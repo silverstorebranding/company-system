@@ -708,17 +708,18 @@ function prBuildItemsTable(rows){
   document.getElementById('prItemsWrap').innerHTML=h;
 
   // باكدج ولا لأ
-  const g={yes:{n:0,d:0},no:{n:0,d:0}};
+  const g={yes:{n:0,d:0,o:0,h:0},no:{n:0,d:0,o:0,h:0}};
   rows.forEach(r=>{
     const k=String(r[PR_contentsCol-1]||'').includes('باكدج')?'yes':'no';
-    g[k].n++; if(r[PR_statusCol-1]==='Delivered')g[k].d++;
+    const st=r[PR_statusCol-1];
+    g[k].n++; if(st==='Delivered')g[k].d++; if(st==='Out for Delivery')g[k].o++; if(st==='Hold')g[k].h++;
   });
   const all=g.yes.n+g.no.n;
-  const row=(lbl,m,cls)=>`<tr${cls?` class="${cls}"`:''}><td class="lbl">${lbl}</td><td>${m.n}</td><td>${pct(m.n,all)}</td><td>${m.d}</td><td>${pct(m.d,m.n)}</td></tr>`;
+  const row=(lbl,m,cls)=>`<tr${cls?` class="${cls}"`:''}><td class="lbl">${lbl}</td><td>${m.n}</td><td>${pct(m.n,all)}</td><td>${m.d}</td><td>${pct(m.d,m.n)}</td><td>${m.o}</td><td>${m.h}</td></tr>`;
   document.getElementById('prPkgTable').innerHTML=
-    '<tr><th>النوع</th><th>عدد الأوردرات</th><th>النسبة من الإجمالي</th><th>اتسلم منهم</th><th>نسبة التسليم</th></tr>'+
+    '<tr><th>النوع</th><th>عدد الأوردرات</th><th>النسبة من الإجمالي</th><th>اتسلم منهم</th><th>نسبة التسليم</th><th>🚚 لسه تحت التسليم</th><th>⏸️ Hold</th></tr>'+
     row('📦 فيها كلمة "باكدج"',g.yes)+row('بدون "باكدج"',g.no)+
-    row('الإجمالي',{n:all,d:g.yes.d+g.no.d},'total');
+    row('الإجمالي',{n:all,d:g.yes.d+g.no.d,o:g.yes.o+g.no.o,h:g.yes.h+g.no.h},'total');
 }
 
 /* ---------------- STATE ---------------- */
