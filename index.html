@@ -159,6 +159,9 @@ input.plainIn{padding:6px 10px;border:1px solid var(--line);border-radius:6px;wi
       <div>الدخول باسم:</div>
       <select id="whoami" onchange="setWho(this.value)"></select>
     </div>
+    <div class="grp"><div class="grp-title">الأقسام</div>
+      <div id="deptlinks"></div>
+    </div>
     <div class="grp"><div class="grp-title">الرئيسية</div>
       <a class="navlink" href="#/home">🏠 الرئيسية</a>
       <a class="navlink" href="#/whatnow">❓ أعمل إيه دلوقتي؟</a>
@@ -181,9 +184,6 @@ input.plainIn{padding:6px 10px;border:1px solid var(--line);border-radius:6px;wi
       <a class="navlink" href="#/sop">📚 مكتبة الإجراءات</a>
       <a class="navlink" href="#/training">🎓 مركز التدريب</a>
       <a class="navlink" href="#/search">🔍 بحث المعرفة</a>
-    </div>
-    <div class="grp"><div class="grp-title">الأقسام</div>
-      <div id="deptlinks"></div>
     </div>
   </nav>
   <main id="main"></main>
@@ -250,7 +250,18 @@ const EMP = {
     sops:["Customer Communication SOP","Order Creation SOP","Follow-up SOP","Complaint SOP","Failed Delivery SOP"],
     checklists:["Start of Day","End of Day","قائمة تسليم"]},
 };
+// ترتيب ظهور الأقسام
+const DEPT_ORDER=["testing","marketing","cs","qa","ops","shipping","purchasing","finance","management"];
 const DEPTS = {
+  testing:{name:"اختبار المنتجات",emoji:"🧪",mgr:"Fady",employees:[],
+    purpose:"اختبار أي منتج جديد قبل إطلاقه: فحص الجودة، واختبار الطلب عليه بإعلان صغير، وقرار واضح (اعتماد / تعديل / رفض) قبل ما يتسلّم للتسويق.",
+    inputs:"منتج مرشّح / عينة من المورد",outputs:"منتج معتمد جاهز للتسويق",givesUs:"التسويق",receivesFrom:"المشتريات (العينات)",
+    workflow:["اختيار المنتج المرشّح","طلب عينة من المورد","فحص الجودة (خامة، تشطيب، مقاس)","تصوير المنتج وعمل إعلان تجريبي صغير","قياس النتيجة (تكلفة الأوردر ونسبة التسليم)","القرار: اعتماد / تعديل / رفض","تسليم المنتج المعتمد للتسويق"],
+    daily:["متابعة نتائج الاختبارات الجارية"],weekly:["مراجعة المنتجات تحت الاختبار واتخاذ القرار"],
+    escalation:[["منتج نتيجته حدّية (مش واضح ينجح ولا لأ)","Fady / Peter"],["عينة بجودة سيئة","المشتريات"]],
+    handover:["المنتجات تحت الاختبار وحالتها","نتائج الاختبارات المنتهية"],
+    mistakes:["إطلاق منتج بدون اختبار","الحكم على المنتج من يوم أو يومين بس","عدم توثيق نتيجة الاختبار"],
+    good:["مُختبَر","مُقاس بالأرقام","قرار واضح","موثّق"]},
   cs:{name:"خدمة العملاء",emoji:"💬",mgr:"اسماء",employees:["asmaa","farah"],
     purpose:"استقبال العملاء، فهم احتياجهم، تحويلهم لطلب، تأكيد البيانات، المتابعة، الحفاظ على تجربة العميل.",
     inputs:"رسائل العملاء عبر القنوات",outputs:"طلب مؤكد + بيانات دقيقة",givesUs:"Marketing (تحويلات)",receivesFrom:"Review / QA",
@@ -261,7 +272,7 @@ const DEPTS = {
     handover:["المحادثات المعلّقة","الـFollow-ups القادمة","الشكاوى المفتوحة","العملاء المنتظرين رد","ملاحظات مهمة"],
     mistakes:["عنوان خاطئ","مقاس خاطئ","سعر خاطئ","نسيان Follow-up","وعد غير مؤكد للعميل"],
     good:["سريع","واضح","دقيق","مهذب","كامل البيانات"]},
-  qa:{name:"المراجعة / ضبط الجودة",emoji:"🔎",mgr:"الإدارة",employees:[],
+  qa:{name:"الجودة والمراجعة",emoji:"🔎",mgr:"الإدارة",employees:[],
     purpose:"التأكد من صحة بيانات الطلبات المنفذة من خدمة العملاء قبل تحويلها للتشغيل.",
     inputs:"طلبات من Customer Service",outputs:"طلبات معتمدة أو مُعادة للتصحيح",givesUs:"Customer Service",receivesFrom:"Operations",
     workflow:["استلام الطلب","مراجعة كل الحقول","اعتماد أو إرجاع للتصحيح","إعادة الفحص بعد التصحيح","تحويل للتشغيل"],
@@ -349,7 +360,7 @@ const SOPS = [
   purpose:"اقتراحات بيع إضافية منظمة بدل الاجتهاد الشخصي.",when:"بعد اختيار العميل منتج أساسي.",
   steps:["حدد المنتج الذي اختاره العميل","راجع المنتج المكمّل المعتمد له","اعرضه بالـScript المعتمد فقط عند التوقيت المناسب","لا تعرضه إذا رفض العميل من قبل أو كان غير مهتم"],
   mistakes:["اقتراح عشوائي غير مرتبط بالمنتج"],escalation:"—",done:"تم العرض مرة واحدة بالشكل الصحيح بغض النظر عن قرار العميل"},
- {id:"qa-flow",dept:"المراجعة / ضبط الجودة",name:"QA Workflow",owner:"ضبط الجودة",ver:"1.0",time:"5 د",diff:"أساسي",
+ {id:"qa-flow",dept:"الجودة والمراجعة",name:"QA Workflow",owner:"ضبط الجودة",ver:"1.0",time:"5 د",diff:"أساسي",
   purpose:"ضمان دقة بيانات كل طلب قبل التشغيل.",when:"عند استلام أي طلب جديد.",
   steps:["استلام الطلب","مراجعة كل حقل","إن كان صحيحًا: اعتماد وتحويل للتشغيل","إن كان به خطأ: إرجاعه للموظف مع سبب الخطأ","إعادة الفحص بعد التصحيح"],
   mistakes:["تفويت حقل"],escalation:"خطأ متكرر من نفس الموظف → الإدارة",done:"الطلب معتمد بالكامل أو مُعاد للتصحيح مع سبب واضح"},
@@ -801,7 +812,7 @@ function wireCommon(){
 
 /* ---------------- VIEWS ---------------- */
 function viewHome(){
-  const steps=[["التسويق","marketing"],["خدمة العملاء","cs"],["تأكيد الطلب","cs"],["تجهيز الطلبات","ops"],["الشحن","shipping"],["متابعة العميل","cs"],["المالية","finance"],["الإدارة","management"]];
+  const steps=[["اختبار المنتجات","testing"],["التسويق","marketing"],["خدمة العملاء","cs"],["تأكيد الطلب","cs"],["تجهيز الطلبات","ops"],["الشحن","shipping"],["متابعة العميل","cs"],["المالية","finance"],["الإدارة","management"]];
   return `
   <div class="pagehead"><h1>مرحبًا بك في نظام تشغيل الشركة</h1><p>هنا تفهم إزاي الشركة شغالة، وتلاقي دورك بالظبط. اضغط على أي مرحلة لتفاصيلها.</p></div>
   <div class="card"><h3>إزاي الشركة شغالة</h3>
@@ -816,7 +827,7 @@ function viewHome(){
 
 function viewOrg(){
   const tiers=[["الشركاء",["peter","fady"]],["فريق تجهيز الطلبات",["habiba","nouran","somaya"]],["فريق خدمة العملاء",["asmaa","farah"]]];
-  const deptRow = Object.entries(DEPTS).map(([k,d])=>`<div class="orgcard" onclick="go('#/dept/${k}')"><b>${d.emoji} ${d.name}</b><span>مدير: ${d.mgr}</span></div>`).join('');
+  const deptRow = DEPT_ORDER.map(k=>[k,DEPTS[k]]).map(([k,d])=>`<div class="orgcard" onclick="go('#/dept/${k}')"><b>${d.emoji} ${d.name}</b><span>مدير: ${d.mgr}</span></div>`).join('');
   return `
   <div class="pagehead"><h1>الهيكل التنظيمي للشركة</h1><p>الهيكل التنظيمي — اضغط على أي اسم لفتح ملفه.</p></div>
   ${tiers.map(([label,ids])=>`
@@ -1110,7 +1121,7 @@ function renderSearchResults(q){
 (function init(){
   const who=document.getElementById('whoami');
   who.innerHTML = Object.entries(EMP).map(([k,e])=>`<option value="${k}" ${k===currentUser?'selected':''}>${e.name} — ${e.title}</option>`).join('');
-  document.getElementById('deptlinks').innerHTML = Object.entries(DEPTS).map(([k,d])=>`<a class="navlink" href="#/dept/${k}">${d.emoji} ${d.name}</a>`).join('');
+  document.getElementById('deptlinks').innerHTML = DEPT_ORDER.map(k=>[k,DEPTS[k]]).map(([k,d])=>`<a class="navlink" href="#/dept/${k}">${d.emoji} ${d.name}</a>`).join('');
   render();
 })();
 </script>
