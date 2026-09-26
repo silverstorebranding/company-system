@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>نظام تشغيل الشركة</title>
+<style>
+:root{
+  --ink:#1c2321; --paper:#f6f4ef; --line:#dcd6c9; --panel:#ffffff;
+  --brass:#8a6d3b; --brass-d:#5f4b28; --slate:#3f5a56; --slate-l:#e7eeec;
+  --warn:#9a3b2e; --ok:#3d6b4f; --muted:#6b6659;
+  font-family:'Segoe UI',Tahoma,Arial,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--paper);color:var(--ink);padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);}
+h1,h2,h3,h4{font-weight:600;margin:0 0 .5em}
+a{color:inherit}
+::-webkit-scrollbar{width:8px;height:8px}
+::-webkit-scrollbar-thumb{background:var(--line);border-radius:4px}
+
+#app{display:flex;min-height:100vh}
+/* Sidebar on the right for RTL */
+#sidebar{
+  width:250px;flex:none;background:var(--brass-d);color:#f3ede0;
+  padding:18px 14px;position:sticky;top:0;height:100vh;overflow-y:auto;
+}
+#sidebar .brand{font-size:19px;font-weight:700;margin-bottom:4px}
+#sidebar .brand small{display:block;font-size:11px;font-weight:400;opacity:.7;margin-top:2px}
+#sidebar .grp{margin-top:18px}
+#sidebar .grp-title{font-size:11px;opacity:.6;letter-spacing:.03em;margin:0 0 6px 4px}
+#sidebar a.navlink{
+  display:block;padding:7px 10px;border-radius:6px;color:#f3ede0;text-decoration:none;
+  font-size:14px;margin-bottom:2px;opacity:.88
+}
+#sidebar a.navlink:hover{background:rgba(255,255,255,.08)}
+#sidebar a.navlink.active{background:#f3ede0;color:var(--brass-d);opacity:1;font-weight:600}
+#userbox{margin-top:16px;padding:10px;background:rgba(0,0,0,.15);border-radius:8px;font-size:13px}
+#userbox select{width:100%;margin-top:6px;padding:5px;border-radius:5px;border:none}
+
+#main{flex:1;min-width:0;padding:26px 34px;max-width:980px}
+.crumb{color:var(--muted);font-size:13px;margin-bottom:10px}
+.pagehead{margin-bottom:22px;border-bottom:1px solid var(--line);padding-bottom:14px}
+.pagehead h1{font-size:26px}
+.pagehead p{color:var(--muted);margin:0}
+
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-bottom:16px}
+.card h3{font-size:15px;color:var(--brass-d);border-bottom:1px solid var(--line);padding-bottom:8px;margin-bottom:10px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+@media (max-width:760px){.grid2,.grid3{grid-template-columns:1fr}#sidebar{position:fixed;right:0;z-index:5;transform:translateX(100%);transition:.2s}#sidebar.open{transform:none}#main{padding:18px}}
+
+.flowmap{display:flex;flex-wrap:wrap;gap:0;align-items:center;justify-content:center;margin:20px 0}
+.flownode{background:var(--panel);border:1.5px solid var(--brass);border-radius:9px;padding:12px 16px;font-size:14px;cursor:pointer;min-width:130px;text-align:center;transition:.15s}
+.flownode:hover{background:var(--slate-l);border-color:var(--slate)}
+.flowarrow{color:var(--brass);font-size:20px;padding:0 8px}
+
+.orgtier{margin-bottom:22px}
+.orgtier .lbl{font-size:12px;color:var(--muted);margin-bottom:8px}
+.orgrow{display:flex;flex-wrap:wrap;gap:12px}
+.orgcard{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:12px 16px;cursor:pointer;min-width:150px}
+.orgcard:hover{border-color:var(--brass)}
+.orgcard b{display:block;font-size:15px}
+.orgcard span{font-size:12.5px;color:var(--muted)}
+
+.badge{display:inline-block;padding:2px 9px;border-radius:20px;font-size:11.5px;margin-inline-end:6px}
+.b-slate{background:var(--slate-l);color:var(--slate)}
+.b-warn{background:#f4e2de;color:var(--warn)}
+.b-ok{background:#e1ece4;color:var(--ok)}
+
+ul.plain{margin:0;padding-inline-start:18px}
+ul.plain li{margin-bottom:5px}
+
+.do-dont{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.do-dont .col{border-radius:9px;padding:14px}
+.do-dont .do{background:#e9f1ea;border:1px solid var(--ok)}
+.do-dont .dont{background:#f6e7e4;border:1px solid var(--warn)}
+
+.sopcard{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:14px 16px;margin-bottom:10px;cursor:pointer}
+.sopcard:hover{border-color:var(--brass)}
+.sopcard .meta{font-size:12px;color:var(--muted);margin-top:4px}
+
+.qa-item{border:1px solid var(--line);border-radius:8px;padding:10px 14px;margin-bottom:8px}
+.qa-item .q{font-weight:600;cursor:pointer}
+.qa-item .a{display:none;margin-top:8px;padding-top:8px;border-top:1px dashed var(--line);color:var(--muted)}
+.qa-item.open .a{display:block}
+
+.steps{list-style:none;margin:0;padding:0}
+.steps li{display:flex;gap:10px;padding:7px 0;border-bottom:1px dashed var(--line)}
+.steps li .n{background:var(--brass);color:#fff;border-radius:50%;width:22px;height:22px;flex:none;display:flex;align-items:center;justify-content:center;font-size:12px}
+
+.chk{display:block;margin-bottom:6px;font-size:14px}
+.chk input{margin-inline-end:8px}
+
+.taskrow{display:flex;justify-content:space-between;align-items:center;border:1px solid var(--line);border-radius:8px;padding:10px 14px;margin-bottom:8px;background:var(--panel)}
+.taskrow .t{font-weight:600;font-size:14px}
+.taskrow .d{font-size:12px;color:var(--muted)}
+
+.progresswrap{background:var(--line);border-radius:20px;height:10px;overflow:hidden;margin:10px 0}
+.progressbar{background:var(--ok);height:100%}
+
+#search{width:100%;padding:10px 14px;border-radius:8px;border:1px solid var(--line);font-size:14px;margin-bottom:14px}
+.searchres{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 14px;margin-bottom:8px;cursor:pointer}
+.searchres .k{font-size:11px;color:var(--brass-d)}
+
+.mockbtn{display:inline-block;background:var(--brass);color:#fff;padding:9px 16px;border-radius:7px;border:none;cursor:pointer;font-size:14px}
+.mockbtn:hover{background:var(--brass-d)}
+.linkbtn{background:none;border:1px solid var(--brass);color:var(--brass-d);padding:6px 12px;border-radius:6px;cursor:pointer;font-size:13px}
+
+.mono-note{background:#fbf6e8;border:1px solid #e3d19c;border-radius:8px;padding:10px 14px;font-size:13px;color:#6b5a1e;margin-bottom:14px}
+
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){--ink:#eee8db;--paper:#1b1a17;--panel:#242220;--line:#3a362f;--muted:#a39d8c;--slate-l:#233230;}
+}
+:root[data-theme="dark"]{--ink:#eee8db;--paper:#1b1a17;--panel:#242220;--line:#3a362f;--muted:#a39d8c;--slate-l:#233230;}
+</style>
+</head>
+<body>
+<div id="app">
+  <nav id="sidebar">
+    <div class="brand">🏢 نظام تشغيل الشركة<small>دليل تشغيل الشركة الموحّد</small></div>
+    <div id="userbox">
+      <div>الدخول باسم:</div>
+      <select id="whoami" onchange="setWho(this.value)"></select>
+    </div>
+    <div class="grp"><div class="grp-title">الرئيسية</div>
+      <a class="navlink" href="#/home">🏠 الرئيسية</a>
+      <a class="navlink" href="#/whatnow">❓ أعمل إيه دلوقتي؟</a>
+      <a class="navlink" href="#/onboarding">🚀 ابدأ هنا (التهيئة)</a>
+    </div>
+    <div class="grp"><div class="grp-title">الشركة</div>
+      <a class="navlink" href="#/org">🏢 الهيكل التنظيمي</a>
+      <a class="navlink" href="#/staff">👥 الموظفين الحاليون</a>
+      <a class="navlink" href="#/flow">🔄 تدفق العمل بالشركة</a>
+      <a class="navlink" href="#/policies">📜 السياسات</a>
+    </div>
+    <div class="grp"><div class="grp-title">العمل</div>
+      <a class="navlink" href="#/tasks">✅ مهامي</a>
+      <a class="navlink" href="#/handover">🔁 مركز التسليم</a>
+    </div>
+    <div class="grp"><div class="grp-title">المعرفة</div>
+      <a class="navlink" href="#/sop">📚 مكتبة الإجراءات</a>
+      <a class="navlink" href="#/training">🎓 مركز التدريب</a>
+      <a class="navlink" href="#/search">🔍 بحث المعرفة</a>
+    </div>
+    <div class="grp"><div class="grp-title">الأقسام</div>
+      <div id="deptlinks"></div>
+    </div>
+  </nav>
+  <main id="main"></main>
+</div>
+
+<script>
+/* ---------------- DATA ---------------- */
+const EMP = {
+  peter:{name:"Peter",dept:"management",title:"شريك / وضع الاستراتيجيات",reports:"—",
+    role:"صاحب القرار النهائي في السياسات، التسعير، والقرارات الجوهرية.",
+    daily:["مراجعة الأمور المصعّدة","متابعة الأداء العام"],weekly:["Weekly Business Review"],monthly:["مراجعة السياسات"],
+    own:["القرار النهائي","السياسات العامة"],notown:["التنفيذ اليومي التفصيلي"],
+    reportsto:"—",handto:"Fady / الإدارة",approver:"—",escalate:"عند أي قرار مالي/سياسي كبير",
+    tools:["كل الأنظمة"],sops:["Decision Rights"],checklists:["Weekly Review"]},
+  fady:{name:"Fady",dept:"management",title:"شريك / التنفيذ والرقابة",reports:"Peter",
+    role:"مسؤول تنفيذ العمليات اليومية، التسويق، الشراء، وتصعيد المشاكل التشغيلية.",
+    daily:["مراجعة التصعيدات","متابعة الأقسام"],weekly:["مراجعة الحملات","مراجعة المخزون"],monthly:["مراجعة الموردين"],
+    own:["التشغيل","التسويق","الشراء"],notown:["القرار المالي النهائي"],
+    reportsto:"Peter",handto:"الأقسام التنفيذية",approver:"Peter (للقرارات الكبرى)",escalate:"للقرارات المالية الكبرى → Peter",
+    tools:["كل الأنظمة التشغيلية"],sops:["Escalation Matrix"],checklists:["Daily Ops Check"]},
+  habiba:{name:"حبيبة",dept:"ops",title:"مسؤولة تجهيز الطلبات — مسؤولية كاملة",reports:"Fady",
+    role:"مسؤولة بالكامل عن تجهيز الطلبات من الألف للياء: توزيع الطلبات على فريق التجهيز، متابعة التنفيذ لحظة بلحظة، والتأكد إن كل طلب يوصل للشحن كامل وصحيح.",
+    daily:["توزيع الطلبات على الفريق","متابعة تجهيز طلبات اليوم أول بأول","مراجعة الحالات المعقدة"],
+    weekly:["جرد يوم الخميس مع مسؤولة المخزن"],monthly:["—"],
+    own:["تجهيز الطلبات بالكامل","توزيع العمل على الفريق"],notown:["الرد على العملاء (إلا عند الحاجة)"],
+    reportsto:"Fady",handto:"الشحن",approver:"Fady",escalate:"عند نقص مخزون أو مشكلة تجهيز متكررة",
+    tools:["نظام الطلبات","Packing Checklist"],
+    sops:["Packing SOP","Weekly Stock Count"],
+    checklists:["Start of Day","End of Day","قائمة تسليم"]},
+  somaya:{name:"سمية",dept:"ops",title:"عضوة فريق تجهيز الطلبات — تنضم لخدمة العملاء بعد الانتهاء",reports:"حبيبة",
+    role:"تجهّز نصيبها من طلبات اليوم أولًا، وبمجرد ما تخلّص تجهيزها تنضم لفريق خدمة العملاء لدعمه — ده جزء أساسي من يومها مش استثناء.",
+    daily:["تجهيز الطلبات المخصّصة لها","الانضمام لخدمة العملاء فور الانتهاء من التجهيز"],
+    weekly:["—"],monthly:["—"],
+    own:["تجهيز نصيبها من الطلبات"],notown:["اعتماد سعر أو استثناء للعميل"],
+    reportsto:"حبيبة (تجهيز) / اسماء (خدمة عملاء)",handto:"الشحن ثم خدمة العملاء",approver:"حبيبة / اسماء",
+    escalate:"عند تعارض بين مهمة التجهيز ودعم خدمة العملاء → حبيبة",
+    tools:["نظام الطلبات","WhatsApp","Messenger"],
+    sops:["Packing SOP","Customer Communication SOP","Follow-up SOP"],
+    checklists:["Start of Day","End of Day"]},
+  nouran:{name:"نورهان",dept:"ops",title:"مسؤولة المخزن",reports:"حبيبة",
+    role:"مسؤولة عن دقة المخزون: الجرد الأسبوعي، تسجيل أي فرق أو نقص أو تالف، وتوفير المكونات لفريق التجهيز أول بأول.",
+    daily:["فحص توفر المكونات لطلبات اليوم","تجهيز نصيبها من الطلبات"],weekly:["جرد يوم الخميس"],monthly:["—"],
+    own:["دقة المخزون","تسجيل الفروقات"],notown:["قرار الشراء النهائي"],reportsto:"حبيبة",handto:"فريق التجهيز",
+    approver:"حبيبة / Fady",escalate:"عند فرق كبير في الجرد أو نقص متكرر",tools:["Inventory Sheet","نظام الطلبات"],
+    sops:["Weekly Stock Count","Packing SOP"],checklists:["Start of Day"]},
+  asmaa:{name:"اسماء",dept:"cs",title:"مسؤولة خدمة العملاء",reports:"Fady",
+    role:"مسؤولة عن فريق خدمة العملاء بالكامل: توزيع المحادثات، متابعة الرد في الوقت، ومتابعة الشكاوى حتى الحل أو التصعيد.",
+    daily:["توزيع المحادثات على الفريق","متابعة الرد خلال الوقت المحدد","متابعة الشكاوى المفتوحة"],
+    weekly:["مراجعة الحالات المتأخرة"],monthly:["—"],
+    own:["إدارة فريق خدمة العملاء","التواصل مع العميل"],notown:["تسعير غير معتمد"],
+    reportsto:"Fady",handto:"تجهيز الطلبات",approver:"Fady",escalate:"عند شكوى خارج الصلاحية أو طلب استثناء",
+    tools:["WhatsApp","Messenger","Instagram","TikTok","نظام الطلبات"],
+    sops:["Customer Communication SOP","Order Creation SOP","Follow-up SOP","Complaint SOP","Failed Delivery SOP","Upsell Rules"],
+    checklists:["Start of Day","End of Day","قائمة تسليم"]},
+  farah:{name:"فرح",dept:"cs",title:"عضوة فريق خدمة العملاء",reports:"اسماء",
+    role:"استقبال العملاء، الرد على الاستفسارات، تحويل العميل لطلب، ومتابعته حتى التسليم.",
+    daily:["الرد على المحادثات الجديدة","متابعة الـFollow-ups","تسجيل الطلبات الجاهزة"],
+    weekly:["مراجعة الحالات المعلّقة"],monthly:["—"],
+    own:["التواصل مع العميل","تسجيل بيانات الطلب"],notown:["تغيير السياسات","تسعير غير معتمد"],
+    reportsto:"اسماء",handto:"تجهيز الطلبات",approver:"اسماء / Fady للحالات الاستثنائية",
+    escalate:"عند شكوى خارج صلاحيتها أو طلب استثناء",
+    tools:["WhatsApp","Messenger","Instagram","TikTok","نظام الطلبات"],
+    sops:["Customer Communication SOP","Order Creation SOP","Follow-up SOP","Complaint SOP","Failed Delivery SOP"],
+    checklists:["Start of Day","End of Day","قائمة تسليم"]},
+};
+const DEPTS = {
+  cs:{name:"خدمة العملاء",emoji:"💬",mgr:"اسماء",employees:["asmaa","farah"],
+    purpose:"استقبال العملاء، فهم احتياجهم، تحويلهم لطلب، تأكيد البيانات، المتابعة، الحفاظ على تجربة العميل.",
+    inputs:"رسائل العملاء عبر القنوات",outputs:"طلب مؤكد + بيانات دقيقة",givesUs:"Marketing (تحويلات)",receivesFrom:"Review / QA",
+    workflow:["Login وفحص القنوات","الرد على المحادثات الجديدة","فهم احتياج العميل","تحويله لطلب عند الجاهزية","تسجيل الطلب في Order System","متابعة الحالة حتى التسليم"],
+    daily:["فحص المحادثات غير المقروءة","متابعة الـFollow-ups","تسجيل الطلبات الجاهزة","الرد خلال SLA"],
+    weekly:["مراجعة الحالات المتأخرة","مراجعة الشكاوى المتكررة"],
+    escalation:[["سعر غير معتمد أو خصم","Fady"],["شكوى خارج الصلاحية","Fady / الإدارة"],["مشكلة تسليم متكررة","Fady"]],
+    handover:["المحادثات المعلّقة","الـFollow-ups القادمة","الشكاوى المفتوحة","العملاء المنتظرين رد","ملاحظات مهمة"],
+    mistakes:["عنوان خاطئ","مقاس خاطئ","سعر خاطئ","نسيان Follow-up","وعد غير مؤكد للعميل"],
+    good:["سريع","واضح","دقيق","مهذب","كامل البيانات"]},
+  qa:{name:"المراجعة / ضبط الجودة",emoji:"🔎",mgr:"الإدارة",employees:[],
+    purpose:"التأكد من صحة بيانات الطلبات المنفذة من خدمة العملاء قبل تحويلها للتشغيل.",
+    inputs:"طلبات من Customer Service",outputs:"طلبات معتمدة أو مُعادة للتصحيح",givesUs:"Customer Service",receivesFrom:"Operations",
+    workflow:["استلام الطلب","مراجعة كل الحقول","اعتماد أو إرجاع للتصحيح","إعادة الفحص بعد التصحيح","تحويل للتشغيل"],
+    daily:["مراجعة كل الطلبات الجديدة"],weekly:["تحليل الأخطاء المتكررة"],
+    escalation:[["خطأ متكرر من نفس الموظف","الإدارة"],["تعارض في البيانات","Customer Service"]],
+    handover:["الطلبات قيد المراجعة","الطلبات المُعادة وتنتظر تصحيح"],
+    mistakes:["تفويت خطأ صغير","تأخير المراجعة"],good:["دقيق","سريع","موثّق"]},
+  ops:{name:"تجهيز الطلبات / المخزن",emoji:"📦",mgr:"حبيبة",employees:["habiba","nouran","somaya"],
+    purpose:"تحويل الطلب المؤكد إلى شحنة جاهزة وصحيحة بالكامل.",
+    inputs:"طلبات معتمدة من QA",outputs:"شحنة معبأة وجاهزة",givesUs:"Review / QA",receivesFrom:"Shipping",
+    workflow:["استلام الطلب المعتمد","تجهيز المنتج","مراجعة المكونات","Packing","QA داخلي","تسليم للشحن"],
+    daily:["تجهيز الطلبات المعتمدة","Packing حسب Checklist"],weekly:["جرد يوم الخميس"],
+    escalation:[["نقص في المخزون","Fady"],["منتج تالف","Fady"]],
+    handover:["الطلبات قيد التجهيز","حالات النقص المكتشفة"],
+    mistakes:["مكوّن ناقص","منتج خاطئ","مقاس خاطئ","تغليف ناقص"],good:["صحيح","كامل","نظيف","مُراجَع"]},
+  shipping:{name:"الشحن",emoji:"🚚",mgr:"—",employees:[],
+    purpose:"ضمان انتقال الشحنات من الشركة للعميل عبر Q.B ومتابعة الحالات.",
+    inputs:"شحنات جاهزة من Operations",outputs:"تسليم ناجح أو حالة موثّقة",givesUs:"Operations",receivesFrom:"Customer Follow-up",
+    workflow:["استلام الشحنة","تسجيل السيريال في Q.B","تتبع الحالة","تسجيل النتيجة (تم/فشل)","متابعة أو إرجاع"],
+    daily:["تسليم الشحنات لـQ.B","متابعة حالات اليوم"],weekly:["مراجعة المرتجعات"],
+    escalation:[["فشل تسليم متكرر لنفس المنطقة","Fady"]],handover:["الشحنات قيد المتابعة"],
+    mistakes:["تسجيل سيريال خاطئ","تأخير المتابعة"],good:["مُتابَع","موثّق","سريع"]},
+  marketing:{name:"التسويق",emoji:"📣",mgr:"Fady",employees:["fady"],
+    purpose:"جذب العملاء عبر الحملات والمحتوى وتحويلهم لخدمة العملاء.",
+    inputs:"أهداف وموازنة",outputs:"عملاء محتملون / تحويلات",givesUs:"الإدارة",receivesFrom:"Customer Service (نتائج)",
+    workflow:["فكرة","عرض","Creative Brief","تصميم","صفحة هبوط","إطلاق","اختبار","تحليل","قرار (توسيع/تعديل/إيقاف)"],
+    daily:["مراجعة أداء الحملات الجارية"],weekly:["مراجعة نتائج الاختبارات"],
+    escalation:[["ميزانية إضافية مطلوبة","Fady / Peter"]],handover:["الحملات الجارية وحالتها"],
+    mistakes:["تتبع غير مفعّل","صفحة هبوط بدون مراجعة"],good:["مُختبَر","مُتتبَّع","موثّق","مُراجَع"]},
+  purchasing:{name:"المشتريات",emoji:"🛒",mgr:"Fady",employees:["fady"],
+    purpose:"توفير المنتجات والمكونات في الوقت المناسب وبالتكلفة المناسبة.",
+    inputs:"احتياج مكتشف من المخزون",outputs:"بضاعة مستلمة ومسجّلة",givesUs:"Operations (نواقص)",receivesFrom:"الموردين",
+    workflow:["تحديد الاحتياج","فحص المخزون","تحديد المورد","طلب سعر","مقارنة","قرار شراء","شراء","استلام وفحص","تسجيل وتحديث المخزون"],
+    daily:["متابعة الطلبات المفتوحة مع الموردين"],weekly:["مراجعة الاحتياجات القادمة"],
+    escalation:[["مورد يماطل أو سعر غير منطقي","Fady"]],handover:["طلبات الشراء المفتوحة"],
+    mistakes:["شراء بدون مقارنة أسعار","عدم فحص البضاعة عند الاستلام"],good:["بالتكلفة المناسبة","في الوقت المناسب","مُوثّق"]},
+  finance:{name:"المالية",emoji:"💰",mgr:"الإدارة",employees:[],
+    purpose:"تسجيل واعتماد ودفع المصروفات، متابعة الإيرادات وتسويات Q.B.",
+    inputs:"طلبات مصروف / تسويات Q.B",outputs:"سجل مالي دقيق",givesUs:"كل الأقسام",receivesFrom:"Shipping (تسويات)",
+    workflow:["طلب مصروف","مراجعة","اعتماد","دفع","تسجيل","إرفاق الإيصال"],
+    daily:["متابعة تسويات Q.B اليومية"],weekly:["مراجعة المصروفات"],
+    escalation:[["مصروف كبير غير مخطط","Peter / Fady"]],handover:["المصروفات المعلّقة الاعتماد"],
+    mistakes:["دفع بدون اعتماد","عدم إرفاق إيصال"],good:["دقيق","موثّق","معتمد قبل الدفع"]},
+  management:{name:"الإدارة",emoji:"🧭",mgr:"Peter + Fady",employees:["peter","fady"],
+    purpose:"القرار النهائي، متابعة الأداء العام، حل التصعيدات الكبرى.",
+    inputs:"تصعيدات + تقارير الأقسام",outputs:"قرارات وسياسات",givesUs:"—",receivesFrom:"كل الأقسام",
+    workflow:["استلام التصعيد","المراجعة","القرار","التوصيل للقسم المعني"],
+    daily:["مراجعة التصعيدات"],weekly:["Weekly Business Review"],
+    escalation:[["—","—"]],handover:["القرارات المعلّقة"],mistakes:["تأخير القرار"],good:["واضح","سريع","موثّق"]},
+};
+const SOPS = [
+ {id:"cs-comm",dept:"خدمة العملاء",name:"Customer Communication SOP",owner:"مدير خدمة العملاء",ver:"1.0",time:"مستمر",diff:"أساسي",
+  purpose:"توحيد طريقة الرد على العملاء لضمان دقة واحترافية الرد.",
+  when:"عند أي تواصل مع عميل عبر أي قناة.",
+  steps:["ابدأ بالتحية واسم العميل إن وجد","افهم السؤال قبل الرد","استخدم الرد المعتمد فقط","لا تخترع إجابة أو سعر","أنهِ بخطوة تالية واضحة"],
+  approved:[["بكام؟","السعر المعتمد + عرض الحالي إن وجد، بدون خصم غير مصرّح"],
+    ["بتوصل إمتى؟","مدة الشحن المعتمدة حسب المحافظة"],
+    ["فيه ضمان؟","تفاصيل الضمان المعتمدة للمنتج"],
+    ["ممكن أستبدل؟","سياسة الاستبدال المعتمدة والشروط"],
+    ["فيه استرجاع؟","سياسة الاسترجاع المعتمدة"],
+    ["هيوصل إزاي؟","اسم شركة الشحن (Q.B) وطريقة الدفع عند الاستلام"]],
+  mistakes:["اختراع سعر أو موعد","الجدال مع العميل"],escalation:"عند طلب خارج السياسة المعتمدة → Fady",
+  done:"تم الرد، تم فهم العميل، تم تحديد الخطوة التالية"},
+ {id:"cs-order",dept:"خدمة العملاء",name:"Order Creation SOP",owner:"CS Manager",ver:"1.0",time:"5-10 د",diff:"أساسي",
+  purpose:"تسجيل بيانات طلب العميل بدقة كاملة قبل تحويله للتشغيل.",when:"عندما يصبح العميل جاهزًا للشراء.",
+  steps:["جمع بيانات العميل","تأكيد المنتج","تأكيد المقاس","تأكيد الكمية","تأكيد العنوان","تأكيد رقم الهاتف","تأكيد السعر","تأكيد طريقة الشحن","تسجيل الطلب في Order System","إرسال رسالة تأكيد للعميل"],
+  mistakes:["عنوان أو مقاس غير مؤكد قبل التسجيل"],escalation:"عند تعارض بيانات العميل → مراجعة يدوية قبل التسجيل",
+  done:"كل الحقول مؤكدة ومسجّلة + تم إرسال التأكيد للعميل",mockOrderBtn:true},
+ {id:"cs-followup",dept:"خدمة العملاء",name:"Follow-up SOP",owner:"CS Manager",ver:"1.0",time:"مستمر",diff:"أساسي",
+  purpose:"عدم فقدان أي عميل مهتم بسبب انقطاع المتابعة.",when:"عند عدم رد العميل بعد تواصل سابق.",
+  steps:["لا رد بعد ساعة → Follow-up رقم 1","لا رد لاحقًا في نفس اليوم → Follow-up رقم 2","لا رد في اليوم التالي → Follow-up أخير","لا رد بعدها → تسجيل الحالة (Lost / No Response)"],
+  mistakes:["نسيان المتابعة","رسالة متابعة متكررة بنفس الصيغة"],escalation:"لا يوجد إلا عند طلب خاص من العميل",
+  done:"تم تسجيل نتيجة كل محاولة متابعة وتحديد الحالة النهائية"},
+ {id:"cs-complaint",dept:"خدمة العملاء",name:"Complaint SOP",owner:"CS Manager",ver:"1.0",time:"10-20 د",diff:"متوسط",
+  purpose:"حل شكاوى العملاء بشكل منظم دون تجاوز الصلاحيات.",when:"عند أي شكوى من عميل.",
+  steps:["استمع للشكوى كاملة","افهم المشكلة الحقيقية","راجع بيانات الطلب","حدد المشكلة بدقة","استخدم الحل المعتمد إن وجد","إن كانت ضمن صلاحيتك: حُلّها","إن كانت خارج صلاحيتك: صعّدها","وثّق الشكوى والحل","أغلق الحالة بعد تأكيد العميل"],
+  mistakes:["الوعد بحل خارج الصلاحية","عدم توثيق الشكوى"],escalation:"خارج الصلاحية → Fady → الإدارة",
+  done:"تم الحل أو التصعيد + تم التوثيق + تم الإغلاق"},
+ {id:"cs-delivery",dept:"خدمة العملاء",name:"Failed Delivery SOP",owner:"CS Manager",ver:"1.0",time:"10 د",diff:"متوسط",
+  purpose:"التعامل مع حالات فشل التسليم بشكل موحّد.",when:"عند إبلاغ الشحن بفشل تسليم.",
+  steps:["اقرأ سبب الفشل","تواصل مع العميل","اسأل عن السبب الحقيقي","حدد الحل المناسب","سجّل النتيجة","أبلغ Shipping بالقرار","تابع حسب الحالة"],
+  mistakes:["عدم التواصل السريع مع العميل"],escalation:"فشل متكرر لنفس العميل → Fady",
+  done:"تم تحديد نتيجة واضحة من: سيستلم / تغيير عنوان / تغيير موعد / رفض / رقم خاطئ / لا رد"},
+ {id:"cs-upsell",dept:"خدمة العملاء",name:"Upsell Rules",owner:"CS Manager",ver:"1.0",time:"—",diff:"أساسي",
+  purpose:"اقتراحات بيع إضافية منظمة بدل الاجتهاد الشخصي.",when:"بعد اختيار العميل منتج أساسي.",
+  steps:["حدد المنتج الذي اختاره العميل","راجع المنتج المكمّل المعتمد له","اعرضه بالـScript المعتمد فقط عند التوقيت المناسب","لا تعرضه إذا رفض العميل من قبل أو كان غير مهتم"],
+  mistakes:["اقتراح عشوائي غير مرتبط بالمنتج"],escalation:"—",done:"تم العرض مرة واحدة بالشكل الصحيح بغض النظر عن قرار العميل"},
+ {id:"qa-flow",dept:"المراجعة / ضبط الجودة",name:"QA Workflow",owner:"ضبط الجودة",ver:"1.0",time:"5 د",diff:"أساسي",
+  purpose:"ضمان دقة بيانات كل طلب قبل التشغيل.",when:"عند استلام أي طلب جديد.",
+  steps:["استلام الطلب","مراجعة كل حقل","إن كان صحيحًا: اعتماد وتحويل للتشغيل","إن كان به خطأ: إرجاعه للموظف مع سبب الخطأ","إعادة الفحص بعد التصحيح"],
+  mistakes:["تفويت حقل"],escalation:"خطأ متكرر من نفس الموظف → الإدارة",done:"الطلب معتمد بالكامل أو مُعاد للتصحيح مع سبب واضح"},
+ {id:"ops-pack",dept:"تجهيز الطلبات",name:"Packing SOP",owner:"المخزن",ver:"1.0",time:"5-8 د",diff:"أساسي",
+  purpose:"ضمان تغليف كامل وصحيح لكل شحنة.",when:"عند تجهيز أي طلب معتمد.",
+  steps:["Product","Ring","Bracelet if applicable","Box","Bag","Card","Velvet Pouch","Leather Pouch","Polishing Material","Warranty"],
+  mistakes:["نسيان عنصر من الـChecklist"],escalation:"نقص مكوّن → Fady",
+  done:"كل عناصر الـChecklist تم التأكد منها فعليًا وليس افتراضًا"},
+ {id:"ops-stock",dept:"تجهيز الطلبات",name:"Weekly Stock Count",owner:"Warehouse",ver:"1.0",time:"ساعة",diff:"متوسط",
+  purpose:"ضمان تطابق المخزون الفعلي مع المسجّل.",when:"كل يوم خميس.",
+  steps:["عدّ الكمية الفعلية","قارنها بالمسجّل","حدد الفرق","حقق في السبب","وثّق النتيجة","اطلب تعديل إن لزم","انتظر الاعتماد","حدّث المخزون"],
+  mistakes:["عدم التحقيق في سبب الفرق"],escalation:"فرق كبير غير مفسَّر → Fady",done:"المخزون مطابق أو الفرق موثّق ومعتمد"},
+ {id:"purch-flow",dept:"المشتريات",name:"Purchasing Workflow",owner:"Fady",ver:"1.0",time:"يتفاوت",diff:"متوسط",
+  purpose:"شراء منظم بأفضل سعر وجودة.",when:"عند اكتشاف احتياج شراء.",
+  steps:["تحديد الاحتياج","فحص المخزون","تحديد المورد","طلب سعر","مقارنة","قرار الشراء","الشراء","الاستلام والفحص","تسجيل الشراء وتحديث المخزون"],
+  mistakes:["الشراء بدون مقارنة أسعار"],escalation:"سعر غير منطقي أو تأخير مورد → Fady",done:"البضاعة مستلمة، مفحوصة، مسجّلة، والمخزون محدّث"},
+ {id:"fin-expense",dept:"المالية",name:"Expense Workflow",owner:"المالية",ver:"1.0",time:"—",diff:"أساسي",
+  purpose:"ضمان عدم دفع أي مصروف بدون اعتماد وتوثيق.",when:"عند أي طلب صرف.",
+  steps:["طلب المصروف","المراجعة","الاعتماد","الدفع","التسجيل","إرفاق الإيصال"],
+  mistakes:["الدفع قبل الاعتماد"],escalation:"مصروف كبير غير مخطط → Peter / Fady",done:"المصروف مسجّل، معتمد، ومرفق بإيصال"},
+];
+const CHANNELS = "WhatsApp, Messenger, Instagram, TikTok, Phone";
+
+/* ---------------- STATE ---------------- */
+let currentUser = localStorage.getItem('cos_user') || 'habiba';
+function setWho(id){currentUser=id; localStorage.setItem('cos_user',id); render();}
+
+/* ---------------- ROUTER ---------------- */
+function el(html){const d=document.createElement('div'); d.innerHTML=html; return d.firstElementChild;}
+function go(hash){location.hash=hash;}
+window.addEventListener('hashchange', render);
+
+function render(){
+  const main = document.getElementById('main');
+  const hash = location.hash.replace('#/','') || 'home';
+  const [route, param] = hash.split('/');
+  document.querySelectorAll('#sidebar a.navlink').forEach(a=>a.classList.toggle('active', a.getAttribute('href')==='#/'+route));
+  let html = '';
+  if(route==='home') html = viewHome();
+  else if(route==='org') html = viewOrg();
+  else if(route==='staff') html = viewStaff();
+  else if(route==='employee') html = viewEmployee(param);
+  else if(route==='dept') html = viewDept(param);
+  else if(route==='flow') html = viewCompanyFlow();
+  else if(route==='tasks') html = viewTasks();
+  else if(route==='handover') html = viewHandover();
+  else if(route==='sop') html = viewSopLibrary();
+  else if(route==='sopdetail') html = viewSopDetail(param);
+  else if(route==='training') html = viewTraining();
+  else if(route==='search') html = viewSearch();
+  else if(route==='policies') html = viewPolicies();
+  else if(route==='onboarding') html = viewOnboarding();
+  else if(route==='whatnow') html = viewWhatNow();
+  else html = viewHome();
+  main.innerHTML = html;
+  wireCommon();
+}
+
+function wireCommon(){
+  document.querySelectorAll('.qa-item .q').forEach(q=>{
+    q.onclick=()=>q.parentElement.classList.toggle('open');
+  });
+  document.querySelectorAll('input[type=checkbox][data-ls]').forEach(cb=>{
+    const key='chk_'+cb.dataset.ls;
+    cb.checked = localStorage.getItem(key)==='1';
+    cb.onchange=()=>localStorage.setItem(key, cb.checked?'1':'0');
+  });
+  const s=document.getElementById('liveSearch');
+  if(s) s.oninput=()=>renderSearchResults(s.value);
+}
+
+/* ---------------- VIEWS ---------------- */
+function viewHome(){
+  const steps=[["التسويق","marketing"],["خدمة العملاء","cs"],["تأكيد الطلب","cs"],["تجهيز الطلبات","ops"],["الشحن","shipping"],["متابعة العميل","cs"],["المالية","finance"],["الإدارة","management"]];
+  return `
+  <div class="pagehead"><h1>مرحبًا بك في نظام تشغيل الشركة</h1><p>هنا تفهم إزاي الشركة شغالة، وتلاقي دورك بالظبط. اضغط على أي مرحلة لتفاصيلها.</p></div>
+  <div class="card"><h3>إزاي الشركة شغالة</h3>
+    <div class="flowmap">${steps.map((s,i)=>`<div class="flownode" onclick="go('#/dept/${s[1]}')">${s[0]}</div>${i<steps.length-1?'<span class="flowarrow">←</span>':''}`).join('')}</div>
+  </div>
+  <div class="grid3">
+    <div class="card"><h3>🏢 الهيكل التنظيمي</h3><p style="color:var(--muted);font-size:13.5px">هيكل الشركة والمديرين.</p><button class="linkbtn" onclick="go('#/org')">فتح</button></div>
+    <div class="card"><h3>✅ مهامي</h3><p style="color:var(--muted);font-size:13.5px">مهامك اليوم والمعلّقة.</p><button class="linkbtn" onclick="go('#/tasks')">فتح</button></div>
+    <div class="card"><h3>📚 مكتبة الإجراءات</h3><p style="color:var(--muted);font-size:13.5px">كل إجراءات العمل الموثّقة.</p><button class="linkbtn" onclick="go('#/sop')">فتح</button></div>
+  </div>`;
+}
+
+function viewOrg(){
+  const tiers=[["الشركاء",["peter","fady"]],["فريق تجهيز الطلبات",["habiba","nouran","somaya"]],["فريق خدمة العملاء",["asmaa","farah"]]];
+  const deptRow = Object.entries(DEPTS).map(([k,d])=>`<div class="orgcard" onclick="go('#/dept/${k}')"><b>${d.emoji} ${d.name}</b><span>مدير: ${d.mgr}</span></div>`).join('');
+  return `
+  <div class="pagehead"><h1>الهيكل التنظيمي للشركة</h1><p>الهيكل التنظيمي — اضغط على أي اسم لفتح ملفه.</p></div>
+  ${tiers.map(([label,ids])=>`
+    <div class="orgtier"><div class="lbl">${label}</div><div class="orgrow">
+      ${ids.map(id=>`<div class="orgcard" onclick="go('#/employee/${id}')"><b>${EMP[id].name}</b><span>${EMP[id].title}</span></div>`).join('')}
+    </div></div>`).join('')}
+  <div class="orgtier"><div class="lbl">كل الأقسام</div><div class="orgrow">${deptRow}</div></div>`;
+}
+
+function viewStaff(){
+  const prep = DEPTS.ops.employees.map(id=>({id,...EMP[id]}));
+  const cs = DEPTS.cs.employees.map(id=>({id,...EMP[id]}));
+  const rowFor = e => `<div class="orgcard" style="min-width:200px;margin-bottom:8px;cursor:pointer" onclick="go('#/employee/${e.id}')">
+      <b>${e.name}</b><span>${e.title}</span></div>`;
+  return `
+  <div class="pagehead"><h1>الموظفين الحاليون</h1><p>الفريق اتقسم بشكل واضح بدل ما الكل يعمل كل حاجة — كل حد له دور ثابت، وفيه حركة واحدة موثّقة بين الفريقين.</p></div>
+  <div class="mono-note">مش كل الفريق بيجهّز طلبات ويرد على العملاء ويمسك السوشيال ميديا مع بعض. كل موظفة دورها الأساسي محدد، وأي انتقال بين الفريقين موثّق هنا بوضوح — مش عشوائي.</div>
+  <div class="grid2">
+    <div class="card"><h3>📦 فريق تجهيز الطلبات — المسؤولة: حبيبة</h3>
+      ${prep.map(rowFor).join('')}
+    </div>
+    <div class="card"><h3>💬 فريق خدمة العملاء — المسؤولة: اسماء</h3>
+      ${cs.map(rowFor).join('')}
+    </div>
+  </div>
+  <div class="card"><h3>حركة الفريق (Rotation)</h3>
+    <p>🔁 <b>سمية</b> تجهّز نصيبها من الطلبات الأول، وبمجرد ما تخلّص تنضم فورًا لفريق خدمة العملاء لدعمه لحد آخر الشيفت.</p>
+    <p style="color:var(--muted);font-size:13.5px">ده الاستثناء الوحيد المسموح بيه، وهو موثّق كجزء من دورها مش تجاوز على قسم تاني.</p>
+  </div>
+  <div class="card"><h3>المسؤوليات الكاملة</h3>
+    <p><span class="badge b-ok">مسؤولة تجهيز الطلبات بالكامل</span> حبيبة</p>
+    <p><span class="badge b-ok">مسؤولة المخزن</span> نورهان</p>
+    <p><span class="badge b-ok">مسؤولة خدمة العملاء</span> اسماء</p>
+  </div>`;
+}
+function viewEmployee(id){
+  const e=EMP[id]; if(!e) return `<p>غير موجود</p>`;
+  const dept = DEPTS[e.dept];
+  return `
+  <div class="crumb"><a href="#/org">الهيكل التنظيمي</a> / ${e.name}</div>
+  <div class="pagehead"><h1>${e.name}</h1><p>${e.title}${dept?' · '+dept.name:''}</p></div>
+  <div class="card"><h3>دوري</h3><p>${e.role}</p></div>
+  <div class="grid2">
+    <div class="card"><h3>المسؤوليات اليومية</h3><ul class="plain">${e.daily.map(x=>`<li>${x}</li>`).join('')}</ul></div>
+    <div class="card"><h3>المسؤوليات الأسبوعية</h3><ul class="plain">${e.weekly.map(x=>`<li>${x}</li>`).join('')}</ul></div>
+  </div>
+  <div class="grid2">
+    <div class="card"><h3>المسؤول عنها</h3><ul class="plain">${e.own.map(x=>`<li>${x}</li>`).join('')}</ul></div>
+    <div class="card"><h3>غير المسؤول عنها</h3><ul class="plain">${e.notown.map(x=>`<li>${x}</li>`).join('')}</ul></div>
+  </div>
+  <div class="card"><h3>التبعية والتسليم</h3>
+    <p><span class="badge b-slate">يرفع تقاريره لـ</span> ${e.reportsto}</p>
+    <p><span class="badge b-slate">يسلّم العمل لـ</span> ${e.handto}</p>
+    <p><span class="badge b-ok">المعتمِد</span> ${e.approver}</p>
+    <p><span class="badge b-warn">يصعّد عندما</span> ${e.escalate}</p>
+  </div>
+  <div class="grid2">
+    <div class="card"><h3>الأدوات التي أستخدمها</h3><ul class="plain">${e.tools.map(x=>`<li>${x}</li>`).join('')}</ul></div>
+    <div class="card"><h3>الإجراءات وقوائم المراجعة</h3><ul class="plain">${e.sops.map(x=>`<li>${x}</li>`).join('')}${e.checklists.map(x=>`<li>${x}</li>`).join('')}</ul></div>
+  </div>
+  <div class="card"><h3>لو غادرت الشركة غدًا</h3><p style="color:var(--muted);font-size:13.5px">هذا الملخص يوضّح للإدارة كل ما تحتاجه لنقل مسؤوليات ${e.name} لموظف آخر فورًا.</p>
+    <ul class="plain"><li>مسؤولياتي: ${e.own.join('، ')}</li><li>أدواتي: ${e.tools.join('، ')}</li><li>الـSOPs الخاصة بي: ${e.sops.join('، ')}</li><li>من يستلم عني: ${e.handto}</li></ul>
+  </div>`;
+}
+
+function viewCompanyFlow(){
+  const rows=[
+   ["التسويق ← خدمة العملاء","التسويق","تحويلات/عملاء مهتمون","عميل جاهز للتواصل","منصة الإعلانات","—","Brief + نتائج"],
+   ["خدمة العملاء ← المراجعة/ضبط الجودة","خدمة العملاء","طلب مؤكد من العميل","طلب مسجّل بالكامل","نظام الطلبات","فوري","قائمة تسليم"],
+   ["المراجعة/ضبط الجودة ← تجهيز الطلبات","ضبط الجودة","طلب مُراجَع","طلب معتمد","نظام الطلبات","نفس اليوم","طلب معتمد"],
+   ["تجهيز الطلبات ← الشحن","المخزن","طلب معتمد","شحنة معبأة","قائمة تغليف","1-2 يوم","شحنة جاهزة"],
+   ["الشحن ← متابعة العميل","الشحن","شحنة في الطريق","نتيجة التسليم","Q.B","حسب المسافة","حالة التسليم"],
+   ["متابعة العميل ← المالية","خدمة العملاء","نتيجة التسليم","تسوية مالية","تسوية Q.B","أسبوعي","تقرير التسوية"],
+   ["المالية ← الإدارة","المالية","تسويات وتقارير","سجل مالي موثّق","سجلات المالية","شهري","ملخص مالي"],
+  ];
+  return `<div class="pagehead"><h1>إزاي الشغل بيتحرك جوه الشركة</h1><p>تتبّع انتقال العمل من مرحلة لأخرى بالتفصيل.</p></div>
+  ${rows.map(r=>`<div class="card"><h3>${r[0]}</h3>
+    <p><span class="badge b-slate">المسؤول</span>${r[1]} &nbsp; <span class="badge b-slate">الأداة</span>${r[4]} &nbsp; <span class="badge b-slate">المدة المتوقعة</span>${r[5]}</p>
+    <p style="font-size:13.5px;color:var(--muted)">المدخل: ${r[2]} ← المخرج: ${r[3]} · التسليم: ${r[6]}</p></div>`).join('')}`;
+}
+
+function viewDept(key){
+  const d=DEPTS[key]; if(!d) return viewHome();
+  const emps=d.employees.map(id=>EMP[id]);
+  const sops=SOPS.filter(s=>s.dept.toLowerCase().includes(d.name.split(' /')[0].toLowerCase().slice(0,4)) || s.dept===d.name);
+  return `
+  <div class="crumb"><a href="#/org">الهيكل التنظيمي</a> / ${d.name}</div>
+  <div class="pagehead"><h1>${d.emoji} ${d.name}</h1><p>${d.purpose}</p></div>
+  <div class="grid2">
+    <div class="card"><h3>نظرة عامة</h3>
+      <p><span class="badge b-slate">المدير</span> ${d.mgr}</p>
+      <p><span class="badge b-slate">المدخل</span> ${d.inputs}</p>
+      <p><span class="badge b-slate">المخرج</span> ${d.outputs}</p>
+      <p><span class="badge b-slate">يستلم العمل من</span> ${d.receivesFrom}</p>
+      <p><span class="badge b-slate">يسلّم العمل لـ</span> ${d.givesUs}</p>
+    </div>
+    <div class="card"><h3>الموظفون</h3>
+      ${emps.length? emps.map(e=>`<div class="orgcard" style="margin-bottom:8px" onclick="go('#/employee/${d.employees[emps.indexOf(e)]}')"><b>${e.name}</b><span>${e.title}</span></div>`).join(''): '<p style="color:var(--muted)">سيتم إضافة الموظفين لاحقًا.</p>'}
+    </div>
+  </div>
+  <div class="card"><h3>تدفق عمل القسم</h3><ol class="steps">${d.workflow.map((s,i)=>`<li><span class="n">${i+1}</span>${s}</li>`).join('')}</ol></div>
+  <div class="grid2">
+    <div class="card"><h3>المهام اليومية</h3><ul class="plain">${d.daily.map(x=>`<li>${x}</li>`).join('')}</ul></div>
+    <div class="card"><h3>المهام الأسبوعية</h3><ul class="plain">${d.weekly.map(x=>`<li>${x}</li>`).join('')}</ul></div>
+  </div>
+  <div class="card"><h3>مكتبة الإجراءات — ${d.name}</h3>
+    ${sops.length? sops.map(s=>`<div class="sopcard" onclick="go('#/sopdetail/${s.id}')"><b>${s.name}</b><div class="meta">إصدار ${s.ver} · ${s.time} · ${s.diff}</div></div>`).join('') : '<p style="color:var(--muted)">لا توجد SOPs مسجّلة بعد.</p>'}
+  </div>
+  <div class="card"><h3>قواعد التصعيد</h3>${d.escalation.map(([p,to])=>`<p>🔺 ${p} → <b>${to}</b></p>`).join('')}</div>
+  <div class="card"><h3>التسليم</h3><ul class="plain">${d.handover.map(x=>`<li>${x}</li>`).join('')}</ul></div>
+  <div class="grid2">
+    <div class="card"><h3>الأخطاء الشائعة</h3><ul class="plain">${d.mistakes.map(x=>`<li>${x}</li>`).join('')}</ul></div>
+    <div class="card"><h3>شكل العمل الجيد</h3><ul class="plain">${d.good.map(x=>`<li>${x}</li>`).join('')}</ul></div>
+  </div>
+  ${key==='cs'?`
+  <div class="card"><h3>قواعد التواصل</h3><div class="do-dont">
+    <div class="col do"><b>افعل</b><ul class="plain"><li>استخدم الردود المعتمدة</li><li>أكّد كل بيانات الطلب</li><li>وثّق كل شكوى</li></ul></div>
+    <div class="col dont"><b>لا تفعل</b><ul class="plain"><li>سعر غير معتمد</li><li>وعد بموعد غير مؤكد</li><li>الجدال مع العميل</li><li>مشاركة بيانات داخلية</li></ul></div>
+  </div></div>
+  <div class="card"><h3>تسجيل الطلب — وصول سريع</h3><p style="font-size:13.5px;color:var(--muted)">عندما يصبح العميل جاهزًا، اتبع Order Creation SOP، ثم سجّل الطلب هنا:</p>
+    <button class="mockbtn" onclick="alert('هذا زر تجريبي — نظام الطلبات الفعلي سيُضاف في مرحلة لاحقة.')">فتح نظام الطلبات</button>
+  </div>`:''}
+  `;
+}
+
+function viewSopLibrary(){
+  const cats=[...new Set(SOPS.map(s=>s.dept))];
+  return `<div class="pagehead"><h1>مكتبة الإجراءات</h1><p>كل إجراءات العمل الموثّقة في الشركة.</p></div>
+  ${cats.map(c=>`<div class="card"><h3>${c}</h3>${SOPS.filter(s=>s.dept===c).map(s=>`<div class="sopcard" onclick="go('#/sopdetail/${s.id}')"><b>${s.name}</b><div class="meta">المسؤول: ${s.owner} · إصدار ${s.ver} · ${s.time} · ${s.diff}</div></div>`).join('')}</div>`).join('')}`;
+}
+
+function viewSopDetail(id){
+  const s=SOPS.find(x=>x.id===id); if(!s) return viewSopLibrary();
+  return `<div class="crumb"><a href="#/sop">مكتبة الإجراءات</a> / ${s.name}</div>
+  <div class="pagehead"><h1>${s.name}</h1><p>${s.dept} · المسؤول: ${s.owner} · إصدار ${s.ver}</p></div>
+  <div class="card"><h3>الغرض</h3><p>${s.purpose}</p></div>
+  <div class="card"><h3>متى تُستخدم</h3><p>${s.when}</p></div>
+  <div class="card"><h3>الخطوات</h3><ol class="steps">${s.steps.map((x,i)=>`<li><span class="n">${i+1}</span>${x}</li>`).join('')}</ol></div>
+  ${s.approved?`<div class="card"><h3>الردود المعتمدة</h3>${s.approved.map(([q,a])=>`<div class="qa-item"><div class="q">${q}</div><div class="a">${a}</div></div>`).join('')}</div>`:''}
+  ${s.mockOrderBtn?`<div class="card"><button class="mockbtn" onclick="alert('زر تجريبي — نظام الطلبات الفعلي لاحقًا.')">فتح نظام الطلبات</button></div>`:''}
+  <div class="grid2">
+    <div class="card"><h3>الأخطاء الشائعة</h3><ul class="plain">${s.mistakes.map(x=>`<li>${x}</li>`).join('')}</ul></div>
+    <div class="card"><h3>التصعيد</h3><p>${s.escalation}</p></div>
+  </div>
+  <div class="card"><h3>تعريف الانتهاء</h3><p>${s.done}</p></div>`;
+}
+
+function viewTasks(){
+  const e=EMP[currentUser];
+  const today = e.daily.map((t,i)=>({t,d:'اليوم',id:'d'+i}));
+  return `<div class="pagehead"><h1>مهامي</h1><p>مهام ${e.name} — ${e.title}</p></div>
+  <div class="card"><h3>اليوم</h3>${today.map(x=>`<label class="chk"><input type="checkbox" data-ls="${x.id}_${currentUser}"> ${x.t}</label>`).join('')}</div>
+  <div class="card"><h3>أسبوعي</h3>${e.weekly.map((t,i)=>`<label class="chk"><input type="checkbox" data-ls="w${i}_${currentUser}"> ${t}</label>`).join('')}</div>
+  <div class="card"><h3>قالب تعريف المهمة</h3><p style="font-size:13.5px;color:var(--muted)">كل مهمة في النظام تجيب على:</p>
+    <ul class="plain"><li><b>ليه؟</b> ليه بنعملها</li><li><b>إيه؟</b> إيه المطلوب</li><li><b>إزاي؟</b> إزاي (SOP)</li><li><b>إمتى؟</b> إمتى</li><li><b>مين؟</b> مين</li><li><b>لمين؟</b> بتتسلم لمين</li><li><b>إمتى خلصت؟</b> إمتى تعتبر خلصت</li></ul>
+  </div>`;
+}
+
+function viewHandover(){
+  const e=EMP[currentUser];
+  return `<div class="pagehead"><h1>مركز التسليم</h1><p>تسليم الشغل عند نهاية الشيفت أو الغياب — بدون مشاركة كلمات السر.</p></div>
+  <div class="card"><h3>تسليم نهاية الشيفت — ${e.name}</h3>
+    ${(DEPTS[e.dept]?.handover||["Pending items"]).map((x,i)=>`<label class="chk"><input type="checkbox" data-ls="h${i}_${currentUser}"> ${x}</label>`).join('')}
+  </div>
+  <div class="card"><h3>لو غادرت الشركة غدًا</h3><p style="font-size:13.5px;color:var(--muted)">ملخص جاهز لأي موظف يستلم مكان ${e.name} فورًا — راجعه في <a href="#/employee/${currentUser}">صفحة الملف الشخصي</a>.</p></div>`;
+}
+
+function viewTraining(){
+  const modules=["الشركة","القسم","الدور","الأدوات","الإجراءات","التواصل مع العملاء","التصعيد","التسليم"];
+  const done = modules.filter(m=>localStorage.getItem('mod_'+m+'_'+currentUser)==='1').length;
+  return `<div class="pagehead"><h1>مركز التدريب</h1><p>تدريب الموظف الجديد خطوة بخطوة.</p></div>
+  <div class="card"><h3>التقدم</h3><div class="progresswrap"><div class="progressbar" style="width:${done/modules.length*100}%"></div></div><p>${done} / ${modules.length} مكتمل</p></div>
+  <div class="card"><h3>الوحدات التدريبية</h3>${modules.map((m,i)=>`<label class="chk"><input type="checkbox" data-ls="mod_${m}_${currentUser}" onchange="render()"> الوحدة ${i+1} — ${m}</label>`).join('')}</div>`;
+}
+
+function viewOnboarding(){
+  const steps=["افهم الشركة","افهم قسمك","اقرأ دورك","اقرأ سير العمل اليومي","اقرأ الإجراءات","تعلّم الأدوات","اقرأ قواعد التواصل","اقرأ قواعد التصعيد","اقرأ معايير الجودة","أكمل التدريب","رافق موظفًا حاليًا","ابدأ العمل"];
+  const done = steps.filter((s,i)=>localStorage.getItem('ob'+i+'_'+currentUser)==='1').length;
+  return `<div class="pagehead"><h1>ابدأ هنا</h1><p>رحلة الموظف الجديد — 12 خطوة.</p></div>
+  <div class="card"><div class="progresswrap"><div class="progressbar" style="width:${done/steps.length*100}%"></div></div><p>${done} / ${steps.length} مكتمل</p></div>
+  <div class="card">${steps.map((s,i)=>`<label class="chk"><input type="checkbox" data-ls="ob${i}_${currentUser}" onchange="render()"> ${i+1}. ${s}</label>`).join('')}</div>`;
+}
+
+function viewWhatNow(){
+  const e=EMP[currentUser]; const d=DEPTS[e.dept];
+  return `<div class="pagehead"><h1>أعمل إيه دلوقتي؟</h1><p>بناءً على دورك الحالي: ${e.title}</p></div>
+  <div class="card"><h3>1. المهمة الأولى</h3><p>${e.daily[0]||'—'}</p></div>
+  <div class="card"><h3>2. المهمة التالية</h3><p>${e.daily[1]||'—'}</p></div>
+  <div class="card"><h3>3. ما الذي ينتظر ردًا</h3><p>راجع <a href="#/handover">مركز التسليم</a> لأي محادثات أو حالات معلّقة.</p></div>
+  <div class="card"><h3>4. ما يجب تسليمه</h3><ul class="plain">${(d?.handover||[]).map(x=>`<li>${x}</li>`).join('')}</ul></div>
+  <div class="card"><h3>5. هل هناك شيء يحتاج تصعيد؟</h3>${(d?.escalation||[]).map(([p,to])=>`<p>${p} → <b>${to}</b></p>`).join('')}</div>`;
+}
+
+function viewPolicies(){
+  const cats=["ساعات العمل","التواصل","خصوصية العميل","الخصوصية الداخلية","استخدام الأجهزة","أمان كلمات المرور","بيانات العملاء","الحضور","الإجازات","التصعيد","الاعتمادات","أصول الشركة","السلوك المهني"];
+  return `<div class="pagehead"><h1>دليل سياسات الشركة</h1><p>السياسات العامة للشركة.</p></div>
+  <div class="card"><div class="grid3">${cats.map(c=>`<div class="orgcard"><b>${c}</b><span>راجع مع مديرك المباشر عند أي استفسار</span></div>`).join('')}</div></div>
+  <div class="mono-note">المصدر الوحيد للحقيقة: كل معلومة تخص مسؤولية، إجراء عمل، تدفق عمل، سياسة، مهمة، دور، تسليم، تصعيد أو اعتماد يجب أن تكون موجودة هنا — وليس في واتساب أو ورقة أو ذاكرة الموظف.</div>`;
+}
+
+function viewSearch(){
+  return `<div class="pagehead"><h1>بحث المعرفة</h1><p>ابحث في الموظفين، الأقسام، الإجراءات، والسياسات.</p></div>
+  <input id="liveSearch" placeholder="اكتب كلمة، مثلاً: استبدال، متابعة، مخزون..." />
+  <div id="searchResults"></div>`;
+}
+function renderSearchResults(q){
+  const box=document.getElementById('searchResults'); if(!box) return;
+  q=q.trim();
+  if(!q){box.innerHTML='';return;}
+  const results=[];
+  SOPS.forEach(s=>{ if((s.name+s.purpose+s.dept).includes(q)) results.push({k:'إجراء',t:s.name,href:'#/sopdetail/'+s.id}); });
+  Object.entries(DEPTS).forEach(([k,d])=>{ if((d.name+d.purpose).includes(q)) results.push({k:'قسم',t:d.name,href:'#/dept/'+k}); });
+  Object.entries(EMP).forEach(([k,e])=>{ if((e.name+e.title+e.role).includes(q)) results.push({k:'موظف',t:e.name,href:'#/employee/'+k}); });
+  box.innerHTML = results.length? results.map(r=>`<div class="searchres" onclick="go('${r.href}')"><div class="k">${r.k}</div>${r.t}</div>`).join('') : '<p style="color:var(--muted)">لا نتائج.</p>';
+}
+
+/* ---------------- INIT ---------------- */
+(function init(){
+  const who=document.getElementById('whoami');
+  who.innerHTML = Object.entries(EMP).map(([k,e])=>`<option value="${k}" ${k===currentUser?'selected':''}>${e.name} — ${e.title}</option>`).join('');
+  document.getElementById('deptlinks').innerHTML = Object.entries(DEPTS).map(([k,d])=>`<a class="navlink" href="#/dept/${k}">${d.emoji} ${d.name}</a>`).join('');
+  render();
+})();
+</script>
+</body>
+</html>
