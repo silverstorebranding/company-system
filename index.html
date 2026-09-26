@@ -687,6 +687,22 @@ function prBuildUnbrandedTable(){
   box.innerHTML=h;
 }
 
+/* توحيد الكتابة للمقارنة: بيشيل المسافات والأقواس والرموز والحروف المخفية والتشكيل،
+   وبيوحّد ة/ه و ى/ي و أ/إ/آ/ا */
+function prNorm(x){
+  return String(x||'')
+    .replace(/[\u064B-\u0652\u0640]/g,'')
+    .replace(/[أإآ]/g,'ا').replace(/ة/g,'ه').replace(/ى/g,'ي')
+    .replace(/[^\p{L}\p{N}]/gu,'')
+    .toLowerCase();
+}
+function prFilterItems(q){
+  const n=prNorm(q);
+  document.querySelectorAll('#prItemsWrap tr[data-n]').forEach(tr=>{
+    tr.style.display=(!n||tr.dataset.n.includes(n))?'':'none';
+  });
+}
+
 /* إحصائية تفاصيل الطلبات (العمود L) */
 function prBuildItemsTable(rows){
   const map={};
@@ -702,7 +718,7 @@ function prBuildItemsTable(rows){
   let h='<table class="pr"><tr><th>#</th><th>تفاصيل الطلب</th><th>اتكرر كام مرة</th><th>اتسلم منهم</th><th>نسبة التسليم</th></tr>';
   h+=`<tr class="total"><td>—</td><td class="lbl">الإجمالي</td><td>${totN}</td><td>${totD}</td><td>${pct(totD,totN)}</td></tr>`;
   list.forEach(([k,m],i)=>{
-    h+=`<tr><td>${i+1}</td><td class="lbl" style="text-align:right">${k.replace(/</g,'&lt;')}</td><td>${m.n}</td><td>${m.d}</td><td>${pct(m.d,m.n)}</td></tr>`;
+    h+=`<tr data-n="${prNorm(k)}"><td>${i+1}</td><td class="lbl" style="text-align:right">${k.replace(/</g,'&lt;')}</td><td>${m.n}</td><td>${m.d}</td><td>${pct(m.d,m.n)}</td></tr>`;
   });
   h+='</table>';
   document.getElementById('prItemsWrap').innerHTML=h;
@@ -710,7 +726,7 @@ function prBuildItemsTable(rows){
   // باكدج ولا لأ
   const g={yes:{n:0,d:0,o:0,h:0},no:{n:0,d:0,o:0,h:0},s1:{n:0,d:0,o:0,h:0},s2:{n:0,d:0,o:0,h:0},rest:{n:0,d:0,o:0,h:0}};
   // أوردرات محددة بتتفصل من "بدون باكدج" (المقارنة بتتجاهل المسافات)
-  const nos=x=>String(x||'').replace(/\s+/g,'');
+  const nos=prNorm;
   const SP1='طقم سلسله ومحبس وحلق ( ايطالي )';
   const SP2='طقم سلسله ومحبس وحلق ( ايطالي ) انسيال فصوص زاركونيا ايطالي';
   rows.forEach(r=>{
@@ -720,7 +736,7 @@ function prBuildItemsTable(rows){
     add(g[k]);
     if(k==='no'){
       const c=nos(r[PR_contentsCol-1]);
-      add(c===nos(SP2)?g.s2:c===nos(SP1)?g.s1:g.rest);
+      add(c.includes(nos(SP2))?g.s2:c.includes(nos(SP1))?g.s1:g.rest);
     }
   });
   const all=g.yes.n+g.no.n;
@@ -1031,6 +1047,7 @@ function viewProfits(){
     </div>
     <div class="card"><h3>7) إحصائية تفاصيل الطلبات (العمود L) — <span id="prItemsCount">0</span> نوع</h3>
       <p style="font-size:13px;color:var(--muted)">كل تفاصيل طلب مختلفة، اتكررت كام مرة في الملف كله، واتسلم منها كام. مترتبة من الأكثر للأقل.</p>
+      <input id="prItemsFilter" oninput="prFilterItems(this.value)" placeholder="🔍 دوّر في تفاصيل الطلبات… مثلاً: طقم سلسله" style="width:100%;padding:9px 12px;border:1px solid var(--line);border-radius:8px;margin-bottom:10px;background:var(--panel);color:var(--ink)">
       <div class="tablewrap" id="prItemsWrap" style="max-height:480px;overflow-y:auto"></div>
     </div>
     <div class="card"><h3>8) أوردرات الباكدج</h3>
