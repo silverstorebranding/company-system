@@ -367,8 +367,9 @@ const PR_COLS=[
 ];
 const PR_A_SAL_D=8000/30, PR_MSG_SAL_D=150, PR_SHR_SAL_D=300, PR_RENT_D=200, PR_OPS_D=20;
 const PR_COGS_NO=65.2, PR_COGS_YES=94, PR_BRANCH_PCT=0.145, PR_PEND_VAL=75;
+const PR_OFD_RATE=0.35, PR_HOLD_RATE=0.15;
 const PR_statusCol=15,PR_priceCol=5,PR_shipCol=6,PR_notesCol=10,PR_contentsCol=12,PR_returnedCol=9,PR_dateCol=11;
-let prBrandCalc={}, prPendingTotal=0, prRealCols=[], prUnbranded=[];
+let prBrandCalc={}, prPendingTotal=0, prRealCols=[], prExpCols=[], prUnbranded=[];
 
 function prGetBrand(note){
   const n=String(note||"").toLowerCase().trim().split("\n")[0].trim();
@@ -445,6 +446,17 @@ function prProcess(rows){
     return {key:b,revenue:c.revenue,fixed};
   });
 
+  prExpCols=PR_PNL_BRANDS.map(b=>{
+    const c=prBrandCalc[b];
+    const avgPrice=c.delivered?c.revenue/c.delivered:0;
+    const avgCogs=c.delivered?c.cogs/c.delivered:0;
+    const avgShip=c.delivered?c.shipDel/c.delivered:0;
+    const count=c.ofd*PR_OFD_RATE+c.hold*PR_HOLD_RATE;
+    const revenue=count*avgPrice;
+    const fixed=count*(avgCogs+avgShip);
+    return {key:b,count,revenue,fixed};
+  });
+
   prPendingTotal=PR_BRANDS.reduce((s,b)=>{
     const rs=byBrand[b].filter(r=>{
       const ret=r[PR_returnedCol-1]; const isRet=ret&&String(ret).trim()!==""&&String(ret).trim()!=="NaT";
@@ -454,6 +466,8 @@ function prProcess(rows){
   },0);
 
   prBuildPnlTable();
+  prBuildExpPnlTable();
+  prBuildForecastTable();
   prBuildSummaryTable();
   prBuildCountsTable();
   prBuildUnbrandedTable();
@@ -483,16 +497,52 @@ function prBuildPnlTable(){
   t.dataset.rev=JSON.stringify(revRow); t.dataset.fix=JSON.stringify(fixRow); t.dataset.totalrev=totalRev; t.dataset.totalfix=totalFix;
 }
 
+function prBuildExpPnlTable(){
+  const t=document.getElementById('prExpPnlTable');
+  if(!t)return;
+  let h='<tr><th>البند</th>'+PR_COLS.map(c=>`<th>${c.h}</th>`).join('')+'<th>الإجمالي</th></tr>';
+  const cntOf=k=>{const e=prExpCols.find(x=>x.key===k);return e?e.count:0;};
+  const revOf=k=>{const e=prExpCols.find(x=>x.key===k);return e?e.revenue:0;};
+  const fixOf=k=>{const e=prExpCols.find(x=>x.key===k);return e?e.fixed:0;};
+  const cntRow=PR_COLS.map(c=>c.type==='agg'?c.brands.reduce((s,b)=>s+cntOf(b),0):cntOf(c.key));
+  const totalCnt=PR_PNL_BRANDS.reduce((s,b)=>s+cntOf(b),0);
+  h+='<tr><td class="lbl">🔮 عدد الأوردرات المتوقع تسليمها (35% تحت التسليم + 15% Hold)</td>'+cntRow.map(v=>`<td>${prFmt(v)}</td>`).join('')+`<td>${prFmt(totalCnt)}</td></tr>`;
+  const revRow=PR_COLS.map(c=>c.type==='agg'?c.brands.reduce((s,b)=>s+revOf(b),0):revOf(c.key));
+  const totalRev=PR_PNL_BRANDS.reduce((s,b)=>s+revOf(b),0);
+  h+='<tr><td class="lbl">📥 مبيعات متوقعة</td>'+revRow.map(v=>`<td>${prFmt(v)}</td>`).join('')+`<td>${prFmt(totalRev)}</td></tr>`;
+  const fixRow=PR_COLS.map(c=>c.type==='agg'?c.brands.reduce((s,b)=>s+fixOf(b),0):fixOf(c.key));
+  const totalFix=PR_PNL_BRANDS.reduce((s,b)=>s+fixOf(b),0);
+  h+='<tr><td class="lbl">⚙️ تكلفة بضاعة + شحن متوقعة</td>'+fixRow.map(v=>`<td>${prFmt(v)}</td>`).join('')+`<td>${prFmt(totalFix)}</td></tr>`;
+  const profRow=revRow.map((v,i)=>v-fixRow[i]);
+  const totalProf=totalRev-totalFix;
+  h+='<tr class="profit"><td class="lbl">✅ صافي ربح متوقع إضافي</td>'+profRow.map(v=>`<td>${prFmt(v)}</td>`).join('')+`<td>${prFmt(totalProf)}</td></tr>`;
+  t.innerHTML=h;
+  t.dataset.rev=JSON.stringify(revRow); t.dataset.fix=JSON.stringify(fixRow);
+  t.dataset.totalrev=totalRev; t.dataset.totalfix=totalFix; t.dataset.totalprof=totalProf;
+}
+
+function prBuildForecastTable(){
+  const t=document.getElementById('prForecastTable');
+  if(!t)return;
+  let h='<tr><th>البند</th>'+PR_COLS.map(c=>`<th>${c.h}</th>`).join('')+'<th>الإجمالي</th></tr>';
+  h+='<tr><td class="lbl">✅ صافي الربح الفعلي (حسب الإعلانات المدخلة)</td>'+PR_COLS.map(c=>`<td id="prFcAct_${c.key}">0</td>`).join('')+`<td id="prFcAct_total">0</td></tr>`;
+  h+='<tr><td class="lbl">🔮 صافي الربح المتوقع الإضافي</td>'+PR_COLS.map(c=>`<td id="prFcExp_${c.key}">0</td>`).join('')+`<td id="prFcExp_total">0</td></tr>`;
+  h+='<tr class="profit"><td class="lbl">🏁 إجمالي الربح التوقعي (الفعلي + المتوقع)</td>'+PR_COLS.map(c=>`<td id="prFcTotal_${c.key}">0</td>`).join('')+`<td id="prFcTotal_total">0</td></tr>`;
+  t.innerHTML=h;
+}
+
 function prRecalc(){
   const t=document.getElementById('prPnlTable');
   if(!t||!t.dataset.rev)return;
   const revRow=JSON.parse(t.dataset.rev), fixRow=JSON.parse(t.dataset.fix);
   const adsByBrand={}; PR_PNL_BRANDS.forEach(b=>{const el=document.getElementById('prAds_'+b); adsByBrand[b]=el?prNum(el.value):0;});
   let totalAds=0,totalCost=0,totalProf=0;
+  const actProfArr=[];
   PR_COLS.forEach((c,i)=>{
     const ads=c.type==='agg'?c.brands.reduce((s,b)=>s+adsByBrand[b],0):adsByBrand[c.key];
     const cost=ads+fixRow[i];
     const prof=revRow[i]-cost;
+    actProfArr[i]=prof;
     document.getElementById('prCost_'+c.key).textContent=prFmt(cost);
     document.getElementById('prProf_'+c.key).textContent=prFmt(prof);
     document.getElementById('prPct_'+c.key).textContent=revRow[i]?((prof/revRow[i])*100).toFixed(1)+'%':'—';
@@ -520,6 +570,28 @@ function prRecalc(){
   const pendingVal=prPendingTotal*PR_PEND_VAL;
   document.getElementById('prPendingValue').textContent=prFmt(pendingVal);
   document.getElementById('prSafeValue').textContent=prFmt(grandTotal-pendingVal);
+
+  const expT=document.getElementById('prExpPnlTable');
+  if(expT && expT.dataset.rev){
+    const expRev=JSON.parse(expT.dataset.rev), expFix=JSON.parse(expT.dataset.fix);
+    const expTotalProf=parseFloat(expT.dataset.totalprof)||0;
+    PR_COLS.forEach((c,i)=>{
+      const expProf=expRev[i]-expFix[i];
+      const actProf=actProfArr[i];
+      const fcAct=document.getElementById('prFcAct_'+c.key);
+      const fcExp=document.getElementById('prFcExp_'+c.key);
+      const fcTot=document.getElementById('prFcTotal_'+c.key);
+      if(fcAct){fcAct.textContent=prFmt(actProf);}
+      if(fcExp){fcExp.textContent=prFmt(expProf);}
+      if(fcTot){fcTot.textContent=prFmt(actProf+expProf);}
+    });
+    const fcActTotal=document.getElementById('prFcAct_total');
+    const fcExpTotal=document.getElementById('prFcExp_total');
+    const fcTotTotal=document.getElementById('prFcTotal_total');
+    if(fcActTotal)fcActTotal.textContent=prFmt(totalProf);
+    if(fcExpTotal)fcExpTotal.textContent=prFmt(expTotalProf);
+    if(fcTotTotal)fcTotTotal.textContent=prFmt(totalProf+expTotalProf);
+  }
 }
 
 function prAggRow(label,brands){
@@ -824,6 +896,14 @@ function viewProfits(){
     <div class="card"><h3>2) جدول التكاليف والأرباح (لكل براند)</h3>
       <p style="font-size:13px;color:var(--muted)">عدّل خانات "الإعلانات" الخضراء يدويًا — الإجمالي وصافي الربح بيتحدّثوا فورًا.</p>
       <div class="tablewrap"><table class="pr" id="prPnlTable"></table></div>
+    </div>
+    <div class="card"><h3>3) جدول الأرباح المتوقعة (من الأوردرات تحت التسليم و Hold)</h3>
+      <p style="font-size:13px;color:var(--muted)">بيتوقع تسليم 35% من الأوردرات "تحت التسليم" (Out for Delivery) و15% من أوردرات "Hold"، وبيحسب المبيعات وتكلفة البضاعة والشحن المتوقعة لهذه الأوردرات بناءً على متوسط البراند نفسه.</p>
+      <div class="tablewrap"><table class="pr" id="prExpPnlTable"></table></div>
+    </div>
+    <div class="card"><h3>4) الجدول التوقعي الإجمالي (الفعلي + المتوقع)</h3>
+      <p style="font-size:13px;color:var(--muted)">مجموع صافي الربح الفعلي (من الجدول رقم 2) مع صافي الربح المتوقع الإضافي (من الجدول رقم 3).</p>
+      <div class="tablewrap"><table class="pr" id="prForecastTable"></table></div>
     </div>
     <div class="grid2">
       <div class="card"><h3>🏪 مبيعات الفرع</h3>
