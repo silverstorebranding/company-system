@@ -708,17 +708,29 @@ function prBuildItemsTable(rows){
   document.getElementById('prItemsWrap').innerHTML=h;
 
   // باكدج ولا لأ
-  const g={yes:{n:0,d:0,o:0,h:0},no:{n:0,d:0,o:0,h:0}};
+  const g={yes:{n:0,d:0,o:0,h:0},no:{n:0,d:0,o:0,h:0},s1:{n:0,d:0,o:0,h:0},s2:{n:0,d:0,o:0,h:0},rest:{n:0,d:0,o:0,h:0}};
+  // أوردرات محددة بتتفصل من "بدون باكدج" (المقارنة بتتجاهل المسافات)
+  const nos=x=>String(x||'').replace(/\s+/g,'');
+  const SP1='طقم سلسله ومحبس وحلق ( ايطالي )';
+  const SP2='طقم سلسله ومحبس وحلق ( ايطالي ) انسيال فصوص زاركونيا ايطالي';
   rows.forEach(r=>{
     const k=String(r[PR_contentsCol-1]||'').includes('باكدج')?'yes':'no';
     const st=r[PR_statusCol-1];
-    g[k].n++; if(st==='Delivered')g[k].d++; if(st==='Out for Delivery')g[k].o++; if(st==='Hold')g[k].h++;
+    const add=m=>{m.n++; if(st==='Delivered')m.d++; if(st==='Out for Delivery')m.o++; if(st==='Hold')m.h++;};
+    add(g[k]);
+    if(k==='no'){
+      const c=nos(r[PR_contentsCol-1]);
+      add(c===nos(SP2)?g.s2:c===nos(SP1)?g.s1:g.rest);
+    }
   });
   const all=g.yes.n+g.no.n;
   const row=(lbl,m,cls)=>`<tr${cls?` class="${cls}"`:''}><td class="lbl">${lbl}</td><td>${m.n}</td><td>${pct(m.n,all)}</td><td>${m.d}</td><td>${pct(m.d,m.n)}</td><td>${m.o}</td><td>${m.h}</td></tr>`;
   document.getElementById('prPkgTable').innerHTML=
     '<tr><th>النوع</th><th>عدد الأوردرات</th><th>النسبة من الإجمالي</th><th>اتسلم منهم</th><th>نسبة التسليم</th><th>🚚 لسه تحت التسليم</th><th>⏸️ Hold</th></tr>'+
     row('📦 فيها كلمة "باكدج"',g.yes)+row('بدون "باكدج"',g.no)+
+    row('↳ منها: '+SP1,g.s1,'info')+
+    row('↳ منها: '+SP2,g.s2,'info')+
+    row('↳ منها: باقي الأوردرات',g.rest,'info')+
     row('الإجمالي',{n:all,d:g.yes.d+g.no.d,o:g.yes.o+g.no.o,h:g.yes.h+g.no.h},'total');
 }
 
