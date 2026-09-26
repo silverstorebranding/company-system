@@ -380,11 +380,8 @@ const PR_statusCol=15,PR_priceCol=5,PR_shipCol=6,PR_notesCol=10,PR_contentsCol=1
 
 // البنود اليدوية — بتتكتب مرة واحدة في الجدول الأساسي وبتتطبق على الجدولين
 const PR_MANUAL=[
-  {id:"ads", lbl:"📢 إعلانات"},
-  {id:"ops", lbl:"⚙️ مصاريف تشغيل"},
-  {id:"loss",lbl:"🗑️ هوالك"},
-  {id:"misc",lbl:"🧾 نثريات"},
-  {id:"soft",lbl:"💻 برامج مساعدة"}
+  {id:"ads",  lbl:"📢 إعلانات"},
+  {id:"other",lbl:"🧾 هوالك - نثريات - أخرى"}
 ];
 let prManualVals={}; // prManualVals[id][brand]
 const prMan=(id,b)=>(prManualVals[id]&&prManualVals[id][b])||0;
@@ -909,7 +906,7 @@ function viewProfits(){
   <div id="prResults" style="display:none">
     <div class="card"><h3>2) الجدول الأساسي — التكاليف والأرباح بعد التوقع (الفعلي + المتوقع)</h3>
       <p style="font-size:13px;color:var(--muted)">المبيعات وشحن التسليمات وتكلفة البضاعة هنا = الفعلي + المتوقع من الأوردرات "تحت التسليم" (35%) و"Hold" (15%) لمعظم البراندات — ما عدا CARA SILVER (30% / 10%)، CARA SILVER UN (25% / 8%)، وCARA WA (30% / 10%). باقي البنود زي ما هي.</p>
-      <p style="font-size:13px;color:var(--muted)">اكتب البنود اليدوية (الإعلانات، مصاريف التشغيل، الهوالك، النثريات، البرامج المساعدة) في الخانات الخضراء هنا بس — بتتطبق تلقائيًا على الجدول الفعلي تحت كمان.</p>
+      <p style="font-size:13px;color:var(--muted)">اكتب البنود اليدوية (الإعلانات، و"هوالك - نثريات - أخرى") في الخانات الخضراء هنا بس — بتتطبق تلقائيًا على الجدول الفعلي تحت كمان.</p>
       <div class="tablewrap"><table class="pr" id="prFullTable"></table></div>
     </div>
     <div class="card"><h3>3) الجدول الفعلي — التكاليف والأرباح قبل التوقع</h3>
