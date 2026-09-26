@@ -120,6 +120,26 @@ table.pr td.lbl{text-align:right;font-weight:600;white-space:normal;min-width:17
 table.pr tr.total td{background:#ffe699;font-weight:700;color:#1c2321}
 table.pr tr.profit td{background:#d1fae5;font-weight:700;color:#1c2321}
 table.pr tr.info td{background:var(--slate-l);font-style:italic}
+table.pr th.tot{background:var(--brass-d)}
+table.pr td.tot{font-weight:700;background:#f3ead6;color:#1c2321}
+/* الجدول المختصر */
+table.sum{border-collapse:collapse;width:100%;font-size:15px;min-width:520px}
+table.sum th,table.sum td{border:1px solid var(--line);padding:10px 12px;text-align:center;white-space:nowrap}
+table.sum th.grp{font-size:16px;color:#fff}
+table.sum th.g-dream{background:#5b3f7a}
+table.sum th.g-cara{background:#2f5f73}
+table.sum th.act{background:#e7eeec;color:#3f5a56}
+table.sum th.exp{background:#fbf0d9;color:#5f4b28}
+table.sum td.act{background:var(--panel)}
+table.sum td.exp{background:#fdf8ec;color:#1c2321}
+table.sum td.lbl{text-align:right;font-weight:600;background:var(--panel)}
+table.sum tr.big td{font-size:17px;font-weight:700}
+table.sum td.pos{color:#1f7a45 !important;font-weight:700}
+table.sum td.neg{color:#b3261e !important;font-weight:700}
+table.sum td.sep,table.sum th.sep{border-inline-start:3px solid var(--brass-d)}
+.legend{display:flex;flex-wrap:wrap;gap:14px;font-size:13px;color:var(--muted);margin-top:10px}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend i{display:inline-block;width:14px;height:14px;border-radius:3px;border:1px solid var(--line)}
 input.adsIn{width:75px;padding:4px;border:1px solid var(--brass);border-radius:5px;background:#dcfce7;color:#1c2321;text-align:center}
 input.plainIn{padding:6px 10px;border:1px solid var(--line);border-radius:6px;width:140px}
 .kpi{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dashed var(--line);font-size:14px}
@@ -513,17 +533,16 @@ function prBuildTable(pfx){
   const expVal=(k,f)=>{const e=prExpCols.find(x=>x.key===k)||{};return e[f]||0;};
   const rowFor=g=>PR_COLS.map(c=>c.type==='agg'?c.brands.reduce((s,b)=>s+g(b),0):g(c.key));
   const totalFor=g=>PR_PNL_BRANDS.reduce((s,b)=>s+g(b),0);
-  const tr=(lbl,row,total,cls)=>`<tr${cls?` class="${cls}"`:''}><td class="lbl">${lbl}</td>${row.map(v=>`<td>${prFmt(v)}</td>`).join('')}<td>${prFmt(total)}</td></tr>`;
+  const tr=(lbl,row,total,cls)=>`<tr${cls?` class="${cls}"`:''}><td class="lbl">${lbl}</td><td class="tot">${prFmt(total)}</td>${row.map(v=>`<td>${prFmt(v)}</td>`).join('')}</tr>`;
   const autoRow=(lbl,f)=>{const g=b=>val(b,f);const row=rowFor(g),tot=totalFor(g);return {html:tr(lbl,row,tot),row,tot};};
-  const manRow=m=>`<tr><td class="lbl">${m.lbl}${full?' (عدّل يدوي)':''}</td>`+
+  const manRow=m=>`<tr><td class="lbl">${m.lbl}${full?' (عدّل يدوي)':''}</td><td class="tot" id="${pfx}_${m.id}_total">0</td>`+
     PR_COLS.map(c=>(full&&c.type!=='agg')
       ?`<td><input class="adsIn" data-man="${m.id}" data-brand="${c.key}" type="number" value="${prMan(m.id,c.key)}" oninput="prRecalc()"></td>`
-      :`<td id="${pfx}_${m.id}_${c.key}">0</td>`).join('')+
-    `<td id="${pfx}_${m.id}_total">0</td></tr>`;
-  const idRow=(lbl,id,cls)=>`<tr${cls?` class="${cls}"`:''}><td class="lbl">${lbl}</td>`+PR_COLS.map(c=>`<td id="${pfx}_${id}_${c.key}">0</td>`).join('')+`<td id="${pfx}_${id}_total">0</td></tr>`;
+      :`<td id="${pfx}_${m.id}_${c.key}">0</td>`).join('')+`</tr>`;
+  const idRow=(lbl,id,cls)=>`<tr${cls?` class="${cls}"`:''}><td class="lbl">${lbl}</td><td class="tot" id="${pfx}_${id}_total">0</td>`+PR_COLS.map(c=>`<td id="${pfx}_${id}_${c.key}">0</td>`).join('')+`</tr>`;
   const sfx=full?' (فعلي + متوقع)':'';
 
-  let h='<tr><th>البند</th>'+PR_COLS.map(c=>`<th>${c.h}</th>`).join('')+'<th>الإجمالي</th></tr>';
+  let h='<tr><th>البند</th><th class="tot">الإجمالي</th>'+PR_COLS.map(c=>`<th>${c.h}</th>`).join('')+'</tr>';
   if(full){
     const gc=b=>expVal(b,'count'), gr=b=>expVal(b,'revenue');
     h+=tr('🔮 أوردرات متوقع تسليمها (من OFD و Hold)',rowFor(gc),totalFor(gc),'info');
@@ -581,6 +600,12 @@ function prRecalc(){
       setT(`${pfx}_cost_${c.key}`,prFmt(cost));
       setT(`${pfx}_prof_${c.key}`,prFmt(prof));
       setT(`${pfx}_pct_${c.key}`,pct(prof,rev[i]));
+      if(c.type==='agg'){
+        const sid=k=>`S_${k}_${c.key}_${pfx}`;
+        setT(sid('rev'),prFmt(rev[i])); setT(sid('cost'),prFmt(cost)); setT(sid('prof'),prFmt(prof));
+        setT(sid('pct'),pct(prof,rev[i])); setT(sid('ads'),pct(colMan('ads',c),rev[i]));
+        ['prof','pct'].forEach(k=>{const e=document.getElementById(sid(k)); if(e){e.classList.toggle('pos',prof>0);e.classList.toggle('neg',prof<0);}});
+      }
     });
     let manTotal=0;
     PR_MANUAL.forEach(m=>{const v=totMan(m.id); manTotal+=v; setT(`${pfx}_${m.id}_total`,prFmt(v));});
@@ -906,6 +931,21 @@ function viewProfits(){
     <div id="prStatus" style="font-size:13px;color:var(--muted);margin-top:8px"></div>
   </div>
   <div id="prResults" style="display:none">
+    <div class="card"><h3>⭐ الخلاصة — DREAM مقابل CARA</h3>
+      <div class="tablewrap"><table class="sum">
+        <tr><th rowspan="2">البند</th><th colspan="2" class="grp g-dream">DREAM المجمع</th><th colspan="2" class="grp g-cara sep">CARA المجمع</th></tr>
+        <tr><th class="act">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th><th class="act sep">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th></tr>
+        ${[['rev','📥 المبيعات',''],['cost','🔴 التكاليف',''],['prof','✅ الأرباح','big'],['pct','📊 نسبة الأرباح','big'],['ads','📢 نسبة الإعلانات','']].map(([k,l,cls])=>`
+        <tr class="${cls}"><td class="lbl">${l}</td>
+          <td class="act" id="S_${k}_dream_group_A">—</td><td class="exp" id="S_${k}_dream_group_F">—</td>
+          <td class="act sep" id="S_${k}_cara_group_A">—</td><td class="exp" id="S_${k}_cara_group_F">—</td></tr>`).join('')}
+      </table></div>
+      <div class="legend">
+        <span><i style="background:var(--panel)"></i>✔️ فعلي = الأوردرات اللي اتسلمت فعلًا</span>
+        <span><i style="background:#fdf8ec"></i>🔮 بعد التوقع = الفعلي + المتوقع يتسلم من OFD و Hold</span>
+        <span style="color:#1f7a45">أخضر = مكسب</span><span style="color:#b3261e">أحمر = خسارة</span>
+      </div>
+    </div>
     <div class="card"><h3>2) الجدول الأساسي — التكاليف والأرباح بعد التوقع (الفعلي + المتوقع)</h3>
       <p style="font-size:13px;color:var(--muted)">المبيعات وشحن التسليمات وتكلفة البضاعة هنا = الفعلي + المتوقع من الأوردرات "تحت التسليم" (35%) و"Hold" (15%) لمعظم البراندات — ما عدا CARA SILVER (30% / 10%)، CARA SILVER UN (25% / 8%)، وCARA WA (30% / 10%). باقي البنود زي ما هي.</p>
       <p style="font-size:13px;color:var(--muted)">اكتب البنود اليدوية (الإعلانات، و"هوالك - نثريات - أخرى") في الخانات الخضراء هنا بس — بتتطبق تلقائيًا على الجدول الفعلي تحت كمان.</p>
