@@ -443,7 +443,9 @@ function prProcess(rows){
     const shipAll=rs.reduce((s,r)=>s+prNum(r[PR_shipCol-1]),0);
     const shipDel=delivered.reduce((s,r)=>s+prNum(r[PR_shipCol-1]),0);
     const shipRet=returned.reduce((s,r)=>s+prNum(r[PR_shipCol-1]),0);
-    const shipUndel=undelRows.reduce((s,r)=>s+prNum(r[PR_shipCol-1]),0);
+    // الشحن البايظ: Undelivered وملوش تاريخ إرجاع (اللي له تاريخ إرجاع بيتحسب في المرتجعات بس)
+    const isRet=r=>{const v=r[PR_returnedCol-1];return v&&String(v).trim()!==""&&String(v).trim()!=="NaT";};
+    const shipUndel=undelRows.filter(r=>!isRet(r)).reduce((s,r)=>s+prNum(r[PR_shipCol-1]),0);
     const wIns=delivered.filter(r=>prHasInsial(r[PR_contentsCol-1])).length;
     const cogs=wIns*PR_COGS_YES+(delivered.length-wIns)*PR_COGS_NO;
     return {n:rs.length,delivered:delivered.length,returned:returned.length,hold,ofd,undel,revenue,shipAll,shipDel,shipRet,shipUndel,cogs};
