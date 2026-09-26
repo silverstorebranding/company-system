@@ -353,18 +353,16 @@ const SOPS = [
 const CHANNELS = "WhatsApp, Messenger, Instagram, TikTok, Phone";
 
 /* ---------------- PROFITS DATA/LOGIC ---------------- */
-const PR_BRANDS=["dream","dream msg site","dream wa","dream site tik","damas","msg","logy-silvermsg","dream tiktok","logy-silver","lo gel nails","fastplt","cara silver","cara silver un"];
+const PR_BRANDS=["dream","dream msg site","dream wa","msg","lo gel nails","fastplt","cara silver","cara silver un"];
 const PR_PNL_BRANDS=PR_BRANDS.filter(b=>b!=="lo gel nails");
 const PR_SOLO="lo gel nails";
-const PR_MSG_GROUP=["msg","dream msg site","logy-silvermsg","fastplt"];
+const PR_MSG_GROUP=["msg","dream msg site","fastplt"];
 const PR_COLS=[
  {type:"brand",key:"dream",h:"DREAM"},{type:"brand",key:"dream msg site",h:"DREAM MSG SITE"},
  {type:"brand",key:"dream wa",h:"DREAM WA"},{type:"agg",key:"dream_group",h:"DREAM المجمع",brands:["dream","dream msg site","dream wa"]},
- {type:"brand",key:"dream site tik",h:"DREAM SITE TIK"},{type:"brand",key:"damas",h:"DAMAS"},
- {type:"brand",key:"msg",h:"MSG"},{type:"brand",key:"logy-silvermsg",h:"LOGY-SILVERMSG"},
- {type:"brand",key:"dream tiktok",h:"DREAM TIKTOK"},{type:"brand",key:"logy-silver",h:"LOGY-SILVER"},
- {type:"brand",key:"fastplt",h:"FASTPLT"},{type:"brand",key:"cara silver",h:"CARA SILVER"},
- {type:"brand",key:"cara silver un",h:"CARA SILVER UN"}
+ {type:"brand",key:"msg",h:"MSG"},{type:"brand",key:"fastplt",h:"FASTPLT"},
+ {type:"brand",key:"cara silver",h:"CARA SILVER"},{type:"brand",key:"cara silver un",h:"CARA SILVER UN"},
+ {type:"agg",key:"cara_group",h:"CARA مجمع",brands:["cara silver","cara silver un"]}
 ];
 const PR_A_SAL_D=8000/30, PR_MSG_SAL_D=150, PR_SHR_SAL_D=300, PR_RENT_D=200, PR_OPS_D=20;
 const PR_COGS_NO=65.2, PR_COGS_YES=94, PR_BRANCH_PCT=0.145, PR_PEND_VAL=75;
@@ -374,20 +372,14 @@ let prBrandCalc={}, prPendingTotal=0, prRealCols=[];
 function prGetBrand(note){
   const n=String(note||"").toLowerCase().trim().split("\n")[0].trim();
   if(n.startsWith("dream msg site"))return"dream msg site";
-  if(n.startsWith("dream site tik"))return"dream site tik";
-  if(n.startsWith("dream tiktok"))return"dream tiktok";
-  if(n.startsWith("logy-silvermsg")||n.startsWith("logy-silver msg")||n.startsWith("logy silvermsg"))return"logy-silvermsg";
   if(n.startsWith("msg"))return"msg";
-  if(n.startsWith("damas"))return"damas";
   if(n.startsWith("dream wa"))return"dream wa";
   if(n.startsWith("dream"))return"dream";
-  if(n.startsWith("logy-silver"))return"logy-silver";
-  if(n.startsWith("logy"))return"logy-silver";
   if(n.startsWith("lo gel nails")||n.startsWith("lo gel")||n.startsWith("logel"))return"lo gel nails";
   if(n.startsWith("fastplt"))return"fastplt";
   if(n.startsWith("cara silver un"))return"cara silver un";
   if(n.startsWith("cara silver"))return"cara silver";
-  return null;
+  return null; // ملاحظات dream site tik / damas / logy-silvermsg / dream tiktok / logy-silver اتشالت خالص من التقرير
 }
 const prHasInsial=c=>String(c||"").includes("انسيال");
 const prNum=v=>parseFloat(String(v).replace(/[^\d.-]/g,""))||0;
@@ -474,6 +466,7 @@ function prBuildPnlTable(){
   const totalFix=PR_PNL_BRANDS.reduce((s,b)=>s+fixOf(b),0);
   h+='<tr><td class="lbl">⚙️ تكاليف ثابتة (شحن+رواتب+إيجار+بضاعة)</td>'+fixRow.map(v=>`<td>${prFmt(v)}</td>`).join('')+`<td>${prFmt(totalFix)}</td></tr>`;
   h+='<tr><td class="lbl">📢 إعلانات (عدّل يدوي)</td>'+PR_COLS.map(c=>c.type==='agg'?`<td id="prAdsAgg">0</td>`:`<td><input class="adsIn" id="prAds_${c.key}" type="number" value="0" oninput="prRecalc()"></td>`).join('')+`<td id="prAdsTotal">0</td></tr>`;
+  h+='<tr><td class="lbl">📊 نسبة الإعلانات من المبيعات</td>'+PR_COLS.map(c=>`<td id="prAdsPct_${c.key}">—</td>`).join('')+`<td id="prAdsPct_total">—</td></tr>`;
   h+='<tr class="total"><td class="lbl">🔴 إجمالي التكاليف</td>'+PR_COLS.map(c=>`<td id="prCost_${c.key}">0</td>`).join('')+`<td id="prCost_total">0</td></tr>`;
   h+='<tr class="profit"><td class="lbl">✅ صافي الربح</td>'+PR_COLS.map(c=>`<td id="prProf_${c.key}">0</td>`).join('')+`<td id="prProf_total">0</td></tr>`;
   h+='<tr><td class="lbl">📊 نسبة الربح %</td>'+PR_COLS.map(c=>`<td id="prPct_${c.key}">0%</td>`).join('')+`<td id="prPct_total">0%</td></tr>`;
@@ -494,12 +487,14 @@ function prRecalc(){
     document.getElementById('prCost_'+c.key).textContent=prFmt(cost);
     document.getElementById('prProf_'+c.key).textContent=prFmt(prof);
     document.getElementById('prPct_'+c.key).textContent=revRow[i]?((prof/revRow[i])*100).toFixed(1)+'%':'—';
+    document.getElementById('prAdsPct_'+c.key).textContent=revRow[i]?((ads/revRow[i])*100).toFixed(1)+'%':'—';
     if(c.type==='agg'){document.getElementById('prAdsAgg').textContent=prFmt(ads);}
     else totalAds+=ads;
   });
   totalCost=PR_PNL_BRANDS.reduce((s,b)=>s+(fixRow[PR_COLS.findIndex(c=>c.key===b)]+adsByBrand[b]),0);
   totalProf=t.dataset.totalrev-totalCost;
   document.getElementById('prAdsTotal').textContent=prFmt(totalAds);
+  document.getElementById('prAdsPct_total').textContent=t.dataset.totalrev?((totalAds/t.dataset.totalrev)*100).toFixed(1)+'%':'—';
   document.getElementById('prCost_total').textContent=prFmt(totalCost);
   document.getElementById('prProf_total').textContent=prFmt(totalProf);
   document.getElementById('prPct_total').textContent=t.dataset.totalrev?((totalProf/t.dataset.totalrev)*100).toFixed(1)+'%':'—';
