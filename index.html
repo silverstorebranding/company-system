@@ -353,7 +353,7 @@ const SOPS = [
 const CHANNELS = "WhatsApp, Messenger, Instagram, TikTok, Phone";
 
 /* ---------------- PROFITS DATA/LOGIC ---------------- */
-const PR_BRANDS=["dream","dream msg site","dream wa","msg","lo gel nails","fastplt","cara silver","cara silver un"];
+const PR_BRANDS=["dream","dream msg site","dream wa","msg","lo gel nails","fastplt","cara silver","cara silver un","cara wa"];
 const PR_PNL_BRANDS=PR_BRANDS.filter(b=>b!=="lo gel nails");
 const PR_SOLO="lo gel nails";
 const PR_MSG_GROUP=["msg","dream msg site","fastplt"];
@@ -362,7 +362,8 @@ const PR_COLS=[
  {type:"brand",key:"dream wa",h:"DREAM WA"},{type:"agg",key:"dream_group",h:"DREAM المجمع",brands:["dream","dream msg site","dream wa"]},
  {type:"brand",key:"msg",h:"MSG"},{type:"brand",key:"fastplt",h:"FASTPLT"},
  {type:"brand",key:"cara silver",h:"CARA SILVER"},{type:"brand",key:"cara silver un",h:"CARA SILVER UN"},
- {type:"agg",key:"cara_group",h:"CARA مجمع",brands:["cara silver","cara silver un"]}
+ {type:"brand",key:"cara wa",h:"CARA WA"},
+ {type:"agg",key:"cara_group",h:"CARA مجمع",brands:["cara silver","cara silver un","cara wa"]}
 ];
 const PR_A_SAL_D=8000/30, PR_MSG_SAL_D=150, PR_SHR_SAL_D=300, PR_RENT_D=200, PR_OPS_D=20;
 const PR_COGS_NO=65.2, PR_COGS_YES=94, PR_BRANCH_PCT=0.145, PR_PEND_VAL=75;
@@ -372,13 +373,18 @@ let prBrandCalc={}, prPendingTotal=0, prRealCols=[], prUnbranded=[];
 function prGetBrand(note){
   const n=String(note||"").toLowerCase().trim().split("\n")[0].trim();
   if(n.startsWith("dream msg site"))return"dream msg site";
-  if(n.startsWith("msg"))return"msg";
+  if(n.startsWith("drew wa"))return"dream wa"; // خطأ إملائي شائع لـ dream wa
   if(n.startsWith("dream wa"))return"dream wa";
   if(n.startsWith("dream"))return"dream";
+  if(n.startsWith("re"))return"msg"; // أي ملاحظة بتبدأ بـ re بتتصنف MSG
+  if(n.startsWith("msg"))return"msg";
   if(n.startsWith("lo gel nails")||n.startsWith("lo gel")||n.startsWith("logel"))return"lo gel nails";
+  if(n.startsWith("fastlpt"))return"fastplt"; // خطأ إملائي شائع لـ fastplt
   if(n.startsWith("fastplt"))return"fastplt";
   if(n.startsWith("cara silver un"))return"cara silver un";
+  if(n.startsWith("cara siver"))return"cara silver"; // خطأ إملائي شائع لـ cara silver
   if(n.startsWith("cara silver"))return"cara silver";
+  if(n.startsWith("wa"))return"cara wa"; // ملاحظة "wa" لوحدها = براند جديد
   return null; // ملاحظات dream site tik / damas / logy-silvermsg / dream tiktok / logy-silver اتشالت خالص من التقرير
 }
 const prHasInsial=c=>String(c||"").includes("انسيال");
