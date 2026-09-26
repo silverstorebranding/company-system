@@ -510,6 +510,7 @@ function prProcess(rows){
   prBuildSummaryTable();
   prBuildCountsTable();
   prBuildUnbrandedTable();
+  prBuildItemsTable(rows);
   prRecalc();
   document.getElementById('prResults').style.display='block';
 }
@@ -684,6 +685,27 @@ function prBuildUnbrandedTable(){
   });
   h+='</table>';
   box.innerHTML=h;
+}
+
+/* إحصائية تفاصيل الطلبات (العمود L) */
+function prBuildItemsTable(rows){
+  const map={};
+  rows.forEach(r=>{
+    const key=String(r[PR_contentsCol-1]||'').replace(/\s+/g,' ').trim()||'(فاضي)';
+    const m=map[key]||(map[key]={n:0,d:0});
+    m.n++; if(r[PR_statusCol-1]==='Delivered')m.d++;
+  });
+  const list=Object.entries(map).sort((a,b)=>b[1].n-a[1].n);
+  const totN=list.reduce((s,[,m])=>s+m.n,0), totD=list.reduce((s,[,m])=>s+m.d,0);
+  const pct=(d,n)=>n?((d/n)*100).toFixed(1)+'%':'—';
+  document.getElementById('prItemsCount').textContent=list.length;
+  let h='<table class="pr"><tr><th>#</th><th>تفاصيل الطلب</th><th>اتكرر كام مرة</th><th>اتسلم منهم</th><th>نسبة التسليم</th></tr>';
+  h+=`<tr class="total"><td>—</td><td class="lbl">الإجمالي</td><td>${totN}</td><td>${totD}</td><td>${pct(totD,totN)}</td></tr>`;
+  list.forEach(([k,m],i)=>{
+    h+=`<tr><td>${i+1}</td><td class="lbl" style="text-align:right">${k.replace(/</g,'&lt;')}</td><td>${m.n}</td><td>${m.d}</td><td>${pct(m.d,m.n)}</td></tr>`;
+  });
+  h+='</table>';
+  document.getElementById('prItemsWrap').innerHTML=h;
 }
 
 /* ---------------- STATE ---------------- */
@@ -980,6 +1002,10 @@ function viewProfits(){
     <div class="card"><h3>6) أوردرات بدون براند (مش محسوبة في التقرير) — <span id="prUnbrandedCount">0</span></h3>
       <p style="font-size:13px;color:var(--muted)">الملاحظة فيها مش بادئة بأي اسم براند معروف، فالتقرير مش بيحسبها ضمن أي براند.</p>
       <div class="tablewrap" id="prUnbrandedWrap" style="max-height:340px;overflow-y:auto"></div>
+    </div>
+    <div class="card"><h3>7) إحصائية تفاصيل الطلبات (العمود L) — <span id="prItemsCount">0</span> نوع</h3>
+      <p style="font-size:13px;color:var(--muted)">كل تفاصيل طلب مختلفة، اتكررت كام مرة في الملف كله، واتسلم منها كام. مترتبة من الأكثر للأقل.</p>
+      <div class="tablewrap" id="prItemsWrap" style="max-height:480px;overflow-y:auto"></div>
     </div>
   </div>`;
 }
