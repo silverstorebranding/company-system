@@ -367,7 +367,7 @@ const PR_COLS=[
 const PR_A_SAL_D=8000/30, PR_MSG_SAL_D=150, PR_SHR_SAL_D=300, PR_RENT_D=200, PR_OPS_D=20;
 const PR_COGS_NO=65.2, PR_COGS_YES=94, PR_BRANCH_PCT=0.145, PR_PEND_VAL=75;
 const PR_statusCol=15,PR_priceCol=5,PR_shipCol=6,PR_notesCol=10,PR_contentsCol=12,PR_returnedCol=9,PR_dateCol=11;
-let prBrandCalc={}, prPendingTotal=0, prRealCols=[];
+let prBrandCalc={}, prPendingTotal=0, prRealCols=[], prUnbranded=[];
 
 function prGetBrand(note){
   const n=String(note||"").toLowerCase().trim().split("\n")[0].trim();
@@ -404,7 +404,8 @@ function prRunReport(){
 
 function prProcess(rows){
   const byBrand={}; PR_BRANDS.forEach(b=>byBrand[b]=[]);
-  rows.forEach(r=>{const b=prGetBrand(r[PR_notesCol-1]); if(b)byBrand[b].push(r);});
+  prUnbranded=[];
+  rows.forEach(r=>{const b=prGetBrand(r[PR_notesCol-1]); if(b)byBrand[b].push(r); else prUnbranded.push(r);});
 
   function calcOne(brand){
     const rs=byBrand[brand];
@@ -448,6 +449,8 @@ function prProcess(rows){
 
   prBuildPnlTable();
   prBuildSummaryTable();
+  prBuildCountsTable();
+  prBuildUnbrandedTable();
   prRecalc();
   document.getElementById('prResults').style.display='block';
 }
@@ -522,6 +525,37 @@ function prBuildSummaryTable(){
     h+=`<tr><td class="lbl">${b.toUpperCase()}${b===PR_SOLO?' ⭐':''}</td><td>${c.n}</td><td>${c.delivered}</td><td>${c.returned}</td><td>${c.hold}</td><td>${c.ofd}</td><td>${c.undel}</td><td>${prFmt(c.revenue)}</td><td>${prFmt(c.shipAll)}</td><td>${rate}</td></tr>`;
   });
   t.innerHTML=h;
+}
+
+function prBuildCountsTable(){
+  const t=document.getElementById('prCountsTable');
+  const total=PR_BRANDS.reduce((s,b)=>s+prBrandCalc[b].n,0);
+  let h='<tr><th>البراند</th><th>عدد الأوردرات</th></tr>';
+  PR_BRANDS.forEach(b=>{
+    h+=`<tr><td class="lbl">${b.toUpperCase()}${b===PR_SOLO?' ⭐':''}</td><td>${prBrandCalc[b].n}</td></tr>`;
+  });
+  h+=`<tr><td class="lbl">بدون براند (غير محسوبة)</td><td>${prUnbranded.length}</td></tr>`;
+  h+=`<tr class="total"><td class="lbl">الإجمالي (كل الملف)</td><td>${total+prUnbranded.length}</td></tr>`;
+  t.innerHTML=h;
+}
+
+function prFmtDate(v){
+  if(!v)return'—';
+  const d=v instanceof Date?v:new Date(v);
+  return isNaN(d)?String(v):d.toLocaleDateString('ar-EG');
+}
+
+function prBuildUnbrandedTable(){
+  const box=document.getElementById('prUnbrandedWrap');
+  const countEl=document.getElementById('prUnbrandedCount');
+  countEl.textContent=prUnbranded.length;
+  if(!prUnbranded.length){box.innerHTML='<p style="color:var(--muted)">كل الأوردرات في الملف اتصنّفت على براند ✅</p>';return;}
+  let h='<table class="pr"><tr><th>#</th><th>التاريخ</th><th>الملاحظة</th><th>السعر</th><th>الحالة</th></tr>';
+  prUnbranded.forEach((r,i)=>{
+    h+=`<tr><td>${i+1}</td><td>${prFmtDate(r[PR_dateCol-1])}</td><td class="lbl" style="text-align:right">${(r[PR_notesCol-1]||'—')}</td><td>${prFmt(prNum(r[PR_priceCol-1]))}</td><td>${r[PR_statusCol-1]||'—'}</td></tr>`;
+  });
+  h+='</table>';
+  box.innerHTML=h;
 }
 
 /* ---------------- STATE ---------------- */
@@ -790,6 +824,13 @@ function viewProfits(){
     </div>
     <div class="card"><h3>📊 ملخص البراندات</h3>
       <div class="tablewrap"><table class="pr" id="prSummaryTable"></table></div>
+    </div>
+    <div class="card"><h3>🔢 عدد الأوردرات لكل براند</h3>
+      <div class="tablewrap"><table class="pr" id="prCountsTable"></table></div>
+    </div>
+    <div class="card"><h3>⚠️ أوردرات بدون براند (مش محسوبة في التقرير) — <span id="prUnbrandedCount">0</span></h3>
+      <p style="font-size:13px;color:var(--muted)">الملاحظة فيها مش بادئة بأي اسم براند معروف، فالتقرير مش بيحسبها ضمن أي براند.</p>
+      <div class="tablewrap" id="prUnbrandedWrap" style="max-height:340px;overflow-y:auto"></div>
     </div>
   </div>`;
 }
