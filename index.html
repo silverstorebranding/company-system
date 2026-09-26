@@ -140,6 +140,14 @@ table.sum td.sep,table.sum th.sep{border-inline-start:3px solid var(--brass-d)}
 .legend{display:flex;flex-wrap:wrap;gap:14px;font-size:13px;color:var(--muted);margin-top:10px}
 .legend span{display:inline-flex;align-items:center;gap:6px}
 .legend i{display:inline-block;width:14px;height:14px;border-radius:3px;border:1px solid var(--line)}
+.tasks3{gap:12px}
+.tcol{background:var(--slate-l);border-radius:8px;padding:10px 12px}
+h4.tk{font-size:13px;color:var(--slate);margin:0 0 6px}
+.none{color:var(--muted);font-size:13px;margin:0}
+.subhead{font-weight:700;font-size:14.5px;margin:4px 0 8px;cursor:pointer}
+.subhead span{font-weight:400;font-size:12.5px;color:var(--muted);margin-inline-start:6px}
+hr.sep{border:none;border-top:1px dashed var(--line);margin:14px 0}
+h2.sectitle{font-size:17px;color:var(--muted);margin:26px 0 12px;border-top:1px solid var(--line);padding-top:16px}
 input.adsIn{width:75px;padding:4px;border:1px solid var(--brass);border-radius:5px;background:#dcfce7;color:#1c2321;text-align:center}
 input.plainIn{padding:6px 10px;border:1px solid var(--line);border-radius:6px;width:140px}
 .kpi{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dashed var(--line);font-size:14px}
@@ -208,7 +216,7 @@ const EMP = {
   habiba:{name:"حبيبة",dept:"ops",title:"مسؤولة تجهيز الطلبات — مسؤولية كاملة",reports:"Fady",
     role:"مسؤولة بالكامل عن تجهيز الطلبات من الألف للياء: توزيع الطلبات على فريق التجهيز، متابعة التنفيذ لحظة بلحظة، والتأكد إن كل طلب يوصل للشحن كامل وصحيح.",
     daily:["توزيع الطلبات على الفريق","متابعة تجهيز طلبات اليوم أول بأول","مراجعة الحالات المعقدة"],
-    weekly:["جرد يوم الخميس مع مسؤولة المخزن"],monthly:["—"],
+    weekly:["متابعة نواقص المكونات مع مسؤولة المخزن"],monthly:["—"],
     own:["تجهيز الطلبات بالكامل","توزيع العمل على الفريق"],notown:["الرد على العملاء (إلا عند الحاجة)"],
     reportsto:"Fady",handto:"الشحن",approver:"Fady",escalate:"عند نقص مخزون أو مشكلة تجهيز متكررة",
     tools:["نظام الطلبات","Packing Checklist"],
@@ -224,12 +232,12 @@ const EMP = {
     tools:["نظام الطلبات","WhatsApp","Messenger"],
     sops:["Packing SOP","Customer Communication SOP","Follow-up SOP"],
     checklists:["Start of Day","End of Day"]},
-  nouran:{name:"نورهان",dept:"ops",title:"مسؤولة المخزن",reports:"حبيبة",
-    role:"مسؤولة عن دقة المخزون: الجرد الأسبوعي، تسجيل أي فرق أو نقص أو تالف، وتوفير المكونات لفريق التجهيز أول بأول.",
-    daily:["فحص توفر المكونات لطلبات اليوم","تجهيز نصيبها من الطلبات"],weekly:["جرد يوم الخميس"],monthly:["—"],
-    own:["دقة المخزون","تسجيل الفروقات"],notown:["قرار الشراء النهائي"],reportsto:"حبيبة",handto:"فريق التجهيز",
-    approver:"حبيبة / Fady",escalate:"عند فرق كبير في الجرد أو نقص متكرر",tools:["Inventory Sheet","نظام الطلبات"],
-    sops:["Weekly Stock Count","Packing SOP"],checklists:["Start of Day"]},
+  nouran:{name:"نورهان",dept:"qa",title:"مسؤولة الجودة والمراجعة + مساعدة في خدمة العملاء",reports:"Fady",
+    role:"مسؤولة عن مراجعة بيانات كل طلب قبل ما يروح للتجهيز والتأكد إنه صحيح بالكامل، وبتساعد فريق خدمة العملاء.",
+    daily:["مراجعة كل الطلبات الجديدة قبل التجهيز","إرجاع أي طلب فيه خطأ مع سبب واضح","دعم فريق خدمة العملاء"],weekly:["تحليل الأخطاء المتكررة"],monthly:["—"],
+    own:["دقة بيانات الطلبات","اعتماد الطلب قبل التجهيز"],notown:["اعتماد سعر أو استثناء للعميل"],reportsto:"Fady (جودة) / اسماء (خدمة عملاء)",handto:"تجهيز الطلبات",
+    approver:"Fady",escalate:"عند خطأ متكرر من نفس الموظف",tools:["نظام الطلبات","WhatsApp","Messenger"],
+    sops:["QA Workflow","Customer Communication SOP"],checklists:["Start of Day"]},
   asmaa:{name:"اسماء",dept:"cs",title:"مسؤولة خدمة العملاء",reports:"Fady",
     role:"مسؤولة عن فريق خدمة العملاء بالكامل: توزيع المحادثات، متابعة الرد في الوقت، ومتابعة الشكاوى حتى الحل أو التصعيد.",
     daily:["توزيع المحادثات على الفريق","متابعة الرد خلال الوقت المحدد","متابعة الشكاوى المفتوحة"],
@@ -239,19 +247,19 @@ const EMP = {
     tools:["WhatsApp","Messenger","Instagram","TikTok","نظام الطلبات"],
     sops:["Customer Communication SOP","Order Creation SOP","Follow-up SOP","Complaint SOP","Failed Delivery SOP","Upsell Rules"],
     checklists:["Start of Day","End of Day","قائمة تسليم"]},
-  farah:{name:"فرح",dept:"cs",title:"عضوة فريق خدمة العملاء",reports:"اسماء",
+  farah:{name:"فرح",dept:"cs",title:"مسؤولة المخزن + خدمة العملاء + المالية",reports:"اسماء",
     role:"استقبال العملاء، الرد على الاستفسارات، تحويل العميل لطلب، ومتابعته حتى التسليم.",
-    daily:["الرد على المحادثات الجديدة","متابعة الـFollow-ups","تسجيل الطلبات الجاهزة"],
-    weekly:["مراجعة الحالات المعلّقة"],monthly:["—"],
-    own:["التواصل مع العميل","تسجيل بيانات الطلب"],notown:["تغيير السياسات","تسعير غير معتمد"],
+    daily:["فحص توفر المكونات لطلبات اليوم","تسجيل أي نقص أو تالف في المخزن","الرد على المحادثات الجديدة","متابعة الـFollow-ups","تسجيل الطلبات الجاهزة"],
+    weekly:["جرد المخزن يوم الخميس","مراجعة الحالات المعلّقة"],monthly:["—"],
+    own:["دقة المخزون","تسجيل فروقات الجرد","التواصل مع العميل","تسجيل بيانات الطلب"],notown:["تغيير السياسات","تسعير غير معتمد"],
     reportsto:"اسماء",handto:"تجهيز الطلبات",approver:"اسماء / Fady للحالات الاستثنائية",
     escalate:"عند شكوى خارج صلاحيتها أو طلب استثناء",
     tools:["WhatsApp","Messenger","Instagram","TikTok","نظام الطلبات"],
-    sops:["Customer Communication SOP","Order Creation SOP","Follow-up SOP","Complaint SOP","Failed Delivery SOP"],
+    sops:["Weekly Stock Count","Customer Communication SOP","Order Creation SOP","Follow-up SOP","Complaint SOP","Failed Delivery SOP"],
     checklists:["Start of Day","End of Day","قائمة تسليم"]},
 };
 // ترتيب ظهور الأقسام
-const DEPT_ORDER=["testing","marketing","cs","qa","ops","shipping","purchasing","finance","management"];
+const DEPT_ORDER=["testing","marketing","cs","qa","ops","warehouse","shipping","purchasing","finance","management"];
 const DEPTS = {
   testing:{name:"اختبار المنتجات",emoji:"🧪",mgr:"Fady",employees:[],
     purpose:"اختبار أي منتج جديد قبل إطلاقه: فحص الجودة، واختبار الطلب عليه بإعلان صغير، وقرار واضح (اعتماد / تعديل / رفض) قبل ما يتسلّم للتسويق.",
@@ -272,6 +280,14 @@ const DEPTS = {
     handover:["المحادثات المعلّقة","الـFollow-ups القادمة","الشكاوى المفتوحة","العملاء المنتظرين رد","ملاحظات مهمة"],
     mistakes:["عنوان خاطئ","مقاس خاطئ","سعر خاطئ","نسيان Follow-up","وعد غير مؤكد للعميل"],
     good:["سريع","واضح","دقيق","مهذب","كامل البيانات"]},
+  warehouse:{name:"المخزن",emoji:"🏬",mgr:"فرح",employees:[],
+    purpose:"الحفاظ على دقة المخزون: الجرد الأسبوعي، تسجيل أي فرق أو نقص أو تالف، وتوفير المكونات لفريق التجهيز أول بأول.",
+    inputs:"بضاعة مستلمة من المشتريات",outputs:"مخزون مظبوط ومكونات متاحة للتجهيز",givesUs:"تجهيز الطلبات",receivesFrom:"المشتريات",
+    workflow:["استلام البضاعة من المشتريات","فحصها وتسجيلها","صرف المكونات لفريق التجهيز","متابعة الحد الأدنى لكل صنف","جرد يوم الخميس","تسجيل الفروقات وطلب الاعتماد","إبلاغ المشتريات بالنواقص"],
+    daily:["فحص توفر المكونات لطلبات اليوم","تسجيل أي تالف أو نقص"],weekly:["جرد يوم الخميس"],
+    escalation:[["فرق كبير في الجرد مش متفسر","Fady"],["نقص متكرر في صنف","المشتريات (Fady)"]],
+    handover:["الأصناف الناقصة","الفروقات تحت المراجعة"],
+    mistakes:["عدم التحقيق في سبب فرق الجرد","صرف مكونات من غير تسجيل"],good:["مطابق","موثّق","متاح في الوقت"]},
   qa:{name:"الجودة والمراجعة",emoji:"🔎",mgr:"الإدارة",employees:[],
     purpose:"التأكد من صحة بيانات الطلبات المنفذة من خدمة العملاء قبل تحويلها للتشغيل.",
     inputs:"طلبات من Customer Service",outputs:"طلبات معتمدة أو مُعادة للتصحيح",givesUs:"Customer Service",receivesFrom:"Operations",
@@ -280,12 +296,12 @@ const DEPTS = {
     escalation:[["خطأ متكرر من نفس الموظف","الإدارة"],["تعارض في البيانات","Customer Service"]],
     handover:["الطلبات قيد المراجعة","الطلبات المُعادة وتنتظر تصحيح"],
     mistakes:["تفويت خطأ صغير","تأخير المراجعة"],good:["دقيق","سريع","موثّق"]},
-  ops:{name:"تجهيز الطلبات / المخزن",emoji:"📦",mgr:"حبيبة",employees:["habiba","nouran","somaya"],
+  ops:{name:"تجهيز الطلبات",emoji:"📦",mgr:"حبيبة",employees:["habiba","nouran","somaya"],
     purpose:"تحويل الطلب المؤكد إلى شحنة جاهزة وصحيحة بالكامل.",
     inputs:"طلبات معتمدة من QA",outputs:"شحنة معبأة وجاهزة",givesUs:"Review / QA",receivesFrom:"Shipping",
     workflow:["استلام الطلب المعتمد","تجهيز المنتج","مراجعة المكونات","Packing","QA داخلي","تسليم للشحن"],
-    daily:["تجهيز الطلبات المعتمدة","Packing حسب Checklist"],weekly:["جرد يوم الخميس"],
-    escalation:[["نقص في المخزون","Fady"],["منتج تالف","Fady"]],
+    daily:["تجهيز الطلبات المعتمدة","Packing حسب Checklist"],weekly:["مراجعة أخطاء التجهيز المتكررة"],
+    escalation:[["نقص في المخزون","المخزن (فرح)"],["منتج تالف","المخزن (فرح) / Fady"]],
     handover:["الطلبات قيد التجهيز","حالات النقص المكتشفة"],
     mistakes:["مكوّن ناقص","منتج خاطئ","مقاس خاطئ","تغليف ناقص"],good:["صحيح","كامل","نظيف","مُراجَع"]},
   shipping:{name:"الشحن",emoji:"🚚",mgr:"—",employees:[],
@@ -323,6 +339,24 @@ const DEPTS = {
     daily:["مراجعة التصعيدات"],weekly:["Weekly Business Review"],
     escalation:[["—","—"]],handover:["القرارات المعلّقة"],mistakes:["تأخير القرار"],good:["واضح","سريع","موثّق"]},
 };
+// فريق كل قسم: m = المسؤولين، a = المساعدين
+const DEPT_TEAM={
+  testing:   {m:["peter","fady"], a:[]},
+  marketing: {m:["fady"],         a:[]},
+  cs:        {m:["asmaa"],        a:["farah","nouran"]},
+  qa:        {m:["nouran"],       a:[]},
+  ops:       {m:["habiba"],       a:["somaya"]},
+  warehouse: {m:["farah"],        a:[]},
+  shipping:  {m:["fady"],         a:[]},
+  purchasing:{m:["fady"],         a:[]},
+  finance:   {m:["peter","farah"],a:[]},
+  management:{m:["peter","fady"], a:[]}
+};
+Object.entries(DEPT_TEAM).forEach(([k,t])=>{
+  DEPTS[k].employees=[...t.m,...t.a];
+  DEPTS[k].mgr=t.m.map(id=>EMP[id].name).join(' + ')||'—';
+});
+
 const SOPS = [
  {id:"cs-comm",dept:"خدمة العملاء",name:"Customer Communication SOP",owner:"مدير خدمة العملاء",ver:"1.0",time:"مستمر",diff:"أساسي",
   purpose:"توحيد طريقة الرد على العملاء لضمان دقة واحترافية الرد.",
@@ -369,7 +403,7 @@ const SOPS = [
   steps:["Product","Ring","Bracelet if applicable","Box","Bag","Card","Velvet Pouch","Leather Pouch","Polishing Material","Warranty"],
   mistakes:["نسيان عنصر من الـChecklist"],escalation:"نقص مكوّن → Fady",
   done:"كل عناصر الـChecklist تم التأكد منها فعليًا وليس افتراضًا"},
- {id:"ops-stock",dept:"تجهيز الطلبات",name:"Weekly Stock Count",owner:"Warehouse",ver:"1.0",time:"ساعة",diff:"متوسط",
+ {id:"ops-stock",dept:"المخزن",name:"Weekly Stock Count",owner:"مسؤولة المخزن",ver:"1.0",time:"ساعة",diff:"متوسط",
   purpose:"ضمان تطابق المخزون الفعلي مع المسجّل.",when:"كل يوم خميس.",
   steps:["عدّ الكمية الفعلية","قارنها بالمسجّل","حدد الفرق","حقق في السبب","وثّق النتيجة","اطلب تعديل إن لزم","انتظر الاعتماد","حدّث المخزون"],
   mistakes:["عدم التحقيق في سبب الفرق"],escalation:"فرق كبير غير مفسَّر → Fady",done:"المخزون مطابق أو الفرق موثّق ومعتمد"},
@@ -826,7 +860,7 @@ function viewHome(){
 }
 
 function viewOrg(){
-  const tiers=[["الشركاء",["peter","fady"]],["فريق تجهيز الطلبات",["habiba","nouran","somaya"]],["فريق خدمة العملاء",["asmaa","farah"]]];
+  const tiers=[["الشركاء",["peter","fady"]],["فريق تجهيز الطلبات",["habiba","somaya"]],["فريق الجودة والمراجعة",["nouran"]],["فريق خدمة العملاء",["asmaa","farah"]]];
   const deptRow = DEPT_ORDER.map(k=>[k,DEPTS[k]]).map(([k,d])=>`<div class="orgcard" onclick="go('#/dept/${k}')"><b>${d.emoji} ${d.name}</b><span>مدير: ${d.mgr}</span></div>`).join('');
   return `
   <div class="pagehead"><h1>الهيكل التنظيمي للشركة</h1><p>الهيكل التنظيمي — اضغط على أي اسم لفتح ملفه.</p></div>
@@ -859,7 +893,7 @@ function viewStaff(){
   </div>
   <div class="card"><h3>المسؤوليات الكاملة</h3>
     <p><span class="badge b-ok">مسؤولة تجهيز الطلبات بالكامل</span> حبيبة</p>
-    <p><span class="badge b-ok">مسؤولة المخزن</span> نورهان</p>
+    <p><span class="badge b-ok">مسؤولة الجودة والمراجعة</span> نورهان</p>
     <p><span class="badge b-ok">مسؤولة خدمة العملاء</span> اسماء</p>
   </div>`;
 }
@@ -909,33 +943,60 @@ function viewCompanyFlow(){
     <p style="font-size:13.5px;color:var(--muted)">المدخل: ${r[2]} ← المخرج: ${r[3]} · التسليم: ${r[6]}</p></div>`).join('')}`;
 }
 
+// مين المسؤول عن كل قسم (الباقي في القسم = مساعدين)
+const DEPT_MGRS=Object.fromEntries(Object.entries(DEPT_TEAM).map(([k,t])=>[k,t.m]));
+
 function viewDept(key){
   const d=DEPTS[key]; if(!d) return viewHome();
-  const emps=d.employees.map(id=>EMP[id]);
+  const mgrIds=DEPT_MGRS[key]||[];
+  const asstIds=d.employees.filter(id=>!mgrIds.includes(id));
   const sops=SOPS.filter(s=>s.dept.toLowerCase().includes(d.name.split(' /')[0].toLowerCase().slice(0,4)) || s.dept===d.name);
+  const clean=a=>(a||[]).filter(x=>x&&x!=='—');
+  const list=a=>{const c=clean(a);return c.length?`<ul class="plain">${c.map(x=>`<li>${x}</li>`).join('')}</ul>`:'<p class="none">لا يوجد</p>';};
+  const tasks3=(dl,wk,mo)=>`<div class="grid3 tasks3">
+      <div class="tcol"><h4 class="tk">📅 يومي</h4>${list(dl)}</div>
+      <div class="tcol"><h4 class="tk">🗓️ أسبوعي</h4>${list(wk)}</div>
+      <div class="tcol"><h4 class="tk">📆 شهري</h4>${list(mo)}</div></div>`;
+  const person=id=>`<div class="orgcard" style="margin-bottom:8px" onclick="go('#/employee/${id}')"><b>${EMP[id].name}</b><span>${EMP[id].title}</span></div>`;
+  const subhead=id=>`<div class="subhead" onclick="go('#/employee/${id}')">👤 ${EMP[id].name} <span>${EMP[id].title}</span></div>`;
+
   return `
   <div class="crumb"><a href="#/org">الهيكل التنظيمي</a> / ${d.name}</div>
   <div class="pagehead"><h1>${d.emoji} ${d.name}</h1><p>${d.purpose}</p></div>
+
   <div class="grid2">
-    <div class="card"><h3>نظرة عامة</h3>
-      <p><span class="badge b-slate">المدير</span> ${d.mgr}</p>
-      <p><span class="badge b-slate">المدخل</span> ${d.inputs}</p>
-      <p><span class="badge b-slate">المخرج</span> ${d.outputs}</p>
-      <p><span class="badge b-slate">يستلم العمل من</span> ${d.receivesFrom}</p>
-      <p><span class="badge b-slate">يسلّم العمل لـ</span> ${d.givesUs}</p>
+    <div class="card"><h3>1) 👑 المسؤول عن القسم</h3>
+      ${mgrIds.length?mgrIds.map(person).join(''):`<p><b>${d.mgr}</b></p><p class="none">لسه مفيش موظف متحدد كمسؤول عن القسم ده.</p>`}
     </div>
-    <div class="card"><h3>الموظفون</h3>
-      ${emps.length? emps.map(e=>`<div class="orgcard" style="margin-bottom:8px" onclick="go('#/employee/${d.employees[emps.indexOf(e)]}')"><b>${e.name}</b><span>${e.title}</span></div>`).join(''): '<p style="color:var(--muted)">سيتم إضافة الموظفين لاحقًا.</p>'}
+    <div class="card"><h3>2) 🤝 المساعدين</h3>
+      ${asstIds.length?asstIds.map(person).join(''):'<p class="none">لا يوجد مساعدين حاليًا.</p>'}
     </div>
+  </div>
+
+  <div class="card"><h3>3) 📋 مهام المسؤول</h3>
+    ${mgrIds.length
+      ? mgrIds.map(id=>(mgrIds.length>1?subhead(id):'')+tasks3(EMP[id].daily,EMP[id].weekly,EMP[id].monthly)).join('')
+      : '<p class="none" style="margin-bottom:8px">مهام القسم العامة لحد ما يتحدد مسؤول:</p>'+tasks3(d.daily,d.weekly,[])}
+  </div>
+
+  <div class="card"><h3>4) 📋 مهام المساعدين</h3>
+    ${asstIds.length
+      ? asstIds.map(id=>subhead(id)+tasks3(EMP[id].daily,EMP[id].weekly,EMP[id].monthly)).join('<hr class="sep">')
+      : '<p class="none">لا يوجد مساعدين حاليًا.</p>'}
+  </div>
+
+  <div class="card"><h3>5) 📚 مكتبة الإجراءات — ${d.name}</h3>
+    ${sops.length? sops.map(s=>`<div class="sopcard" onclick="go('#/sopdetail/${s.id}')"><b>${s.name}</b><div class="meta">إصدار ${s.ver} · ${s.time} · ${s.diff}</div></div>`).join('') : '<p class="none">لا توجد إجراءات مسجّلة بعد.</p>'}
+  </div>
+
+  <h2 class="sectitle">تفاصيل القسم</h2>
+  <div class="card"><h3>نظرة عامة</h3>
+    <p><span class="badge b-slate">المدخل</span> ${d.inputs}</p>
+    <p><span class="badge b-slate">المخرج</span> ${d.outputs}</p>
+    <p><span class="badge b-slate">يستلم العمل من</span> ${d.receivesFrom}</p>
+    <p><span class="badge b-slate">يسلّم العمل لـ</span> ${d.givesUs}</p>
   </div>
   <div class="card"><h3>تدفق عمل القسم</h3><ol class="steps">${d.workflow.map((s,i)=>`<li><span class="n">${i+1}</span>${s}</li>`).join('')}</ol></div>
-  <div class="grid2">
-    <div class="card"><h3>المهام اليومية</h3><ul class="plain">${d.daily.map(x=>`<li>${x}</li>`).join('')}</ul></div>
-    <div class="card"><h3>المهام الأسبوعية</h3><ul class="plain">${d.weekly.map(x=>`<li>${x}</li>`).join('')}</ul></div>
-  </div>
-  <div class="card"><h3>مكتبة الإجراءات — ${d.name}</h3>
-    ${sops.length? sops.map(s=>`<div class="sopcard" onclick="go('#/sopdetail/${s.id}')"><b>${s.name}</b><div class="meta">إصدار ${s.ver} · ${s.time} · ${s.diff}</div></div>`).join('') : '<p style="color:var(--muted)">لا توجد SOPs مسجّلة بعد.</p>'}
-  </div>
   <div class="card"><h3>قواعد التصعيد</h3>${d.escalation.map(([p,to])=>`<p>🔺 ${p} → <b>${to}</b></p>`).join('')}</div>
   <div class="card"><h3>التسليم</h3><ul class="plain">${d.handover.map(x=>`<li>${x}</li>`).join('')}</ul></div>
   <div class="grid2">
