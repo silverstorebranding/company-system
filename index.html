@@ -706,6 +706,19 @@ function prBuildItemsTable(rows){
   });
   h+='</table>';
   document.getElementById('prItemsWrap').innerHTML=h;
+
+  // باكدج ولا لأ
+  const g={yes:{n:0,d:0},no:{n:0,d:0}};
+  rows.forEach(r=>{
+    const k=String(r[PR_contentsCol-1]||'').includes('باكدج')?'yes':'no';
+    g[k].n++; if(r[PR_statusCol-1]==='Delivered')g[k].d++;
+  });
+  const all=g.yes.n+g.no.n;
+  const row=(lbl,m,cls)=>`<tr${cls?` class="${cls}"`:''}><td class="lbl">${lbl}</td><td>${m.n}</td><td>${pct(m.n,all)}</td><td>${m.d}</td><td>${pct(m.d,m.n)}</td></tr>`;
+  document.getElementById('prPkgTable').innerHTML=
+    '<tr><th>النوع</th><th>عدد الأوردرات</th><th>النسبة من الإجمالي</th><th>اتسلم منهم</th><th>نسبة التسليم</th></tr>'+
+    row('📦 فيها كلمة "باكدج"',g.yes)+row('بدون "باكدج"',g.no)+
+    row('الإجمالي',{n:all,d:g.yes.d+g.no.d},'total');
 }
 
 /* ---------------- STATE ---------------- */
@@ -1006,6 +1019,10 @@ function viewProfits(){
     <div class="card"><h3>7) إحصائية تفاصيل الطلبات (العمود L) — <span id="prItemsCount">0</span> نوع</h3>
       <p style="font-size:13px;color:var(--muted)">كل تفاصيل طلب مختلفة، اتكررت كام مرة في الملف كله، واتسلم منها كام. مترتبة من الأكثر للأقل.</p>
       <div class="tablewrap" id="prItemsWrap" style="max-height:480px;overflow-y:auto"></div>
+    </div>
+    <div class="card"><h3>8) أوردرات الباكدج</h3>
+      <p style="font-size:13px;color:var(--muted)">كام أوردر في العمود L مكتوب فيه كلمة "باكدج" وكام لأ — على كل الأوردرات في الملف.</p>
+      <div class="tablewrap"><table class="pr" id="prPkgTable"></table></div>
     </div>
   </div>`;
 }
