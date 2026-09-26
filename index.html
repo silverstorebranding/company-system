@@ -522,14 +522,26 @@ function prRecalc(){
   document.getElementById('prSafeValue').textContent=prFmt(grandTotal-pendingVal);
 }
 
+function prAggRow(label,brands){
+  const agg=brands.reduce((a,b)=>{
+    const c=prBrandCalc[b];
+    a.n+=c.n;a.delivered+=c.delivered;a.returned+=c.returned;a.hold+=c.hold;a.ofd+=c.ofd;a.undel+=c.undel;a.revenue+=c.revenue;a.shipAll+=c.shipAll;
+    return a;
+  },{n:0,delivered:0,returned:0,hold:0,ofd:0,undel:0,revenue:0,shipAll:0});
+  const rate=agg.n?((agg.delivered/agg.n)*100).toFixed(1)+'%':'0%';
+  return `<tr class="total"><td class="lbl">${label}</td><td>${agg.n}</td><td>${agg.delivered}</td><td>${agg.returned}</td><td>${agg.hold}</td><td>${agg.ofd}</td><td>${agg.undel}</td><td>${prFmt(agg.revenue)}</td><td>${prFmt(agg.shipAll)}</td><td>${rate}</td></tr>`;
+}
+
 function prBuildSummaryTable(){
   const t=document.getElementById('prSummaryTable');
   let h='<tr><th>البراند</th><th>إجمالي</th><th>مُسلَّم</th><th>مرتجع</th><th>Hold</th><th>OFD</th><th>Undelivered</th><th>مبيعات</th><th>شحن</th><th>نسبة تسليم</th></tr>';
-  PR_BRANDS.forEach(b=>{
+  PR_BRANDS.filter(b=>b!==PR_SOLO).forEach(b=>{
     const c=prBrandCalc[b];
     const rate=c.n?((c.delivered/c.n)*100).toFixed(1)+'%':'0%';
-    h+=`<tr><td class="lbl">${b.toUpperCase()}${b===PR_SOLO?' ⭐':''}</td><td>${c.n}</td><td>${c.delivered}</td><td>${c.returned}</td><td>${c.hold}</td><td>${c.ofd}</td><td>${c.undel}</td><td>${prFmt(c.revenue)}</td><td>${prFmt(c.shipAll)}</td><td>${rate}</td></tr>`;
+    h+=`<tr><td class="lbl">${b.toUpperCase()}</td><td>${c.n}</td><td>${c.delivered}</td><td>${c.returned}</td><td>${c.hold}</td><td>${c.ofd}</td><td>${c.undel}</td><td>${prFmt(c.revenue)}</td><td>${prFmt(c.shipAll)}</td><td>${rate}</td></tr>`;
   });
+  h+=prAggRow('DREAM مجمع',['dream','dream msg site','dream wa']);
+  h+=prAggRow('CARA مجمع',['cara silver','cara silver un','cara wa']);
   t.innerHTML=h;
 }
 
