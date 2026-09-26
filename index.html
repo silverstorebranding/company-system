@@ -368,6 +368,12 @@ const PR_COLS=[
 const PR_A_SAL_D=8000/30, PR_MSG_SAL_D=150, PR_SHR_SAL_D=300, PR_RENT_D=200, PR_OPS_D=20;
 const PR_COGS_NO=65.2, PR_COGS_YES=94, PR_BRANCH_PCT=0.145, PR_PEND_VAL=75;
 const PR_OFD_RATE=0.35, PR_HOLD_RATE=0.15;
+const PR_RATE_OVERRIDES={
+  "cara silver":{ofd:0.30,hold:0.10},
+  "cara silver un":{ofd:0.25,hold:0.08},
+  "cara wa":{ofd:0.30,hold:0.10}
+};
+const prRatesFor=b=>PR_RATE_OVERRIDES[b]||{ofd:PR_OFD_RATE,hold:PR_HOLD_RATE};
 const PR_statusCol=15,PR_priceCol=5,PR_shipCol=6,PR_notesCol=10,PR_contentsCol=12,PR_returnedCol=9,PR_dateCol=11;
 let prBrandCalc={}, prPendingTotal=0, prRealCols=[], prExpCols=[], prUnbranded=[];
 
@@ -418,16 +424,18 @@ function prProcess(rows){
     const rs=byBrand[brand];
     const delivered=rs.filter(r=>r[PR_statusCol-1]==="Delivered");
     const returned=rs.filter(r=>{const v=r[PR_returnedCol-1];return v&&String(v).trim()!==""&&String(v).trim()!=="NaT";});
-    const hold=rs.filter(r=>r[PR_statusCol-1]==="Hold").length;
-    const ofd=rs.filter(r=>r[PR_statusCol-1]==="Out for Delivery").length;
-    const undel=rs.filter(r=>r[PR_statusCol-1]==="Undelivered").length;
+    const holdRows=rs.filter(r=>r[PR_statusCol-1]==="Hold");
+    const ofdRows=rs.filter(r=>r[PR_statusCol-1]==="Out for Delivery");
+    const undelRows=rs.filter(r=>r[PR_statusCol-1]==="Undelivered");
+    const hold=holdRows.length, ofd=ofdRows.length, undel=undelRows.length;
     const revenue=delivered.reduce((s,r)=>s+prNum(r[PR_priceCol-1]),0);
     const shipAll=rs.reduce((s,r)=>s+prNum(r[PR_shipCol-1]),0);
     const shipDel=delivered.reduce((s,r)=>s+prNum(r[PR_shipCol-1]),0);
     const shipRet=returned.reduce((s,r)=>s+prNum(r[PR_shipCol-1]),0);
+    const shipUndel=undelRows.reduce((s,r)=>s+prNum(r[PR_shipCol-1]),0);
     const wIns=delivered.filter(r=>prHasInsial(r[PR_contentsCol-1])).length;
     const cogs=wIns*PR_COGS_YES+(delivered.length-wIns)*PR_COGS_NO;
-    return {n:rs.length,delivered:delivered.length,returned:returned.length,hold,ofd,undel,revenue,shipAll,shipDel,shipRet,cogs};
+    return {n:rs.length,delivered:delivered.length,returned:returned.length,hold,ofd,undel,revenue,shipAll,shipDel,shipRet,shipUndel,cogs};
   }
   prBrandCalc={}; PR_BRANDS.forEach(b=>prBrandCalc[b]=calcOne(b));
 
@@ -441,9 +449,12 @@ function prProcess(rows){
   prRealCols=PR_PNL_BRANDS.map(b=>{
     const c=prBrandCalc[b];
     const share=totalOrders?c.n/totalOrders:0;
-    const fixed=c.shipDel+c.shipRet+A_SAL*share+SHR_SAL*share+RENT*share+OPS*share+
-      (PR_MSG_GROUP.includes(b)&&msgTotal?MSG_SAL*(c.n/msgTotal):0)+c.cogs;
-    return {key:b,revenue:c.revenue,fixed};
+    const aSal=A_SAL*share;
+    const shrSal=SHR_SAL*share;
+    const rent=RENT*share;
+    const ops=OPS*share;
+    const msgSal=(PR_MSG_GROUP.includes(b)&&msgTotal)?MSG_SAL*(c.n/msgTotal):0;
+    return {key:b,revenue:c.revenue,shipDel:c.shipDel,shipUndel:c.shipUndel,shipRet:c.shipRet,aSal,msgSal,shrSal,rent,ops,cogs:c.cogs};
   });
 
   prExpCols=PR_PNL_BRANDS.map(b=>{
@@ -451,10 +462,12 @@ function prProcess(rows){
     const avgPrice=c.delivered?c.revenue/c.delivered:0;
     const avgCogs=c.delivered?c.cogs/c.delivered:0;
     const avgShip=c.delivered?c.shipDel/c.delivered:0;
-    const count=c.ofd*PR_OFD_RATE+c.hold*PR_HOLD_RATE;
+    const rt=prRatesFor(b);
+    const count=c.ofd*rt.ofd+c.hold*rt.hold;
     const revenue=count*avgPrice;
-    const fixed=count*(avgCogs+avgShip);
-    return {key:b,count,revenue,fixed};
+    const shipExp=count*avgShip;
+    const cogsExp=count*avgCogs;
+    return {key:b,count,revenue,shipExp,cogsExp};
   });
 
   prPendingTotal=PR_BRANDS.reduce((s,b)=>{
@@ -466,11 +479,10 @@ function prProcess(rows){
   },0);
 
   prBuildPnlTable();
-  prBuildExpPnlTable();
-  prBuildForecastTable();
   prBuildSummaryTable();
   prBuildCountsTable();
   prBuildUnbrandedTable();
+  prBuildFullForecastTable();
   prRecalc();
   document.getElementById('prResults').style.display='block';
 }
@@ -480,79 +492,123 @@ function prFmt(n){return (Math.round(n*10)/10).toLocaleString('ar-EG');}
 function prBuildPnlTable(){
   const t=document.getElementById('prPnlTable');
   let h='<tr><th>البند</th>'+PR_COLS.map(c=>`<th>${c.h}</th>`).join('')+'<th>الإجمالي</th></tr>';
-  const revOf=k=>{const rc=prRealCols.find(r=>r.key===k);return rc?rc.revenue:0;};
-  const fixOf=k=>{const rc=prRealCols.find(r=>r.key===k);return rc?rc.fixed:0;};
-  const revRow=PR_COLS.map(c=>c.type==='agg'?c.brands.reduce((s,b)=>s+revOf(b),0):revOf(c.key));
-  const totalRev=PR_PNL_BRANDS.reduce((s,b)=>s+revOf(b),0);
+  const fieldOf=(k,f)=>{const rc=prRealCols.find(r=>r.key===k);return rc?rc[f]:0;};
+  const rowFor=f=>PR_COLS.map(c=>c.type==='agg'?c.brands.reduce((s,b)=>s+fieldOf(b,f),0):fieldOf(c.key,f));
+  const totalFor=f=>PR_PNL_BRANDS.reduce((s,b)=>s+fieldOf(b,f),0);
+
+  const revRow=rowFor('revenue'), totalRev=totalFor('revenue');
   h+='<tr><td class="lbl">📥 مبيعات التسليمات</td>'+revRow.map(v=>`<td>${prFmt(v)}</td>`).join('')+`<td>${prFmt(totalRev)}</td></tr>`;
-  const fixRow=PR_COLS.map(c=>c.type==='agg'?c.brands.reduce((s,b)=>s+fixOf(b),0):fixOf(c.key));
-  const totalFix=PR_PNL_BRANDS.reduce((s,b)=>s+fixOf(b),0);
-  h+='<tr><td class="lbl">⚙️ تكاليف ثابتة (شحن+رواتب+إيجار+بضاعة)</td>'+fixRow.map(v=>`<td>${prFmt(v)}</td>`).join('')+`<td>${prFmt(totalFix)}</td></tr>`;
+
+  const shipDelRow=rowFor('shipDel'), totalShipDel=totalFor('shipDel');
+  h+='<tr><td class="lbl">🚚 شحن التسليمات</td>'+shipDelRow.map(v=>`<td>${prFmt(v)}</td>`).join('')+`<td>${prFmt(totalShipDel)}</td></tr>`;
+
+  const shipUndelRow=rowFor('shipUndel'), totalShipUndel=totalFor('shipUndel');
+  h+='<tr><td class="lbl">💔 شحن بايظ (Undelivered)</td>'+shipUndelRow.map(v=>`<td>${prFmt(v)}</td>`).join('')+`<td>${prFmt(totalShipUndel)}</td></tr>`;
+
+  const shipRetRow=rowFor('shipRet'), totalShipRet=totalFor('shipRet');
+  h+='<tr><td class="lbl">↩️ شحن المرتجعات</td>'+shipRetRow.map(v=>`<td>${prFmt(v)}</td>`).join('')+`<td>${prFmt(totalShipRet)}</td></tr>`;
+
   h+='<tr><td class="lbl">📢 إعلانات (عدّل يدوي)</td>'+PR_COLS.map(c=>c.type==='agg'?`<td id="prAdsAgg">0</td>`:`<td><input class="adsIn" id="prAds_${c.key}" type="number" value="0" oninput="prRecalc()"></td>`).join('')+`<td id="prAdsTotal">0</td></tr>`;
-  h+='<tr><td class="lbl">📊 نسبة الإعلانات من المبيعات</td>'+PR_COLS.map(c=>`<td id="prAdsPct_${c.key}">—</td>`).join('')+`<td id="prAdsPct_total">—</td></tr>`;
+
+  h+='<tr><td class="lbl">📊 نسبة الإعلانات</td>'+PR_COLS.map(c=>`<td id="prAdsPct_${c.key}">—</td>`).join('')+`<td id="prAdsPct_total">—</td></tr>`;
+
+  const aSalRow=rowFor('aSal'), totalASal=totalFor('aSal');
+  h+='<tr><td class="lbl">👤 راتب مساعد مدير المكتب</td>'+aSalRow.map(v=>`<td>${prFmt(v)}</td>`).join('')+`<td>${prFmt(totalASal)}</td></tr>`;
+
+  const msgSalRow=rowFor('msgSal'), totalMsgSal=totalFor('msgSal');
+  h+='<tr><td class="lbl">💬 خدمة عملاء</td>'+msgSalRow.map(v=>`<td>${prFmt(v)}</td>`).join('')+`<td>${prFmt(totalMsgSal)}</td></tr>`;
+
+  const shrSalRow=rowFor('shrSal'), totalShrSal=totalFor('shrSal');
+  h+='<tr><td class="lbl">👥 راتب مشترك (مدير مكتب)</td>'+shrSalRow.map(v=>`<td>${prFmt(v)}</td>`).join('')+`<td>${prFmt(totalShrSal)}</td></tr>`;
+
+  const rentRow=rowFor('rent'), totalRent=totalFor('rent');
+  h+='<tr><td class="lbl">🏢 إيجار مكتب</td>'+rentRow.map(v=>`<td>${prFmt(v)}</td>`).join('')+`<td>${prFmt(totalRent)}</td></tr>`;
+
+  const opsRow=rowFor('ops'), totalOps=totalFor('ops');
+  h+='<tr><td class="lbl">⚙️ مصاريف تشغيل</td>'+opsRow.map(v=>`<td>${prFmt(v)}</td>`).join('')+`<td>${prFmt(totalOps)}</td></tr>`;
+
+  h+='<tr><td class="lbl">💻 برامج مساعدة (عدّل يدوي)</td>'+PR_COLS.map(c=>c.type==='agg'?`<td id="prSoftAgg">0</td>`:`<td><input class="adsIn" id="prSoft_${c.key}" type="number" value="0" oninput="prRecalc()"></td>`).join('')+`<td id="prSoftTotal">0</td></tr>`;
+
+  const cogsRow=rowFor('cogs'), totalCogs=totalFor('cogs');
+  h+='<tr><td class="lbl">📦 تكلفة البضاعة</td>'+cogsRow.map(v=>`<td>${prFmt(v)}</td>`).join('')+`<td>${prFmt(totalCogs)}</td></tr>`;
+
   h+='<tr class="total"><td class="lbl">🔴 إجمالي التكاليف</td>'+PR_COLS.map(c=>`<td id="prCost_${c.key}">0</td>`).join('')+`<td id="prCost_total">0</td></tr>`;
   h+='<tr class="profit"><td class="lbl">✅ صافي الربح</td>'+PR_COLS.map(c=>`<td id="prProf_${c.key}">0</td>`).join('')+`<td id="prProf_total">0</td></tr>`;
   h+='<tr><td class="lbl">📊 نسبة الربح %</td>'+PR_COLS.map(c=>`<td id="prPct_${c.key}">0%</td>`).join('')+`<td id="prPct_total">0%</td></tr>`;
   t.innerHTML=h;
-  t.dataset.rev=JSON.stringify(revRow); t.dataset.fix=JSON.stringify(fixRow); t.dataset.totalrev=totalRev; t.dataset.totalfix=totalFix;
+
+  const fixedRow=shipDelRow.map((v,i)=>v+shipUndelRow[i]+shipRetRow[i]+aSalRow[i]+msgSalRow[i]+shrSalRow[i]+rentRow[i]+opsRow[i]+cogsRow[i]);
+  const totalFixed=totalShipDel+totalShipUndel+totalShipRet+totalASal+totalMsgSal+totalShrSal+totalRent+totalOps+totalCogs;
+  t.dataset.rev=JSON.stringify(revRow); t.dataset.fix=JSON.stringify(fixedRow); t.dataset.totalrev=totalRev; t.dataset.totalfix=totalFixed;
 }
 
-function prBuildExpPnlTable(){
-  const t=document.getElementById('prExpPnlTable');
-  if(!t)return;
-  let h='<tr><th>البند</th>'+PR_COLS.map(c=>`<th>${c.h}</th>`).join('')+'<th>الإجمالي</th></tr>';
-  const cntOf=k=>{const e=prExpCols.find(x=>x.key===k);return e?e.count:0;};
-  const revOf=k=>{const e=prExpCols.find(x=>x.key===k);return e?e.revenue:0;};
-  const fixOf=k=>{const e=prExpCols.find(x=>x.key===k);return e?e.fixed:0;};
-  const cntRow=PR_COLS.map(c=>c.type==='agg'?c.brands.reduce((s,b)=>s+cntOf(b),0):cntOf(c.key));
-  const totalCnt=PR_PNL_BRANDS.reduce((s,b)=>s+cntOf(b),0);
-  h+='<tr><td class="lbl">🔮 عدد الأوردرات المتوقع تسليمها (35% تحت التسليم + 15% Hold)</td>'+cntRow.map(v=>`<td>${prFmt(v)}</td>`).join('')+`<td>${prFmt(totalCnt)}</td></tr>`;
-  const revRow=PR_COLS.map(c=>c.type==='agg'?c.brands.reduce((s,b)=>s+revOf(b),0):revOf(c.key));
-  const totalRev=PR_PNL_BRANDS.reduce((s,b)=>s+revOf(b),0);
-  h+='<tr><td class="lbl">📥 مبيعات متوقعة</td>'+revRow.map(v=>`<td>${prFmt(v)}</td>`).join('')+`<td>${prFmt(totalRev)}</td></tr>`;
-  const fixRow=PR_COLS.map(c=>c.type==='agg'?c.brands.reduce((s,b)=>s+fixOf(b),0):fixOf(c.key));
-  const totalFix=PR_PNL_BRANDS.reduce((s,b)=>s+fixOf(b),0);
-  h+='<tr><td class="lbl">⚙️ تكلفة بضاعة + شحن متوقعة</td>'+fixRow.map(v=>`<td>${prFmt(v)}</td>`).join('')+`<td>${prFmt(totalFix)}</td></tr>`;
-  const profRow=revRow.map((v,i)=>v-fixRow[i]);
-  const totalProf=totalRev-totalFix;
-  h+='<tr class="profit"><td class="lbl">✅ صافي ربح متوقع إضافي</td>'+profRow.map(v=>`<td>${prFmt(v)}</td>`).join('')+`<td>${prFmt(totalProf)}</td></tr>`;
-  t.innerHTML=h;
-  t.dataset.rev=JSON.stringify(revRow); t.dataset.fix=JSON.stringify(fixRow);
-  t.dataset.totalrev=totalRev; t.dataset.totalfix=totalFix; t.dataset.totalprof=totalProf;
-}
-
-function prBuildForecastTable(){
+function prBuildFullForecastTable(){
   const t=document.getElementById('prForecastTable');
   if(!t)return;
   let h='<tr><th>البند</th>'+PR_COLS.map(c=>`<th>${c.h}</th>`).join('')+'<th>الإجمالي</th></tr>';
-  h+='<tr><td class="lbl">✅ صافي الربح الفعلي (حسب الإعلانات المدخلة)</td>'+PR_COLS.map(c=>`<td id="prFcAct_${c.key}">0</td>`).join('')+`<td id="prFcAct_total">0</td></tr>`;
-  h+='<tr><td class="lbl">🔮 صافي الربح المتوقع الإضافي</td>'+PR_COLS.map(c=>`<td id="prFcExp_${c.key}">0</td>`).join('')+`<td id="prFcExp_total">0</td></tr>`;
+  const fieldOf=(k,f)=>{const e=prExpCols.find(x=>x.key===k);return e?e[f]:0;};
+  const rowFor=f=>PR_COLS.map(c=>c.type==='agg'?c.brands.reduce((s,b)=>s+fieldOf(b,f),0):fieldOf(c.key,f));
+  const totalFor=f=>PR_PNL_BRANDS.reduce((s,b)=>s+fieldOf(b,f),0);
+
+  const cntRow=rowFor('count'), totalCnt=totalFor('count');
+  h+='<tr><td class="lbl">🔮 عدد الأوردرات المتوقع تسليمها (نسبة لكل براند)</td>'+cntRow.map(v=>`<td>${prFmt(v)}</td>`).join('')+`<td>${prFmt(totalCnt)}</td></tr>`;
+
+  const revRow=rowFor('revenue'), totalRev=totalFor('revenue');
+  h+='<tr><td class="lbl">📥 مبيعات متوقعة</td>'+revRow.map(v=>`<td>${prFmt(v)}</td>`).join('')+`<td>${prFmt(totalRev)}</td></tr>`;
+
+  const shipRow=rowFor('shipExp'), totalShip=totalFor('shipExp');
+  h+='<tr><td class="lbl">🚚 شحن متوقع</td>'+shipRow.map(v=>`<td>${prFmt(v)}</td>`).join('')+`<td>${prFmt(totalShip)}</td></tr>`;
+
+  const cogsRow=rowFor('cogsExp'), totalCogs=totalFor('cogsExp');
+  h+='<tr><td class="lbl">📦 تكلفة بضاعة متوقعة</td>'+cogsRow.map(v=>`<td>${prFmt(v)}</td>`).join('')+`<td>${prFmt(totalCogs)}</td></tr>`;
+
+  const costRow=shipRow.map((v,i)=>v+cogsRow[i]);
+  const totalCost=totalShip+totalCogs;
+  h+='<tr class="total"><td class="lbl">🔴 إجمالي التكاليف المتوقعة</td>'+costRow.map(v=>`<td>${prFmt(v)}</td>`).join('')+`<td>${prFmt(totalCost)}</td></tr>`;
+
+  const profRow=revRow.map((v,i)=>v-costRow[i]);
+  const totalProfExp=totalRev-totalCost;
+  h+='<tr class="profit"><td class="lbl">✅ صافي ربح متوقع إضافي</td>'+profRow.map(v=>`<td>${prFmt(v)}</td>`).join('')+`<td>${prFmt(totalProfExp)}</td></tr>`;
+
+  h+='<tr><td class="lbl">📊 نسبة الربح المتوقع %</td>'+PR_COLS.map((c,i)=>`<td>${revRow[i]?((profRow[i]/revRow[i])*100).toFixed(1)+'%':'—'}</td>`).join('')+`<td>${totalRev?((totalProfExp/totalRev)*100).toFixed(1)+'%':'—'}</td></tr>`;
+
+  h+='<tr><td class="lbl">✅ صافي الربح الفعلي (من الجدول أعلاه)</td>'+PR_COLS.map(c=>`<td id="prFcAct_${c.key}">0</td>`).join('')+`<td id="prFcAct_total">0</td></tr>`;
   h+='<tr class="profit"><td class="lbl">🏁 إجمالي الربح التوقعي (الفعلي + المتوقع)</td>'+PR_COLS.map(c=>`<td id="prFcTotal_${c.key}">0</td>`).join('')+`<td id="prFcTotal_total">0</td></tr>`;
+
   t.innerHTML=h;
+  t.dataset.expprof=JSON.stringify(profRow); t.dataset.totalexpprof=totalProfExp;
 }
 
 function prRecalc(){
   const t=document.getElementById('prPnlTable');
   if(!t||!t.dataset.rev)return;
   const revRow=JSON.parse(t.dataset.rev), fixRow=JSON.parse(t.dataset.fix);
-  const adsByBrand={}; PR_PNL_BRANDS.forEach(b=>{const el=document.getElementById('prAds_'+b); adsByBrand[b]=el?prNum(el.value):0;});
-  let totalAds=0,totalCost=0,totalProf=0;
+  const adsByBrand={}, softByBrand={};
+  PR_PNL_BRANDS.forEach(b=>{
+    const adsEl=document.getElementById('prAds_'+b); adsByBrand[b]=adsEl?prNum(adsEl.value):0;
+    const softEl=document.getElementById('prSoft_'+b); softByBrand[b]=softEl?prNum(softEl.value):0;
+  });
+  let totalAds=0,totalSoft=0,totalCost=0,totalProf=0;
   const actProfArr=[];
   PR_COLS.forEach((c,i)=>{
     const ads=c.type==='agg'?c.brands.reduce((s,b)=>s+adsByBrand[b],0):adsByBrand[c.key];
-    const cost=ads+fixRow[i];
+    const soft=c.type==='agg'?c.brands.reduce((s,b)=>s+softByBrand[b],0):softByBrand[c.key];
+    const cost=ads+soft+fixRow[i];
     const prof=revRow[i]-cost;
     actProfArr[i]=prof;
     document.getElementById('prCost_'+c.key).textContent=prFmt(cost);
     document.getElementById('prProf_'+c.key).textContent=prFmt(prof);
     document.getElementById('prPct_'+c.key).textContent=revRow[i]?((prof/revRow[i])*100).toFixed(1)+'%':'—';
     document.getElementById('prAdsPct_'+c.key).textContent=revRow[i]?((ads/revRow[i])*100).toFixed(1)+'%':'—';
-    if(c.type==='agg'){document.getElementById('prAdsAgg').textContent=prFmt(ads);}
-    else totalAds+=ads;
+    if(c.type==='agg'){
+      document.getElementById('prAdsAgg').textContent=prFmt(ads);
+      document.getElementById('prSoftAgg').textContent=prFmt(soft);
+    } else {totalAds+=ads; totalSoft+=soft;}
   });
-  totalCost=PR_PNL_BRANDS.reduce((s,b)=>s+(fixRow[PR_COLS.findIndex(c=>c.key===b)]+adsByBrand[b]),0);
+  totalCost=PR_PNL_BRANDS.reduce((s,b)=>s+(fixRow[PR_COLS.findIndex(c=>c.key===b)]+adsByBrand[b]+softByBrand[b]),0);
   totalProf=t.dataset.totalrev-totalCost;
   document.getElementById('prAdsTotal').textContent=prFmt(totalAds);
+  document.getElementById('prSoftTotal').textContent=prFmt(totalSoft);
   document.getElementById('prAdsPct_total').textContent=t.dataset.totalrev?((totalAds/t.dataset.totalrev)*100).toFixed(1)+'%':'—';
   document.getElementById('prCost_total').textContent=prFmt(totalCost);
   document.getElementById('prProf_total').textContent=prFmt(totalProf);
@@ -571,26 +627,21 @@ function prRecalc(){
   document.getElementById('prPendingValue').textContent=prFmt(pendingVal);
   document.getElementById('prSafeValue').textContent=prFmt(grandTotal-pendingVal);
 
-  const expT=document.getElementById('prExpPnlTable');
-  if(expT && expT.dataset.rev){
-    const expRev=JSON.parse(expT.dataset.rev), expFix=JSON.parse(expT.dataset.fix);
-    const expTotalProf=parseFloat(expT.dataset.totalprof)||0;
+  const fcT=document.getElementById('prForecastTable');
+  if(fcT && fcT.dataset.expprof){
+    const expProfRow=JSON.parse(fcT.dataset.expprof);
+    const totalExpProf=parseFloat(fcT.dataset.totalexpprof)||0;
     PR_COLS.forEach((c,i)=>{
-      const expProf=expRev[i]-expFix[i];
       const actProf=actProfArr[i];
       const fcAct=document.getElementById('prFcAct_'+c.key);
-      const fcExp=document.getElementById('prFcExp_'+c.key);
       const fcTot=document.getElementById('prFcTotal_'+c.key);
-      if(fcAct){fcAct.textContent=prFmt(actProf);}
-      if(fcExp){fcExp.textContent=prFmt(expProf);}
-      if(fcTot){fcTot.textContent=prFmt(actProf+expProf);}
+      if(fcAct)fcAct.textContent=prFmt(actProf);
+      if(fcTot)fcTot.textContent=prFmt(actProf+expProfRow[i]);
     });
     const fcActTotal=document.getElementById('prFcAct_total');
-    const fcExpTotal=document.getElementById('prFcExp_total');
     const fcTotTotal=document.getElementById('prFcTotal_total');
     if(fcActTotal)fcActTotal.textContent=prFmt(totalProf);
-    if(fcExpTotal)fcExpTotal.textContent=prFmt(expTotalProf);
-    if(fcTotTotal)fcTotTotal.textContent=prFmt(totalProf+expTotalProf);
+    if(fcTotTotal)fcTotTotal.textContent=prFmt(totalProf+totalExpProf);
   }
 }
 
@@ -893,17 +944,9 @@ function viewProfits(){
     <div id="prStatus" style="font-size:13px;color:var(--muted);margin-top:8px"></div>
   </div>
   <div id="prResults" style="display:none">
-    <div class="card"><h3>2) جدول التكاليف والأرباح (لكل براند)</h3>
-      <p style="font-size:13px;color:var(--muted)">عدّل خانات "الإعلانات" الخضراء يدويًا — الإجمالي وصافي الربح بيتحدّثوا فورًا.</p>
+    <div class="card"><h3>2) جدول التكاليف والأرباح بالتفصيل (لكل براند)</h3>
+      <p style="font-size:13px;color:var(--muted)">كل بند تكلفة ظاهر لوحده زي ما بيتحسب بالظبط. عدّل خانات "الإعلانات" و"البرامج المساعدة" الخضراء يدويًا — الإجمالي وصافي الربح بيتحدّثوا فورًا.</p>
       <div class="tablewrap"><table class="pr" id="prPnlTable"></table></div>
-    </div>
-    <div class="card"><h3>3) جدول الأرباح المتوقعة (من الأوردرات تحت التسليم و Hold)</h3>
-      <p style="font-size:13px;color:var(--muted)">بيتوقع تسليم 35% من الأوردرات "تحت التسليم" (Out for Delivery) و15% من أوردرات "Hold"، وبيحسب المبيعات وتكلفة البضاعة والشحن المتوقعة لهذه الأوردرات بناءً على متوسط البراند نفسه.</p>
-      <div class="tablewrap"><table class="pr" id="prExpPnlTable"></table></div>
-    </div>
-    <div class="card"><h3>4) الجدول التوقعي الإجمالي (الفعلي + المتوقع)</h3>
-      <p style="font-size:13px;color:var(--muted)">مجموع صافي الربح الفعلي (من الجدول رقم 2) مع صافي الربح المتوقع الإضافي (من الجدول رقم 3).</p>
-      <div class="tablewrap"><table class="pr" id="prForecastTable"></table></div>
     </div>
     <div class="grid2">
       <div class="card"><h3>🏪 مبيعات الفرع</h3>
@@ -920,15 +963,19 @@ function viewProfits(){
         <div class="kpi" style="font-size:16px;border-top:2px solid var(--brass);padding-top:10px">🏦 قيمة الخزنة الحالية <b id="prSafeValue">0</b></div>
       </div>
     </div>
-    <div class="card"><h3>📊 ملخص البراندات</h3>
+    <div class="card"><h3>3) ملخص البراندات</h3>
       <div class="tablewrap"><table class="pr" id="prSummaryTable"></table></div>
     </div>
-    <div class="card"><h3>🔢 عدد الأوردرات لكل براند</h3>
+    <div class="card"><h3>4) عدد الأوردرات لكل براند</h3>
       <div class="tablewrap"><table class="pr" id="prCountsTable"></table></div>
     </div>
-    <div class="card"><h3>⚠️ أوردرات بدون براند (مش محسوبة في التقرير) — <span id="prUnbrandedCount">0</span></h3>
+    <div class="card"><h3>5) أوردرات بدون براند (مش محسوبة في التقرير) — <span id="prUnbrandedCount">0</span></h3>
       <p style="font-size:13px;color:var(--muted)">الملاحظة فيها مش بادئة بأي اسم براند معروف، فالتقرير مش بيحسبها ضمن أي براند.</p>
       <div class="tablewrap" id="prUnbrandedWrap" style="max-height:340px;overflow-y:auto"></div>
+    </div>
+    <div class="card"><h3>6) الجدول التوقعي بالتفصيل (من الأوردرات تحت التسليم و Hold)</h3>
+      <p style="font-size:13px;color:var(--muted)">بيتوقع تسليم 35% من الأوردرات "تحت التسليم" (Out for Delivery) و15% من أوردرات "Hold" لمعظم البراندات — ما عدا CARA SILVER (30% / 10%)، CARA SILVER UN (25% / 8%)، وCARA WA (30% / 10%). بيحسب المبيعات والشحن وتكلفة البضاعة المتوقعة لكل بند لوحده بنفس طريقة الجدول رقم 2، وفي الآخر بيجمعها مع صافي الربح الفعلي عشان يطلّع الصورة الكاملة المتوقعة.</p>
+      <div class="tablewrap"><table class="pr" id="prForecastTable"></table></div>
     </div>
   </div>`;
 }
