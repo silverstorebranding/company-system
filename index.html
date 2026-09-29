@@ -1881,5 +1881,331 @@ const Squad = (function(){
   Squad.init(); // بيرجّع جلسة الدخول لو موجودة ويشغّل إشعارات الأوردرات الجديدة في كل الصفحات
 })();
 </script>
+  <!-- =====================================================================
+     📢 قسم الإعلانات — بيقرأ من جوجل شيت
+     الصق البلوك ده كله في ملف النظام قبل سطر </body> على طول (بعد آخر </script>)
+     ===================================================================== -->
+<style>
+.ads-toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:16px}
+.ads-toolbar label{font-size:13px;color:var(--muted);display:inline-flex;align-items:center;gap:6px}
+.ads-toolbar input[type=date]{padding:6px 8px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--ink);font-family:inherit}
+.ads-toolbar .mockbtn:disabled{opacity:.6;cursor:wait}
+.ads-upd{font-size:12px;color:var(--muted)}
+.ads-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
+@media (max-width:720px){.ads-kpis{grid-template-columns:repeat(2,1fr)}}
+.ads-kpi{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+.ads-kpi .n{font-size:23px;font-weight:700;color:var(--brass)}
+.ads-kpi .l{font-size:12.5px;color:var(--muted);margin-top:6px}
+.ads-brand{border-top:4px solid var(--c)}
+.ads-brand h3{color:var(--c)}
+.ads-share{background:var(--line);height:8px;border-radius:8px;overflow:hidden;margin-top:12px}
+.ads-share i{display:block;height:100%;background:var(--c)}
+.ads-sh{font-size:12px;color:var(--muted);margin-top:5px}
+.ads-chart{overflow-x:auto}
+.ads-chart svg{display:block;height:auto}
+.ads-legend{display:flex;flex-wrap:wrap;gap:14px;font-size:12.5px;color:var(--muted);margin-top:8px}
+.ads-legend i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-inline-end:5px;vertical-align:-1px}
+table.pr td.cpo-good{color:#1f7a45;font-weight:700}
+table.pr td.cpo-bad{color:#b3261e;font-weight:700}
+.ads-fill{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:4px 0 12px}
+.ads-fill span{font-size:12.5px;color:var(--muted)}
+</style>
+
+<script>
+(function(){
+  /* ---------- إعدادات الشيت ---------- */
+  const ADS_SHEET_ID = '1ZLQLKF-aNBXXeF_0ltB2RH_K7eH1tfCyKmtRri44DWw';
+  const ADS_GID      = '1578295146';           // رقم التاب (من اللينك بعد gid=)
+  const ADS_YEAR     = new Date().getFullYear(); // الشيت مكتوب فيه اليوم والشهر بس
+  // أرقام الأعمدة: A=0, B=1, C=2 ... — لو ضفت براند جديد في الشيت ضيفه هنا
+  // pr = اسم العمود اللي الإعلانات بتتحط فيه في جدول الأرباح
+  const ADS_GROUPS = [
+    { key:'dream',   name:'DREAM',   color:'#5b3f7a', spend:1, orders:2,  msgs:3,    pr:'dream' },
+    { key:'cara',    name:'CARA',    color:'#2f5f73', spend:5, orders:6,  msgs:7,    pr:'cara silver' },
+    { key:'fastplt', name:'FASTPLT', color:'#8a6d3b', spend:9, orders:10, msgs:null, pr:'fastplt' },
+  ];
+  const MONTHS = ['january','february','march','april','may','june','july','august','september','october','november','december'];
+
+  let adsData = null, adsLoading = false, adsError = '', adsLoadedAt = null, adsPromise = null;
+  let adsFrom = '', adsTo = '';
+  let prOrdersRange = null;
+
+  /* ---------- helpers ---------- */
+  const pad2 = n => String(n).padStart(2,'0');
+  const adsKey = d => `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
+  const adsNum = v => { const s = String(v ?? '').trim(); if(!s || s.includes('#')) return 0; return parseFloat(s.replace(/[^\d.-]/g,'')) || 0; };
+  const fmt = n => Math.round(n).toLocaleString('ar-EG');
+  const cpoTxt = (s,o) => o ? fmt(s/o) : '—';
+  const adsMonth = name => { const n = String(name).toLowerCase(); return MONTHS.findIndex(m => n.length >= 3 && m.startsWith(n.slice(0,3))); };
+  const hasSpend = r => ADS_GROUPS.some(G => r.g[G.key].spend > 0 || r.g[G.key].orders > 0);
+  const daySpend = r => ADS_GROUPS.reduce((s,G) => s + r.g[G.key].spend, 0);
+  const dayOrders = r => ADS_GROUPS.reduce((s,G) => s + r.g[G.key].orders, 0);
+
+  /* ---------- قراءة الشيت ---------- */
+  function adsCSV(t){
+    const rows = []; let row = [], cur = '', q = false;
+    for(let i = 0; i < t.length; i++){
+      const c = t[i];
+      if(q){ if(c === '"'){ if(t[i+1] === '"'){ cur += '"'; i++; } else q = false; } else cur += c; }
+      else if(c === '"') q = true;
+      else if(c === ','){ row.push(cur); cur = ''; }
+      else if(c === '\n' || c === '\r'){ if(c === '\r' && t[i+1] === '\n') i++; row.push(cur); rows.push(row); row = []; cur = ''; }
+      else cur += c;
+    }
+    if(cur || row.length){ row.push(cur); rows.push(row); }
+    return rows;
+  }
+
+  function adsJsonp(base){
+    return new Promise((resolve, reject) => {
+      const cb = '__adsCb' + Date.now();
+      const s = document.createElement('script');
+      const timer = setTimeout(() => { cleanup(); reject(new Error('timeout')); }, 12000);
+      function cleanup(){ clearTimeout(timer); try{ delete window[cb]; }catch(e){} s.remove(); }
+      window[cb] = resp => {
+        cleanup();
+        if(!resp || resp.status === 'error' || !resp.table){ reject(new Error('sheet')); return; }
+        resolve((resp.table.rows || []).map(r => (r.c || []).map(c => c ? (c.v ?? c.f ?? '') : '')));
+      };
+      s.src = base + '&tqx=responseHandler:' + cb;
+      s.onerror = () => { cleanup(); reject(new Error('network')); };
+      document.body.appendChild(s);
+    });
+  }
+
+  async function adsFetchRows(){
+    const base = `https://docs.google.com/spreadsheets/d/${ADS_SHEET_ID}/gviz/tq?gid=${ADS_GID}&headers=0`;
+    try{
+      const res = await fetch(base + '&tqx=out:csv&_=' + Date.now());
+      if(!res.ok) throw new Error('HTTP ' + res.status);
+      const txt = await res.text();
+      if(/<html/i.test(txt.slice(0,300))) throw new Error('not csv');
+      return adsCSV(txt);
+    }catch(e){
+      return await adsJsonp(base); // طريقة بديلة لو المتصفح منع الأولى
+    }
+  }
+
+  // بياخد الصفوف اللي أولها تاريخ زي "9September" ويتجاهل صفوف العناوين والإجماليات
+  function adsParse(rows){
+    const out = [];
+    rows.forEach(r => {
+      const m = String(r[0] ?? '').trim().match(/^(\d{1,2})\s*([A-Za-z]+)/);
+      if(!m) return;
+      const mon = adsMonth(m[2]); if(mon < 0) return;
+      const d = new Date(ADS_YEAR, mon, +m[1]);
+      const g = {};
+      ADS_GROUPS.forEach(G => {
+        g[G.key] = { spend: adsNum(r[G.spend]), orders: adsNum(r[G.orders]), msgs: G.msgs == null ? 0 : adsNum(r[G.msgs]) };
+      });
+      out.push({ key: adsKey(d), date: d, g });
+    });
+    return out.sort((a,b) => a.date - b.date);
+  }
+
+  function adsLoad(force){
+    if(adsLoading) return adsPromise;
+    if(adsData && !force) return Promise.resolve(adsData);
+    adsLoading = true; adsError = ''; adsRerender();
+    adsPromise = (async () => {
+      try{
+        const parsed = adsParse(await adsFetchRows());
+        if(!parsed.length) throw new Error('empty');
+        adsData = parsed; adsLoadedAt = new Date();
+      }catch(e){
+        adsError = e.message === 'empty'
+          ? 'الشيت اتقرا بس مفيهوش صفوف بتواريخ (زي 1September). اتأكد إن رقم التاب (gid) صح.'
+          : 'مش قادر يقرأ الشيت. اتأكد إن الشيت متشارك "Anyone with the link" بصلاحية Viewer وإن فيه إنترنت، وبعدين دوس "تحديث من الشيت".';
+      }finally{ adsLoading = false; }
+      adsRerender();
+      return adsData;
+    })();
+    return adsPromise;
+  }
+
+  const inRange = (r, f, t) => (!f || r.key >= f) && (!t || r.key <= t);
+  function adsSum(rows){
+    const t = {};
+    ADS_GROUPS.forEach(G => t[G.key] = { spend:0, orders:0, msgs:0 });
+    rows.forEach(r => ADS_GROUPS.forEach(G => { const a = t[G.key], b = r.g[G.key]; a.spend += b.spend; a.orders += b.orders; a.msgs += b.msgs; }));
+    return t;
+  }
+
+  /* ---------- الرسم البياني ---------- */
+  function adsChart(days){
+    if(!days.length) return '<p class="none">مفيش صرف في الفترة دي.</p>';
+    const max = Math.max(1, ...days.map(daySpend));
+    const bw = 20, gap = 8, H = 190, top = 8, bottom = 22, W = days.length * (bw + gap) + gap;
+    let s = `<svg viewBox="0 0 ${W} ${H + top + bottom}" width="${Math.max(W, 320)}" role="img" aria-label="الصرف اليومي على الإعلانات">`;
+    s += `<line x1="0" x2="${W}" y1="${H + top}" y2="${H + top}" style="stroke:var(--line)"/>`;
+    days.forEach((r, i) => {
+      const x = gap + i * (bw + gap);
+      let y = H + top;
+      ADS_GROUPS.forEach(G => {
+        const v = r.g[G.key].spend; if(!v) return;
+        const h = v / max * H; y -= h;
+        s += `<rect x="${x}" y="${y}" width="${bw}" height="${h}" fill="${G.color}"><title>${r.date.getDate()}/${r.date.getMonth()+1} — ${G.name}: ${fmt(v)} ج</title></rect>`;
+      });
+      s += `<text x="${x + bw/2}" y="${H + top + 15}" text-anchor="middle" style="font-size:10px;fill:var(--muted)">${r.date.getDate()}</text>`;
+    });
+    return s + '</svg>';
+  }
+
+  /* ---------- صفحة الإعلانات ---------- */
+  function viewAds(){
+    const minK = adsData?.length ? adsData[0].key : '', maxK = adsData?.length ? adsData[adsData.length-1].key : '';
+    const upd = adsLoadedAt ? 'آخر تحديث: ' + adsLoadedAt.toLocaleTimeString('ar-EG', { hour:'2-digit', minute:'2-digit' }) : '';
+    let h = `<div class="pagehead"><h1>📢 الإعلانات</h1><p>المصروف على الإعلانات لكل براند يوم بيوم، والبيانات جاية مباشرة من جوجل شيت.</p></div>
+    <div class="ads-toolbar">
+      <label>من <input type="date" value="${adsFrom}" min="${minK}" max="${maxK}" onchange="Ads.setRange(this.value,null)"></label>
+      <label>إلى <input type="date" value="${adsTo}" min="${minK}" max="${maxK}" onchange="Ads.setRange(null,this.value)"></label>
+      <button class="linkbtn" onclick="Ads.quick('all')">الكل</button>
+      <button class="linkbtn" onclick="Ads.quick('7d')">آخر 7 أيام</button>
+      <button class="linkbtn" onclick="Ads.quick('yesterday')">امبارح</button>
+      <button class="linkbtn" onclick="Ads.quick('today')">النهارده</button>
+      <button class="mockbtn" onclick="Ads.refresh()" ${adsLoading ? 'disabled' : ''}>${adsLoading ? '⏳ بيحدّث...' : '🔄 تحديث من الشيت'}</button>
+      <span class="ads-upd">${upd}</span>
+    </div>`;
+
+    if(adsError) h += `<div class="mono-note">${adsError}</div>`;
+    if(!adsData){
+      if(adsLoading) h += `<div class="card"><p class="none">بيجيب البيانات من جوجل شيت...</p></div>`;
+      return h;
+    }
+
+    const rows = adsData.filter(r => inRange(r, adsFrom, adsTo));
+    const days = rows.filter(hasSpend);
+    const t = adsSum(rows);
+    const T = Object.values(t).reduce((a,b) => ({ spend:a.spend+b.spend, orders:a.orders+b.orders }), { spend:0, orders:0 });
+
+    h += `<div class="ads-kpis">
+      <div class="ads-kpi"><div class="n">${fmt(T.spend)} ج</div><div class="l">إجمالي الصرف</div></div>
+      <div class="ads-kpi"><div class="n">${fmt(T.orders)}</div><div class="l">إجمالي الأوردرات</div></div>
+      <div class="ads-kpi"><div class="n">${cpoTxt(T.spend, T.orders)} ج</div><div class="l">متوسط تكلفة الأوردر (CPO)</div></div>
+      <div class="ads-kpi"><div class="n">${days.length}</div><div class="l">أيام فيها صرف</div></div>
+    </div>`;
+
+    h += `<div class="grid3">` + ADS_GROUPS.map(G => {
+      const a = t[G.key], sh = T.spend ? a.spend / T.spend * 100 : 0;
+      return `<div class="card ads-brand" style="--c:${G.color}"><h3>${G.name}</h3>
+        <div class="kpi">الصرف <b>${fmt(a.spend)} ج</b></div>
+        <div class="kpi">الأوردرات <b>${fmt(a.orders)}</b></div>
+        <div class="kpi">متوسط CPO <b>${cpoTxt(a.spend, a.orders)} ج</b></div>
+        ${G.msgs != null ? `<div class="kpi">رسائل WA/MSG <b>${fmt(a.msgs)}</b></div>` : ''}
+        <div class="ads-share"><i style="width:${sh}%"></i></div>
+        <div class="ads-sh">${sh.toFixed(1)}% من إجمالي الصرف</div></div>`;
+    }).join('') + `</div>`;
+
+    h += `<div class="card"><h3>الصرف اليومي</h3>
+      <div class="ads-chart" dir="ltr">${adsChart(days)}</div>
+      <div class="ads-legend">${ADS_GROUPS.map(G => `<span><i style="background:${G.color}"></i>${G.name}</span>`).join('')}</div></div>`;
+
+    // جدول يوم بيوم — الـCPO بيتلوّن مقارنة بمتوسط البراند في نفس الفترة
+    const avg = {}; ADS_GROUPS.forEach(G => avg[G.key] = t[G.key].orders ? t[G.key].spend / t[G.key].orders : 0);
+    const z = v => v ? fmt(v) : '—';
+    const cpoCell = (s, o, a) => {
+      if(!o) return `<td>${s ? '∞' : '—'}</td>`;
+      const v = s / o, cls = a ? (v > a * 1.15 ? 'cpo-bad' : v < a * 0.9 ? 'cpo-good' : '') : '';
+      return `<td class="${cls}">${fmt(v)}</td>`;
+    };
+    let tb = '<tr><th rowspan="2">اليوم</th>' +
+      ADS_GROUPS.map(G => `<th colspan="3" style="background:${G.color}">${G.name}</th>`).join('') +
+      '<th colspan="3" class="tot">الإجمالي</th></tr><tr>' +
+      [...ADS_GROUPS, null].map(() => '<th>صرف</th><th>أوردرات</th><th>CPO</th>').join('') + '</tr>';
+    tb += '<tr class="total"><td class="lbl">إجمالي الفترة</td>' +
+      ADS_GROUPS.map(G => `<td>${z(t[G.key].spend)}</td><td>${z(t[G.key].orders)}</td><td>${cpoTxt(t[G.key].spend, t[G.key].orders)}</td>`).join('') +
+      `<td>${z(T.spend)}</td><td>${z(T.orders)}</td><td>${cpoTxt(T.spend, T.orders)}</td></tr>`;
+    [...days].reverse().forEach(r => {
+      tb += `<tr><td class="lbl">${r.date.toLocaleDateString('ar-EG', { weekday:'short', day:'numeric', month:'short' })}</td>` +
+        ADS_GROUPS.map(G => { const b = r.g[G.key]; return `<td>${z(b.spend)}</td><td>${z(b.orders)}</td>${cpoCell(b.spend, b.orders, avg[G.key])}`; }).join('') +
+        `<td class="tot">${z(daySpend(r))}</td><td class="tot">${z(dayOrders(r))}</td><td class="tot">${cpoTxt(daySpend(r), dayOrders(r))}</td></tr>`;
+    });
+    h += `<div class="card"><h3>تفاصيل كل يوم</h3>
+      <div class="tablewrap"><table class="pr">${tb}</table></div>
+      <div class="ads-legend"><span style="color:#1f7a45">أخضر = CPO أقل من متوسط البراند بـ10% أو أكتر</span><span style="color:#b3261e">أحمر = أعلى من المتوسط بـ15% أو أكتر</span></div></div>`;
+    return h;
+  }
+
+  /* ---------- ربط الإعلانات بجدول الأرباح ---------- */
+  function adsInjectProfitsBtn(){
+    const tbl = document.getElementById('prFullTable');
+    if(!tbl || document.getElementById('adsFillBox')) return;
+    const box = document.createElement('div');
+    box.id = 'adsFillBox'; box.className = 'ads-fill';
+    box.innerHTML = `<button class="mockbtn" onclick="Ads.fill()">📢 املأ الإعلانات من جوجل شيت</button>
+      <span id="adsFillStatus">بيجمع الصرف لنفس فترة ملف الأوردرات: DREAM في عمود DREAM، وCARA في CARA SILVER، وFASTPLT في FASTPLT.</span>`;
+    tbl.closest('.card').insertBefore(box, tbl.parentElement);
+  }
+
+  async function adsFill(){
+    const st = document.getElementById('adsFillStatus');
+    const inputs = [...document.querySelectorAll('#prFullTable input[data-man="ads"]')];
+    if(!inputs.length){ st.textContent = 'شغّل التقرير الأول.'; return; }
+    st.textContent = 'بيجيب الإعلانات من الشيت...';
+    await adsLoad(true);
+    if(!adsData){ st.textContent = adsError; return; }
+    const R = prOrdersRange || { from:'', to:'' };
+    const t = adsSum(adsData.filter(r => inRange(r, R.from, R.to)));
+    ADS_GROUPS.forEach(G => inputs.forEach(inp => { if(inp.dataset.brand === G.pr) inp.value = Math.round(t[G.key].spend); }));
+    if(typeof prRecalc === 'function') prRecalc();
+    const period = R.from ? `من ${R.from} لـ ${R.to}` : 'لكل الشيت';
+    st.textContent = `✅ اتملت ${period}: ` + ADS_GROUPS.map(G => `${G.name} ${fmt(t[G.key].spend)} ج`).join('، ');
+  }
+
+  // بنحفظ فترة ملف الأوردرات لما التقرير يشتغل
+  if(typeof prProcess === 'function'){
+    const _prProcess = prProcess;
+    prProcess = function(rows){
+      try{
+        const ts = [];
+        rows.forEach(r => { const v = r[PR_dateCol-1]; if(!v) return; const d = v instanceof Date ? v : new Date(v); if(!isNaN(d)) ts.push(+d); });
+        prOrdersRange = ts.length ? { from: adsKey(new Date(Math.min(...ts))), to: adsKey(new Date(Math.max(...ts))) } : null;
+      }catch(e){ prOrdersRange = null; }
+      return _prProcess.apply(this, arguments);
+    };
+  }
+
+  /* ---------- الربط مع الراوتر والقائمة ---------- */
+  const route = () => (location.hash.replace('#/','') || 'home').split('/')[0];
+  function adsRerender(){
+    if(route() !== 'ads') return;
+    const main = document.getElementById('main');
+    if(main) main.innerHTML = viewAds();
+  }
+  function adsAfterRender(){
+    const r = route();
+    document.querySelectorAll('#sidebar a.navlink').forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#/' + r));
+    if(r === 'ads'){ adsRerender(); if(!adsData && !adsLoading) adsLoad(); }
+    else if(r === 'profits') adsInjectProfitsBtn();
+  }
+
+  const profitsLink = document.querySelector('#sidebar a.navlink[href="#/profits"]');
+  if(profitsLink && !document.querySelector('#sidebar a.navlink[href="#/ads"]')){
+    const a = document.createElement('a');
+    a.className = 'navlink'; a.href = '#/ads'; a.textContent = '📢 الإعلانات';
+    profitsLink.after(a);
+  }
+
+  const _render = render;
+  render = function(){ _render.apply(this, arguments); adsAfterRender(); };
+  window.addEventListener('hashchange', adsAfterRender);
+
+  window.Ads = {
+    setRange(f, t){ if(f !== null) adsFrom = f; if(t !== null) adsTo = t; adsRerender(); },
+    quick(k){
+      const d = new Date(), day = 86400000;
+      if(k === 'all'){ adsFrom = adsTo = ''; }
+      else if(k === 'today'){ adsFrom = adsTo = adsKey(d); }
+      else if(k === 'yesterday'){ adsFrom = adsTo = adsKey(new Date(+d - day)); }
+      else if(k === '7d'){ adsFrom = adsKey(new Date(+d - 6*day)); adsTo = adsKey(d); }
+      adsRerender();
+    },
+    refresh(){ adsLoad(true); },
+    fill: adsFill,
+  };
+
+  adsAfterRender();
+})();
+</script>
 </body>
 </html>
