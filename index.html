@@ -1161,8 +1161,18 @@ function viewHandover(){
 }
 
 function viewProfits(){
-  return `<div class="pagehead"><h1>💰 الأرباح</h1><p>ارفع ملف الأوردرات (إكسل) واضغط "شغّل التقرير" لحساب أرباح كل براند.</p></div>
-  <div class="card"><h3>1) رفع الملف</h3>
+  const today = new Date().toISOString().slice(0,10);
+  return `<div class="pagehead"><h1>💰 الأرباح</h1><p>اختار المدة واحسب الأرباح تلقائيًا من QP والإعلانات، أو ارفع ملف الأوردرات يدويًا.</p></div>
+  <div class="card"><h3>⚙️ حساب تلقائي بالمدة (QP + الإعلانات)</h3>
+    <p style="font-size:13px;color:var(--muted)">بيجيب أوردرات المدة دي من موقع الشحن QP، وبيجيب مصروف الإعلانات لنفس المدة من شيت الإعلانات، وبيحسب كل حاجة لوحده. لازم تكون داخل على QP من قسم 🚚 QP الأول.</p>
+    <div class="uploadrow">
+      <label style="display:inline-flex;align-items:center;gap:6px;font-size:13.5px">من <input type="date" id="prAutoFrom" class="plainIn" value="2026-08-01"></label>
+      <label style="display:inline-flex;align-items:center;gap:6px;font-size:13.5px">إلى <input type="date" id="prAutoTo" class="plainIn" value="${today}"></label>
+      <button class="mockbtn" onclick="QP.calcProfitsRange()">⚙️ احسب الأرباح تلقائيًا</button>
+    </div>
+    <div id="prAutoStatus" style="font-size:13px;color:var(--muted);margin-top:10px"></div>
+  </div>
+  <div class="card"><h3>📄 أو ارفع ملف يدويًا</h3>
     <div class="uploadrow">
       <input type="file" id="prFileIn" accept=".xlsx,.xls,.csv">
       <button class="mockbtn" onclick="prRunReport()">▶️ شغّل التقرير</button>
@@ -1612,7 +1622,7 @@ const Squad = (function(){
           <div class="sq-field"><label for="sq-signup-fullname">الاسم كامل</label>
             <input type="text" id="sq-signup-fullname" required></div>
           <div class="sq-field"><label for="sq-signup-username">اليوزرنيم (من غير مسافات)</label>
-            <input type="text" id="sq-signup-username" pattern="[A-Za-z0-9_\\.]+" required></div>
+            <input type="text" id="sq-signup-username" pattern="[A-Za-z0-9_\.]+" required></div>
           <div class="sq-field"><label for="sq-signup-password">الباسورد</label>
             <input type="password" id="sq-signup-password" autocomplete="new-password" required></div>
           <button type="submit" class="sq-btn block" ${state.loading?'disabled':''}>${state.loading ? 'بنجهز الحساب...' : 'اعمل الحساب'}</button>
@@ -1880,11 +1890,10 @@ const Squad = (function(){
   render();
   Squad.init(); // بيرجّع جلسة الدخول لو موجودة ويشغّل إشعارات الأوردرات الجديدة في كل الصفحات
 })();
+
 </script>
-  <!-- =====================================================================
-     📢 قسم الإعلانات — بيقرأ من جوجل شيت
-     الصق البلوك ده كله في ملف النظام قبل سطر </body> على طول (بعد آخر </script>)
-     ===================================================================== -->
+
+
 <!-- =====================================================================
      📢 قسم الإعلانات — بيقرأ من جوجل شيت
      الصق البلوك ده كله في ملف النظام قبل سطر </body> على طول (بعد آخر </script>)
@@ -2372,7 +2381,8 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
   adsAfterRender();
 })();
 </script>
-  <!-- =====================================================================
+
+<!-- =====================================================================
      🚚 قسم QP — بيدخل على موقع شركة الشحن QP Express ويجيب الأوردرات
      الصق البلوك ده كله قبل سطر </body> (بعد بلوك الإعلانات)
      البيانات (يوزر/باس) بتتخزن على جهازك بس، مش جوه الكود.
@@ -2389,8 +2399,8 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
 .qp-toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:16px}
 .qp-toolbar label{font-size:13px;color:var(--muted);display:inline-flex;align-items:center;gap:6px}
 .qp-toolbar input,.qp-toolbar select{padding:6px 9px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--ink);font-family:inherit;font-size:14px}
-.qp-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
-@media (max-width:720px){.qp-kpis{grid-template-columns:repeat(2,1fr)}}
+.qp-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px}
+@media (max-width:520px){.qp-kpis{grid-template-columns:repeat(2,1fr)}}
 .qp-kpi{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
 .qp-kpi .n{font-size:22px;font-weight:700;color:var(--brass)}
 .qp-kpi .n.green{color:var(--ok)}
@@ -2430,6 +2440,9 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
     '6': { label:'مرتجع للعميل',        color:'#b3423a', pr:'Undelivered' },
   };
   const qpStatus = s => QP_STATUS[String(s)] || { label:'حالة ' + s, color:'#6b6659', pr:'Undelivered' };
+  // أرقام الحالات اللي معناها "اتسلم فعليًا" — صلّحها لو رقم التسليم عندك مختلف
+  const QP_DELIVERED = ['3'];
+  const isDelivered = o => QP_DELIVERED.includes(String(o.Order_Delivery_Status));
 
   let creds = (() => { try{ return JSON.parse(localStorage.getItem(QP_LS)) || null; }catch(e){ return null; } })();
   let token = null;
@@ -2496,35 +2509,43 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
     }
   }
 
-  /* ---------- جلب الأوردرات على صفحات ---------- */
+  /* ---------- جلب الأوردرات على صفحات (دالة قابلة لإعادة الاستخدام) ----------
+     بترجّع مصفوفة الأوردرات للمدة المطلوبة، وبتنادي onProg(count, pct) كل صفحة */
+  async function qpFetchRange(from, to, onProg){
+    const all = [];
+    const fromT = new Date(from + 'T00:00:00').getTime();
+    const toT   = new Date(to   + 'T23:59:59').getTime();
+    for(let page = 1; page <= QP_MAX_PAGES; page++){
+      const url = QP_ORDERS_EP + '?rejected=0&printO=All&status=&order_serial=&full_name=&phone_number=&city=' +
+        '&order_date=' + from + '&to_date=' + to + '&page=' + page + '&page_size=' + QP_PAGE_SIZE;
+      const j = await qpApiGet(url);
+      const rows = j.results || [];
+      if(!rows.length) break;
+      let older = false;
+      rows.forEach(o => {
+        const t = new Date(o.order_date).getTime();
+        if(isNaN(t)) { all.push(o); return; }
+        if(t < fromT){ older = true; return; }
+        if(t > toT) return;
+        all.push(o);
+      });
+      if(onProg){
+        const pct = j.count ? Math.min(100, Math.round(all.length / Math.min(j.count, QP_MAX_PAGES * QP_PAGE_SIZE) * 100)) : 0;
+        onProg(all.length, pct);
+      }
+      if(older) break;            // وصلنا لأوردرات أقدم من التاريخ المطلوب (مترتبة من الأحدث)
+      if(!j.next) break;          // مفيش صفحة بعد كده
+    }
+    const seen = new Set();       // شيل التكرار لو حصل
+    return all.filter(o => { if(seen.has(o.serial)) return false; seen.add(o.serial); return true; });
+  }
+
   async function qpFetch(){
     qpLoading = true; qpErr = ''; qpInfo = ''; qpProg = 0; qpRerender();
-    const all = [];
-    const fromT = new Date(qpFrom + 'T00:00:00').getTime();
-    const toT   = new Date(qpTo   + 'T23:59:59').getTime();
     try{
-      for(let page = 1; page <= QP_MAX_PAGES; page++){
-        const url = QP_ORDERS_EP + '?rejected=0&printO=All&status=&order_serial=&full_name=&phone_number=&city=' +
-          '&order_date=' + qpFrom + '&to_date=' + qpTo + '&page=' + page + '&page_size=' + QP_PAGE_SIZE;
-        const j = await qpApiGet(url);
-        const rows = j.results || [];
-        if(!rows.length) break;
-        let older = false;
-        rows.forEach(o => {
-          const t = new Date(o.order_date).getTime();
-          if(isNaN(t)) { all.push(o); return; }
-          if(t < fromT){ older = true; return; }
-          if(t > toT) return;
-          all.push(o);
-        });
-        if(j.count) qpProg = Math.min(100, Math.round(all.length / Math.min(j.count, QP_MAX_PAGES * QP_PAGE_SIZE) * 100));
-        qpInfo = 'بيجيب... ' + all.length + ' أوردر';
-        qpRerender();
-        if(older) break;            // وصلنا لأوردرات أقدم من التاريخ المطلوب (مترتبة من الأحدث)
-        if(!j.next) break;          // مفيش صفحة بعد كده
-      }
-      // شيل التكرار لو حصل
-      const seen = new Set(); qpOrders = all.filter(o => { if(seen.has(o.serial)) return false; seen.add(o.serial); return true; });
+      qpOrders = await qpFetchRange(qpFrom, qpTo, (n, pct) => {
+        qpProg = pct; qpInfo = 'بيجيب... ' + n + ' أوردر'; qpRerender();
+      });
       qpFetchedAt = new Date();
       qpLoading = false; qpProg = 100;
       qpInfo = 'تم ✅ ' + qpOrders.length + ' أوردر من ' + qpFrom + ' لـ ' + qpTo;
@@ -2542,15 +2563,20 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
   function qpStats(list){
     const st = {}, brand = {};
     let sales = 0, fees = 0, ret = 0;
+    let salesDel = 0, feesDel = 0, deliveredCount = 0, pending = 0;
     list.forEach(o => {
       const k = String(o.Order_Delivery_Status);
       st[k] = (st[k] || 0) + 1;
-      const b = qpBrand(o.notes); brand[b] = brand[b] || { n:0, sales:0 };
+      const del = isDelivered(o), rt = isReturned(o);
+      const b = qpBrand(o.notes); brand[b] = brand[b] || { n:0, sales:0, del:0, salesDel:0 };
       brand[b].n++; brand[b].sales += num(o.price);
       sales += num(o.price); fees += num(o.total_fees);
-      if(isReturned(o)) ret++;
+      if(rt) ret++;
+      if(del){ salesDel += num(o.price); feesDel += num(o.total_fees); deliveredCount++; brand[b].del++; brand[b].salesDel += num(o.price); }
+      else if(!rt) pending++;   // لسه تحت التسليم (مش متسلم ومش مرتجع)
     });
-    return { st, brand, sales, fees, ret };
+    const rate = list.length ? (deliveredCount / list.length * 100) : 0;
+    return { st, brand, sales, fees, ret, salesDel, feesDel, deliveredCount, pending, rate };
   }
   const qpFiltered = () => {
     if(!qpOrders) return [];
@@ -2596,9 +2622,11 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
     const all = qpStats(qpOrders);
     h += `<div class="qp-kpis">
       <div class="qp-kpi"><div class="n">${fmt(qpOrders.length)}</div><div class="l">إجمالي الأوردرات</div></div>
-      <div class="qp-kpi"><div class="n green">${fmt(all.sales)} ج</div><div class="l">إجمالي القيمة</div></div>
-      <div class="qp-kpi"><div class="n">${fmt(all.fees)} ج</div><div class="l">إجمالي الشحن</div></div>
-      <div class="qp-kpi"><div class="n">${fmt(all.ret)}</div><div class="l">مرتجعات</div></div>
+      <div class="qp-kpi"><div class="n">${fmt(all.deliveredCount)}</div><div class="l">✅ اتسلم — نسبة التسليم ${all.rate.toFixed(1)}%</div></div>
+      <div class="qp-kpi"><div class="n green">${fmt(all.salesDel)} ج</div><div class="l">💰 إجمالي القيمة (المُسلَّم بس)</div></div>
+      <div class="qp-kpi"><div class="n">${fmt(all.fees)} ج</div><div class="l">🚚 إجمالي الشحن</div></div>
+      <div class="qp-kpi"><div class="n">${fmt(all.pending)}</div><div class="l">⏳ لسه ماوصلش (تحت التسليم)</div></div>
+      <div class="qp-kpi"><div class="n">${fmt(all.ret)}</div><div class="l">↩️ مرتجعات</div></div>
     </div>`;
 
     // شرائح الحالات
@@ -2611,8 +2639,8 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
     // ملخص البراندات
     const brs = Object.entries(all.brand).sort((a,b) => b[1].n - a[1].n);
     h += `<div class="card"><h3>حسب البراند</h3><div class="tablewrap"><table class="pr">
-      <tr><th>البراند</th><th>عدد الأوردرات</th><th>إجمالي القيمة</th></tr>
-      ${brs.map(([b,v]) => `<tr><td class="lbl" style="text-align:right">${esc(b)}</td><td>${fmt(v.n)}</td><td>${fmt(v.sales)}</td></tr>`).join('')}
+      <tr><th>البراند</th><th>عدد الأوردرات</th><th>اتسلم</th><th>نسبة التسليم</th><th>قيمة المُسلَّم</th></tr>
+      ${brs.map(([b,v]) => `<tr><td class="lbl" style="text-align:right">${esc(b)}</td><td>${fmt(v.n)}</td><td>${fmt(v.del||0)}</td><td>${v.n?((v.del||0)/v.n*100).toFixed(1)+'%':'—'}</td><td>${fmt(v.salesDel||0)}</td></tr>`).join('')}
     </table></div></div>`;
 
     // الجدول
@@ -2650,9 +2678,9 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
   }
 
   /* ---------- تحويل أوردرات QP لصفوف يفهمها تقرير الأرباح ---------- */
-  function qpToProfitRows(){
+  function qpToProfitRows(list){
     // ترتيب الأعمدة زي ملف الأوردرات: E=سعر(5) F=شحن(6) I=تاريخ إرجاع(9) J=ملاحظة(10) K=تاريخ(11) L=محتويات(12) O=حالة(15)
-    return (qpOrders || []).map(o => {
+    return (list || qpOrders || []).map(o => {
       const r = new Array(15).fill('');
       r[4]  = num(o.price);                 // E
       r[5]  = num(o.total_fees);            // F
@@ -2687,6 +2715,15 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
     box.innerHTML = `<button class="mockbtn" id="qpProfitsBtn" onclick="QP.toProfitsHere(this)">🚚 استخدم أوردرات QP بدل الإكسل (${qpOrders.length})</button><span class="qp-userline" id="qpProfitsMsg"></span>`;
     card.appendChild(box);
   }
+  // بيتأكد إن صندوق ملء الإعلانات موجود (وفيه #adsFillStatus) عشان Ads.fill() ما يبوظش
+  function qpEnsureAdsBox(){
+    const tbl = document.getElementById('prFullTable');
+    if(!tbl || document.getElementById('adsFillBox')) return;
+    const box = document.createElement('div');
+    box.id = 'adsFillBox'; box.className = 'ads-fill';
+    box.innerHTML = `<button class="mockbtn" onclick="Ads.fill()">📢 املأ الإعلانات من جوجل شيت</button><span id="adsFillStatus"></span>`;
+    tbl.closest('.card').insertBefore(box, tbl.parentElement);
+  }
 
   // لينك في السايدبار تحت "الأرباح" (أو "البوصلة" لو موجودة)
   const anchor = document.querySelector('#sidebar a.navlink[href="#/compass"]') || document.querySelector('#sidebar a.navlink[href="#/profits"]');
@@ -2716,10 +2753,41 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
       const msg = document.getElementById('qpProfitsMsg');
       if(qpFeedProfits(msg)) msg.textContent = '✅ اتحسبت الأرباح من ' + qpOrders.length + ' أوردر QP.';
     },
+    // 🔽 الحساب التلقائي من صفحة الأرباح: يجيب أوردرات المدة من QP + إعلانات نفس المدة
+    async calcProfitsRange(){
+      const st = document.getElementById('prAutoStatus');
+      const from = document.getElementById('prAutoFrom') && document.getElementById('prAutoFrom').value;
+      const to   = document.getElementById('prAutoTo')   && document.getElementById('prAutoTo').value;
+      if(!from || !to){ if(st) st.textContent = 'اختار المدة (من / إلى) الأول.'; return; }
+      if(from > to){ if(st) st.textContent = 'تاريخ "من" لازم يكون قبل "إلى".'; return; }
+      if(!creds){ if(st) st.innerHTML = '⚠️ لازم تسجّل دخول QP الأول من قسم <b>🚚 QP</b> في القائمة، وبعدين ترجع هنا.'; return; }
+      if(typeof prProcess !== 'function'){ if(st) st.textContent = 'تقرير الأرباح مش متاح.'; return; }
+      try{
+        if(st) st.textContent = '⏳ بيجيب أوردرات QP من ' + from + ' لـ ' + to + '...';
+        const list = await qpFetchRange(from, to, n => { if(st) st.textContent = '⏳ بيجيب أوردرات QP... ' + n + ' أوردر'; });
+        if(!list.length){ if(st) st.textContent = 'مفيش أوردرات في المدة دي على QP.'; return; }
+        qpOrders = list; qpFrom = from; qpTo = to; qpFetchedAt = new Date();
+        if(st) st.textContent = '⚙️ بيحسب الأرباح من ' + list.length + ' أوردر...';
+        prProcess(qpToProfitRows(list));
+        const res = document.getElementById('prResults'); if(res) res.style.display = 'block';
+        let adsMsg = '';
+        try{
+          qpEnsureAdsBox();
+          if(window.Ads && typeof window.Ads.fill === 'function'){ await window.Ads.fill(); adsMsg = ' — وجِبت الإعلانات لنفس المدة (اطمن على قيمها في صف "📢 إعلانات" بالجدول).'; }
+        }catch(e){ adsMsg = ' (تعذّر جلب الإعلانات تلقائيًا — تقدر تملأها من صفحة 📢 الإعلانات)'; }
+        if(st) st.innerHTML = '✅ تم الحساب من <b>' + list.length + '</b> أوردر QP للمدة من ' + from + ' لـ ' + to + '.' + adsMsg;
+        if(res && res.scrollIntoView) res.scrollIntoView({ behavior:'smooth', block:'start' });
+      }catch(e){
+        if(st) st.textContent = /Failed to fetch|NetworkError/i.test(e.message)
+          ? 'مش قادر يوصل لموقع الشحن QP. اتأكد إنك داخل على QP وإن فيه إنترنت.'
+          : ('خطأ: ' + e.message);
+      }
+    },
   };
 
   qpAfterRender();
 })();
 </script>
+
 </body>
 </html>
