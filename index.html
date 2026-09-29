@@ -2372,5 +2372,354 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
   adsAfterRender();
 })();
 </script>
+  <!-- =====================================================================
+     🚚 قسم QP — بيدخل على موقع شركة الشحن QP Express ويجيب الأوردرات
+     الصق البلوك ده كله قبل سطر </body> (بعد بلوك الإعلانات)
+     البيانات (يوزر/باس) بتتخزن على جهازك بس، مش جوه الكود.
+     ===================================================================== -->
+<style>
+.qp-auth{max-width:420px;margin:6px auto;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:26px}
+.qp-auth h3{border:none;font-size:18px;color:var(--brass-d);margin-bottom:16px}
+.qp-field{margin-bottom:14px}
+.qp-field label{display:block;font-size:13px;font-weight:600;color:var(--muted);margin-bottom:5px}
+.qp-field input{width:100%;padding:10px 12px;border:1.5px solid var(--line);border-radius:8px;font-size:15px;background:var(--panel);color:var(--ink);font-family:inherit}
+.qp-field input:focus{outline:none;border-color:var(--brass)}
+.qp-note{background:#fbf6e8;border:1px solid #e3d19c;border-radius:8px;padding:10px 13px;font-size:12.5px;color:#6b5a1e;margin-bottom:14px}
+:root[data-theme="dark"] .qp-note,:root:not([data-theme="light"]) .qp-note{background:#2a2716;color:#d8c78a;border-color:#5a4f28}
+.qp-toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:16px}
+.qp-toolbar label{font-size:13px;color:var(--muted);display:inline-flex;align-items:center;gap:6px}
+.qp-toolbar input,.qp-toolbar select{padding:6px 9px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--ink);font-family:inherit;font-size:14px}
+.qp-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
+@media (max-width:720px){.qp-kpis{grid-template-columns:repeat(2,1fr)}}
+.qp-kpi{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+.qp-kpi .n{font-size:22px;font-weight:700;color:var(--brass)}
+.qp-kpi .n.green{color:var(--ok)}
+.qp-kpi .l{font-size:12.5px;color:var(--muted);margin-top:6px}
+.qp-stbar{display:flex;flex-wrap:wrap;gap:8px}
+.qp-chip{border:1px solid var(--line);background:var(--panel);border-radius:20px;padding:6px 13px;font-size:13px;cursor:pointer;display:inline-flex;gap:7px;align-items:center}
+.qp-chip:hover{border-color:var(--brass)}
+.qp-chip.on{background:var(--brass-d);color:#fff;border-color:var(--brass-d)}
+.qp-chip b{font-weight:700}
+.qp-search{width:100%;padding:9px 12px;border:1px solid var(--line);border-radius:8px;margin-bottom:12px;background:var(--panel);color:var(--ink);font-size:14px}
+.qp-userline{font-size:13px;color:var(--muted)}
+.qp-userline b{color:var(--brass-d)}
+.qp-tag{display:inline-block;padding:2px 8px;border-radius:6px;font-size:11.5px;background:var(--slate-l);color:var(--slate)}
+.qp-ret{background:#f4e2de;color:var(--warn)}
+.qp-prog{height:8px;background:var(--line);border-radius:8px;overflow:hidden;margin:8px 0}
+.qp-prog i{display:block;height:100%;background:var(--brass);width:0;transition:width .2s}
+</style>
+
+<script>
+(function(){
+  const QP_API      = 'https://api.qpxpress.com';
+  const QP_TOKEN_EP = QP_API + '/api/token/';
+  const QP_ORDERS_EP= QP_API + '/addorders/order/';
+  const QP_PAGE_SIZE= 100;
+  const QP_MAX_PAGES= 400;   // حد أمان (ماكس 40 ألف أوردر)
+  const QP_LS       = 'qp_creds';
+
+  /* خريطة الحالات — الرقم اللي في Order_Delivery_Status.
+     دي أفضل تخمين مبدئي؛ افتح القسم وشوف "الحالات" وصلّحها لو أي رقم طالع بمعنى غلط.
+     pr = الاسم اللي بيستخدمه تقرير الأرباح (Delivered / Hold / Out for Delivery / Undelivered) */
+  const QP_STATUS = {
+    '1': { label:'جديد / قيد التجهيز', color:'#6b6659', pr:'Undelivered' },
+    '2': { label:'خرج للتسليم',        color:'#9a6b14', pr:'Out for Delivery' },
+    '3': { label:'اتسلم',              color:'#276749', pr:'Delivered' },
+    '4': { label:'مؤجّل (Hold)',        color:'#8a6d3b', pr:'Hold' },
+    '5': { label:'راجع للفرع',          color:'#b3423a', pr:'Undelivered' },
+    '6': { label:'مرتجع للعميل',        color:'#b3423a', pr:'Undelivered' },
+  };
+  const qpStatus = s => QP_STATUS[String(s)] || { label:'حالة ' + s, color:'#6b6659', pr:'Undelivered' };
+
+  let creds = (() => { try{ return JSON.parse(localStorage.getItem(QP_LS)) || null; }catch(e){ return null; } })();
+  let token = null;
+  let qpFrom = '2026-08-01';
+  let qpTo   = new Date().toISOString().slice(0,10);
+  let qpOrders = null, qpLoading = false, qpErr = '', qpInfo = '', qpProg = 0, qpFetchedAt = null;
+  let qpStFilter = 'all', qpQuery = '';
+
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const fmt = n => Math.round(n).toLocaleString('ar-EG');
+  const num = v => parseFloat(String(v ?? '').replace(/[^\d.-]/g,'')) || 0;
+  const qpBrand = notes => (typeof prGetBrand === 'function' ? (prGetBrand(notes) || 'بدون براند') : (notes || 'بدون براند'));
+  const isReturned = o => !!(o.Returned_Client || o.Returned_shipper || o.returned_Client_date || (num(o.return_count) > 0) || o.has_return);
+  const route = () => (location.hash.replace('#/','') || 'home').split('/')[0];
+
+  function qpRerender(){ if(route() === 'qp'){ const m = document.getElementById('main'); if(m) m.innerHTML = viewQP(); } }
+
+  /* ---------- تسجيل الدخول والتوكن ---------- */
+  async function qpGetToken(force){
+    if(token && !force) return token;
+    if(!creds) throw new Error('مفيش بيانات دخول محفوظة.');
+    const res = await fetch(QP_TOKEN_EP, {
+      method:'POST', headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify({ username: creds.u, password: creds.p })
+    });
+    if(res.status === 401) throw new Error('اليوزرنيم أو الباسورد غلط.');
+    if(!res.ok) throw new Error('السيرفر رفض تسجيل الدخول (' + res.status + ').');
+    const j = await res.json();
+    if(!j.access) throw new Error('مفيش توكن رجع من السيرفر.');
+    token = j.access;
+    return token;
+  }
+
+  async function qpApiGet(url, retry){
+    const t = await qpGetToken();
+    const res = await fetch(url, { headers:{ 'Authorization':'Bearer ' + t } });
+    if(res.status === 401 && !retry){ token = null; return qpApiGet(url, true); } // التوكن خلص، جدّده
+    if(!res.ok) throw new Error('السيرفر رجّع خطأ (' + res.status + ').');
+    return res.json();
+  }
+
+  function qpSaveCreds(u, p){
+    creds = { u: u.trim(), p };
+    try{ localStorage.setItem(QP_LS, JSON.stringify(creds)); }catch(e){}
+  }
+  function qpLogout(){
+    creds = null; token = null; qpOrders = null; qpErr = ''; qpInfo = '';
+    try{ localStorage.removeItem(QP_LS); }catch(e){}
+    qpRerender();
+  }
+
+  async function qpDoLogin(u, p){
+    if(!u || !p){ qpErr = 'اكتب اليوزرنيم والباسورد.'; qpRerender(); return; }
+    qpLoading = true; qpErr = ''; qpRerender();
+    qpSaveCreds(u, p); token = null;
+    try{
+      await qpGetToken(true);
+      qpLoading = false; qpInfo = 'تم الدخول ✅ دوس "جيب الأوردرات".'; qpErr = '';
+      qpRerender();
+    }catch(e){
+      qpLoading = false; qpErr = e.message; creds = null;
+      try{ localStorage.removeItem(QP_LS); }catch(x){}
+      qpRerender();
+    }
+  }
+
+  /* ---------- جلب الأوردرات على صفحات ---------- */
+  async function qpFetch(){
+    qpLoading = true; qpErr = ''; qpInfo = ''; qpProg = 0; qpRerender();
+    const all = [];
+    const fromT = new Date(qpFrom + 'T00:00:00').getTime();
+    const toT   = new Date(qpTo   + 'T23:59:59').getTime();
+    try{
+      for(let page = 1; page <= QP_MAX_PAGES; page++){
+        const url = QP_ORDERS_EP + '?rejected=0&printO=All&status=&order_serial=&full_name=&phone_number=&city=' +
+          '&order_date=' + qpFrom + '&to_date=' + qpTo + '&page=' + page + '&page_size=' + QP_PAGE_SIZE;
+        const j = await qpApiGet(url);
+        const rows = j.results || [];
+        if(!rows.length) break;
+        let older = false;
+        rows.forEach(o => {
+          const t = new Date(o.order_date).getTime();
+          if(isNaN(t)) { all.push(o); return; }
+          if(t < fromT){ older = true; return; }
+          if(t > toT) return;
+          all.push(o);
+        });
+        if(j.count) qpProg = Math.min(100, Math.round(all.length / Math.min(j.count, QP_MAX_PAGES * QP_PAGE_SIZE) * 100));
+        qpInfo = 'بيجيب... ' + all.length + ' أوردر';
+        qpRerender();
+        if(older) break;            // وصلنا لأوردرات أقدم من التاريخ المطلوب (مترتبة من الأحدث)
+        if(!j.next) break;          // مفيش صفحة بعد كده
+      }
+      // شيل التكرار لو حصل
+      const seen = new Set(); qpOrders = all.filter(o => { if(seen.has(o.serial)) return false; seen.add(o.serial); return true; });
+      qpFetchedAt = new Date();
+      qpLoading = false; qpProg = 100;
+      qpInfo = 'تم ✅ ' + qpOrders.length + ' أوردر من ' + qpFrom + ' لـ ' + qpTo;
+      qpRerender();
+    }catch(e){
+      qpLoading = false;
+      qpErr = /Failed to fetch|NetworkError/i.test(e.message)
+        ? 'مش قادر يوصل لموقع الشحن. اتأكد إن فيه إنترنت وإن الموقع شغّال.'
+        : e.message;
+      qpRerender();
+    }
+  }
+
+  /* ---------- إحصائيات ---------- */
+  function qpStats(list){
+    const st = {}, brand = {};
+    let sales = 0, fees = 0, ret = 0;
+    list.forEach(o => {
+      const k = String(o.Order_Delivery_Status);
+      st[k] = (st[k] || 0) + 1;
+      const b = qpBrand(o.notes); brand[b] = brand[b] || { n:0, sales:0 };
+      brand[b].n++; brand[b].sales += num(o.price);
+      sales += num(o.price); fees += num(o.total_fees);
+      if(isReturned(o)) ret++;
+    });
+    return { st, brand, sales, fees, ret };
+  }
+  const qpFiltered = () => {
+    if(!qpOrders) return [];
+    let l = qpOrders;
+    if(qpStFilter !== 'all') l = l.filter(o => String(o.Order_Delivery_Status) === qpStFilter);
+    const q = qpQuery.trim().toLowerCase();
+    if(q) l = l.filter(o => [o.full_name, o.phone, o.serial, o.notes, o.city, o.customer_phone].some(v => String(v ?? '').toLowerCase().includes(q)));
+    return l;
+  };
+
+  /* ---------- الصفحة ---------- */
+  function viewQP(){
+    let h = `<div class="pagehead"><h1>🚚 QP</h1><p>الأوردرات جاية مباشرة من موقع شركة الشحن QP Express.</p></div>`;
+
+    if(!creds){
+      return h + `<div class="qp-auth"><h3>الدخول على QP Express</h3>
+        <div class="qp-note">البيانات بتتحفظ على الجهاز ده بس، ومش بتتكتب في كود الصفحة. الأفضل تستخدم حساب فرعي لو متاح، وتغيّر الباسورد لو شاركت الجهاز.</div>
+        ${qpErr ? `<div class="mono-note">${esc(qpErr)}</div>` : ''}
+        ${qpInfo ? `<p class="qp-userline">${esc(qpInfo)}</p>` : ''}
+        <div class="qp-field"><label>اليوزرنيم</label><input id="qpU" type="text" autocomplete="off" value="${esc(creds ? creds.u : '')}"></div>
+        <div class="qp-field"><label>الباسورد</label><input id="qpP" type="password" autocomplete="off"></div>
+        <button class="mockbtn" onclick="QP.login()" ${qpLoading ? 'disabled' : ''}>${qpLoading ? 'بيتحقق...' : 'دخول'}</button>
+      </div>`;
+    }
+
+    h += `<div class="qp-toolbar">
+      <span class="qp-userline">داخل باسم <b>${esc(creds.u)}</b></span>
+      <label>من <input type="date" value="${qpFrom}" onchange="QP.setDate('from',this.value)"></label>
+      <label>إلى <input type="date" value="${qpTo}" onchange="QP.setDate('to',this.value)"></label>
+      <button class="mockbtn" onclick="QP.fetch()" ${qpLoading ? 'disabled' : ''}>${qpLoading ? '⏳ بيجيب...' : '⬇️ جيب الأوردرات'}</button>
+      <button class="linkbtn" onclick="QP.logout()">خروج</button>
+      ${qpFetchedAt ? `<span class="qp-userline">آخر تحديث: ${qpFetchedAt.toLocaleTimeString('ar-EG',{hour:'2-digit',minute:'2-digit'})}</span>` : ''}
+    </div>`;
+
+    if(qpLoading) h += `<div class="card"><p class="qp-userline">${esc(qpInfo || 'بيشتغل...')}</p><div class="qp-prog"><i style="width:${qpProg}%"></i></div></div>`;
+    if(qpErr) h += `<div class="mono-note">${esc(qpErr)}</div>`;
+
+    if(!qpOrders){
+      if(!qpLoading) h += `<div class="card"><p class="none">اختار الفترة (الافتراضي من 1 أغسطس) ودوس "جيب الأوردرات".</p></div>`;
+      return h;
+    }
+
+    const all = qpStats(qpOrders);
+    h += `<div class="qp-kpis">
+      <div class="qp-kpi"><div class="n">${fmt(qpOrders.length)}</div><div class="l">إجمالي الأوردرات</div></div>
+      <div class="qp-kpi"><div class="n green">${fmt(all.sales)} ج</div><div class="l">إجمالي القيمة</div></div>
+      <div class="qp-kpi"><div class="n">${fmt(all.fees)} ج</div><div class="l">إجمالي الشحن</div></div>
+      <div class="qp-kpi"><div class="n">${fmt(all.ret)}</div><div class="l">مرتجعات</div></div>
+    </div>`;
+
+    // شرائح الحالات
+    const stKeys = Object.keys(all.st).sort((a,b) => all.st[b] - all.st[a]);
+    h += `<div class="card"><h3>الحالات</h3><div class="qp-stbar">
+      <span class="qp-chip ${qpStFilter==='all'?'on':''}" onclick="QP.filterSt('all')">الكل <b>${fmt(qpOrders.length)}</b></span>
+      ${stKeys.map(k => { const s = qpStatus(k); return `<span class="qp-chip ${qpStFilter===k?'on':''}" onclick="QP.filterSt('${k}')"><span style="width:9px;height:9px;border-radius:50%;background:${s.color};display:inline-block"></span>${esc(s.label)} <b>${fmt(all.st[k])}</b> <span class="qp-userline">(#${esc(k)})</span></span>`; }).join('')}
+    </div><p class="none" style="margin-top:10px">الرقم اللي جنب كل حالة (#) هو رقمها في QP. لو أي رقم طالع بمعنى غلط، قولي الرقم ومعناه الصح وأنا أظبطه.</p></div>`;
+
+    // ملخص البراندات
+    const brs = Object.entries(all.brand).sort((a,b) => b[1].n - a[1].n);
+    h += `<div class="card"><h3>حسب البراند</h3><div class="tablewrap"><table class="pr">
+      <tr><th>البراند</th><th>عدد الأوردرات</th><th>إجمالي القيمة</th></tr>
+      ${brs.map(([b,v]) => `<tr><td class="lbl" style="text-align:right">${esc(b)}</td><td>${fmt(v.n)}</td><td>${fmt(v.sales)}</td></tr>`).join('')}
+    </table></div></div>`;
+
+    // الجدول
+    const list = qpFiltered();
+    const cap = 400;
+    let rows = list.slice(0, cap).map(o => {
+      const s = qpStatus(o.Order_Delivery_Status);
+      const d = new Date(o.order_date);
+      return `<tr>
+        <td>${esc(o.serial)}</td>
+        <td class="lbl" style="text-align:right">${esc(o.full_name || '—')}</td>
+        <td>${esc(o.phone || '—')}</td>
+        <td>${esc(o.city || '—')}</td>
+        <td>${esc(qpBrand(o.notes))}</td>
+        <td>${fmt(num(o.price))}</td>
+        <td>${fmt(num(o.total_fees))}</td>
+        <td><span class="qp-tag" style="background:${s.color}22;color:${s.color}">${esc(s.label)}</span>${isReturned(o) ? ' <span class="qp-tag qp-ret">مرتجع</span>' : ''}</td>
+        <td>${isNaN(d) ? '—' : d.toLocaleDateString('ar-EG',{day:'numeric',month:'short'})}</td>
+      </tr>`;
+    }).join('');
+    h += `<div class="card"><h3>الأوردرات — ${fmt(list.length)}${qpStFilter!=='all' ? ' (' + esc(qpStatus(qpStFilter).label) + ')' : ''}</h3>
+      <input class="qp-search" placeholder="🔍 دوّر باسم العميل، التليفون، السيريال، البراند، أو المدينة..." value="${esc(qpQuery)}" oninput="QP.search(this.value)">
+      <div class="tablewrap" style="max-height:520px;overflow-y:auto"><table class="pr">
+        <tr><th>السيريال</th><th>العميل</th><th>الموبايل</th><th>المدينة</th><th>البراند</th><th>القيمة</th><th>الشحن</th><th>الحالة</th><th>التاريخ</th></tr>
+        ${rows || '<tr><td colspan="9" class="none">مفيش نتايج للبحث ده.</td></tr>'}
+      </table></div>
+      ${list.length > cap ? `<p class="none" style="margin-top:8px">بيعرض أول ${cap} أوردر بس. ضيّق بالبحث أو بالحالة عشان تشوف الباقي. الإحصائيات فوق محسوبة على الكل.</p>` : ''}
+    </div>`;
+
+    h += `<div class="card"><h3>ربط بتقرير الأرباح</h3>
+      <p class="none" style="margin-bottom:10px">تقدر تغذّي تقرير الأرباح بالأوردرات دي بدل ما ترفع ملف الإكسل.</p>
+      <button class="mockbtn" onclick="QP.toProfits()">💰 استخدم الأوردرات دي في تقرير الأرباح</button>
+      <span class="qp-userline" id="qpToProfits" style="margin-inline-start:10px"></span></div>`;
+    return h;
+  }
+
+  /* ---------- تحويل أوردرات QP لصفوف يفهمها تقرير الأرباح ---------- */
+  function qpToProfitRows(){
+    // ترتيب الأعمدة زي ملف الأوردرات: E=سعر(5) F=شحن(6) I=تاريخ إرجاع(9) J=ملاحظة(10) K=تاريخ(11) L=محتويات(12) O=حالة(15)
+    return (qpOrders || []).map(o => {
+      const r = new Array(15).fill('');
+      r[4]  = num(o.price);                 // E
+      r[5]  = num(o.total_fees);            // F
+      r[8]  = o.returned_Client_date || ''; // I
+      r[9]  = o.notes || '';                // J
+      r[10] = new Date(o.order_date);       // K
+      r[11] = o.shipment_contents || '';    // L
+      r[14] = qpStatus(o.Order_Delivery_Status).pr; // O
+      return r;
+    });
+  }
+  function qpFeedProfits(statusSpan){
+    if(!qpOrders || !qpOrders.length){ if(statusSpan) statusSpan.textContent = 'جيب الأوردرات الأول.'; return false; }
+    if(typeof prProcess !== 'function'){ if(statusSpan) statusSpan.textContent = 'تقرير الأرباح مش متاح.'; return false; }
+    prProcess(qpToProfitRows());
+    const res = document.getElementById('prResults'); if(res) res.style.display = 'block';
+    return true;
+  }
+
+  /* ---------- ربط بالراوتر والقائمة ---------- */
+  function qpAfterRender(){
+    const r = route();
+    document.querySelectorAll('#sidebar a.navlink').forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#/' + r));
+    if(r === 'qp') qpRerender();
+    else if(r === 'profits' && qpOrders && qpOrders.length) qpInjectProfitsBtn();
+  }
+  function qpInjectProfitsBtn(){
+    const card = document.getElementById('prFileIn')?.closest('.card');
+    if(!card || document.getElementById('qpProfitsBtn')) return;
+    const box = document.createElement('div');
+    box.className = 'ads-fill'; box.style.marginTop = '12px';
+    box.innerHTML = `<button class="mockbtn" id="qpProfitsBtn" onclick="QP.toProfitsHere(this)">🚚 استخدم أوردرات QP بدل الإكسل (${qpOrders.length})</button><span class="qp-userline" id="qpProfitsMsg"></span>`;
+    card.appendChild(box);
+  }
+
+  // لينك في السايدبار تحت "الأرباح" (أو "البوصلة" لو موجودة)
+  const anchor = document.querySelector('#sidebar a.navlink[href="#/compass"]') || document.querySelector('#sidebar a.navlink[href="#/profits"]');
+  if(anchor && !document.querySelector('#sidebar a.navlink[href="#/qp"]')){
+    const a = document.createElement('a');
+    a.className = 'navlink'; a.href = '#/qp'; a.textContent = '🚚 QP';
+    anchor.after(a);
+  }
+
+  const _render = render;
+  render = function(){ _render.apply(this, arguments); qpAfterRender(); };
+  window.addEventListener('hashchange', qpAfterRender);
+
+  window.QP = {
+    login(){ qpDoLogin(document.getElementById('qpU').value, document.getElementById('qpP').value); },
+    logout: qpLogout,
+    fetch: qpFetch,
+    setDate(k, v){ if(k === 'from') qpFrom = v; else qpTo = v; },
+    filterSt(k){ qpStFilter = k; qpRerender(); },
+    search(v){ qpQuery = v; qpRerender();
+      const inp = document.querySelector('.qp-search'); if(inp){ inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); } },
+    toProfits(){
+      const span = document.getElementById('qpToProfits');
+      if(qpFeedProfits(span)){ span.textContent = '✅ اتبعتت للأرباح...'; go('#/profits'); }
+    },
+    toProfitsHere(btn){
+      const msg = document.getElementById('qpProfitsMsg');
+      if(qpFeedProfits(msg)) msg.textContent = '✅ اتحسبت الأرباح من ' + qpOrders.length + ' أوردر QP.';
+    },
+  };
+
+  qpAfterRender();
+})();
+</script>
 </body>
 </html>
