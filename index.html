@@ -2981,7 +2981,8 @@ async function exportHoldToSheet(btn) {
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify({ headers, rows })
     });
-    const r = await res.json();
+      const r = await res.json();
+    if (r.error) return alert('❌ خطأ من الشيت: ' + r.error);
     alert(`✅ اتضاف ${r.added} أوردر في تاب "${r.sheet}"` + (r.skipped ? `\n(${r.skipped} كانوا موجودين قبل كده)` : ''));
   } catch (e) {
     alert('❌ حصل خطأ في التصدير: ' + e.message);
