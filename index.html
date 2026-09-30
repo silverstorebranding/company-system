@@ -2966,10 +2966,20 @@ async function exportHoldToSheet(btn) {
     return v;
   };
 
-  const headers = [...table.querySelectorAll('thead th')].map(th => th.innerText.trim()).slice(0, -1);
-  const rows = [...table.querySelectorAll('tbody tr')]
-    .filter(tr => tr.offsetParent !== null)
-    .map(tr => [...tr.querySelectorAll('td')].slice(0, headers.length).map(td => clean(td.innerText)));
+  const allRows = [...table.querySelectorAll('tr')];
+  const headRow = allRows.find(tr => tr.innerText.includes('السيريال'));
+  if (!headRow) return alert('مش لاقي صف العناوين');
+
+  const headCells = [...headRow.children].map(c => c.innerText.trim());
+  const keep = headCells.map((h, i) => i).filter(i => headCells[i] && headCells[i] !== 'واتساب');
+  const headers = keep.map(i => headCells[i]);
+
+  const rows = allRows
+    .filter(tr => tr !== headRow && tr.offsetParent !== null && tr.querySelector('td'))
+    .map(tr => {
+      const cells = [...tr.children];
+      return keep.map(i => clean(cells[i] ? cells[i].innerText : ''));
+    });
 
   if (!rows.length) return alert('مفيش أوردرات للتصدير');
 
