@@ -3444,7 +3444,8 @@ table.pr tr.out td{background:#fff5f4}
   const KIND = { in: ['إدخال', 'in'], out: ['إخراج', 'out'], adjust: ['تسوية جرد', 'adj'] };
 
   let S = { tab:'stock', items:null, moves:null, loading:false, busy:false, err:'', msg:'', q:'', mq:'',
-            lines:[{ item:'', qty:'' }], note:'', countNote:'', count:{}, editing:null };
+            lines:[{ item:'', qty:'' }], note:'', countNote:'', count:{}, editing:null,
+            showLow:false, req:{}, target:(() => { try{ return Number(localStorage.getItem('inv_target')) || 300; }catch(e){ return 300; } })() };
 
   const active = () => (S.items || []).filter(i => i.active !== false);
   const itemById = id => (S.items || []).find(i => String(i.id) === String(id));
@@ -3507,9 +3508,10 @@ table.pr tr.out td{background:#fff5f4}
     return `<div class="inv-kpis">
         <div class="inv-kpi"><div class="n">${fmtN(all.length)}</div><div class="l">عدد الأصناف</div></div>
         <div class="inv-kpi"><div class="n">${fmtN(pcs)}</div><div class="l">إجمالي القطع في المخزن</div></div>
-        <div class="inv-kpi ${low ? 'warn' : ''}"><div class="n">${fmtN(low)}</div><div class="l">⚠️ أصناف خلصت أو قربت تخلص</div></div>
+        <div class="inv-kpi ${low ? 'warn' : ''}" data-act="low" style="cursor:pointer;${S.showLow ? 'border-color:var(--brass);border-width:2px' : ''}"><div class="n">${fmtN(low)}</div><div class="l">⚠️ أصناف خلصت أو قربت تخلص · ${S.showLow ? 'دوس تقفل' : 'دوس تشوفهم'}</div></div>
         ${val ? `<div class="inv-kpi"><div class="n">${fmtN(Math.round(val))} ج</div><div class="l">قيمة المخزون (بسعر التكلفة)</div></div>` : ''}
       </div>
+      ${S.showLow ? vLow() : ''}
       <div class="card">
         <div class="inv-bar">
           <input type="search" id="invQ" class="inv-in" placeholder="🔍 دوّر باسم الصنف أو الكود أو التصنيف..." value="${esc(S.q)}">
@@ -3526,6 +3528,91 @@ table.pr tr.out td{background:#fff5f4}
           </tr>`; }).join('') || '<tr><td colspan="7" class="none">مفيش نتايج.</td></tr>'}
         </table></div>
       </div>`;
+  }
+
+  /* ---------- النواقص ---------- */
+  function lowItems(){
+    return active().filter(i => status(i)[1] !== 'ok').sort((a, b) => Number(a.qty || 0) - Number(b.qty || 0));
+  }
+  function lowRows(){
+    return lowItems().map(i => {
+      const def = Math.max(0, S.target - Number(i.qty || 0));
+      const v = S.req[i.id];
+      const n = (v === undefined || v === '') ? def : (toNum(v) || 0);
+      return { i, def, need: Math.max(0, n) };
+    });
+  }
+  function vLow(){
+    const rows = lowRows();
+    if(!rows.length) return `<div class="card" id="invLow"><p class="none">🎉 مفيش أصناف خلصت أو قربت تخلص.</p></div>`;
+    const total = rows.reduce((a, r) => a + r.need, 0);
+    return `<div class="card" id="invLow">
+      <div class="inv-bar" style="justify-content:space-between">
+        <h3 style="margin:0">⚠️ النواقص — ${fmtN(rows.length)} صنف</h3>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <label for="invTarget" style="font-size:13px;color:var(--muted)">نكمّل كل صنف لـ</label>
+          <input id="invTarget" class="inv-count-in" type="number" min="1" step="1" value="${esc(S.target)}">
+          <span style="font-size:13px;color:var(--muted)">قطعة</span>
+          <button class="inv-btn pri" data-act="print-low">🖨️ اطبع فاتورة النواقص</button>
+        </div>
+      </div>
+      <div class="tablewrap"><table class="pr">
+        <tr><th>الصنف</th><th>الكود</th><th>التصنيف</th><th>الموجود</th><th>الحد الأدنى</th><th>الحالة</th><th>ناقص (المطلوب)</th></tr>
+        ${rows.map(({ i, def, need }) => { const [t, c] = status(i); return `<tr class="${c}">
+          <td class="lbl">${esc(i.name)}</td><td>${esc(i.sku || '—')}</td><td>${esc(i.category || '—')}</td>
+          <td class="num">${fmtN(i.qty)} <span style="font-weight:400;color:var(--muted)">${esc(i.unit || '')}</span></td>
+          <td>${i.min_qty ? fmtN(i.min_qty) : '—'}</td><td><span class="inv-tag ${c}">${t}</span></td>
+          <td><input class="inv-count-in" id="invR${i.id}" data-req="${i.id}" type="number" min="0" step="any" value="${esc(S.req[i.id] ?? def)}"></td>
+        </tr>`; }).join('')}
+        <tr class="total"><td class="lbl">الإجمالي المطلوب</td><td colspan="5"></td><td id="invLowTotal">${fmtN(total)}</td></tr>
+      </table></div>
+      <p class="none" style="margin-top:8px">"المطلوب" = ${fmtN(S.target)} ناقص الموجود. تقدر تعدّل أي رقم قبل الطباعة، والأصناف اللي مطلوبها صفر مش هتطلع في الفاتورة.</p>
+    </div>`;
+  }
+
+  function printShortage(){
+    const rows = lowRows().filter(r => r.need > 0);
+    if(!rows.length) return flash('مفيش كميات مطلوبة عشان تتطبع.', true);
+    const now = new Date();
+    const pad = n => String(n).padStart(2, '0');
+    const no = 'NQ-' + now.getFullYear() + pad(now.getMonth() + 1) + pad(now.getDate()) + '-' + pad(now.getHours()) + pad(now.getMinutes());
+    const hasCost = rows.some(r => Number(r.i.cost) > 0);
+    const totalQty = rows.reduce((a, r) => a + r.need, 0);
+    const totalCost = rows.reduce((a, r) => a + r.need * Number(r.i.cost || 0), 0);
+    const n = v => Number(v || 0).toLocaleString('ar-EG', { maximumFractionDigits: 2 });
+    const html = `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>فاتورة نواقص ${no}</title>
+<style>
+  *{box-sizing:border-box} body{font-family:Tahoma,Arial,sans-serif;color:#1c2321;margin:0;padding:28px}
+  .hd{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #8a6d3b;padding-bottom:12px;margin-bottom:18px}
+  h1{margin:0;font-size:26px} .co{color:#666;font-size:13px;margin-top:4px}
+  .meta{font-size:13px;line-height:1.9;text-align:left} .meta b{color:#000}
+  table{width:100%;border-collapse:collapse;font-size:13.5px} th,td{border:1px solid #bbb;padding:8px;text-align:center}
+  th{background:#3d5553;color:#fff} td.r{text-align:right;font-weight:600} tr:nth-child(even) td{background:#f7f5f0}
+  .tot td{background:#ffe699 !important;font-weight:700}
+  .note{font-size:12.5px;color:#666;margin-top:10px}
+  .sig{display:flex;justify-content:space-between;gap:30px;margin-top:60px;font-size:14px}
+  .sig div{flex:1;border-top:1px solid #333;padding-top:6px;text-align:center}
+  @media print{body{padding:10mm} @page{size:A4;margin:8mm}}
+</style></head><body>
+  <div class="hd">
+    <div><h1>🧾 فاتورة نواقص</h1><div class="co">طلب توريد أصناف للمخزن</div></div>
+    <div class="meta">رقم: <b>${no}</b><br>التاريخ: <b>${now.toLocaleDateString('ar-EG', { day:'numeric', month:'long', year:'numeric' })}</b><br>طلب بواسطة: <b>${esc(myName() || '—')}</b></div>
+  </div>
+  <table>
+    <tr><th>م</th><th>الصنف</th><th>الكود</th><th>التصنيف</th><th>الموجود</th><th>الكمية المطلوبة</th>${hasCost ? '<th>تكلفة الوحدة</th><th>الإجمالي</th>' : ''}</tr>
+    ${rows.map((r, k) => `<tr><td>${n(k + 1)}</td><td class="r">${esc(r.i.name)}</td><td>${esc(r.i.sku || '—')}</td><td>${esc(r.i.category || '—')}</td>
+      <td>${n(r.i.qty)}</td><td><b>${n(r.need)}</b> ${esc(r.i.unit || '')}</td>
+      ${hasCost ? `<td>${r.i.cost ? n(r.i.cost) : '—'}</td><td>${r.i.cost ? n(r.need * r.i.cost) : '—'}</td>` : ''}</tr>`).join('')}
+    <tr class="tot"><td colspan="5">الإجمالي — ${n(rows.length)} صنف</td><td>${n(totalQty)}</td>${hasCost ? `<td></td><td>${n(Math.round(totalCost))} ج</td>` : ''}</tr>
+  </table>
+  <div class="note">الكمية المطلوبة محسوبة عشان يوصل كل صنف لـ ${n(S.target)} قطعة.</div>
+  <div class="sig"><div>توقيع مسؤول المخزن</div><div>اعتماد الإدارة</div><div>استلام المورد</div></div>
+</body></html>`;
+    const f = document.createElement('iframe');
+    f.style.cssText = 'position:fixed;left:-9999px;top:0;width:900px;height:1200px;border:0';
+    document.body.appendChild(f);
+    f.contentDocument.open(); f.contentDocument.write(html); f.contentDocument.close();
+    setTimeout(() => { try{ f.contentWindow.focus(); f.contentWindow.print(); }catch(e){} setTimeout(() => f.remove(), 2000); }, 300);
   }
 
   function itemOptions(sel){
@@ -3661,6 +3748,19 @@ table.pr tr.out td{background:#fff5f4}
     root.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => { S.editing = b.dataset.edit; S.draft = null; S.msg = ''; draw(); window.scrollTo({ top:0, behavior:'smooth' }); });
     root.querySelectorAll('[data-toggle]').forEach(b => b.onclick = () => toggleItem(b.dataset.toggle));
     const x = root.querySelector('[data-act=xlsx]'); if(x) x.onclick = exportXlsx;
+    const lk = root.querySelector('[data-act=low]'); if(lk) lk.onclick = () => {
+      S.showLow = !S.showLow; draw();
+      if(S.showLow){ const c = document.getElementById('invLow'); if(c) c.scrollIntoView({ behavior:'smooth', block:'start' }); }
+    };
+    const tg = root.querySelector('#invTarget'); if(tg) tg.onchange = () => {
+      const n = toNum(tg.value); if(!n || n <= 0) return;
+      S.target = n; S.req = {}; try{ localStorage.setItem('inv_target', n); }catch(e){} draw();
+    };
+    root.querySelectorAll('[data-req]').forEach(el => el.oninput = () => {
+      S.req[el.dataset.req] = el.value;
+      const t = document.getElementById('invLowTotal'); if(t) t.textContent = fmtN(lowRows().reduce((a, r) => a + r.need, 0));
+    });
+    const pr = root.querySelector('[data-act=print-low]'); if(pr) pr.onclick = printShortage;
   }
 
   async function saveMove(kind){
