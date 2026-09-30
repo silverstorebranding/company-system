@@ -2884,30 +2884,38 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
     });
   }
 
-  // (2) كارت الهولد: "لسه هيتسلم — محتاج متابعة" — يفلتر على الهولد لما يتداس عليه
-  function holdChip(){
+  // (2) كروت المتابعة: Hold + Un (العميل مستلمش) — كل كارت يفلتر على حالته لما يتداس عليه
+  const FOLLOW_CARDS = [
+    { id:'waHoldCard', re:/Hold|مؤجّل|هولد/i, label:'⏸️ Hold — لسه هيتسلم (محتاج متابعة من خدمة العملاء) · دوس تعرضهم' },
+    { id:'waUnCard',   re:/راجع للفرع/,       label:'↩️ Un — العميل مستلمش (راجع للفرع) · دوس تعرضهم' },
+  ];
+  function findChip(re){
     for(const c of document.querySelectorAll('#main .qp-chip')){
-      if(/Hold|مؤجّل|هولد/i.test(c.textContent)) return c;
+      if(re.test(c.textContent)) return c;
     }
     return null;
   }
-  function injectHoldCard(){
+  function injectFollowCards(){
     const kpis = document.querySelector('#main .qp-kpis');
-    const chip = holdChip();
-    if(!kpis || !chip || document.getElementById('waHoldCard')) return;
-    const n = (chip.querySelector('b') ? toEn(chip.querySelector('b').textContent).trim() : '') || '—';
-    const card = document.createElement('div');
-    card.className = 'qp-kpi'; card.id = 'waHoldCard';
-    card.style.cssText = 'cursor:pointer;border-color:var(--brass);border-width:2px';
-    card.innerHTML = '<div class="n">' + n + '</div><div class="l">⏸️ Hold — لسه هيتسلم (محتاج متابعة من خدمة العملاء) · دوس تعرضهم</div>';
-    card.onclick = () => {
-      chip.click();
-      setTimeout(() => { const t = qpTable(); if(t) t.scrollIntoView({ behavior:'smooth', block:'start' }); }, 80);
-    };
-    kpis.appendChild(card);
+    if(!kpis) return;
+    FOLLOW_CARDS.forEach(fc => {
+      const chip = findChip(fc.re);
+      if(!chip || document.getElementById(fc.id)) return;
+      const n = (chip.querySelector('b') ? toEn(chip.querySelector('b').textContent).trim() : '') || '—';
+      const card = document.createElement('div');
+      card.className = 'qp-kpi'; card.id = fc.id;
+      card.style.cssText = 'cursor:pointer;border-color:var(--brass);border-width:2px' +
+        (chip.classList.contains('on') ? ';background:#fdf8ec' : '');
+      card.innerHTML = '<div class="n">' + n + '</div><div class="l">' + fc.label + '</div>';
+      card.onclick = () => {
+        const c = findChip(fc.re); if(c) c.click();
+        setTimeout(() => { const t = qpTable(); if(t) t.scrollIntoView({ behavior:'smooth', block:'start' }); }, 80);
+      };
+      kpis.appendChild(card);
+    });
   }
 
-  function run(){ try{ injectButtons(); injectHoldCard(); }catch(e){} }
+  function run(){ try{ injectButtons(); injectFollowCards(); }catch(e){} }
 
   // نعيد الحقن بعد أي إعادة رسم للصفحة
   let scheduled = false;
@@ -2921,41 +2929,43 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
   else start();
 })();
 </script>
- <script>
+<script>
+/* ===== 📤 تصدير أوردرات المتابعة (Hold / Un) لجوجل شيت ===== */
 const SHEET_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbzsO2TcA4PQQTV1ON9NIPcvleSQ0XXrMoOLPtBFfuz8yzXzqjabXgiKAKIGkt4Wwq1F/exec';
 
-// ===== إضافة الزرار تلقائياً جنب عنوان الأوردرات المؤجلة =====
-function addHoldExportBtn() {
+// نوع التصدير حسب الحالة المفتوحة في الجدول — التاب في الشيت بتخلص بالكلمة دي
+const EXPORT_TYPES = [
+  { type: 'hold', re: /Hold/ },
+  { type: 'un',   re: /راجع للفرع/ },
+];
+
+function addExportBtn() {
   if (!location.hash.includes('qp')) return;
   if (document.getElementById('holdExportBtn')) return;
-
-  const matches = [...document.querySelectorAll('body *')].filter(el =>
-    el.textContent.includes('الأوردرات') &&
-    el.textContent.includes('Hold') &&
-    el.textContent.length < 80 &&
-    !el.querySelector('table')
-  );
-  const title = matches.find(el => ![...el.children].some(c => matches.includes(c)));
+  const title = [...document.querySelectorAll('#main .card h3')].find(el => el.textContent.trim().startsWith('الأوردرات'));
   if (!title) return;
+  const t = EXPORT_TYPES.find(x => x.re.test(title.textContent));
+  if (!t) return;
 
   const btn = document.createElement('button');
   btn.id = 'holdExportBtn';
+  btn.dataset.type = t.type;
   btn.innerHTML = '📤 تصدير لجوجل شيت';
   btn.style.cssText = 'background:#2e7d32;color:#fff;border:none;padding:6px 14px;border-radius:8px;cursor:pointer;font-family:inherit;font-size:14px;margin-inline-start:12px;vertical-align:middle';
-  btn.onclick = () => exportHoldToSheet(btn);
+  btn.onclick = () => exportToSheet(btn);
   title.appendChild(btn);
 }
 
-let _holdTimer;
+let _exportTimer;
 new MutationObserver(() => {
-  clearTimeout(_holdTimer);
-  _holdTimer = setTimeout(addHoldExportBtn, 200);
+  clearTimeout(_exportTimer);
+  _exportTimer = setTimeout(addExportBtn, 200);
 }).observe(document.body, { childList: true, subtree: true });
-window.addEventListener('hashchange', () => setTimeout(addHoldExportBtn, 300));
-setTimeout(addHoldExportBtn, 500);
+window.addEventListener('hashchange', () => setTimeout(addExportBtn, 300));
+setTimeout(addExportBtn, 500);
 
-// ===== التصدير =====
-async function exportHoldToSheet(btn) {
+async function exportToSheet(btn) {
+  const type = btn.dataset.type || 'hold';
   const table = [...document.querySelectorAll('table')]
     .find(t => t.innerText.includes('السيريال') && t.innerText.includes('واتساب'));
   if (!table) return alert('مش لاقي جدول الأوردرات');
@@ -2979,7 +2989,8 @@ async function exportHoldToSheet(btn) {
     .map(tr => {
       const cells = [...tr.children];
       return keep.map(i => clean(cells[i] ? cells[i].innerText : ''));
-    });
+    })
+    .filter(r => r[0] && /\d/.test(r[0]));
 
   if (!rows.length) return alert('مفيش أوردرات للتصدير');
 
@@ -2989,11 +3000,13 @@ async function exportHoldToSheet(btn) {
     const res = await fetch(SHEET_WEBAPP_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ headers, rows })
+      body: JSON.stringify({ type, headers, rows })
     });
-      const r = await res.json();
+    const r = await res.json();
     if (r.error) return alert('❌ خطأ من الشيت: ' + r.error);
-    alert(`✅ اتضاف ${r.added} أوردر في تاب "${r.sheet}"` + (r.skipped ? `\n(${r.skipped} كانوا موجودين قبل كده)` : ''));
+    alert(`✅ اتضاف ${r.added} أوردر في تاب "${r.sheet}"` +
+      (r.dups ? `\n🟧 منهم ${r.dups} متكرر في تابات قبل كده` : '') +
+      (r.skipped ? `\n(${r.skipped} كانوا موجودين في نفس التاب)` : ''));
   } catch (e) {
     alert('❌ حصل خطأ في التصدير: ' + e.message);
   } finally {
@@ -3001,7 +3014,5 @@ async function exportHoldToSheet(btn) {
   }
 }
 </script>
-</body>
-</body>
 </body>
 </html>
