@@ -263,6 +263,46 @@ input.plainIn{padding:6px 10px;border:1px solid var(--line);border-radius:6px;wi
 }
 :root[data-theme="dark"]{--ink:#eee8db;--paper:#1b1a17;--panel:#242220;--line:#3a362f;--muted:#a39d8c;--slate-l:#233230;}
 </style>
+<style id="auth-style">
+/* ===== 🔐 بوابة الدخول والصلاحيات ===== */
+html:not(.auth-ok) #app{display:none}
+#authGate{position:fixed;inset:0;z-index:9999;background:var(--paper,#f4f1ea);display:flex;align-items:center;justify-content:center;padding:20px;overflow:auto;direction:rtl}
+#authGate .ag-box{background:var(--panel,#fff);border:1px solid var(--line,#ddd);border-radius:14px;padding:26px 24px;width:100%;max-width:390px;box-shadow:0 10px 30px rgba(0,0,0,.08)}
+#authGate .ag-brand{font-size:20px;font-weight:700;margin-bottom:4px;color:var(--ink,#222)}
+#authGate .ag-sub{font-size:13px;color:var(--muted,#777);margin-bottom:18px}
+#authGate .ag-tabs{display:flex;gap:6px;margin-bottom:16px;background:var(--paper,#f4f1ea);padding:4px;border-radius:10px}
+#authGate .ag-tabs button{flex:1;border:none;background:none;padding:8px;border-radius:8px;font-family:inherit;font-size:14px;cursor:pointer;color:var(--muted,#777)}
+#authGate .ag-tabs button.on{background:var(--panel,#fff);color:var(--ink,#222);font-weight:700;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+#authGate label{display:block;font-size:13px;font-weight:600;color:var(--muted,#777);margin:0 0 5px}
+#authGate input{width:100%;padding:10px 12px;border:1.5px solid var(--line,#ddd);border-radius:8px;font-size:15px;font-family:inherit;background:var(--panel,#fff);color:var(--ink,#222);margin-bottom:12px;box-sizing:border-box}
+#authGate input:focus{outline:none;border-color:var(--brass,#8a6d3b)}
+#authGate .ag-btn{width:100%;background:var(--brass,#8a6d3b);color:#fff;border:none;padding:11px;border-radius:9px;font-size:15px;font-weight:700;font-family:inherit;cursor:pointer;margin-top:4px}
+#authGate .ag-btn:disabled{opacity:.6;cursor:default}
+#authGate .ag-btn.ghost{background:none;color:var(--ink,#222);border:1.5px solid var(--line,#ddd)}
+#authGate .ag-msg{font-size:13.5px;padding:9px 11px;border-radius:8px;margin-bottom:12px;background:#fdecea;color:#b3423a}
+#authGate .ag-msg.ok{background:#e8f3ec;color:#276749}
+#authUser{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:13px;margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,.15)}
+#authUser button{background:none;border:1px solid currentColor;color:inherit;border-radius:7px;padding:3px 10px;font-family:inherit;font-size:12px;cursor:pointer;opacity:.85}
+.adm-user{border:1px solid var(--line);border-radius:10px;margin-bottom:10px;background:var(--panel)}
+.adm-user>summary{cursor:pointer;padding:12px 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;list-style:none}
+.adm-user>summary::-webkit-details-marker{display:none}
+.adm-user .adm-name{font-weight:700}
+.adm-user .adm-un{color:var(--muted);font-size:12.5px;direction:ltr}
+.adm-badge{font-size:11.5px;padding:2px 8px;border-radius:20px;background:var(--paper);color:var(--muted)}
+.adm-badge.new{background:#fdecea;color:#b3423a;font-weight:700}
+.adm-badge.admin{background:#e8f3ec;color:#276749;font-weight:700}
+.adm-body{padding:4px 14px 14px;border-top:1px solid var(--line)}
+.adm-grp{margin-top:12px}
+.adm-grp h4{font-size:12.5px;color:var(--muted);margin:0 0 6px}
+.adm-checks{display:flex;flex-wrap:wrap;gap:6px}
+.adm-checks label{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:8px;padding:5px 10px;font-size:13px;cursor:pointer;background:var(--paper)}
+.adm-checks input{margin:0}
+.adm-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:14px}
+.adm-actions button{border:1px solid var(--line);background:var(--paper);color:var(--ink);border-radius:8px;padding:6px 12px;font-family:inherit;font-size:13px;cursor:pointer}
+.adm-actions button.save{background:var(--brass);color:#fff;border-color:var(--brass);font-weight:700}
+.adm-actions .adm-st{font-size:12.5px;color:var(--muted)}
+</style>
+
 </head>
 <body>
 <div id="app">
@@ -3024,5 +3064,324 @@ async function exportToSheet(btn) {
   }
 }
 </script>
+<script>
+/* =====================================================================
+   🔐 بوابة الدخول للموقع كله + صلاحيات الأقسام
+   - نفس حسابات الـ Squad (Supabase)
+   - الحساب الجديد مايشوفش أي قسم لحد ما الأدمن يديله صلاحيات
+   - الأدمن بيتحكم من صفحة ⚙️ الحسابات والصلاحيات (#/admin)
+   ===================================================================== */
+(function(){
+  const SB_URL = "https://vjpunudivnsanxjiwvnu.supabase.co";
+  const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZqcHVudWRpdm5zYW54aml3dm51Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkzMjgwNDMsImV4cCI6MjEwNDkwNDA0M30.7fWvRfpn5hErv9VCuzvFYza7ilEGB86lLomXLoWh4CE";
+  const EMAIL_DOMAIN = "agents-app.com";
+  const sb = (window.supabase && window.supabase.createClient) ? window.supabase.createClient(SB_URL, SB_KEY) : null;
+
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+  /* ---------- الأقسام اللي الأدمن بيتحكم فيها ---------- */
+  function deptSections(){
+    try{
+      return DEPT_ORDER.filter(k => DEPTS[k]).map(k => ({ key:'dept:' + k, label:(DEPTS[k].emoji || '') + ' ' + DEPTS[k].name }));
+    }catch(e){ return []; }
+  }
+  const GROUPS = () => [
+    { title:'الرئيسية', items:[
+      { key:'home',       label:'🏠 الرئيسية',             routes:['home'] },
+      { key:'whatnow',    label:'❓ أعمل إيه دلوقتي؟',     routes:['whatnow'] },
+      { key:'onboarding', label:'🚀 ابدأ هنا (التهيئة)',  routes:['onboarding'] } ]},
+    { title:'الأقسام', items: deptSections() },
+    { title:'الشركة', items:[
+      { key:'org',      label:'🏢 الهيكل التنظيمي',     routes:['org','employee'] },
+      { key:'staff',    label:'👥 الموظفين الحاليون',   routes:['staff','employee'] },
+      { key:'flow',     label:'🔄 تدفق العمل بالشركة', routes:['flow'] },
+      { key:'policies', label:'📜 السياسات',            routes:['policies'] } ]},
+    { title:'العمل', items:[
+      { key:'tasks',    label:'✅ مهامي',        routes:['tasks'] },
+      { key:'handover', label:'🔁 مركز التسليم', routes:['handover'] },
+      { key:'squad',    label:'🏆 Squad',        routes:['squad'] } ]},
+    { title:'المالية', items:[
+      { key:'profits', label:'💰 الأرباح',    routes:['profits'] },
+      { key:'ads',     label:'📢 الإعلانات',  routes:['ads'] },
+      { key:'compass', label:'🧭 البوصلة',    routes:['compass'] },
+      { key:'qp',      label:'🚚 QP',         routes:['qp'] } ]},
+    { title:'المعرفة', items:[
+      { key:'sop',      label:'📚 مكتبة الإجراءات', routes:['sop','sopdetail'] },
+      { key:'training', label:'🎓 مركز التدريب',    routes:['training'] },
+      { key:'search',   label:'🔍 بحث المعرفة',     routes:['search'] } ]},
+  ];
+  const allSections = () => GROUPS().flatMap(g => g.items);
+
+  let me = null, ready = false;
+
+  const parse = h => { const [r, p] = String(h || '').replace(/^#?\/?/, '').split('/'); return { r: r || 'home', p: p || '' }; };
+  const allowedSet = () => new Set((me && me.allowed_sections) || []);
+
+  function canSee(hash){
+    if(!me) return false;
+    const { r, p } = parse(hash);
+    if(me.is_admin) return true;
+    if(r === 'admin') return false;
+    const al = allowedSet();
+    if(r === 'dept') return al.has('dept:' + p);
+    const secs = allSections().filter(s => (s.routes || []).includes(r));
+    if(!secs.length) return al.has('home'); // أي صفحة مش معروفة بتفتح الرئيسية
+    return secs.some(s => al.has(s.key));
+  }
+  function firstAllowed(){
+    if(me.is_admin) return '#/home';
+    const al = allowedSet();
+    const s = allSections().find(x => al.has(x.key));
+    if(!s) return null;
+    return s.key.startsWith('dept:') ? '#/dept/' + s.key.slice(5) : '#/' + s.routes[0];
+  }
+
+  /* ---------- شاشة الدخول ---------- */
+  function gate(inner){
+    let g = document.getElementById('authGate');
+    if(!g){ g = document.createElement('div'); g.id = 'authGate'; document.body.appendChild(g); }
+    g.innerHTML = `<div class="ag-box"><div class="ag-brand">🏢 نظام تشغيل الشركة</div>${inner}</div>`;
+    return g;
+  }
+  function hideGate(){ const g = document.getElementById('authGate'); if(g) g.remove(); }
+
+  function showLogin(mode, msg, ok){
+    mode = mode || 'login';
+    const g = gate(`
+      <div class="ag-sub">سجّل دخول عشان تكمل.</div>
+      <div class="ag-tabs">
+        <button type="button" data-mode="login" class="${mode==='login'?'on':''}">دخول</button>
+        <button type="button" data-mode="signup" class="${mode==='signup'?'on':''}">حساب جديد</button>
+      </div>
+      ${msg ? `<div class="ag-msg ${ok?'ok':''}">${esc(msg)}</div>` : ''}
+      <form id="agForm" autocomplete="on">
+        ${mode==='signup' ? `<label for="agName">الاسم كامل</label><input id="agName" required>` : ''}
+        <label for="agUser">اليوزرنيم</label>
+        <input id="agUser" required autocomplete="username" dir="ltr" placeholder="${mode==='signup'?'حروف إنجليزي من غير مسافات':''}">
+        <label for="agPass">الباسورد</label>
+        <input id="agPass" type="password" required autocomplete="${mode==='signup'?'new-password':'current-password'}" dir="ltr" ${mode==='signup'?'minlength="6" placeholder="6 حروف أو أرقام على الأقل"':''}>
+        <button class="ag-btn" type="submit">${mode==='signup' ? 'اعمل الحساب' : 'دخول'}</button>
+      </form>`);
+    g.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => showLogin(b.dataset.mode));
+    g.querySelector('#agForm').onsubmit = async e => {
+      e.preventDefault();
+      const btn = g.querySelector('.ag-btn'); btn.disabled = true; btn.textContent = '⏳ لحظة...';
+      const u = g.querySelector('#agUser').value.trim().toLowerCase();
+      const p = g.querySelector('#agPass').value;
+      if(mode === 'signup') await doSignup(u, g.querySelector('#agName').value.trim(), p);
+      else await doLogin(u, p);
+    };
+  }
+
+  async function doLogin(u, p){
+    const { error } = await sb.auth.signInWithPassword({ email: u + '@' + EMAIL_DOMAIN, password: p });
+    if(error) return showLogin('login', 'اليوزرنيم أو الباسورد غلط. جرب تاني.');
+    location.reload(); // عشان كل الأقسام (زي الـ Squad) تقرا الجلسة الجديدة
+  }
+
+  async function doSignup(u, name, p){
+    if(!/^[a-z0-9._-]{3,}$/.test(u)) return showLogin('signup', 'اليوزرنيم لازم يكون 3 حروف على الأقل، إنجليزي أو أرقام، من غير مسافات.');
+    if(!name) return showLogin('signup', 'اكتب اسمك.');
+    const { data, error } = await sb.auth.signUp({
+      email: u + '@' + EMAIL_DOMAIN, password: p,
+      options: { data: { username: u, full_name: name } }
+    });
+    if(error){
+      const m = String(error.message || '').toLowerCase();
+      return showLogin('signup', m.includes('already') ? 'اليوزرنيم ده متسجل قبل كده.' : 'حصلت مشكلة: ' + error.message);
+    }
+    if(data.user) await sb.from('profiles').upsert({ id: data.user.id, username: u, full_name: name });
+    if(data.session) location.reload();
+    else showLogin('login', 'اتعمل الحساب ✅ سجّل دخول دلوقتي.', true);
+  }
+
+  async function logout(){ await sb.auth.signOut(); location.reload(); }
+  window.AuthGate = { logout };
+
+  function showWaiting(){
+    const g = gate(`
+      <div class="ag-sub">أهلاً ${esc(me.full_name || me.username)} 👋</div>
+      <div class="ag-msg ok">حسابك اتعمل، ومستني الأدمن يفتحلك الأقسام اللي هتشتغل عليها. لما يوافق دوس "تحديث".</div>
+      <button class="ag-btn" type="button" id="agReload">🔄 تحديث</button>
+      <button class="ag-btn ghost" type="button" id="agOut" style="margin-top:8px">خروج</button>`);
+    g.querySelector('#agReload').onclick = () => location.reload();
+    g.querySelector('#agOut').onclick = logout;
+  }
+
+  /* ---------- القائمة الجانبية ---------- */
+  function filterSidebar(){
+    const bar = document.getElementById('sidebar');
+    if(!bar || !me) return;
+    bar.querySelectorAll('a.navlink').forEach(a => {
+      const href = a.getAttribute('href') || '';
+      if(href.startsWith('#/')) a.style.display = canSee(href) ? '' : 'none';
+    });
+    bar.querySelectorAll('.grp').forEach(g => {
+      const any = [...g.querySelectorAll('a.navlink')].some(a => a.style.display !== 'none');
+      g.style.display = any ? '' : 'none';
+    });
+    if(!document.getElementById('authUser')){
+      const box = document.getElementById('userbox');
+      const d = document.createElement('div');
+      d.id = 'authUser';
+      d.innerHTML = `<span>👤 <b>${esc(me.full_name || me.username)}</b></span><button type="button" onclick="AuthGate.logout()">خروج</button>`;
+      if(box) box.appendChild(d); else bar.prepend(d);
+    }
+    if(me.is_admin && !document.getElementById('authAdminGrp')){
+      const g = document.createElement('div');
+      g.className = 'grp'; g.id = 'authAdminGrp';
+      g.innerHTML = `<div class="grp-title">الإدارة</div><a class="navlink" href="#/admin">⚙️ الحسابات والصلاحيات</a>`;
+      bar.appendChild(g);
+    }
+    const r = parse(location.hash).r;
+    const adm = bar.querySelector('a.navlink[href="#/admin"]');
+    if(adm) adm.classList.toggle('active', r === 'admin');
+  }
+
+  function afterRender(){
+    filterSidebar();
+    if(parse(location.hash).r === 'admin' && me && me.is_admin) renderAdmin();
+    // لو حد عمل خروج من جوه الـ Squad
+    sb.auth.getSession().then(({ data }) => { if(!data.session) location.reload(); });
+  }
+
+  /* ---------- صفحة الأدمن ---------- */
+  let admUsers = [];
+  async function renderAdmin(){
+    const main = document.getElementById('main');
+    if(!main) return;
+    main.innerHTML = `<div class="pagehead"><h1>⚙️ الحسابات والصلاحيات</h1>
+      <p>اختار لكل حساب الأقسام اللي يشوفها ودوس حفظ. الحسابات الجديدة بتظهر فوق، ومش بتشوف أي حاجة لحد ما تديها صلاحيات.</p></div>
+      <div id="admList"><div class="card"><p class="none">بيحمّل الحسابات...</p></div></div>`;
+    const { data, error } = await sb.from('profiles').select('id, username, full_name, is_admin, allowed_sections');
+    const list = document.getElementById('admList');
+    if(!list) return;
+    if(error){ list.innerHTML = `<div class="mono-note">مقدرناش نجيب الحسابات: ${esc(error.message)}</div>`; return; }
+    admUsers = (data || []).map(u => ({ ...u, allowed_sections: u.allowed_sections || [] }));
+    const isNew = u => !u.is_admin && !u.allowed_sections.length;
+    admUsers.sort((a, b) => (isNew(b) - isNew(a)) || String(a.full_name || a.username).localeCompare(String(b.full_name || b.username), 'ar'));
+    list.innerHTML = admUsers.map(userCard).join('') || '<div class="card"><p class="none">مفيش حسابات.</p></div>';
+    wireAdmin(list);
+  }
+
+  function userCard(u){
+    const self = me && u.id === me.id;
+    const al = new Set(u.allowed_sections);
+    const fresh = !u.is_admin && !al.size;
+    return `<details class="adm-user" data-id="${esc(u.id)}" ${fresh ? 'open' : ''}>
+      <summary>
+        <span class="adm-name">${esc(u.full_name || u.username || '—')}</span>
+        <span class="adm-un">@${esc(u.username || '')}</span>
+        ${u.is_admin ? '<span class="adm-badge admin">أدمن — بيشوف كله</span>'
+          : fresh ? '<span class="adm-badge new">جديد — مستني صلاحيات</span>'
+          : `<span class="adm-badge">${al.size} قسم</span>`}
+      </summary>
+      <div class="adm-body">
+        ${GROUPS().filter(g => g.items.length).map(g => `<div class="adm-grp"><h4>${esc(g.title)}</h4><div class="adm-checks">
+          ${g.items.map(s => `<label><input type="checkbox" data-sec="${esc(s.key)}" ${al.has(s.key) ? 'checked' : ''}> ${esc(s.label)}</label>`).join('')}
+        </div></div>`).join('')}
+        <div class="adm-grp"><div class="adm-checks">
+          <label><input type="checkbox" data-admin ${u.is_admin ? 'checked' : ''} ${self ? 'disabled' : ''}> 👑 أدمن (يشوف كل حاجة ويتحكم في الحسابات)</label>
+        </div></div>
+        <div class="adm-actions">
+          <button type="button" data-act="all">تحديد الكل</button>
+          <button type="button" data-act="none">شيل الكل</button>
+          <button type="button" class="save" data-act="save">💾 حفظ</button>
+          <span class="adm-st"></span>
+        </div>
+      </div>
+    </details>`;
+  }
+
+  function wireAdmin(list){
+    list.querySelectorAll('.adm-user').forEach(card => {
+      const id = card.dataset.id;
+      const st = card.querySelector('.adm-st');
+      card.querySelectorAll('[data-act]').forEach(b => b.onclick = async () => {
+        const boxes = card.querySelectorAll('input[data-sec]');
+        if(b.dataset.act === 'all'){ boxes.forEach(x => x.checked = true); return; }
+        if(b.dataset.act === 'none'){ boxes.forEach(x => x.checked = false); return; }
+        const allowed = [...boxes].filter(x => x.checked).map(x => x.dataset.sec);
+        const adminBox = card.querySelector('input[data-admin]');
+        const patch = { allowed_sections: allowed };
+        if(!adminBox.disabled) patch.is_admin = adminBox.checked;
+        b.disabled = true; st.textContent = '⏳ بيحفظ...';
+        const { data, error } = await sb.from('profiles').update(patch).eq('id', id).select('id');
+        b.disabled = false;
+        if(error) st.textContent = '❌ ' + error.message;
+        else if(!data || !data.length) st.textContent = '❌ الحفظ اترفض — اتأكد إنك شغّلت كود الـ SQL وإن حسابك أدمن.';
+        else {
+          st.textContent = '✅ اتحفظ — هيسري لما صاحب الحساب يعمل تحديث للصفحة';
+          const u = admUsers.find(x => x.id === id);
+          if(u){ u.allowed_sections = allowed; if('is_admin' in patch) u.is_admin = patch.is_admin; }
+          const badge = card.querySelector('.adm-badge');
+          if(badge){
+            const isAdm = 'is_admin' in patch ? patch.is_admin : (u && u.is_admin);
+            badge.className = 'adm-badge' + (isAdm ? ' admin' : !allowed.length ? ' new' : '');
+            badge.textContent = isAdm ? 'أدمن — بيشوف كله' : !allowed.length ? 'جديد — مستني صلاحيات' : allowed.length + ' قسم';
+          }
+        }
+      });
+    });
+  }
+
+  /* ---------- الربط بالراوتر ---------- */
+  // capture: بيشتغل قبل الراوتر الأصلي، فالصفحة الممنوعة ماتترسمش أصلاً
+  window.addEventListener('hashchange', e => {
+    if(!ready){ e.stopImmediatePropagation(); return; }
+    if(!canSee(location.hash)){
+      e.stopImmediatePropagation();
+      const t = firstAllowed();
+      if(t) location.replace(t); else showWaiting();
+    }
+  }, true);
+  window.addEventListener('hashchange', () => { if(ready) afterRender(); });
+
+  const _render = render;
+  render = function(){
+    if(ready && !canSee(location.hash)){ const t = firstAllowed(); if(t){ location.replace(t); return; } }
+    _render.apply(this, arguments);
+    if(ready) afterRender();
+  };
+
+  /* ---------- التشغيل ---------- */
+  async function boot(){
+    if(!sb){ gate('<div class="ag-msg">مكتبة الدخول ماتحمّلتش. اتأكد إن فيه إنترنت وحدّث الصفحة.</div>'); return; }
+    gate('<div class="ag-sub">⏳ بيتحقق من الدخول...</div>');
+    const { data: { session } } = await sb.auth.getSession();
+    if(!session) return showLogin('login');
+
+    let { data: prof, error } = await sb.from('profiles').select('*').eq('id', session.user.id).maybeSingle();
+    if(error){ gate(`<div class="ag-msg">مقدرناش نقرا بيانات حسابك: ${esc(error.message)}</div><button class="ag-btn ghost" onclick="AuthGate.logout()">خروج</button>`); return; }
+    if(!prof){
+      const username = session.user.email.split('@')[0];
+      await sb.from('profiles').upsert({ id: session.user.id, username });
+      ({ data: prof } = await sb.from('profiles').select('*').eq('id', session.user.id).maybeSingle());
+      prof = prof || { id: session.user.id, username, allowed_sections: [], is_admin: false };
+    }
+    if(!('allowed_sections' in prof)){
+      gate('<div class="ag-msg">نظام الصلاحيات لسه مش متفعّل في قاعدة البيانات — لازم كود الـ SQL يتشغّل في Supabase الأول.</div><button class="ag-btn ghost" onclick="AuthGate.logout()">خروج</button>');
+      return;
+    }
+    me = { ...prof, allowed_sections: prof.allowed_sections || [] };
+    ready = true;
+
+    if(!canSee(location.hash)){
+      const t = firstAllowed();
+      if(!t) return showWaiting();
+      location.replace(t);
+    }
+    document.documentElement.classList.add('auth-ok');
+    hideGate();
+    afterRender();
+
+    let tm;
+    const bar = document.getElementById('sidebar');
+    if(bar) new MutationObserver(() => { clearTimeout(tm); tm = setTimeout(filterSidebar, 50); }).observe(bar, { childList:true, subtree:true });
+  }
+  boot();
+})();
+</script>
+
 </body>
 </html>
