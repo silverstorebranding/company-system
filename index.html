@@ -2921,5 +2921,44 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
   else start();
 })();
 </script>
+  <script>
+const SHEET_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbzsO2TcA4PQQTV1ON9NIPcvleSQ0XXrMoOLPtBFfuz8yzXzqjabXgiKAKIGkt4Wwq1F/exec';
+
+async function exportHoldToSheet(btn) {
+  const table = [...document.querySelectorAll('table')]
+    .find(t => t.innerText.includes('السيريال') && t.innerText.includes('واتساب'));
+  if (!table) return alert('مش لاقي جدول الأوردرات');
+
+  const clean = s => {
+    let v = s.trim().replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d));
+    if (/^[\d.,٬]+$/.test(v)) v = v.replace(/[,٬]/g, '');
+    return v;
+  };
+
+  const headers = [...table.querySelectorAll('thead th')].map(th => th.innerText.trim()).slice(0, -1);
+  const rows = [...table.querySelectorAll('tbody tr')]
+    .filter(tr => tr.offsetParent !== null)
+    .map(tr => [...tr.querySelectorAll('td')].slice(0, headers.length).map(td => clean(td.innerText)));
+
+  if (!rows.length) return alert('مفيش أوردرات للتصدير');
+
+  const old = btn.innerHTML;
+  btn.disabled = true; btn.innerHTML = '⏳ جاري التصدير...';
+  try {
+    const res = await fetch(SHEET_WEBAPP_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ headers, rows })
+    });
+    const r = await res.json();
+    alert(`✅ اتضاف ${r.added} أوردر في تاب "${r.sheet}"` + (r.skipped ? `\n(${r.skipped} كانوا موجودين قبل كده)` : ''));
+  } catch (e) {
+    alert('❌ حصل خطأ في التصدير: ' + e.message);
+  } finally {
+    btn.disabled = false; btn.innerHTML = old;
+  }
+}
+</script>
+</body>
 </body>
 </html>
