@@ -3195,7 +3195,7 @@ async function exportToSheet(btn) {
   }
 
   async function logout(){ await sb.auth.signOut(); location.reload(); }
-  window.AuthGate = { logout };
+  window.AuthGate = { logout, sb, me: () => me };
 
   function showWaiting(){
     const g = gate(`
@@ -3379,6 +3379,391 @@ async function exportToSheet(btn) {
     if(bar) new MutationObserver(() => { clearTimeout(tm); tm = setTimeout(filterSidebar, 50); }).observe(bar, { childList:true, subtree:true });
   }
   boot();
+})();
+</script>
+
+<style id="inv-style">
+/* ===== 🏬 المخزن ===== */
+.inv-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px}
+.inv-tab{border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:8px 14px;border-radius:9px;cursor:pointer;font-family:inherit;font-size:14px}
+.inv-tab.on{background:var(--brass);border-color:var(--brass);color:#fff;font-weight:700}
+.inv-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:16px}
+.inv-kpi{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+.inv-kpi .n{font-size:24px;font-weight:700}
+.inv-kpi .l{font-size:12.5px;color:var(--muted);margin-top:2px}
+.inv-kpi.warn .n{color:#b3423a}
+.inv-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.inv-bar input[type=search]{flex:1;min-width:200px}
+.inv-in{padding:9px 11px;border:1.5px solid var(--line);border-radius:8px;font-size:14.5px;font-family:inherit;background:var(--panel);color:var(--ink);box-sizing:border-box;width:100%}
+.inv-in:focus{outline:none;border-color:var(--brass)}
+.inv-btn{border:1px solid var(--line);background:var(--paper);color:var(--ink);border-radius:8px;padding:7px 13px;font-family:inherit;font-size:13.5px;cursor:pointer;white-space:nowrap}
+.inv-btn.pri{background:var(--brass);border-color:var(--brass);color:#fff;font-weight:700}
+.inv-btn.green{background:#276749;border-color:#276749;color:#fff}
+.inv-btn.red{background:#b3423a;border-color:#b3423a;color:#fff}
+.inv-btn.sm{padding:3px 9px;font-size:12px}
+.inv-btn:disabled{opacity:.55;cursor:default}
+.inv-tag{display:inline-block;padding:2px 9px;border-radius:20px;font-size:12px;font-weight:600}
+.inv-tag.ok{background:#e8f3ec;color:#276749}
+.inv-tag.low{background:#fdf3e1;color:#9a6b14}
+.inv-tag.out{background:#fdecea;color:#b3423a}
+.inv-tag.in{background:#e8f3ec;color:#276749}
+.inv-tag.adj{background:#e9eef7;color:#3b5b92}
+.inv-msg{padding:10px 13px;border-radius:9px;margin-bottom:14px;font-size:14px;background:#e8f3ec;color:#276749}
+.inv-msg.err{background:#fdecea;color:#b3423a}
+.inv-line{display:grid;grid-template-columns:1fr 130px auto;gap:8px;align-items:center;margin-bottom:8px}
+.inv-line .avail{grid-column:1/-1;font-size:12.5px;color:var(--muted);margin-top:-4px}
+.inv-form label{display:block;font-size:13px;font-weight:600;color:var(--muted);margin:10px 0 5px}
+.inv-grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:0 12px}
+table.pr td.num{font-weight:700}
+table.pr tr.low td{background:#fffaf0}
+table.pr tr.out td{background:#fff5f4}
+.inv-count-in{width:100px;padding:5px 8px;border:1.5px solid var(--line);border-radius:7px;font-family:inherit;text-align:center;background:var(--panel);color:var(--ink)}
+.inv-diff.plus{color:#276749;font-weight:700}
+.inv-diff.minus{color:#b3423a;font-weight:700}
+@media (max-width:600px){.inv-line{grid-template-columns:1fr 90px auto}}
+</style>
+<script>
+/* =====================================================================
+   🏬 المخزن — أصناف / إدخال / إخراج / جرد / سجل حركات (Supabase)
+   بيحل مكان صفحة القسم #/dept/warehouse
+   ===================================================================== */
+(function(){
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const fmtN = n => Number(n || 0).toLocaleString('ar-EG', { maximumFractionDigits: 2 });
+  const toNum = v => { const x = parseFloat(String(v ?? '').replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/,/g, '')); return isNaN(x) ? null : x; };
+  const where = () => { const [r, p] = (location.hash.replace('#/', '') || 'home').split('/'); return { r, p }; };
+  const isInv = () => { const w = where(); return w.r === 'dept' && w.p === 'warehouse'; };
+  const sb = () => window.AuthGate && window.AuthGate.sb;
+  const me = () => (window.AuthGate && window.AuthGate.me && window.AuthGate.me()) || {};
+  const myName = () => me().full_name || me().username || '';
+
+  const TABS = [
+    ['stock', '📦 المخزون'], ['in', '➕ إدخال'], ['out', '➖ إخراج'],
+    ['count', '📋 جرد'], ['moves', '🕘 الحركات'], ['items', '🏷️ الأصناف']
+  ];
+  const KIND = { in: ['إدخال', 'in'], out: ['إخراج', 'out'], adjust: ['تسوية جرد', 'adj'] };
+
+  let S = { tab:'stock', items:null, moves:null, loading:false, busy:false, err:'', msg:'', q:'', mq:'',
+            lines:[{ item:'', qty:'' }], note:'', countNote:'', count:{}, editing:null };
+
+  const active = () => (S.items || []).filter(i => i.active !== false);
+  const itemById = id => (S.items || []).find(i => String(i.id) === String(id));
+  function status(i){
+    const q = Number(i.qty || 0), m = Number(i.min_qty || 0);
+    if(q <= 0) return ['خلص', 'out'];
+    if(m > 0 && q <= m) return ['قليل', 'low'];
+    return ['متاح', 'ok'];
+  }
+
+  /* ---------- البيانات ---------- */
+  async function load(){
+    if(!sb()) return;
+    S.loading = true; S.err = ''; draw();
+    const [a, b] = await Promise.all([
+      sb().from('inv_stock').select('*').order('name'),
+      sb().from('inv_moves').select('*, inv_items(name, unit)').order('created_at', { ascending:false }).limit(500)
+    ]);
+    S.loading = false;
+    const e = a.error || b.error;
+    if(e){
+      S.err = /does not exist|relation|schema cache|Could not find/i.test(e.message)
+        ? 'جداول المخزن لسه مش موجودة في Supabase — لازم كود الـ SQL يتشغّل الأول.'
+        : 'مقدرناش نجيب بيانات المخزن: ' + e.message;
+    } else { S.items = a.data || []; S.moves = b.data || []; }
+    draw();
+  }
+
+  function flash(msg, isErr){ S.msg = msg; S.msgErr = !!isErr; draw(); window.scrollTo({ top:0, behavior:'smooth' }); }
+
+  /* ---------- الرسم ---------- */
+  function draw(){
+    if(!isInv()) return;
+    const main = document.getElementById('main'); if(!main) return;
+    const f = document.activeElement, fid = f && f.id, pos = f && f.selectionStart;
+    main.innerHTML = view();
+    wire(main);
+    if(fid){ const n = document.getElementById(fid); if(n){ n.focus(); try{ n.setSelectionRange(pos, pos); }catch(e){} } }
+  }
+
+  function view(){
+    let h = `<div class="pagehead"><h1>🏬 المخزن</h1><p>إدخال وإخراج الأصناف، والمخزون الحالي، والجرد — كله متسجل باسم اللي عمله.</p></div>
+      <div class="inv-tabs">${TABS.map(([k, l]) => `<button class="inv-tab ${S.tab === k ? 'on' : ''}" data-tab="${k}">${l}</button>`).join('')}
+        <button class="inv-btn" data-act="reload" style="margin-inline-start:auto">🔄 تحديث</button></div>`;
+    if(S.msg) h += `<div class="inv-msg ${S.msgErr ? 'err' : ''}">${esc(S.msg)}</div>`;
+    if(S.err) return h + `<div class="inv-msg err">${esc(S.err)}</div>`;
+    if(S.items === null) return h + `<div class="card"><p class="none">⏳ بيحمّل المخزن...</p></div>`;
+    if(!S.items.length && S.tab !== 'items')
+      return h + `<div class="card"><p class="none" style="margin-bottom:10px">لسه مفيش أصناف. ابدأ بإضافة الأصناف ورصيدها الحالي.</p><button class="inv-btn pri" data-tab="items">🏷️ ضيف أول صنف</button></div>`;
+    return h + ({ stock:vStock, in:() => vMove('in'), out:() => vMove('out'), count:vCount, moves:vMoves, items:vItems }[S.tab])();
+  }
+
+  function vStock(){
+    const q = S.q.trim().toLowerCase();
+    const list = active().filter(i => !q || [i.name, i.sku, i.category].some(v => String(v || '').toLowerCase().includes(q)));
+    const all = active();
+    const low = all.filter(i => status(i)[1] !== 'ok').length;
+    const pcs = all.reduce((s, i) => s + Number(i.qty || 0), 0);
+    const val = all.reduce((s, i) => s + Number(i.qty || 0) * Number(i.cost || 0), 0);
+    return `<div class="inv-kpis">
+        <div class="inv-kpi"><div class="n">${fmtN(all.length)}</div><div class="l">عدد الأصناف</div></div>
+        <div class="inv-kpi"><div class="n">${fmtN(pcs)}</div><div class="l">إجمالي القطع في المخزن</div></div>
+        <div class="inv-kpi ${low ? 'warn' : ''}"><div class="n">${fmtN(low)}</div><div class="l">⚠️ أصناف خلصت أو قربت تخلص</div></div>
+        ${val ? `<div class="inv-kpi"><div class="n">${fmtN(Math.round(val))} ج</div><div class="l">قيمة المخزون (بسعر التكلفة)</div></div>` : ''}
+      </div>
+      <div class="card">
+        <div class="inv-bar">
+          <input type="search" id="invQ" class="inv-in" placeholder="🔍 دوّر باسم الصنف أو الكود أو التصنيف..." value="${esc(S.q)}">
+          ${window.XLSX ? '<button class="inv-btn" data-act="xlsx">⬇️ Excel</button>' : ''}
+        </div>
+        <div class="tablewrap" style="max-height:560px;overflow-y:auto"><table class="pr">
+          <tr><th>الصنف</th><th>الكود</th><th>التصنيف</th><th>الكمية</th><th>الحد الأدنى</th><th>الحالة</th><th></th></tr>
+          ${list.map(i => { const [t, c] = status(i); return `<tr class="${c === 'ok' ? '' : c}">
+            <td class="lbl">${esc(i.name)}</td><td>${esc(i.sku || '—')}</td><td>${esc(i.category || '—')}</td>
+            <td class="num">${fmtN(i.qty)} <span style="font-weight:400;color:var(--muted)">${esc(i.unit || '')}</span></td>
+            <td>${i.min_qty ? fmtN(i.min_qty) : '—'}</td>
+            <td><span class="inv-tag ${c}">${t}</span></td>
+            <td><button class="inv-btn sm green" data-quick="in" data-id="${i.id}">+ إدخال</button> <button class="inv-btn sm red" data-quick="out" data-id="${i.id}" ${Number(i.qty) > 0 ? '' : 'disabled'}>− إخراج</button></td>
+          </tr>`; }).join('') || '<tr><td colspan="7" class="none">مفيش نتايج.</td></tr>'}
+        </table></div>
+      </div>`;
+  }
+
+  function itemOptions(sel){
+    return `<option value="">— اختار الصنف —</option>` + active().map(i =>
+      `<option value="${i.id}" ${String(sel) === String(i.id) ? 'selected' : ''}>${esc(i.name)}${i.sku ? ' — ' + esc(i.sku) : ''} (${fmtN(i.qty)})</option>`).join('');
+  }
+
+  function vMove(kind){
+    const isOut = kind === 'out';
+    return `<div class="card inv-form">
+      <h3 style="margin-top:0">${isOut ? '➖ إخراج أصناف من المخزن' : '➕ إدخال أصناف للمخزن'}</h3>
+      <p class="none" style="margin:0 0 12px">${isOut ? 'مثلاً: تجهيز أوردرات، تالف، تحويل.' : 'مثلاً: بضاعة جاية من مورد، مرتجعات رجعت المخزن.'} تقدر تضيف كذا صنف في نفس المرة.</p>
+      ${S.lines.map((l, idx) => { const it = itemById(l.item); return `<div class="inv-line">
+        <select class="inv-in" id="invItem${idx}" data-line="${idx}" data-f="item">${itemOptions(l.item)}</select>
+        <input class="inv-in" id="invQty${idx}" data-line="${idx}" data-f="qty" type="number" min="0" step="any" inputmode="decimal" placeholder="الكمية" value="${esc(l.qty)}">
+        <button class="inv-btn sm" data-del-line="${idx}" ${S.lines.length > 1 ? '' : 'disabled'} title="شيل السطر">✕</button>
+        ${it ? `<div class="avail">المتاح دلوقتي: <b>${fmtN(it.qty)}</b> ${esc(it.unit || '')}</div>` : ''}
+      </div>`; }).join('')}
+      <button class="inv-btn" data-act="addline">+ صنف تاني</button>
+      <label for="invNote">${isOut ? 'السبب / ملاحظة' : 'المصدر / ملاحظة'}</label>
+      <input class="inv-in" id="invNote" placeholder="${isOut ? 'مثلاً: أوردرات يوم 1 أكتوبر' : 'مثلاً: فاتورة المورد رقم 123'}" value="${esc(S.note)}">
+      <div style="margin-top:14px"><button class="inv-btn ${isOut ? 'red' : 'green'}" data-act="save-move" data-kind="${kind}" ${S.busy ? 'disabled' : ''}>${S.busy ? '⏳ بيسجّل...' : isOut ? 'سجّل الإخراج' : 'سجّل الإدخال'}</button></div>
+    </div>`;
+  }
+
+  function vCount(){
+    return `<div class="card">
+      <h3 style="margin-top:0">📋 الجرد</h3>
+      <p class="none" style="margin:0 0 12px">اكتب العدد الفعلي اللي على الرف لكل صنف عدّيته (سيب الباقي فاضي). لما تحفظ، السيستم بيعدّل الرصيد للعدد الفعلي ويسجّل الفرق كـ"تسوية جرد".</p>
+      <div class="tablewrap" style="max-height:560px;overflow-y:auto"><table class="pr">
+        <tr><th>الصنف</th><th>الكود</th><th>في السيستم</th><th>الفعلي</th><th>الفرق</th></tr>
+        ${active().map(i => { const v = S.count[i.id]; const n = toNum(v); const d = (v !== undefined && v !== '' && n !== null) ? n - Number(i.qty || 0) : null;
+          return `<tr><td class="lbl">${esc(i.name)}</td><td>${esc(i.sku || '—')}</td><td class="num">${fmtN(i.qty)}</td>
+          <td><input class="inv-count-in" id="invC${i.id}" data-count="${i.id}" type="number" step="any" min="0" value="${esc(v ?? '')}" placeholder="${esc(i.qty)}"></td>
+          <td class="inv-diff ${d > 0 ? 'plus' : d < 0 ? 'minus' : ''}" data-diff="${i.id}">${d === null ? '' : d === 0 ? '✓' : (d > 0 ? '+' : '') + fmtN(d)}</td></tr>`; }).join('')}
+      </table></div>
+      <label for="invCNote" style="display:block;font-size:13px;font-weight:600;color:var(--muted);margin:12px 0 5px">ملاحظة (اختياري)</label>
+      <input class="inv-in" id="invCNote" placeholder="مثلاً: جرد آخر الشهر" value="${esc(S.countNote)}">
+      <div style="margin-top:14px"><button class="inv-btn pri" data-act="save-count" ${S.busy ? 'disabled' : ''}>${S.busy ? '⏳ بيحفظ...' : '💾 احفظ الجرد'}</button></div>
+    </div>`;
+  }
+
+  function vMoves(){
+    const q = S.mq.trim().toLowerCase();
+    const admin = !!me().is_admin;
+    const list = (S.moves || []).filter(m => !q || [m.inv_items && m.inv_items.name, m.note, m.created_by_name].some(v => String(v || '').toLowerCase().includes(q)));
+    return `<div class="card">
+      <div class="inv-bar"><input type="search" id="invMQ" class="inv-in" placeholder="🔍 دوّر باسم الصنف أو الملاحظة أو اللي سجّل..." value="${esc(S.mq)}"></div>
+      <div class="tablewrap" style="max-height:600px;overflow-y:auto"><table class="pr">
+        <tr><th>التاريخ</th><th>الصنف</th><th>النوع</th><th>الكمية</th><th>ملاحظة</th><th>بواسطة</th>${admin ? '<th></th>' : ''}</tr>
+        ${list.map(m => { const k = KIND[m.kind] || [m.kind, '']; const d = new Date(m.created_at);
+          return `<tr><td>${d.toLocaleDateString('ar-EG', { day:'numeric', month:'short' })} — ${d.toLocaleTimeString('ar-EG', { hour:'2-digit', minute:'2-digit' })}</td>
+          <td class="lbl">${esc(m.inv_items ? m.inv_items.name : '—')}</td>
+          <td><span class="inv-tag ${m.kind === 'out' ? 'out' : k[1]}">${k[0]}</span></td>
+          <td class="num" style="color:${m.qty < 0 ? '#b3423a' : '#276749'}">${m.qty > 0 ? '+' : ''}${fmtN(m.qty)}</td>
+          <td style="white-space:normal;text-align:right">${esc(m.note || '')}</td><td>${esc(m.created_by_name || '—')}</td>
+          ${admin ? `<td><button class="inv-btn sm" data-del-move="${m.id}" title="امسح الحركة">🗑️</button></td>` : ''}</tr>`; }).join('') || `<tr><td colspan="${admin ? 7 : 6}" class="none">مفيش حركات.</td></tr>`}
+      </table></div>
+      <p class="none" style="margin-top:8px">بيعرض آخر ٥٠٠ حركة.</p>
+    </div>`;
+  }
+
+  function vItems(){
+    const e = S.editing ? itemById(S.editing) : null;
+    const src = S.draft || e;
+    const v = k => esc(src ? (src[k] ?? '') : '');
+    return `<div class="card inv-form">
+      <h3 style="margin-top:0">${e ? '✏️ تعديل صنف' : '🏷️ صنف جديد'}</h3>
+      <div class="inv-grid2">
+        <div><label for="itName">اسم الصنف *</label><input class="inv-in" id="itName" value="${v('name')}"></div>
+        <div><label for="itSku">الكود (SKU)</label><input class="inv-in" id="itSku" value="${v('sku')}" dir="ltr"></div>
+        <div><label for="itCat">التصنيف / البراند</label><input class="inv-in" id="itCat" value="${v('category')}" list="invCats"></div>
+        <div><label for="itUnit">الوحدة</label><input class="inv-in" id="itUnit" value="${src ? v('unit') : 'قطعة'}"></div>
+        <div><label for="itMin">الحد الأدنى (ينبّه لما يوصله)</label><input class="inv-in" id="itMin" type="number" min="0" step="any" value="${v('min_qty')}"></div>
+        <div><label for="itCost">سعر التكلفة للوحدة (اختياري)</label><input class="inv-in" id="itCost" type="number" min="0" step="any" value="${v('cost')}"></div>
+        ${e ? '' : `<div><label for="itOpen">الرصيد الحالي (الموجود دلوقتي)</label><input class="inv-in" id="itOpen" type="number" min="0" step="any" placeholder="0" value="${v('open')}"></div>`}
+      </div>
+      <datalist id="invCats">${[...new Set((S.items || []).map(i => i.category).filter(Boolean))].map(c => `<option value="${esc(c)}">`).join('')}</datalist>
+      <div style="margin-top:14px;display:flex;gap:8px">
+        <button class="inv-btn pri" data-act="save-item" ${S.busy ? 'disabled' : ''}>${S.busy ? '⏳...' : e ? '💾 احفظ التعديل' : '➕ ضيف الصنف'}</button>
+        ${e ? '<button class="inv-btn" data-act="cancel-edit">إلغاء</button>' : ''}
+      </div>
+    </div>
+    <div class="card"><h3 style="margin-top:0">كل الأصناف</h3>
+      <div class="tablewrap"><table class="pr">
+        <tr><th>الصنف</th><th>الكود</th><th>التصنيف</th><th>الوحدة</th><th>الحد الأدنى</th><th>التكلفة</th><th>الكمية</th><th></th></tr>
+        ${(S.items || []).map(i => `<tr style="${i.active === false ? 'opacity:.5' : ''}">
+          <td class="lbl">${esc(i.name)}${i.active === false ? ' <span class="inv-tag">متوقف</span>' : ''}</td><td>${esc(i.sku || '—')}</td><td>${esc(i.category || '—')}</td>
+          <td>${esc(i.unit || '—')}</td><td>${i.min_qty ? fmtN(i.min_qty) : '—'}</td><td>${i.cost ? fmtN(i.cost) : '—'}</td><td class="num">${fmtN(i.qty)}</td>
+          <td><button class="inv-btn sm" data-edit="${i.id}">✏️ تعديل</button> <button class="inv-btn sm" data-toggle="${i.id}">${i.active === false ? '↩️ رجّعه' : '⏸️ وقّفه'}</button></td>
+        </tr>`).join('') || '<tr><td colspan="8" class="none">لسه مفيش أصناف.</td></tr>'}
+      </table></div>
+      <p class="none" style="margin-top:8px">الصنف "المتوقف" بيختفي من المخزون والإدخال والإخراج، بس حركاته القديمة بتفضل محفوظة.</p>
+    </div>`;
+  }
+
+  /* ---------- الأحداث ---------- */
+  function wire(root){
+    root.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { S.tab = b.dataset.tab; S.msg = ''; S.editing = null; S.draft = null; draw(); });
+    root.querySelectorAll('[data-act=reload]').forEach(b => b.onclick = () => { S.msg = ''; load(); });
+    root.querySelectorAll('[data-quick]').forEach(b => b.onclick = () => {
+      S.tab = b.dataset.quick; S.lines = [{ item:b.dataset.id, qty:'' }]; S.note = ''; S.msg = ''; draw();
+      const q = document.getElementById('invQty0'); if(q) q.focus();
+    });
+    const q = root.querySelector('#invQ'); if(q) q.oninput = () => { S.q = q.value; draw(); };
+    const mq = root.querySelector('#invMQ'); if(mq) mq.oninput = () => { S.mq = mq.value; draw(); };
+
+    root.querySelectorAll('[data-line]').forEach(el => {
+      const upd = () => { S.lines[+el.dataset.line][el.dataset.f] = el.value; };
+      el.oninput = upd;
+      if(el.tagName === 'SELECT') el.onchange = () => { upd(); draw(); };
+    });
+    root.querySelectorAll('[data-del-line]').forEach(b => b.onclick = () => { S.lines.splice(+b.dataset.delLine, 1); draw(); });
+    const add = root.querySelector('[data-act=addline]'); if(add) add.onclick = () => { S.lines.push({ item:'', qty:'' }); draw(); };
+    const note = root.querySelector('#invNote'); if(note) note.oninput = () => { S.note = note.value; };
+    const sm = root.querySelector('[data-act=save-move]'); if(sm) sm.onclick = () => saveMove(sm.dataset.kind);
+
+    root.querySelectorAll('[data-count]').forEach(el => el.oninput = () => {
+      S.count[el.dataset.count] = el.value;
+      const it = itemById(el.dataset.count), cell = root.querySelector(`[data-diff="${el.dataset.count}"]`);
+      const n = toNum(el.value);
+      if(cell){
+        if(el.value === '' || n === null){ cell.textContent = ''; cell.className = 'inv-diff'; }
+        else { const d = n - Number(it.qty || 0); cell.textContent = d === 0 ? '✓' : (d > 0 ? '+' : '') + fmtN(d); cell.className = 'inv-diff ' + (d > 0 ? 'plus' : d < 0 ? 'minus' : ''); }
+      }
+    });
+    const cn = root.querySelector('#invCNote'); if(cn) cn.oninput = () => { S.countNote = cn.value; };
+    const sc = root.querySelector('[data-act=save-count]'); if(sc) sc.onclick = saveCount;
+
+    root.querySelectorAll('[data-del-move]').forEach(b => b.onclick = () => delMove(b.dataset.delMove));
+    const si = root.querySelector('[data-act=save-item]'); if(si) si.onclick = saveItem;
+    const ce = root.querySelector('[data-act=cancel-edit]'); if(ce) ce.onclick = () => { S.editing = null; S.draft = null; draw(); };
+    root.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => { S.editing = b.dataset.edit; S.draft = null; S.msg = ''; draw(); window.scrollTo({ top:0, behavior:'smooth' }); });
+    root.querySelectorAll('[data-toggle]').forEach(b => b.onclick = () => toggleItem(b.dataset.toggle));
+    const x = root.querySelector('[data-act=xlsx]'); if(x) x.onclick = exportXlsx;
+  }
+
+  async function saveMove(kind){
+    const lines = S.lines.map(l => ({ item: l.item, qty: toNum(l.qty) })).filter(l => l.item || l.qty);
+    if(!lines.length) return flash('اختار صنف واكتب الكمية.', true);
+    for(const l of lines){
+      if(!l.item) return flash('فيه سطر من غير صنف.', true);
+      if(!l.qty || l.qty <= 0) return flash('الكمية لازم تكون أكبر من صفر في كل سطر.', true);
+    }
+    if(kind === 'out'){
+      const need = {};
+      lines.forEach(l => need[l.item] = (need[l.item] || 0) + l.qty);
+      for(const id in need){
+        const it = itemById(id);
+        if(need[id] > Number(it.qty || 0)) return flash(`مينفعش تخرّج ${fmtN(need[id])} من "${it.name}" — المتاح ${fmtN(it.qty)} بس.`, true);
+      }
+    }
+    S.busy = true; draw();
+    const rows = lines.map(l => ({ item_id: Number(l.item), kind, qty: kind === 'out' ? -l.qty : l.qty, note: S.note.trim() || null, created_by_name: myName() }));
+    const { error } = await sb().from('inv_moves').insert(rows);
+    S.busy = false;
+    if(error) return flash('❌ مقدرناش نسجّل: ' + error.message, true);
+    const n = rows.length;
+    S.lines = [{ item:'', qty:'' }]; S.note = '';
+    S.msg = `✅ اتسجّل ${kind === 'out' ? 'إخراج' : 'إدخال'} ${n} صنف.`; S.msgErr = false;
+    await load();
+  }
+
+  async function saveCount(){
+    const rows = [];
+    for(const id in S.count){
+      const v = S.count[id]; if(v === '' || v === undefined) continue;
+      const n = toNum(v), it = itemById(id);
+      if(n === null || n < 0 || !it) continue;
+      const d = n - Number(it.qty || 0);
+      if(d !== 0) rows.push({ item_id: Number(id), kind:'adjust', qty: d, note: ('جرد' + (S.countNote.trim() ? ' — ' + S.countNote.trim() : '')), created_by_name: myName() });
+    }
+    if(!rows.length) return flash('مفيش فروق تتسجّل — كل الأعداد اللي كتبتها زي السيستم (أو ماكتبتش حاجة).', !Object.keys(S.count).length);
+    if(!confirm(`هيتعدّل رصيد ${rows.length} صنف حسب العدد الفعلي. تكمل؟`)) return;
+    S.busy = true; draw();
+    const { error } = await sb().from('inv_moves').insert(rows);
+    S.busy = false;
+    if(error) return flash('❌ مقدرناش نحفظ الجرد: ' + error.message, true);
+    S.count = {}; S.countNote = '';
+    S.msg = `✅ اتحفظ الجرد — اتعدّل ${rows.length} صنف.`; S.msgErr = false;
+    await load();
+  }
+
+  async function saveItem(){
+    const g = id => (document.getElementById(id) || {}).value;
+    const name = (g('itName') || '').trim();
+    if(!name) return flash('اكتب اسم الصنف.', true);
+    const data = {
+      name, sku: (g('itSku') || '').trim() || null, category: (g('itCat') || '').trim() || null,
+      unit: (g('itUnit') || '').trim() || 'قطعة', min_qty: toNum(g('itMin')) || 0, cost: toNum(g('itCost'))
+    };
+    const open = toNum(g('itOpen'));
+    S.draft = { ...data, open: g('itOpen') || '' }; // عشان الفورم مايتمسحش لو حصل خطأ
+    S.busy = true; draw();
+    if(S.editing){
+      const { error } = await sb().from('inv_items').update(data).eq('id', S.editing);
+      S.busy = false;
+      if(error) return flash('❌ ' + (/duplicate|unique/i.test(error.message) ? 'الكود ده مستخدم لصنف تاني.' : error.message), true);
+      S.editing = null; S.draft = null; S.msg = '✅ اتعدّل الصنف.'; S.msgErr = false;
+    } else {
+      const { data: row, error } = await sb().from('inv_items').insert(data).select().single();
+      if(error){ S.busy = false; return flash('❌ ' + (/duplicate|unique/i.test(error.message) ? 'الكود ده مستخدم لصنف تاني.' : error.message), true); }
+      if(open && open > 0){
+        await sb().from('inv_moves').insert({ item_id: row.id, kind:'in', qty: open, note:'رصيد أول المدة', created_by_name: myName() });
+      }
+      S.busy = false; S.draft = null; S.msg = `✅ اتضاف "${name}"${open > 0 ? ' برصيد ' + fmtN(open) : ''}.`; S.msgErr = false;
+    }
+    await load();
+  }
+
+  async function toggleItem(id){
+    const it = itemById(id); if(!it) return;
+    const { error } = await sb().from('inv_items').update({ active: it.active === false }).eq('id', id);
+    if(error) return flash('❌ ' + error.message, true);
+    S.msg = ''; await load();
+  }
+
+  async function delMove(id){
+    if(!confirm('تمسح الحركة دي؟ الرصيد هيتحسب من غيرها.')) return;
+    const { data, error } = await sb().from('inv_moves').delete().eq('id', id).select('id');
+    if(error || !data || !data.length) return flash('❌ مقدرناش نمسح الحركة' + (error ? ': ' + error.message : ' (المسح للأدمن بس).'), true);
+    S.msg = '✅ اتمسحت الحركة.'; S.msgErr = false; await load();
+  }
+
+  function exportXlsx(){
+    const rows = active().map(i => ({ 'الصنف': i.name, 'الكود': i.sku || '', 'التصنيف': i.category || '', 'الكمية': Number(i.qty || 0),
+      'الوحدة': i.unit || '', 'الحد الأدنى': Number(i.min_qty || 0), 'التكلفة': i.cost ?? '', 'الحالة': status(i)[0] }));
+    const ws = XLSX.utils.json_to_sheet(rows); const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'المخزون');
+    XLSX.writeFile(wb, 'المخزون ' + new Date().toISOString().slice(0, 10) + '.xlsx');
+  }
+
+  /* ---------- الربط بالراوتر ---------- */
+  function mount(){ draw(); if(S.items === null && !S.loading && !S.err) load(); }
+  const _render = render;
+  render = function(){ _render.apply(this, arguments); if(isInv()) mount(); };
+  window.addEventListener('hashchange', () => { if(isInv()) mount(); });
+  if(isInv()) setTimeout(mount, 0);
 })();
 </script>
 
