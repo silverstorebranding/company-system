@@ -3439,13 +3439,19 @@ table.pr tr.out td{background:#fff5f4}
 
   const TABS = [
     ['stock', '📦 المخزون'], ['in', '➕ إدخال'], ['out', '➖ إخراج'],
-    ['count', '📋 جرد'], ['moves', '🕘 الحركات'], ['items', '🏷️ الأصناف']
+    ['count', '📋 جرد'], ['moves', '🕘 الحركات'], ['buy', '📊 المشتريات'], ['items', '🏷️ الأصناف']
   ];
   const KIND = { in: ['إدخال', 'in'], out: ['إخراج', 'out'], adjust: ['تسوية جرد', 'adj'] };
+  const SRC = { purchase:'🛒 مشتريات من مورد', return:'↩️ مرتجع من عميل', other:'📥 إدخال تاني' };
+  const moveLabel = m => m.kind !== 'in' ? (KIND[m.kind] || [m.kind])[0]
+    : m.source === 'purchase' ? 'مشتريات' : m.source === 'return' ? 'مرتجع' : m.source === 'opening' ? 'رصيد أول المدة' : 'إدخال';
+  const isPurchase = m => m.kind === 'in' && (m.source === 'purchase' || (!m.source && m.note !== 'رصيد أول المدة'));
+  const ymd = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 
   let S = { tab:'stock', items:null, moves:null, loading:false, busy:false, err:'', msg:'', q:'', mq:'',
             lines:[{ item:'', qty:'' }], note:'', countNote:'', count:{}, editing:null,
-            showLow:false, req:{}, target:(() => { try{ return Number(localStorage.getItem('inv_target')) || 300; }catch(e){ return 300; } })() };
+            showLow:false, req:{}, src:'purchase',
+            buy:null, buyLoading:false, buyErr:'', buyFrom: ymd(new Date(new Date().getFullYear(), new Date().getMonth(), 1)), buyTo: ymd(new Date()), target:(() => { try{ return Number(localStorage.getItem('inv_target')) || 300; }catch(e){ return 300; } })() };
 
   const active = () => (S.items || []).filter(i => i.active !== false);
   const itemById = id => (S.items || []).find(i => String(i.id) === String(id));
@@ -3495,7 +3501,7 @@ table.pr tr.out td{background:#fff5f4}
     if(S.items === null) return h + `<div class="card"><p class="none">⏳ بيحمّل المخزن...</p></div>`;
     if(!S.items.length && S.tab !== 'items')
       return h + `<div class="card"><p class="none" style="margin-bottom:10px">لسه مفيش أصناف. ابدأ بإضافة الأصناف ورصيدها الحالي.</p><button class="inv-btn pri" data-tab="items">🏷️ ضيف أول صنف</button></div>`;
-    return h + ({ stock:vStock, in:() => vMove('in'), out:() => vMove('out'), count:vCount, moves:vMoves, items:vItems }[S.tab])();
+    return h + ({ stock:vStock, in:() => vMove('in'), out:() => vMove('out'), count:vCount, moves:vMoves, buy:vBuy, items:vItems }[S.tab])();
   }
 
   function vStock(){
@@ -3615,25 +3621,162 @@ table.pr tr.out td{background:#fff5f4}
     setTimeout(() => { try{ f.contentWindow.focus(); f.contentWindow.print(); }catch(e){} setTimeout(() => f.remove(), 2000); }, 300);
   }
 
+  /* ---------- 📊 تقرير المشتريات ---------- */
+  function setRange(k){
+    const t = new Date(), y = t.getFullYear(), mo = t.getMonth();
+    const map = {
+      month: [new Date(y, mo, 1), t],
+      last:  [new Date(y, mo - 1, 1), new Date(y, mo, 0)],
+      d30:   [new Date(t.getTime() - 29 * 864e5), t],
+      year:  [new Date(y, 0, 1), t],
+    };
+    const [a, b] = map[k] || map.month;
+    S.buyFrom = ymd(a); S.buyTo = ymd(b);
+  }
+  async function loadBuy(){
+    if(!S.buyFrom || !S.buyTo) return;
+    if(S.buyFrom > S.buyTo){ S.buyErr = 'تاريخ "من" لازم يكون قبل "إلى".'; draw(); return; }
+    S.buyLoading = true; S.buyErr = ''; draw();
+    const { data, error } = await sb().from('inv_moves')
+      .select('*, inv_items(name, sku, category, unit, cost)')
+      .eq('kind', 'in')
+      .gte('created_at', new Date(S.buyFrom + 'T00:00:00').toISOString())
+      .lte('created_at', new Date(S.buyTo + 'T23:59:59').toISOString())
+      .order('created_at', { ascending:false }).limit(10000);
+    S.buyLoading = false;
+    if(error){ S.buyErr = 'مقدرناش نجيب المشتريات: ' + error.message; S.buy = []; }
+    else S.buy = (data || []).filter(isPurchase);
+    draw();
+  }
+  function buyCalc(){
+    const g = {}; let qty = 0, cost = 0, missing = 0, est = 0;
+    (S.buy || []).forEach(m => {
+      const it = m.inv_items || {};
+      const uc = m.unit_cost != null ? Number(m.unit_cost) : (it.cost != null ? Number(it.cost) : null);
+      if(m.unit_cost == null && uc != null) est++;
+      const r = g[m.item_id] = g[m.item_id] || { name: it.name || '—', sku: it.sku, cat: it.category, unit: it.unit, qty: 0, costed: 0, cost: 0, times: 0, missing: 0 };
+      r.qty += Number(m.qty); r.times++; qty += Number(m.qty);
+      if(uc == null){ r.missing++; missing++; }
+      else { r.cost += uc * Number(m.qty); r.costed += Number(m.qty); cost += uc * Number(m.qty); }
+    });
+    const rows = Object.values(g).sort((a, b) => b.cost - a.cost || b.qty - a.qty);
+    return { rows, qty, cost, missing, est, count: (S.buy || []).length };
+  }
+  function vBuy(){
+    let h = `<div class="card">
+      <div class="inv-bar">
+        <label style="font-size:13px;color:var(--muted)">من</label><input type="date" id="buyFrom" class="inv-in" style="width:auto" value="${esc(S.buyFrom)}">
+        <label style="font-size:13px;color:var(--muted)">إلى</label><input type="date" id="buyTo" class="inv-in" style="width:auto" value="${esc(S.buyTo)}">
+        <button class="inv-btn pri" data-act="buy-go">اعرض</button>
+        <span style="flex:1"></span>
+        <button class="inv-btn sm" data-range="month">الشهر ده</button>
+        <button class="inv-btn sm" data-range="last">الشهر اللي فات</button>
+        <button class="inv-btn sm" data-range="d30">آخر ٣٠ يوم</button>
+        <button class="inv-btn sm" data-range="year">السنة دي</button>
+      </div></div>`;
+    if(S.buyErr) h += `<div class="inv-msg err">${esc(S.buyErr)}</div>`;
+    if(S.buyLoading || S.buy === null) return h + `<div class="card"><p class="none">⏳ بيحسب المشتريات...</p></div>`;
+    const c = buyCalc();
+    if(!c.count) return h + `<div class="card"><p class="none">مفيش مشتريات متسجّلة في المدة دي. (المشتريات = الإدخال اللي نوعه "🛒 مشتريات من مورد")</p></div>`;
+    h += `<div class="inv-kpis">
+      <div class="inv-kpi"><div class="n">${fmtN(Math.round(c.cost))} ج</div><div class="l">💰 تكلفة مشتريات المدة كلها</div></div>
+      <div class="inv-kpi"><div class="n">${fmtN(c.qty)}</div><div class="l">إجمالي القطع اللي دخلت</div></div>
+      <div class="inv-kpi"><div class="n">${fmtN(c.rows.length)}</div><div class="l">عدد الأصناف</div></div>
+      <div class="inv-kpi"><div class="n">${fmtN(c.count)}</div><div class="l">عدد مرات الشراء</div></div>
+    </div>`;
+    if(c.missing) h += `<div class="inv-msg err">⚠️ فيه ${fmtN(c.missing)} عملية شراء من غير سعر (ولا الصنف ليه سعر تكلفة) — مش محسوبة في التكلفة. ضيف سعر التكلفة للأصناف دي من تاب الأصناف.</div>`;
+    h += `<div class="card">
+      <div class="inv-bar" style="justify-content:space-between"><h3 style="margin:0">حسب الصنف</h3>
+        <div style="display:flex;gap:8px">${window.XLSX ? '<button class="inv-btn" data-act="buy-xlsx">⬇️ Excel</button>' : ''}<button class="inv-btn" data-act="buy-print">🖨️ اطبع التقرير</button></div></div>
+      <div class="tablewrap"><table class="pr">
+        <tr><th>الصنف</th><th>الكود</th><th>التصنيف</th><th>الكمية اللي دخلت</th><th>مرات الشراء</th><th>متوسط سعر القطعة</th><th>إجمالي التكلفة</th><th>% من المشتريات</th></tr>
+        ${c.rows.map(r => `<tr><td class="lbl">${esc(r.name)}</td><td>${esc(r.sku || '—')}</td><td>${esc(r.cat || '—')}</td>
+          <td class="num">${fmtN(r.qty)} <span style="font-weight:400;color:var(--muted)">${esc(r.unit || '')}</span></td><td>${fmtN(r.times)}</td>
+          <td>${r.costed ? fmtN(Math.round(r.cost / r.costed * 100) / 100) : '—'}</td>
+          <td class="num">${r.costed ? fmtN(Math.round(r.cost)) + ' ج' : '—'}${r.missing ? ' <span class="inv-tag out">ناقص سعر</span>' : ''}</td>
+          <td>${c.cost ? (r.cost / c.cost * 100).toFixed(1) + '%' : '—'}</td></tr>`).join('')}
+        <tr class="total"><td class="lbl">الإجمالي</td><td colspan="2"></td><td>${fmtN(c.qty)}</td><td>${fmtN(c.count)}</td><td></td><td>${fmtN(Math.round(c.cost))} ج</td><td>100%</td></tr>
+      </table></div>
+      ${c.est ? `<p class="none" style="margin-top:8px">${fmtN(c.est)} عملية شراء اتسجّلت من غير سعر، فاتحسبت بسعر التكلفة الحالي للصنف.</p>` : ''}
+    </div>
+    <details class="card"><summary style="cursor:pointer;font-weight:700">🧾 تفاصيل كل عملية شراء (${fmtN(c.count)})</summary>
+      <div class="tablewrap" style="margin-top:12px;max-height:500px;overflow-y:auto"><table class="pr">
+        <tr><th>التاريخ</th><th>الصنف</th><th>الكمية</th><th>سعر القطعة</th><th>الإجمالي</th><th>ملاحظة</th><th>بواسطة</th></tr>
+        ${S.buy.map(m => { const it = m.inv_items || {}; const uc = m.unit_cost != null ? Number(m.unit_cost) : (it.cost != null ? Number(it.cost) : null); const d = new Date(m.created_at);
+          return `<tr><td>${d.toLocaleDateString('ar-EG', { day:'numeric', month:'short' })}</td><td class="lbl">${esc(it.name || '—')}</td><td>${fmtN(m.qty)}</td>
+          <td>${uc == null ? '—' : fmtN(uc)}${m.unit_cost == null && uc != null ? '*' : ''}</td><td>${uc == null ? '—' : fmtN(Math.round(uc * m.qty))}</td>
+          <td style="white-space:normal;text-align:right">${esc(m.note || '')}</td><td>${esc(m.created_by_name || '—')}</td></tr>`; }).join('')}
+      </table></div>
+    </details>`;
+    return h;
+  }
+  function exportBuy(){
+    const c = buyCalc();
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(c.rows.map(r => ({ 'الصنف': r.name, 'الكود': r.sku || '', 'التصنيف': r.cat || '',
+      'الكمية': r.qty, 'مرات الشراء': r.times, 'متوسط سعر القطعة': r.costed ? Math.round(r.cost / r.costed * 100) / 100 : '', 'إجمالي التكلفة': Math.round(r.cost) }))), 'حسب الصنف');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet((S.buy || []).map(m => { const it = m.inv_items || {}; const uc = m.unit_cost != null ? Number(m.unit_cost) : (it.cost != null ? Number(it.cost) : '');
+      return { 'التاريخ': new Date(m.created_at).toLocaleDateString('en-CA'), 'الصنف': it.name || '', 'الكمية': Number(m.qty), 'سعر القطعة': uc, 'الإجمالي': uc === '' ? '' : uc * m.qty, 'ملاحظة': m.note || '', 'بواسطة': m.created_by_name || '' }; })), 'كل العمليات');
+    XLSX.writeFile(wb, `مشتريات ${S.buyFrom} إلى ${S.buyTo}.xlsx`);
+  }
+  function printDoc(title, body){
+    const html = `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${esc(title)}</title>
+<style>*{box-sizing:border-box} body{font-family:Tahoma,Arial,sans-serif;color:#1c2321;margin:0;padding:28px}
+.hd{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #8a6d3b;padding-bottom:12px;margin-bottom:18px}
+h1{margin:0;font-size:24px} .sub{color:#666;font-size:13px;margin-top:4px} .meta{font-size:13px;line-height:1.9;text-align:left}
+.k{display:flex;gap:10px;margin-bottom:16px} .k div{flex:1;border:1px solid #ccc;border-radius:8px;padding:10px;text-align:center} .k b{display:block;font-size:20px}
+table{width:100%;border-collapse:collapse;font-size:13px} th,td{border:1px solid #bbb;padding:7px;text-align:center}
+th{background:#3d5553;color:#fff} td.r{text-align:right;font-weight:600} tr:nth-child(even) td{background:#f7f5f0} .tot td{background:#ffe699 !important;font-weight:700}
+@media print{body{padding:10mm} @page{size:A4;margin:8mm}}</style></head><body>${body}</body></html>`;
+    const f = document.createElement('iframe');
+    f.style.cssText = 'position:fixed;left:-9999px;top:0;width:900px;height:1200px;border:0';
+    document.body.appendChild(f);
+    f.contentDocument.open(); f.contentDocument.write(html); f.contentDocument.close();
+    setTimeout(() => { try{ f.contentWindow.focus(); f.contentWindow.print(); }catch(e){} setTimeout(() => f.remove(), 2000); }, 300);
+  }
+  function printBuy(){
+    const c = buyCalc();
+    const n = v => Number(v || 0).toLocaleString('ar-EG', { maximumFractionDigits: 2 });
+    const dd = s => new Date(s + 'T12:00:00').toLocaleDateString('ar-EG', { day:'numeric', month:'long', year:'numeric' });
+    printDoc('تقرير المشتريات', `
+      <div class="hd"><div><h1>📊 تقرير مشتريات المخزن</h1><div class="sub">من ${dd(S.buyFrom)} إلى ${dd(S.buyTo)}</div></div>
+        <div class="meta">اتطبع: <b>${new Date().toLocaleDateString('ar-EG')}</b><br>بواسطة: <b>${esc(myName() || '—')}</b></div></div>
+      <div class="k"><div>تكلفة المشتريات<b>${n(Math.round(c.cost))} ج</b></div><div>إجمالي القطع<b>${n(c.qty)}</b></div><div>عدد الأصناف<b>${n(c.rows.length)}</b></div><div>مرات الشراء<b>${n(c.count)}</b></div></div>
+      <table><tr><th>م</th><th>الصنف</th><th>الكود</th><th>التصنيف</th><th>الكمية</th><th>متوسط سعر القطعة</th><th>إجمالي التكلفة</th></tr>
+      ${c.rows.map((r, k) => `<tr><td>${n(k + 1)}</td><td class="r">${esc(r.name)}</td><td>${esc(r.sku || '—')}</td><td>${esc(r.cat || '—')}</td><td>${n(r.qty)}</td>
+        <td>${r.costed ? n(Math.round(r.cost / r.costed * 100) / 100) : '—'}</td><td>${r.costed ? n(Math.round(r.cost)) + ' ج' : '—'}</td></tr>`).join('')}
+      <tr class="tot"><td colspan="4">الإجمالي</td><td>${n(c.qty)}</td><td></td><td>${n(Math.round(c.cost))} ج</td></tr></table>`);
+  }
+
   function itemOptions(sel){
     return `<option value="">— اختار الصنف —</option>` + active().map(i =>
       `<option value="${i.id}" ${String(sel) === String(i.id) ? 'selected' : ''}>${esc(i.name)}${i.sku ? ' — ' + esc(i.sku) : ''} (${fmtN(i.qty)})</option>`).join('');
+  }
+
+  function availHtml(l, buy){
+    const it = itemById(l.item); if(!it) return '';
+    const lc = toNum(l.cost) ?? (it.cost != null ? Number(it.cost) : null), lq = toNum(l.qty);
+    return `المتاح دلوقتي: <b>${fmtN(it.qty)}</b> ${esc(it.unit || '')}` + (buy && lc != null && lq ? ` · تكلفة السطر: <b>${fmtN(lc * lq)} ج</b>` : '');
   }
 
   function vMove(kind){
     const isOut = kind === 'out';
     return `<div class="card inv-form">
       <h3 style="margin-top:0">${isOut ? '➖ إخراج أصناف من المخزن' : '➕ إدخال أصناف للمخزن'}</h3>
-      <p class="none" style="margin:0 0 12px">${isOut ? 'مثلاً: تجهيز أوردرات، تالف، تحويل.' : 'مثلاً: بضاعة جاية من مورد، مرتجعات رجعت المخزن.'} تقدر تضيف كذا صنف في نفس المرة.</p>
-      ${S.lines.map((l, idx) => { const it = itemById(l.item); return `<div class="inv-line">
+      <p class="none" style="margin:0 0 12px">${isOut ? 'مثلاً: تجهيز أوردرات، تالف، تحويل.' : 'اختار نوع الإدخال — "المشتريات" بس هي اللي بتتحسب في تقرير المشتريات.'} تقدر تضيف كذا صنف في نفس المرة.</p>
+      ${isOut ? '' : `<div class="inv-tabs" style="margin-bottom:12px">${Object.entries(SRC).map(([k, l]) => `<button class="inv-tab ${S.src === k ? 'on' : ''}" data-src="${k}">${l}</button>`).join('')}</div>`}
+      ${S.lines.map((l, idx) => { const it = itemById(l.item); const buy = !isOut && S.src === 'purchase';
+        return `<div class="inv-line" ${buy ? 'style="grid-template-columns:1fr 110px 130px auto"' : ''}>
         <select class="inv-in" id="invItem${idx}" data-line="${idx}" data-f="item">${itemOptions(l.item)}</select>
         <input class="inv-in" id="invQty${idx}" data-line="${idx}" data-f="qty" type="number" min="0" step="any" inputmode="decimal" placeholder="الكمية" value="${esc(l.qty)}">
+        ${buy ? `<input class="inv-in" id="invCost${idx}" data-line="${idx}" data-f="cost" type="number" min="0" step="any" inputmode="decimal" placeholder="${it && it.cost != null ? 'سعر القطعة: ' + esc(it.cost) : 'سعر القطعة'}" value="${esc(l.cost ?? '')}">` : ''}
         <button class="inv-btn sm" data-del-line="${idx}" ${S.lines.length > 1 ? '' : 'disabled'} title="شيل السطر">✕</button>
-        ${it ? `<div class="avail">المتاح دلوقتي: <b>${fmtN(it.qty)}</b> ${esc(it.unit || '')}</div>` : ''}
+        <div class="avail" id="invAv${idx}">${availHtml(l, buy)}</div>
       </div>`; }).join('')}
       <button class="inv-btn" data-act="addline">+ صنف تاني</button>
       <label for="invNote">${isOut ? 'السبب / ملاحظة' : 'المصدر / ملاحظة'}</label>
-      <input class="inv-in" id="invNote" placeholder="${isOut ? 'مثلاً: أوردرات يوم 1 أكتوبر' : 'مثلاً: فاتورة المورد رقم 123'}" value="${esc(S.note)}">
+      <input class="inv-in" id="invNote" placeholder="${isOut ? 'مثلاً: أوردرات يوم 1 أكتوبر' : S.src === 'purchase' ? 'مثلاً: المورد فلان — فاتورة رقم 123' : 'مثلاً: مرتجع أوردر 22972345'}" value="${esc(S.note)}">
+      ${!isOut && S.src === 'purchase' ? '<p class="none" style="margin:8px 0 0">سعر القطعة لو سبته فاضي هيتحسب بسعر التكلفة المسجّل للصنف. ولو كتبته، هيتحفظ كآخر سعر شراء للصنف.</p>' : ''}
       <div style="margin-top:14px"><button class="inv-btn ${isOut ? 'red' : 'green'}" data-act="save-move" data-kind="${kind}" ${S.busy ? 'disabled' : ''}>${S.busy ? '⏳ بيسجّل...' : isOut ? 'سجّل الإخراج' : 'سجّل الإدخال'}</button></div>
     </div>`;
   }
@@ -3666,7 +3809,7 @@ table.pr tr.out td{background:#fff5f4}
         ${list.map(m => { const k = KIND[m.kind] || [m.kind, '']; const d = new Date(m.created_at);
           return `<tr><td>${d.toLocaleDateString('ar-EG', { day:'numeric', month:'short' })} — ${d.toLocaleTimeString('ar-EG', { hour:'2-digit', minute:'2-digit' })}</td>
           <td class="lbl">${esc(m.inv_items ? m.inv_items.name : '—')}</td>
-          <td><span class="inv-tag ${m.kind === 'out' ? 'out' : k[1]}">${k[0]}</span></td>
+          <td><span class="inv-tag ${m.kind === 'out' ? 'out' : k[1]}">${esc(moveLabel(m))}</span></td>
           <td class="num" style="color:${m.qty < 0 ? '#b3423a' : '#276749'}">${m.qty > 0 ? '+' : ''}${fmtN(m.qty)}</td>
           <td style="white-space:normal;text-align:right">${esc(m.note || '')}</td><td>${esc(m.created_by_name || '—')}</td>
           ${admin ? `<td><button class="inv-btn sm" data-del-move="${m.id}" title="امسح الحركة">🗑️</button></td>` : ''}</tr>`; }).join('') || `<tr><td colspan="${admin ? 7 : 6}" class="none">مفيش حركات.</td></tr>`}
@@ -3711,7 +3854,7 @@ table.pr tr.out td{background:#fff5f4}
 
   /* ---------- الأحداث ---------- */
   function wire(root){
-    root.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { S.tab = b.dataset.tab; S.msg = ''; S.editing = null; S.draft = null; draw(); });
+    root.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { S.tab = b.dataset.tab; S.msg = ''; S.editing = null; S.draft = null; draw(); if(S.tab === 'buy' && S.buy === null && !S.buyLoading) loadBuy(); });
     root.querySelectorAll('[data-act=reload]').forEach(b => b.onclick = () => { S.msg = ''; load(); });
     root.querySelectorAll('[data-quick]').forEach(b => b.onclick = () => {
       S.tab = b.dataset.quick; S.lines = [{ item:b.dataset.id, qty:'' }]; S.note = ''; S.msg = ''; draw();
@@ -3722,12 +3865,20 @@ table.pr tr.out td{background:#fff5f4}
 
     root.querySelectorAll('[data-line]').forEach(el => {
       const upd = () => { S.lines[+el.dataset.line][el.dataset.f] = el.value; };
-      el.oninput = upd;
+      el.oninput = () => { upd(); const av = document.getElementById('invAv' + el.dataset.line);
+        if(av) av.innerHTML = availHtml(S.lines[+el.dataset.line], S.tab === 'in' && S.src === 'purchase'); };
       if(el.tagName === 'SELECT') el.onchange = () => { upd(); draw(); };
     });
     root.querySelectorAll('[data-del-line]').forEach(b => b.onclick = () => { S.lines.splice(+b.dataset.delLine, 1); draw(); });
     const add = root.querySelector('[data-act=addline]'); if(add) add.onclick = () => { S.lines.push({ item:'', qty:'' }); draw(); };
     const note = root.querySelector('#invNote'); if(note) note.oninput = () => { S.note = note.value; };
+    root.querySelectorAll('[data-src]').forEach(b => b.onclick = () => { S.src = b.dataset.src; draw(); });
+    const bf = root.querySelector('#buyFrom'); if(bf) bf.onchange = () => { S.buyFrom = bf.value; };
+    const bt = root.querySelector('#buyTo'); if(bt) bt.onchange = () => { S.buyTo = bt.value; };
+    const bg = root.querySelector('[data-act=buy-go]'); if(bg) bg.onclick = loadBuy;
+    root.querySelectorAll('[data-range]').forEach(b => b.onclick = () => { setRange(b.dataset.range); loadBuy(); });
+    const bx = root.querySelector('[data-act=buy-xlsx]'); if(bx) bx.onclick = exportBuy;
+    const bp = root.querySelector('[data-act=buy-print]'); if(bp) bp.onclick = printBuy;
     const sm = root.querySelector('[data-act=save-move]'); if(sm) sm.onclick = () => saveMove(sm.dataset.kind);
 
     root.querySelectorAll('[data-count]').forEach(el => el.oninput = () => {
@@ -3764,7 +3915,7 @@ table.pr tr.out td{background:#fff5f4}
   }
 
   async function saveMove(kind){
-    const lines = S.lines.map(l => ({ item: l.item, qty: toNum(l.qty) })).filter(l => l.item || l.qty);
+    const lines = S.lines.map(l => ({ item: l.item, qty: toNum(l.qty), cost: toNum(l.cost) })).filter(l => l.item || l.qty);
     if(!lines.length) return flash('اختار صنف واكتب الكمية.', true);
     for(const l of lines){
       if(!l.item) return flash('فيه سطر من غير صنف.', true);
@@ -3779,10 +3930,24 @@ table.pr tr.out td{background:#fff5f4}
       }
     }
     S.busy = true; draw();
-    const rows = lines.map(l => ({ item_id: Number(l.item), kind, qty: kind === 'out' ? -l.qty : l.qty, note: S.note.trim() || null, created_by_name: myName() }));
+    const buy = kind === 'in' && S.src === 'purchase';
+    const rows = lines.map(l => {
+      const r = { item_id: Number(l.item), kind, qty: kind === 'out' ? -l.qty : l.qty, note: S.note.trim() || null, created_by_name: myName() };
+      if(kind === 'in'){
+        r.source = S.src;
+        if(buy){ const it = itemById(l.item); r.unit_cost = l.cost ?? (it && it.cost != null ? Number(it.cost) : null); }
+      }
+      return r;
+    });
     const { error } = await sb().from('inv_moves').insert(rows);
     S.busy = false;
-    if(error) return flash('❌ مقدرناش نسجّل: ' + error.message, true);
+    if(error) return flash(/unit_cost|source/i.test(error.message)
+      ? '❌ لازم سطرين الـ SQL الجداد يتشغّلوا في Supabase الأول (عمود السعر ونوع الإدخال).'
+      : '❌ مقدرناش نسجّل: ' + error.message, true);
+    if(buy){ // آخر سعر شراء يبقى سعر تكلفة الصنف
+      for(const l of lines) if(l.cost != null) await sb().from('inv_items').update({ cost: l.cost }).eq('id', l.item);
+    }
+    S.buy = null;
     const n = rows.length;
     S.lines = [{ item:'', qty:'' }]; S.note = '';
     S.msg = `✅ اتسجّل ${kind === 'out' ? 'إخراج' : 'إدخال'} ${n} صنف.`; S.msgErr = false;
@@ -3829,7 +3994,7 @@ table.pr tr.out td{background:#fff5f4}
       const { data: row, error } = await sb().from('inv_items').insert(data).select().single();
       if(error){ S.busy = false; return flash('❌ ' + (/duplicate|unique/i.test(error.message) ? 'الكود ده مستخدم لصنف تاني.' : error.message), true); }
       if(open && open > 0){
-        await sb().from('inv_moves').insert({ item_id: row.id, kind:'in', qty: open, note:'رصيد أول المدة', created_by_name: myName() });
+        await sb().from('inv_moves').insert({ item_id: row.id, kind:'in', qty: open, note:'رصيد أول المدة', source:'opening', created_by_name: myName() });
       }
       S.busy = false; S.draft = null; S.msg = `✅ اتضاف "${name}"${open > 0 ? ' برصيد ' + fmtN(open) : ''}.`; S.msgErr = false;
     }
