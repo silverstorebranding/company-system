@@ -281,7 +281,7 @@ html:not(.auth-ok) #app{display:none}
 #authGate .ag-btn.ghost{background:none;color:var(--ink,#222);border:1.5px solid var(--line,#ddd)}
 #authGate .ag-msg{font-size:13.5px;padding:9px 11px;border-radius:8px;margin-bottom:12px;background:#fdecea;color:#b3423a}
 #authGate .ag-msg.ok{background:#e8f3ec;color:#276749}
-#authUser{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:13px;margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,.15)}
+#authUser{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:13px}
 #authUser button{background:none;border:1px solid currentColor;color:inherit;border-radius:7px;padding:3px 10px;font-family:inherit;font-size:12px;cursor:pointer;opacity:.85}
 .adm-user{border:1px solid var(--line);border-radius:10px;margin-bottom:10px;background:var(--panel)}
 .adm-user>summary{cursor:pointer;padding:12px 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;list-style:none}
@@ -309,8 +309,7 @@ html:not(.auth-ok) #app{display:none}
   <nav id="sidebar">
     <div class="brand">🏢 نظام تشغيل الشركة<small>دليل تشغيل الشركة الموحّد</small></div>
     <div id="userbox">
-      <div>الدخول باسم:</div>
-      <select id="whoami" onchange="setWho(this.value)"></select>
+      <select id="whoami" onchange="setWho(this.value)" style="display:none"></select>
     </div>
     <div class="grp"><div class="grp-title">الأقسام</div>
       <div id="deptlinks"></div>
