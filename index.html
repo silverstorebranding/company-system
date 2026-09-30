@@ -2788,6 +2788,138 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
   qpAfterRender();
 })();
 </script>
+<!-- =====================================================================
+     💬 باتش الواتساب + متابعة الهولد لقسم QP
+     الصق البلوك ده كله مرة واحدة قبل سطر </body> على طول
+     (يعني تحت خالص، بعد آخر </script> بتاع قسم QP وقبل </body>)
+     مش محتاج تعدّل أي حاجة تانية في الملف.
+     ===================================================================== -->
+<script>
+(function(){
+  const MARK = 'data-wa-done';
 
+  // تحويل الأرقام العربية للإنجليزية
+  const toEn = s => String(s||'').replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d));
+
+  // تطبيع رقم الموبايل المصري لصيغة واتساب الدولية (2010xxxxxxxx)
+  function waPhone(raw){
+    let p = toEn(raw).replace(/[^\d]/g,'');
+    if(!p) return '';
+    if(p.startsWith('00')) p = p.slice(2);
+    if(p.startsWith('20')) return p;
+    if(p.startsWith('0'))  return '20' + p.slice(1);
+    return '20' + p;
+  }
+
+  // الرسالة اللي هتتبعت للعميل — عدّل النص زي ما تحب
+  function buildMessage(d){
+    const L = [];
+    L.push('السلام عليكم' + (d.name && d.name !== '—' ? ' أ/ ' + d.name : '') + ' 🌸');
+    L.push('معاكم خدمة عملاء متجرنا بخصوص طلب حضرتك.');
+    if(d.serial && d.serial !== '—') L.push('رقم الشحنة: ' + d.serial);
+    if(d.brand  && d.brand  !== '—') L.push('النوع: ' + d.brand);
+    if(d.price  && d.price  !== '—') L.push('الإجمالي: ' + d.price + ' ج');
+    if(d.city   && d.city   !== '—') L.push('المحافظة: ' + d.city);
+    if(d.status && d.status !== '—') L.push('حالة الشحنة حاليًا: ' + d.status);
+    L.push('');
+    L.push('حابين نطمن على وصول طلبك 🙏');
+    L.push('هل تواصل معاك مندوب الشحن؟ وهل فيه أي مشكلة في التوصيل؟');
+    L.push('لو المندوب مكلمكش أو فيه أي مشكلة، قولنا وإحنا نظبّطها فورًا.');
+    return L.join('\n');
+  }
+
+  // نلاقي جدول أوردرات QP (اللي فيه أعمدة السيريال + الموبايل + الحالة)
+  function qpTable(){
+    const tables = document.querySelectorAll('#main .card table.pr');
+    for(const t of tables){
+      const heads = [...t.querySelectorAll('tr:first-child th')].map(th => th.textContent.trim());
+      if(heads.includes('الموبايل') && heads.includes('الحالة') && heads.includes('السيريال')) return t;
+    }
+    return null;
+  }
+  const cellVal = (row, heads, name) => {
+    const i = heads.indexOf(name);
+    return i < 0 || !row.children[i] ? '' : row.children[i].textContent.trim();
+  };
+
+  // (1) زرار واتساب جنب كل أوردر
+  function injectButtons(){
+    const t = qpTable();
+    if(!t) return;
+    const headRow = t.querySelector('tr:first-child');
+    if(!headRow) return;
+    if(!headRow.querySelector('th[data-wa-head]')){
+      const th = document.createElement('th');
+      th.setAttribute('data-wa-head','1');
+      th.textContent = 'واتساب';
+      headRow.appendChild(th);
+    }
+    const heads = [...headRow.children].filter(th => !th.hasAttribute('data-wa-head')).map(th => th.textContent.trim());
+    [...t.querySelectorAll('tr')].slice(1).forEach(r => {
+      if(r.hasAttribute(MARK)) return;
+      if(r.children.length < heads.length){ r.setAttribute(MARK,'1'); return; } // صف "مفيش نتايج"
+      const d = {
+        serial: cellVal(r, heads, 'السيريال'),
+        name:   cellVal(r, heads, 'العميل'),
+        phone:  cellVal(r, heads, 'الموبايل'),
+        city:   cellVal(r, heads, 'المدينة'),
+        brand:  cellVal(r, heads, 'البراند'),
+        price:  cellVal(r, heads, 'القيمة'),
+        status: cellVal(r, heads, 'الحالة'),
+      };
+      const td = document.createElement('td');
+      const phone = waPhone(d.phone);
+      if(phone){
+        const a = document.createElement('a');
+        a.href = 'https://web.whatsapp.com/send?phone=' + phone + '&text=' + encodeURIComponent(buildMessage(d));
+        a.target = '_blank'; a.rel = 'noopener';
+        a.textContent = '💬 واتساب';
+        a.style.cssText = 'display:inline-block;background:#25D366;color:#fff;padding:5px 11px;border-radius:7px;font-size:12.5px;font-weight:600;text-decoration:none;white-space:nowrap';
+        td.appendChild(a);
+      }else{
+        td.innerHTML = '<span style="color:var(--muted);font-size:12px">مفيش رقم</span>';
+      }
+      r.appendChild(td);
+      r.setAttribute(MARK,'1');
+    });
+  }
+
+  // (2) كارت الهولد: "لسه هيتسلم — محتاج متابعة" — يفلتر على الهولد لما يتداس عليه
+  function holdChip(){
+    for(const c of document.querySelectorAll('#main .qp-chip')){
+      if(/Hold|مؤجّل|هولد/i.test(c.textContent)) return c;
+    }
+    return null;
+  }
+  function injectHoldCard(){
+    const kpis = document.querySelector('#main .qp-kpis');
+    const chip = holdChip();
+    if(!kpis || !chip || document.getElementById('waHoldCard')) return;
+    const n = (chip.querySelector('b') ? toEn(chip.querySelector('b').textContent).trim() : '') || '—';
+    const card = document.createElement('div');
+    card.className = 'qp-kpi'; card.id = 'waHoldCard';
+    card.style.cssText = 'cursor:pointer;border-color:var(--brass);border-width:2px';
+    card.innerHTML = '<div class="n">' + n + '</div><div class="l">⏸️ Hold — لسه هيتسلم (محتاج متابعة من خدمة العملاء) · دوس تعرضهم</div>';
+    card.onclick = () => {
+      chip.click();
+      setTimeout(() => { const t = qpTable(); if(t) t.scrollIntoView({ behavior:'smooth', block:'start' }); }, 80);
+    };
+    kpis.appendChild(card);
+  }
+
+  function run(){ try{ injectButtons(); injectHoldCard(); }catch(e){} }
+
+  // نعيد الحقن بعد أي إعادة رسم للصفحة
+  let scheduled = false;
+  const schedule = () => { if(scheduled) return; scheduled = true; setTimeout(() => { scheduled = false; run(); }, 60); };
+  function start(){
+    const main = document.getElementById('main');
+    if(main) new MutationObserver(schedule).observe(main, { childList:true, subtree:true });
+    schedule();
+  }
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+  else start();
+})();
+</script>
 </body>
 </html>
