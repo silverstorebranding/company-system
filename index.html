@@ -170,8 +170,8 @@ input.plainIn{padding:6px 10px;border:1px solid var(--line);border-radius:6px;wi
 #sq-root .sq-auth h2{font-size:22px;margin:0 0 20px}
 #sq-root .sq-field{margin-bottom:14px}
 #sq-root .sq-field label{display:block;font-size:13px;font-weight:600;color:var(--muted);margin-bottom:5px}
-#sq-root .sq-field input,#sq-root .sq-field textarea{width:100%;padding:10px 12px;border:1.5px solid var(--line);border-radius:8px;font-size:15px;color:var(--ink);background:var(--panel);font-family:inherit}
-#sq-root .sq-field input:focus,#sq-root .sq-field textarea:focus{outline:none;border-color:var(--brass)}
+#sq-root .sq-field input,#sq-root .sq-field textarea,#sq-root .sq-field select{width:100%;padding:10px 12px;border:1.5px solid var(--line);border-radius:8px;font-size:15px;color:var(--ink);background:var(--panel);font-family:inherit}
+#sq-root .sq-field input:focus,#sq-root .sq-field textarea:focus,#sq-root .sq-field select:focus{outline:none;border-color:var(--brass)}
 #sq-root .sq-field textarea{resize:vertical;min-height:70px}
 #sq-root .sq-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:11px 18px;border-radius:8px;border:none;font-size:15px;font-weight:600;cursor:pointer;font-family:inherit;background:var(--brass);color:#fff}
 #sq-root .sq-btn:hover{background:var(--brass-d)}
@@ -1712,6 +1712,9 @@ const Squad = (function(){
       ${EditOrderModal()}`;
   }
 
+  // مصادر الأوردر اللي بتظهر في القايمة — زوّد أو شيل من هنا
+  const ORDER_SOURCES = ['واتساب', 'بيدج كارا', 'بيدج دريم', 'فون'];
+
   function orderFields(prefix, o){
     o = o || {};
     return `
@@ -1725,8 +1728,15 @@ const Squad = (function(){
       </div>
       <div class="sq-field"><label for="${prefix}-customer-address">العنوان</label>
         <input type="text" id="${prefix}-customer-address" value="${esc(o.customer_address||'')}"></div>
-      <div class="sq-field"><label for="${prefix}-page-name">البيدج</label>
-        <input type="text" id="${prefix}-page-name" value="${esc(o.page_name||'')}" placeholder="اسم البيدج اللي جه منها الأوردر"></div>
+      <div class="sq-field"><label for="${prefix}-page-name">المصدر</label>
+        <select id="${prefix}-page-name" required>
+          <option value="" disabled ${o.page_name ? '' : 'selected'}>اختار المصدر اللي جه منه الأوردر</option>
+          ${(() => {
+            const opts = ORDER_SOURCES.slice();
+            if(o.page_name && !opts.includes(o.page_name)) opts.push(o.page_name); // أوردر قديم بمصدر مكتوب بإيده
+            return opts.map(x => `<option value="${esc(x)}" ${o.page_name === x ? 'selected' : ''}>${esc(x)}</option>`).join('');
+          })()}
+        </select></div>
       <div class="sq-field"><label for="${prefix}-order-details">الطلب</label>
         <textarea id="${prefix}-order-details" placeholder="تفاصيل المنتج/الطلب..." required>${esc(o.order_details||'')}</textarea></div>`;
   }
