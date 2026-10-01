@@ -2477,28 +2477,52 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
   const QP_MAX_PAGES= 400;   // حد أمان (ماكس 40 ألف أوردر)
   const QP_LS       = 'qp_creds';
 
-  /* خريطة الحالات — الرقم اللي في Order_Delivery_Status.
-     دي أفضل تخمين مبدئي؛ افتح القسم وشوف "الحالات" وصلّحها لو أي رقم طالع بمعنى غلط.
-     pr = الاسم اللي بيستخدمه تقرير الأرباح (Delivered / Hold / Out for Delivery / Undelivered) */
-  const QP_STATUS = {
-    '1': { label:'جديد / قيد التجهيز', color:'#6b6659', pr:'Undelivered' },
-    '2': { label:'خرج للتسليم',        color:'#9a6b14', pr:'Out for Delivery' },
-    '3': { label:'اتسلم',              color:'#276749', pr:'Delivered' },
-    '4': { label:'مؤجّل (Hold)',        color:'#8a6d3b', pr:'Hold' },
-    '5': { label:'راجع للفرع',          color:'#b3423a', pr:'Undelivered' },
-    '6': { label:'مرتجع للعميل',        color:'#b3423a', pr:'Undelivered' },
+  /* ================= تصنيف الحالات =================
+     كل رقم حالة في QP (Order_Delivery_Status) بيتربط بتصنيف من الخمسة اللي في شركة الشحن.
+     الربط ده بيتعدّل من جوه الصفحة (كارت "🔧 ربط حالات QP") وبيتحفظ على الجهاز،
+     وكل الأرقام (الكروت + الفلاتر + الأرباح + المرتجعات) بتتحسب منه. */
+  const QP_CATS = {
+    pending:     { label:'Pending — بيندينج',                    short:'Pending',          color:'#6b6659', pr:'Pending' },
+    ofd:         { label:'Out For Delivery — تحت التسليم',       short:'Out For Delivery', color:'#9a6b14', pr:'Out for Delivery' },
+    hold:        { label:'Hold — هولد',                           short:'Hold',             color:'#8a6d3b', pr:'Hold' },
+    delivered:   { label:'Delivered — اتسلم',                     short:'Delivered',        color:'#276749', pr:'Delivered' },
+    undelivered: { label:'Undelivered — راجع للفرع / مستلمش',    short:'Undelivered',      color:'#b3423a', pr:'Undelivered' },
   };
-  const qpStatus = s => QP_STATUS[String(s)] || { label:'حالة ' + s, color:'#6b6659', pr:'Undelivered' };
-  // أرقام الحالات اللي معناها "اتسلم فعليًا" — صلّحها لو رقم التسليم عندك مختلف
-  const QP_DELIVERED = ['3'];
-  const isDelivered = o => QP_DELIVERED.includes(String(o.Order_Delivery_Status));
-  // الحالات اللي معناها "العميل مستلمش" — صلّح الأرقام لو مختلفة عندك
-  const QP_UNDELIVERED = ['5','6'];
+  const QP_CAT_ORDER = ['pending','ofd','hold','undelivered','delivered'];
+  const QP_MAP_LS = 'qp_status_map';
+  const QP_MAP_DEFAULT = { '1':'pending', '2':'ofd', '3':'delivered', '4':'hold', '5':'undelivered', '6':'undelivered' };
+  let qpMap = (() => { try{ return Object.assign({}, QP_MAP_DEFAULT, JSON.parse(localStorage.getItem(QP_MAP_LS)) || {}); }catch(e){ return Object.assign({}, QP_MAP_DEFAULT); } })();
+  const qpSaveMap = () => { try{ localStorage.setItem(QP_MAP_LS, JSON.stringify(qpMap)); }catch(e){} };
+
+  const stCode = o => String(o.Order_Delivery_Status ?? '').trim();
+  const catOf  = o => qpMap[stCode(o)] || 'unknown';
+  // أسماء الحالات زي ما QP باعتها (لو الـ API بيبعت اسم نصي جنب الرقم)
+  let qpNames = {};
+  function qpDetectNames(list){
+    const m = {};
+    (list || []).forEach(o => {
+      const k = stCode(o);
+      Object.entries(o).forEach(([key, v]) => {
+        if(key === 'Order_Delivery_Status' || typeof v !== 'string') return;
+        if(!/status|state|stage/i.test(key)) return;
+        const t = v.trim(); if(!t || !isNaN(t) || t.length > 40) return;
+        (m[k] = m[k] || {})[t] = ((m[k] || {})[t] || 0) + 1;
+      });
+    });
+    qpNames = {};
+    Object.entries(m).forEach(([k, names]) => {
+      qpNames[k] = Object.entries(names).sort((a,b) => b[1] - a[1]).slice(0,2).map(x => x[0]).join(' / ');
+    });
+  }
+  const qpStatus = s => {
+    const k = String(s), c = QP_CATS[qpMap[k]];
+    const label = qpNames[k] || (c ? c.short : 'غير مصنّفة');
+    return { label: label + ' #' + k, color: c ? c.color : '#6b6659', pr: c ? c.pr : 'Pending' };
+  };
+  const isDelivered = o => catOf(o) === 'delivered';
   const hasReturnDate = o => { const v = String(o.returned_Client_date ?? '').trim(); return !!v && v !== 'NaT' && v !== 'null'; };
-  // مرتجع لينا عند QP: غير مستلم ولسه ماخدش تاريخ إرجاع
-  const isStuckReturn = o => QP_UNDELIVERED.includes(String(o.Order_Delivery_Status)) && !hasReturnDate(o);
-  // الحالات اللي معناها "لسه ماوصلش": 1 = بيندينج، 2 = تحت التسليم (خرج للتسليم)، 4 = هولد
-  const QP_IN_TRANSIT = ['1','2','4'];
+  // مرتجع لينا عند QP: حالته Undelivered ولسه ماخدش تاريخ إرجاع
+  const isStuckReturn = o => catOf(o) === 'undelivered' && !hasReturnDate(o);
 
   let creds = (() => { try{ return JSON.parse(localStorage.getItem(QP_LS)) || null; }catch(e){ return null; } })();
   let token = null;
@@ -2602,6 +2626,7 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
       qpOrders = await qpFetchRange(qpFrom, qpTo, (n, pct) => {
         qpProg = pct; qpInfo = 'بيجيب... ' + n + ' أوردر'; qpRerender();
       });
+      qpDetectNames(qpOrders);
       qpFetchedAt = new Date();
       qpLoading = false; qpProg = 100;
       qpInfo = 'تم ✅ ' + qpOrders.length + ' أوردر من ' + qpFrom + ' لـ ' + qpTo;
@@ -2617,28 +2642,29 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
 
   /* ---------- إحصائيات ---------- */
   function qpStats(list){
-    const st = {}, brand = {};
-    let sales = 0, fees = 0, ret = 0;
-    let salesDel = 0, feesDel = 0, deliveredCount = 0, pending = 0;
+    const st = {}, brand = {}, cat = { pending:0, ofd:0, hold:0, delivered:0, undelivered:0, unknown:0 };
+    let sales = 0, fees = 0, ret = 0, salesDel = 0, feesDel = 0;
     list.forEach(o => {
-      const k = String(o.Order_Delivery_Status);
+      const k = stCode(o), c = catOf(o);
       st[k] = (st[k] || 0) + 1;
-      const del = isDelivered(o), rt = isReturned(o);
+      cat[c] = (cat[c] || 0) + 1;
+      const del = c === 'delivered';
       const b = qpBrand(o.notes); brand[b] = brand[b] || { n:0, sales:0, del:0, salesDel:0 };
       brand[b].n++; brand[b].sales += num(o.price);
       sales += num(o.price); fees += num(o.total_fees);
-      if(rt) ret++;
-      if(del){ salesDel += num(o.price); feesDel += num(o.total_fees); deliveredCount++; brand[b].del++; brand[b].salesDel += num(o.price); }
-      if(QP_IN_TRANSIT.includes(k)) pending++;   // بيندينج + تحت التسليم + هولد بس
+      if(isReturned(o)) ret++;
+      if(del){ salesDel += num(o.price); feesDel += num(o.total_fees); brand[b].del++; brand[b].salesDel += num(o.price); }
     });
+    const deliveredCount = cat.delivered;
     const rate = list.length ? (deliveredCount / list.length * 100) : 0;
-    return { st, brand, sales, fees, ret, salesDel, feesDel, deliveredCount, pending, rate };
+    return { st, cat, brand, sales, fees, ret, salesDel, feesDel, deliveredCount, rate };
   }
   const qpFiltered = () => {
     if(!qpOrders) return [];
     let l = qpOrders;
     if(qpStFilter === 'stuck') l = l.filter(isStuckReturn);
-    else if(qpStFilter !== 'all') l = l.filter(o => String(o.Order_Delivery_Status) === qpStFilter);
+    else if(qpStFilter.startsWith('cat:')) l = l.filter(o => catOf(o) === qpStFilter.slice(4));
+    else if(qpStFilter !== 'all') l = l.filter(o => stCode(o) === qpStFilter);
     const q = qpQuery.trim().toLowerCase();
     if(q) l = l.filter(o => [o.full_name, o.phone, o.serial, o.notes, o.city, o.customer_phone].some(v => String(v ?? '').toLowerCase().includes(q)));
     return l;
@@ -2678,25 +2704,40 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
 
     const all = qpStats(qpOrders);
     const stuck = qpOrders.filter(isStuckReturn).length;
+    const catCard = c => { const C = QP_CATS[c], on = qpStFilter === 'cat:' + c;
+      return `<div class="qp-kpi" onclick="QP.filterSt('cat:${c}')" style="cursor:pointer;border-top:4px solid ${C.color}${on ? ';background:var(--slate-l);outline:2px solid ' + C.color : ''}">
+        <div class="n" style="color:${C.color}">${fmt(all.cat[c] || 0)}</div><div class="l">${C.label} · دوس تعرضهم</div></div>`; };
+    h += `<div class="qp-note">الأرقام دي محسوبة على الأوردرات من <b>${esc(qpFrom)}</b> لـ <b>${esc(qpTo)}</b> بس. لو لوحة شركة الشحن بتعرض كل الأوردرات من غير تاريخ، رجّع تاريخ "من" لأقدم تاريخ عشان الأرقام تتطابق.</div>`;
+    h += `<div class="qp-kpis">${QP_CAT_ORDER.map(catCard).join('')}
+      ${all.cat.unknown ? `<div class="qp-kpi" style="border-top:4px solid var(--warn)"><div class="n" style="color:var(--warn)">${fmt(all.cat.unknown)}</div><div class="l">⚠️ حالات مش متصنّفة — اربطها من "🔧 ربط حالات QP" تحت</div></div>` : ''}
+    </div>`;
     h += `<div class="qp-kpis">
-      <div class="qp-kpi"><div class="n">${fmt(qpOrders.length)}</div><div class="l">إجمالي الأوردرات</div></div>
-      <div class="qp-kpi"><div class="n">${fmt(all.deliveredCount)}</div><div class="l">✅ اتسلم — نسبة التسليم ${all.rate.toFixed(1)}%</div></div>
+      <div class="qp-kpi" onclick="QP.filterSt('all')" style="cursor:pointer"><div class="n">${fmt(qpOrders.length)}</div><div class="l">إجمالي الأوردرات</div></div>
+      <div class="qp-kpi"><div class="n">${all.rate.toFixed(1)}%</div><div class="l">✅ نسبة التسليم</div></div>
       <div class="qp-kpi"><div class="n green">${fmt(all.salesDel)} ج</div><div class="l">💰 إجمالي القيمة (المُسلَّم بس)</div></div>
       <div class="qp-kpi"><div class="n">${fmt(all.fees)} ج</div><div class="l">🚚 إجمالي الشحن</div></div>
-      <div class="qp-kpi"><div class="n">${fmt(all.pending)}</div><div class="l">⏳ لسه ماوصلش — تحت التسليم ${fmt(all.st['2']||0)} · هولد ${fmt(all.st['4']||0)} · بيندينج ${fmt(all.st['1']||0)}</div></div>
-      <div class="qp-kpi"><div class="n">${fmt(all.ret)}</div><div class="l">↩️ مرتجعات</div></div>
+      <div class="qp-kpi"><div class="n">${fmt(all.ret)}</div><div class="l">↩️ مرتجعات (ليها علامة إرجاع)</div></div>
       <div class="qp-kpi" onclick="QP.filterSt('stuck')" style="cursor:pointer;border:2px solid var(--warn)${qpStFilter==='stuck'?';background:#f4e2de':''}">
         <div class="n" style="color:var(--warn)">${fmt(stuck)}</div>
-        <div class="l">📦 مرتجع لينا عند QP — غير مستلم ومن غير تاريخ إرجاع · دوس تعرضهم</div>
+        <div class="l">📦 مرتجع لينا عند QP — Undelivered ومن غير تاريخ إرجاع · دوس تعرضهم</div>
       </div>
     </div>`;
 
-    // شرائح الحالات
+    // ربط أرقام الحالات بالتصنيفات
     const stKeys = Object.keys(all.st).sort((a,b) => all.st[b] - all.st[a]);
-    h += `<div class="card"><h3>الحالات</h3><div class="qp-stbar">
-      <span class="qp-chip ${qpStFilter==='all'?'on':''}" onclick="QP.filterSt('all')">الكل <b>${fmt(qpOrders.length)}</b></span>
-      ${stKeys.map(k => { const s = qpStatus(k); return `<span class="qp-chip ${qpStFilter===k?'on':''}" onclick="QP.filterSt('${k}')"><span style="width:9px;height:9px;border-radius:50%;background:${s.color};display:inline-block"></span>${esc(s.label)} <b>${fmt(all.st[k])}</b> <span class="qp-userline">(#${esc(k)})</span></span>`; }).join('')}
-    </div><p class="none" style="margin-top:10px">الرقم اللي جنب كل حالة (#) هو رقمها في QP. لو أي رقم طالع بمعنى غلط، قولي الرقم ومعناه الصح وأنا أظبطه.</p></div>`;
+    h += `<details class="card" ${all.cat.unknown ? 'open' : ''}><summary style="cursor:pointer;font-weight:700;color:var(--brass-d)">🔧 ربط حالات QP (لو أي رقم مش مطابق لشركة الشحن صلّحه من هنا)</summary>
+      <p class="none" style="margin:10px 0">كل سطر = رقم حالة جاي من QP وعدد أوردراته. اختار هو تبع أنهي تصنيف، والأرقام فوق هتتحسب فورًا وتتحفظ على الجهاز ده.${Object.keys(qpNames).length ? ' عمود "الاسم في QP" جاي من بيانات الشحنة نفسها.' : ''}</p>
+      <div class="tablewrap"><table class="pr">
+        <tr><th>رقم الحالة</th>${Object.keys(qpNames).length ? '<th>الاسم في QP</th>' : ''}<th>عدد الأوردرات</th><th>التصنيف</th><th></th></tr>
+        ${stKeys.map(k => `<tr><td><b>#${esc(k)}</b></td>${Object.keys(qpNames).length ? `<td>${esc(qpNames[k] || '—')}</td>` : ''}<td>${fmt(all.st[k])}</td>
+          <td><select onchange="QP.mapSt('${esc(k)}',this.value)" style="padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink);font-family:inherit">
+            <option value="" ${!qpMap[k] ? 'selected' : ''}>— مش متصنّفة —</option>
+            ${QP_CAT_ORDER.map(c => `<option value="${c}" ${qpMap[k] === c ? 'selected' : ''}>${QP_CATS[c].label}</option>`).join('')}
+          </select></td>
+          <td><button class="linkbtn" onclick="QP.filterSt('${esc(k)}')">اعرضهم</button></td></tr>`).join('')}
+      </table></div>
+      <div style="margin-top:10px"><button class="linkbtn" onclick="QP.resetMap()">↩️ رجّع الربط الافتراضي</button></div>
+    </details>`;
 
     // ملخص البراندات
     const brs = Object.entries(all.brand).sort((a,b) => b[1].n - a[1].n);
@@ -2723,7 +2764,7 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
         <td>${isNaN(d) ? '—' : d.toLocaleDateString('ar-EG',{day:'numeric',month:'short'})}</td>
       </tr>`;
     }).join('');
-    h += `<div class="card"><h3>الأوردرات — ${fmt(list.length)}${qpStFilter==='stuck' ? ' (مرتجعات لينا عند QP)' : qpStFilter!=='all' ? ' (' + esc(qpStatus(qpStFilter).label) + ')' : ''}</h3>
+    h += `<div class="card"><h3>الأوردرات — ${fmt(list.length)}${qpStFilter==='stuck' ? ' (مرتجعات لينا عند QP — راجع للفرع)' : qpStFilter.startsWith('cat:') ? ' (' + esc(QP_CATS[qpStFilter.slice(4)].label) + ')' : qpStFilter!=='all' ? ' (' + esc(qpStatus(qpStFilter).label) + ')' : ''}</h3>
       <input class="qp-search" placeholder="🔍 دوّر باسم العميل، التليفون، السيريال، البراند، أو المدينة..." value="${esc(qpQuery)}" oninput="QP.search(this.value)">
       <div class="tablewrap" style="max-height:520px;overflow-y:auto"><table class="pr">
         <tr><th>السيريال</th><th>العميل</th><th>الموبايل</th><th>المدينة</th><th>البراند</th><th>القيمة</th><th>الشحن</th><th>الحالة</th><th>التاريخ</th></tr>
@@ -2750,7 +2791,7 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
       r[9]  = o.notes || '';                // J
       r[10] = new Date(o.order_date);       // K
       r[11] = o.shipment_contents || '';    // L
-      r[14] = qpStatus(o.Order_Delivery_Status).pr; // O
+      r[14] = (QP_CATS[catOf(o)] || { pr:'Pending' }).pr; // O
       return r;
     });
   }
@@ -2805,6 +2846,8 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
     fetch: qpFetch,
     setDate(k, v){ if(k === 'from') qpFrom = v; else qpTo = v; },
     filterSt(k){ qpStFilter = k; qpRerender(); },
+    mapSt(k, c){ if(c) qpMap[k] = c; else delete qpMap[k]; qpSaveMap(); qpRerender(); },
+    resetMap(){ qpMap = Object.assign({}, QP_MAP_DEFAULT); try{ localStorage.removeItem(QP_MAP_LS); }catch(e){} qpRerender(); },
     search(v){ qpQuery = v; qpRerender();
       const inp = document.querySelector('.qp-search'); if(inp){ inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); } },
     toProfits(){
@@ -2828,7 +2871,7 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
         if(st) st.textContent = '⏳ بيجيب أوردرات QP من ' + from + ' لـ ' + to + '...';
         const list = await qpFetchRange(from, to, n => { if(st) st.textContent = '⏳ بيجيب أوردرات QP... ' + n + ' أوردر'; });
         if(!list.length){ if(st) st.textContent = 'مفيش أوردرات في المدة دي على QP.'; return; }
-        qpOrders = list; qpFrom = from; qpTo = to; qpFetchedAt = new Date();
+        qpOrders = list; qpFrom = from; qpTo = to; qpFetchedAt = new Date(); qpDetectNames(list);
         if(st) st.textContent = '⚙️ بيحسب الأرباح من ' + list.length + ' أوردر...';
         prProcess(qpToProfitRows(list));
         const res = document.getElementById('prResults'); if(res) res.style.display = 'block';
@@ -2946,38 +2989,9 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
     });
   }
 
-  // (2) كروت المتابعة: Hold + Un (العميل مستلمش) — كل كارت يفلتر على حالته لما يتداس عليه
-  const FOLLOW_CARDS = [
-    { id:'waHoldCard', re:/Hold|مؤجّل|هولد/i, label:'⏸️ Hold — لسه هيتسلم (محتاج متابعة من خدمة العملاء) · دوس تعرضهم' },
-    { id:'waUnCard',   re:/راجع للفرع/,       label:'↩️ Un — العميل مستلمش (راجع للفرع) · دوس تعرضهم' },
-  ];
-  function findChip(re){
-    for(const c of document.querySelectorAll('#main .qp-chip')){
-      if(re.test(c.textContent)) return c;
-    }
-    return null;
-  }
-  function injectFollowCards(){
-    const kpis = document.querySelector('#main .qp-kpis');
-    if(!kpis) return;
-    FOLLOW_CARDS.forEach(fc => {
-      const chip = findChip(fc.re);
-      if(!chip || document.getElementById(fc.id)) return;
-      const n = (chip.querySelector('b') ? toEn(chip.querySelector('b').textContent).trim() : '') || '—';
-      const card = document.createElement('div');
-      card.className = 'qp-kpi'; card.id = fc.id;
-      card.style.cssText = 'cursor:pointer;border-color:var(--brass);border-width:2px' +
-        (chip.classList.contains('on') ? ';background:#fdf8ec' : '');
-      card.innerHTML = '<div class="n">' + n + '</div><div class="l">' + fc.label + '</div>';
-      card.onclick = () => {
-        const c = findChip(fc.re); if(c) c.click();
-        setTimeout(() => { const t = qpTable(); if(t) t.scrollIntoView({ behavior:'smooth', block:'start' }); }, 80);
-      };
-      kpis.appendChild(card);
-    });
-  }
+  // (2) كروت المتابعة (Hold / Undelivered) بقت جزء من قسم QP نفسه — مفيش حقن هنا
 
-  function run(){ try{ injectButtons(); injectFollowCards(); }catch(e){} }
+  function run(){ try{ injectButtons(); }catch(e){} }
 
   // نعيد الحقن بعد أي إعادة رسم للصفحة
   let scheduled = false;
@@ -2998,7 +3012,7 @@ const SHEET_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbzsO2TcA4PQQTV
 // نوع التصدير حسب الحالة المفتوحة في الجدول — التاب في الشيت بتخلص بالكلمة دي
 const EXPORT_TYPES = [
   { type: 'hold', re: /Hold/ },
-  { type: 'un',   re: /راجع للفرع/ },
+  { type: 'un',   re: /راجع للفرع|Undelivered/ },
 ];
 
 function addExportBtn() {
