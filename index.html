@@ -2492,6 +2492,11 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
   // أرقام الحالات اللي معناها "اتسلم فعليًا" — صلّحها لو رقم التسليم عندك مختلف
   const QP_DELIVERED = ['3'];
   const isDelivered = o => QP_DELIVERED.includes(String(o.Order_Delivery_Status));
+  // الحالات اللي معناها "العميل مستلمش" — صلّح الأرقام لو مختلفة عندك
+  const QP_UNDELIVERED = ['5','6'];
+  const hasReturnDate = o => { const v = String(o.returned_Client_date ?? '').trim(); return !!v && v !== 'NaT' && v !== 'null'; };
+  // مرتجع لينا عند QP: غير مستلم ولسه ماخدش تاريخ إرجاع
+  const isStuckReturn = o => QP_UNDELIVERED.includes(String(o.Order_Delivery_Status)) && !hasReturnDate(o);
 
   let creds = (() => { try{ return JSON.parse(localStorage.getItem(QP_LS)) || null; }catch(e){ return null; } })();
   let token = null;
@@ -2630,7 +2635,8 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
   const qpFiltered = () => {
     if(!qpOrders) return [];
     let l = qpOrders;
-    if(qpStFilter !== 'all') l = l.filter(o => String(o.Order_Delivery_Status) === qpStFilter);
+    if(qpStFilter === 'stuck') l = l.filter(isStuckReturn);
+    else if(qpStFilter !== 'all') l = l.filter(o => String(o.Order_Delivery_Status) === qpStFilter);
     const q = qpQuery.trim().toLowerCase();
     if(q) l = l.filter(o => [o.full_name, o.phone, o.serial, o.notes, o.city, o.customer_phone].some(v => String(v ?? '').toLowerCase().includes(q)));
     return l;
@@ -2669,6 +2675,7 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
     }
 
     const all = qpStats(qpOrders);
+    const stuck = qpOrders.filter(isStuckReturn).length;
     h += `<div class="qp-kpis">
       <div class="qp-kpi"><div class="n">${fmt(qpOrders.length)}</div><div class="l">إجمالي الأوردرات</div></div>
       <div class="qp-kpi"><div class="n">${fmt(all.deliveredCount)}</div><div class="l">✅ اتسلم — نسبة التسليم ${all.rate.toFixed(1)}%</div></div>
@@ -2676,6 +2683,10 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
       <div class="qp-kpi"><div class="n">${fmt(all.fees)} ج</div><div class="l">🚚 إجمالي الشحن</div></div>
       <div class="qp-kpi"><div class="n">${fmt(all.pending)}</div><div class="l">⏳ لسه ماوصلش (تحت التسليم)</div></div>
       <div class="qp-kpi"><div class="n">${fmt(all.ret)}</div><div class="l">↩️ مرتجعات</div></div>
+      <div class="qp-kpi" onclick="QP.filterSt('stuck')" style="cursor:pointer;border:2px solid var(--warn)${qpStFilter==='stuck'?';background:#f4e2de':''}">
+        <div class="n" style="color:var(--warn)">${fmt(stuck)}</div>
+        <div class="l">📦 مرتجع لينا عند QP — غير مستلم ومن غير تاريخ إرجاع · دوس تعرضهم</div>
+      </div>
     </div>`;
 
     // شرائح الحالات
@@ -2710,7 +2721,7 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
         <td>${isNaN(d) ? '—' : d.toLocaleDateString('ar-EG',{day:'numeric',month:'short'})}</td>
       </tr>`;
     }).join('');
-    h += `<div class="card"><h3>الأوردرات — ${fmt(list.length)}${qpStFilter!=='all' ? ' (' + esc(qpStatus(qpStFilter).label) + ')' : ''}</h3>
+    h += `<div class="card"><h3>الأوردرات — ${fmt(list.length)}${qpStFilter==='stuck' ? ' (مرتجعات لينا عند QP)' : qpStFilter!=='all' ? ' (' + esc(qpStatus(qpStFilter).label) + ')' : ''}</h3>
       <input class="qp-search" placeholder="🔍 دوّر باسم العميل، التليفون، السيريال، البراند، أو المدينة..." value="${esc(qpQuery)}" oninput="QP.search(this.value)">
       <div class="tablewrap" style="max-height:520px;overflow-y:auto"><table class="pr">
         <tr><th>السيريال</th><th>العميل</th><th>الموبايل</th><th>المدينة</th><th>البراند</th><th>القيمة</th><th>الشحن</th><th>الحالة</th><th>التاريخ</th></tr>
