@@ -3437,8 +3437,13 @@ async function exportToSheet(btn) {
 .inv-tag.adj{background:#e9eef7;color:#3b5b92}
 .inv-msg{padding:10px 13px;border-radius:9px;margin-bottom:14px;font-size:14px;background:#e8f3ec;color:#276749}
 .inv-msg.err{background:#fdecea;color:#b3423a}
-.inv-line{display:grid;grid-template-columns:1fr 130px auto;gap:8px;align-items:center;margin-bottom:8px}
+.inv-line{display:grid;grid-template-columns:1fr 130px auto;gap:8px;align-items:end;margin-bottom:8px}
 .inv-line .avail{grid-column:1/-1;font-size:12.5px;color:var(--muted);margin-top:-4px}
+/* 🔍 سيرش بار فوق خانة اختيار الصنف */
+.inv-pick{display:flex;flex-direction:column;gap:6px;min-width:0}
+.inv-search{background:var(--paper)}
+.inv-search::placeholder{color:var(--muted);opacity:.7;font-weight:300}
+.inv-hits{font-size:12px;color:var(--muted)}
 .inv-form label{display:block;font-size:13px;font-weight:600;color:var(--muted);margin:10px 0 5px}
 .inv-grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:0 12px}
 table.pr td.num{font-weight:700}
@@ -3474,6 +3479,23 @@ table.pr tr.out td{background:#fff5f4}
     : m.source === 'purchase' ? 'مشتريات' : m.source === 'return' ? 'مرتجع' : m.source === 'opening' ? 'رصيد أول المدة' : 'إدخال';
   const isPurchase = m => m.kind === 'in' && (m.source === 'purchase' || (!m.source && m.note !== 'رصيد أول المدة'));
   const ymd = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+
+  // 🔍 بحث الأصناف في الإدخال والإخراج:
+  // بيوحّد أ/إ/آ = ا ، ة = ه ، ى = ي ، والأرقام العربي = إنجليزي، وبيدوّر بأكتر من كلمة
+  const SEARCH_PH = '🔍 سيرش بار اهو عشان منعدش ندور كتير';
+  const normQ = s => String(s ?? '').toLowerCase()
+    .replace(/[\u064B-\u0652\u0640]/g, '')
+    .replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي')
+    .replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d))
+    .replace(/\s+/g, ' ').trim();
+  function matchItems(q){
+    const words = normQ(q).split(' ').filter(Boolean);
+    if(!words.length) return active();
+    return active().filter(i => {
+      const t = normQ([i.name, i.sku, i.category].filter(Boolean).join(' '));
+      return words.every(w => t.includes(w));
+    });
+  }
 
   let S = { tab:'stock', items:null, moves:null, loading:false, busy:false, err:'', msg:'', q:'', mq:'',
             lines:[{ item:'', qty:'' }], note:'', countNote:'', count:{}, editing:null,
@@ -3775,8 +3797,15 @@ th{background:#3d5553;color:#fff} td.r{text-align:right;font-weight:600} tr:nth-
       <tr class="tot"><td colspan="4">الإجمالي</td><td>${n(c.qty)}</td><td></td><td>${n(Math.round(c.cost))} ج</td></tr></table>`);
   }
 
-  function itemOptions(sel){
-    return `<option value="">— اختار الصنف —</option>` + active().map(i =>
+  // قايمة الأصناف — بتتفلتر بكلام السيرش بار، والصنف المختار بيفضل ظاهر دايمًا
+  function itemOptions(sel, q){
+    const hasQ = !!normQ(q);
+    const list = matchItems(q);
+    const cur = itemById(sel);
+    if(cur && cur.active !== false && !list.includes(cur)) list.unshift(cur);
+    const first = !hasQ ? '— اختار الصنف —'
+      : list.length ? `— ${fmtN(list.length)} نتيجة، اختار —` : '— مفيش أصناف بالاسم ده —';
+    return `<option value="">${first}</option>` + list.map(i =>
       `<option value="${i.id}" ${String(sel) === String(i.id) ? 'selected' : ''}>${esc(i.name)}${i.sku ? ' — ' + esc(i.sku) : ''} (${fmtN(i.qty)})</option>`).join('');
   }
 
@@ -3790,11 +3819,14 @@ th{background:#3d5553;color:#fff} td.r{text-align:right;font-weight:600} tr:nth-
     const isOut = kind === 'out';
     return `<div class="card inv-form">
       <h3 style="margin-top:0">${isOut ? '➖ إخراج أصناف من المخزن' : '➕ إدخال أصناف للمخزن'}</h3>
-      <p class="none" style="margin:0 0 12px">${isOut ? 'مثلاً: تجهيز أوردرات، تالف، تحويل.' : 'اختار نوع الإدخال — "المشتريات" بس هي اللي بتتحسب في تقرير المشتريات.'} تقدر تضيف كذا صنف في نفس المرة.</p>
+      <p class="none" style="margin:0 0 12px">${isOut ? 'مثلاً: تجهيز أوردرات، تالف، تحويل.' : 'اختار نوع الإدخال — "المشتريات" بس هي اللي بتتحسب في تقرير المشتريات.'} تقدر تضيف كذا صنف في نفس المرة. اكتب جزء من اسم الصنف في السيرش بار وهتلاقيه على طول (Enter بيختار أول نتيجة).</p>
       ${isOut ? '' : `<div class="inv-tabs" style="margin-bottom:12px">${Object.entries(SRC).map(([k, l]) => `<button class="inv-tab ${S.src === k ? 'on' : ''}" data-src="${k}">${l}</button>`).join('')}</div>`}
       ${S.lines.map((l, idx) => { const it = itemById(l.item); const buy = !isOut && S.src === 'purchase';
         return `<div class="inv-line" ${buy ? 'style="grid-template-columns:1fr 110px 130px auto"' : ''}>
-        <select class="inv-in" id="invItem${idx}" data-line="${idx}" data-f="item">${itemOptions(l.item)}</select>
+        <div class="inv-pick">
+          <input type="search" class="inv-in inv-search" id="invS${idx}" data-search="${idx}" placeholder="${SEARCH_PH}" value="${esc(l.q || '')}" autocomplete="off">
+          <select class="inv-in" id="invItem${idx}" data-line="${idx}" data-f="item">${itemOptions(l.item, l.q)}</select>
+        </div>
         <input class="inv-in" id="invQty${idx}" data-line="${idx}" data-f="qty" type="number" min="0" step="any" inputmode="decimal" placeholder="الكمية" value="${esc(l.qty)}">
         ${buy ? `<input class="inv-in" id="invCost${idx}" data-line="${idx}" data-f="cost" type="number" min="0" step="any" inputmode="decimal" placeholder="${it && it.cost != null ? 'سعر القطعة: ' + esc(it.cost) : 'سعر القطعة'}" value="${esc(l.cost ?? '')}">` : ''}
         <button class="inv-btn sm" data-del-line="${idx}" ${S.lines.length > 1 ? '' : 'disabled'} title="شيل السطر">✕</button>
@@ -3890,6 +3922,28 @@ th{background:#3d5553;color:#fff} td.r{text-align:right;font-weight:600} tr:nth-
     const q = root.querySelector('#invQ'); if(q) q.oninput = () => { S.q = q.value; draw(); };
     const mq = root.querySelector('#invMQ'); if(mq) mq.oninput = () => { S.mq = mq.value; draw(); };
 
+    // 🔍 السيرش بار بتاع كل سطر: بيفلتر القايمة، ولو طلعت نتيجة واحدة بيختارها لوحده
+    root.querySelectorAll('[data-search]').forEach(el => {
+      const idx = +el.dataset.search;
+      el.oninput = () => {
+        const l = S.lines[idx]; if(!l) return;
+        l.q = el.value;
+        const hits = matchItems(l.q);
+        if(normQ(l.q) && hits.length === 1) l.item = String(hits[0].id);
+        draw();
+      };
+      el.onkeydown = e => {
+        if(e.key !== 'Enter') return;
+        e.preventDefault();
+        const l = S.lines[idx]; if(!l) return;
+        const hits = matchItems(l.q);
+        if(!hits.length) return;
+        l.item = String(hits[0].id);
+        draw();
+        const qn = document.getElementById('invQty' + idx); if(qn) qn.focus();
+      };
+    });
+
     root.querySelectorAll('[data-line]').forEach(el => {
       const upd = () => { S.lines[+el.dataset.line][el.dataset.f] = el.value; };
       el.oninput = () => { upd(); const av = document.getElementById('invAv' + el.dataset.line);
@@ -3897,7 +3951,10 @@ th{background:#3d5553;color:#fff} td.r{text-align:right;font-weight:600} tr:nth-
       if(el.tagName === 'SELECT') el.onchange = () => { upd(); draw(); };
     });
     root.querySelectorAll('[data-del-line]').forEach(b => b.onclick = () => { S.lines.splice(+b.dataset.delLine, 1); draw(); });
-    const add = root.querySelector('[data-act=addline]'); if(add) add.onclick = () => { S.lines.push({ item:'', qty:'' }); draw(); };
+    const add = root.querySelector('[data-act=addline]'); if(add) add.onclick = () => {
+      S.lines.push({ item:'', qty:'', q:'' }); draw();
+      const s = document.getElementById('invS' + (S.lines.length - 1)); if(s) s.focus();
+    };
     const note = root.querySelector('#invNote'); if(note) note.oninput = () => { S.note = note.value; };
     root.querySelectorAll('[data-src]').forEach(b => b.onclick = () => { S.src = b.dataset.src; draw(); });
     const bf = root.querySelector('#buyFrom'); if(bf) bf.onchange = () => { S.buyFrom = bf.value; };
