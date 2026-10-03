@@ -3437,13 +3437,23 @@ async function exportToSheet(btn) {
 .inv-tag.adj{background:#e9eef7;color:#3b5b92}
 .inv-msg{padding:10px 13px;border-radius:9px;margin-bottom:14px;font-size:14px;background:#e8f3ec;color:#276749}
 .inv-msg.err{background:#fdecea;color:#b3423a}
-.inv-line{display:grid;grid-template-columns:1fr 130px auto;gap:8px;align-items:end;margin-bottom:8px}
+.inv-line{display:grid;grid-template-columns:1fr 130px auto;gap:8px;align-items:center;margin-bottom:8px}
 .inv-line .avail{grid-column:1/-1;font-size:12.5px;color:var(--muted);margin-top:-4px}
-/* 🔍 سيرش بار فوق خانة اختيار الصنف */
-.inv-pick{display:flex;flex-direction:column;gap:6px;min-width:0}
-.inv-search{background:var(--paper)}
+/* 🔍 قايمة اختيار الصنف — أول حاجة فيها السيرش بار */
+.inv-dd{position:relative;min-width:0}
+.inv-dd-btn{display:flex;justify-content:space-between;align-items:center;gap:8px;cursor:pointer;text-align:right}
+.inv-dd-btn span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.inv-dd-btn.ph span{color:var(--muted)}
+.inv-dd-btn.open{border-color:var(--brass)}
+.inv-dd-panel{position:absolute;top:calc(100% + 4px);inset-inline:0;z-index:40;background:var(--panel);border:1.5px solid var(--brass);border-radius:9px;box-shadow:0 10px 26px rgba(0,0,0,.15);padding:8px}
+.inv-search{background:var(--paper);margin-bottom:6px}
 .inv-search::placeholder{color:var(--muted);opacity:.7;font-weight:300}
-.inv-hits{font-size:12px;color:var(--muted)}
+.inv-dd-list{max-height:300px;overflow-y:auto}
+.inv-dd-opt{padding:8px 10px;border-radius:6px;cursor:pointer;font-size:14px;display:flex;justify-content:space-between;gap:10px}
+.inv-dd-opt:hover,.inv-dd-opt.first{background:var(--slate-l)}
+.inv-dd-opt.sel{font-weight:700;color:var(--brass-d)}
+.inv-dd-opt small{color:var(--muted);white-space:nowrap}
+.inv-dd-empty{padding:10px;color:var(--muted);font-size:13px;text-align:center}
 .inv-form label{display:block;font-size:13px;font-weight:600;color:var(--muted);margin:10px 0 5px}
 .inv-grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:0 12px}
 table.pr td.num{font-weight:700}
@@ -3488,6 +3498,7 @@ table.pr tr.out td{background:#fff5f4}
     .replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي')
     .replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d))
     .replace(/\s+/g, ' ').trim();
+  let ddOpen = null, ddQ = ''; // رقم السطر اللي قايمته مفتوحة + كلام السيرش
   function matchItems(q){
     const words = normQ(q).split(' ').filter(Boolean);
     if(!words.length) return active();
@@ -3797,16 +3808,16 @@ th{background:#3d5553;color:#fff} td.r{text-align:right;font-weight:600} tr:nth-
       <tr class="tot"><td colspan="4">الإجمالي</td><td>${n(c.qty)}</td><td></td><td>${n(Math.round(c.cost))} ج</td></tr></table>`);
   }
 
-  // قايمة الأصناف — بتتفلتر بكلام السيرش بار، والصنف المختار بيفضل ظاهر دايمًا
-  function itemOptions(sel, q){
-    const hasQ = !!normQ(q);
+  // محتوى القايمة — بيتفلتر بكلام السيرش بار، وEnter بيختار أول نتيجة (المعلّمة)
+  function ddListHtml(sel, q){
     const list = matchItems(q);
-    const cur = itemById(sel);
-    if(cur && cur.active !== false && !list.includes(cur)) list.unshift(cur);
-    const first = !hasQ ? '— اختار الصنف —'
-      : list.length ? `— ${fmtN(list.length)} نتيجة، اختار —` : '— مفيش أصناف بالاسم ده —';
-    return `<option value="">${first}</option>` + list.map(i =>
-      `<option value="${i.id}" ${String(sel) === String(i.id) ? 'selected' : ''}>${esc(i.name)}${i.sku ? ' — ' + esc(i.sku) : ''} (${fmtN(i.qty)})</option>`).join('');
+    if(!list.length) return '<div class="inv-dd-empty">مفيش أصناف بالاسم ده</div>';
+    return list.map((i, k) => `<div class="inv-dd-opt ${k === 0 && normQ(q) ? 'first' : ''} ${String(sel) === String(i.id) ? 'sel' : ''}" data-pick="${i.id}">
+      <span>${esc(i.name)}${i.sku ? ' — ' + esc(i.sku) : ''}</span><small>${fmtN(i.qty)} ${esc(i.unit || '')}</small></div>`).join('');
+  }
+  function ddButtonLabel(sel){
+    const it = itemById(sel);
+    return it ? `${esc(it.name)}${it.sku ? ' — ' + esc(it.sku) : ''} (${fmtN(it.qty)})` : '— اختار الصنف —';
   }
 
   function availHtml(l, buy){
@@ -3819,13 +3830,16 @@ th{background:#3d5553;color:#fff} td.r{text-align:right;font-weight:600} tr:nth-
     const isOut = kind === 'out';
     return `<div class="card inv-form">
       <h3 style="margin-top:0">${isOut ? '➖ إخراج أصناف من المخزن' : '➕ إدخال أصناف للمخزن'}</h3>
-      <p class="none" style="margin:0 0 12px">${isOut ? 'مثلاً: تجهيز أوردرات، تالف، تحويل.' : 'اختار نوع الإدخال — "المشتريات" بس هي اللي بتتحسب في تقرير المشتريات.'} تقدر تضيف كذا صنف في نفس المرة. اكتب جزء من اسم الصنف في السيرش بار وهتلاقيه على طول (Enter بيختار أول نتيجة).</p>
+      <p class="none" style="margin:0 0 12px">${isOut ? 'مثلاً: تجهيز أوردرات، تالف، تحويل.' : 'اختار نوع الإدخال — "المشتريات" بس هي اللي بتتحسب في تقرير المشتريات.'} تقدر تضيف كذا صنف في نفس المرة.</p>
       ${isOut ? '' : `<div class="inv-tabs" style="margin-bottom:12px">${Object.entries(SRC).map(([k, l]) => `<button class="inv-tab ${S.src === k ? 'on' : ''}" data-src="${k}">${l}</button>`).join('')}</div>`}
       ${S.lines.map((l, idx) => { const it = itemById(l.item); const buy = !isOut && S.src === 'purchase';
         return `<div class="inv-line" ${buy ? 'style="grid-template-columns:1fr 110px 130px auto"' : ''}>
-        <div class="inv-pick">
-          <input type="search" class="inv-in inv-search" id="invS${idx}" data-search="${idx}" placeholder="${SEARCH_PH}" value="${esc(l.q || '')}" autocomplete="off">
-          <select class="inv-in" id="invItem${idx}" data-line="${idx}" data-f="item">${itemOptions(l.item, l.q)}</select>
+        <div class="inv-dd">
+          <button type="button" class="inv-in inv-dd-btn ${it ? '' : 'ph'} ${ddOpen === idx ? 'open' : ''}" id="invItem${idx}" data-dd="${idx}"><span>${ddButtonLabel(l.item)}</span><b>▾</b></button>
+          ${ddOpen === idx ? `<div class="inv-dd-panel">
+            <input type="search" class="inv-in inv-search" id="invS${idx}" data-search="${idx}" placeholder="${SEARCH_PH}" value="${esc(ddQ)}" autocomplete="off">
+            <div class="inv-dd-list" id="invL${idx}">${ddListHtml(l.item, ddQ)}</div>
+          </div>` : ''}
         </div>
         <input class="inv-in" id="invQty${idx}" data-line="${idx}" data-f="qty" type="number" min="0" step="any" inputmode="decimal" placeholder="الكمية" value="${esc(l.qty)}">
         ${buy ? `<input class="inv-in" id="invCost${idx}" data-line="${idx}" data-f="cost" type="number" min="0" step="any" inputmode="decimal" placeholder="${it && it.cost != null ? 'سعر القطعة: ' + esc(it.cost) : 'سعر القطعة'}" value="${esc(l.cost ?? '')}">` : ''}
@@ -3922,25 +3936,33 @@ th{background:#3d5553;color:#fff} td.r{text-align:right;font-weight:600} tr:nth-
     const q = root.querySelector('#invQ'); if(q) q.oninput = () => { S.q = q.value; draw(); };
     const mq = root.querySelector('#invMQ'); if(mq) mq.oninput = () => { S.mq = mq.value; draw(); };
 
-    // 🔍 السيرش بار بتاع كل سطر: بيفلتر القايمة، ولو طلعت نتيجة واحدة بيختارها لوحده
+    // 🔽 فتح/قفل قايمة الصنف — أول ما تفتح المؤشر بيقف في السيرش بار
+    root.querySelectorAll('[data-dd]').forEach(b => b.onclick = () => {
+      const idx = +b.dataset.dd;
+      ddOpen = ddOpen === idx ? null : idx; ddQ = '';
+      draw();
+      const s = document.getElementById('invS' + idx); if(s) s.focus();
+    });
+    const pick = (idx, id) => {
+      S.lines[idx].item = String(id); ddOpen = null; ddQ = '';
+      draw();
+      const qn = document.getElementById('invQty' + idx); if(qn) qn.focus();
+    };
     root.querySelectorAll('[data-search]').forEach(el => {
       const idx = +el.dataset.search;
+      const wirePicks = () => document.querySelectorAll('#invL' + idx + ' [data-pick]').forEach(o => o.onclick = () => pick(idx, o.dataset.pick));
+      wirePicks();
       el.oninput = () => {
-        const l = S.lines[idx]; if(!l) return;
-        l.q = el.value;
-        const hits = matchItems(l.q);
-        if(normQ(l.q) && hits.length === 1) l.item = String(hits[0].id);
-        draw();
+        ddQ = el.value;
+        const list = document.getElementById('invL' + idx);
+        if(list){ list.innerHTML = ddListHtml(S.lines[idx].item, ddQ); wirePicks(); }
       };
       el.onkeydown = e => {
+        if(e.key === 'Escape'){ ddOpen = null; ddQ = ''; draw(); return; }
         if(e.key !== 'Enter') return;
         e.preventDefault();
-        const l = S.lines[idx]; if(!l) return;
-        const hits = matchItems(l.q);
-        if(!hits.length) return;
-        l.item = String(hits[0].id);
-        draw();
-        const qn = document.getElementById('invQty' + idx); if(qn) qn.focus();
+        const hits = matchItems(ddQ);
+        if(hits.length) pick(idx, hits[0].id);
       };
     });
 
@@ -3950,10 +3972,9 @@ th{background:#3d5553;color:#fff} td.r{text-align:right;font-weight:600} tr:nth-
         if(av) av.innerHTML = availHtml(S.lines[+el.dataset.line], S.tab === 'in' && S.src === 'purchase'); };
       if(el.tagName === 'SELECT') el.onchange = () => { upd(); draw(); };
     });
-    root.querySelectorAll('[data-del-line]').forEach(b => b.onclick = () => { S.lines.splice(+b.dataset.delLine, 1); draw(); });
+    root.querySelectorAll('[data-del-line]').forEach(b => b.onclick = () => { S.lines.splice(+b.dataset.delLine, 1); ddOpen = null; draw(); });
     const add = root.querySelector('[data-act=addline]'); if(add) add.onclick = () => {
-      S.lines.push({ item:'', qty:'', q:'' }); draw();
-      const s = document.getElementById('invS' + (S.lines.length - 1)); if(s) s.focus();
+      S.lines.push({ item:'', qty:'' }); ddOpen = null; draw();
     };
     const note = root.querySelector('#invNote'); if(note) note.oninput = () => { S.note = note.value; };
     root.querySelectorAll('[data-src]').forEach(b => b.onclick = () => { S.src = b.dataset.src; draw(); });
@@ -4106,6 +4127,13 @@ th{background:#3d5553;color:#fff} td.r{text-align:right;font-weight:600} tr:nth-
     XLSX.utils.book_append_sheet(wb, ws, 'المخزون');
     XLSX.writeFile(wb, 'المخزون ' + new Date().toISOString().slice(0, 10) + '.xlsx');
   }
+
+  // دوسة برا القايمة بتقفلها
+  document.addEventListener('click', e => {
+    if(ddOpen === null || !isInv()) return;
+    if(e.target.closest && e.target.closest('.inv-dd')) return;
+    ddOpen = null; ddQ = ''; draw();
+  });
 
   /* ---------- الربط بالراوتر ---------- */
   function mount(){ draw(); if(S.items === null && !S.loading && !S.err) load(); }
