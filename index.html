@@ -3135,7 +3135,8 @@ async function exportToSheet(btn) {
       { key:'profits', label:'💰 الأرباح',    routes:['profits'] },
       { key:'ads',     label:'📢 الإعلانات',  routes:['ads'] },
       { key:'compass', label:'🧭 البوصلة',    routes:['compass'] },
-      { key:'qp',      label:'🚚 QP',         routes:['qp'] } ]},
+      { key:'qp',      label:'🚚 QP',         routes:['qp'] },
+      { key:'direct',  label:'🛒 مبيعات مباشرة', routes:['direct'] } ]},
     { title:'المعرفة', items:[
       { key:'sop',      label:'📚 مكتبة الإجراءات', routes:['sop','sopdetail'] },
       { key:'training', label:'🎓 مركز التدريب',    routes:['training'] },
@@ -4146,6 +4147,272 @@ th{background:#3d5553;color:#fff} td.r{text-align:right;font-weight:600} tr:nth-
   render = function(){ _render.apply(this, arguments); if(isInv()) mount(); };
   window.addEventListener('hashchange', () => { if(isInv()) mount(); });
   if(isInv()) setTimeout(mount, 0);
+})();
+</script>
+
+<!-- =====================================================================
+     🛒 قسم المبيعات المباشرة — مبيعات ومرتجعات يوم بيوم (Supabase)
+     الصق البلوك ده كله قبل سطر </body> على طول
+     (يعني تحت آخر </script> بتاع قسم المخزن 🏬)
+     ===================================================================== -->
+<style id="ds-style">
+.ds-kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px}
+@media (max-width:620px){.ds-kpis{grid-template-columns:1fr}}
+.ds-kpi{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+.ds-kpi .n{font-size:24px;font-weight:700}
+.ds-kpi .l{font-size:12.5px;color:var(--muted);margin-top:4px}
+.ds-kpi.sale .n{color:#276749}
+.ds-kpi.ret .n{color:#b3423a}
+.ds-kpi.net{border:2px solid var(--brass)}
+.ds-kpi.net .n{color:var(--brass-d)}
+.ds-kind{display:flex;gap:6px;margin-bottom:12px}
+.ds-kind button{flex:1;max-width:180px;border:1.5px solid var(--line);background:var(--panel);color:var(--ink);padding:9px 12px;border-radius:9px;cursor:pointer;font-family:inherit;font-size:14px;font-weight:600}
+.ds-kind button.on.sale{background:#276749;border-color:#276749;color:#fff}
+.ds-kind button.on.ret{background:#b3423a;border-color:#b3423a;color:#fff}
+.ds-form{display:grid;grid-template-columns:160px 1fr 140px auto;gap:10px;align-items:end}
+@media (max-width:700px){.ds-form{grid-template-columns:1fr 1fr}}
+.ds-form label{display:block;font-size:13px;font-weight:600;color:var(--muted);margin-bottom:5px}
+.ds-in{width:100%;padding:9px 11px;border:1.5px solid var(--line);border-radius:8px;font-size:14.5px;font-family:inherit;background:var(--panel);color:var(--ink);box-sizing:border-box}
+.ds-in:focus{outline:none;border-color:var(--brass)}
+.ds-btn{border:1px solid var(--line);background:var(--paper);color:var(--ink);border-radius:8px;padding:7px 13px;font-family:inherit;font-size:13.5px;cursor:pointer;white-space:nowrap}
+.ds-btn.pri{background:var(--brass);border-color:var(--brass);color:#fff;font-weight:700;padding:10px 18px;font-size:14.5px}
+.ds-btn.sm{padding:3px 9px;font-size:12px}
+.ds-btn:disabled{opacity:.55;cursor:default}
+.ds-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.ds-bar label{font-size:13px;color:var(--muted);display:inline-flex;align-items:center;gap:6px}
+.ds-bar input[type=date]{width:auto}
+.ds-msg{padding:10px 13px;border-radius:9px;margin-bottom:14px;font-size:14px;background:#e8f3ec;color:#276749}
+.ds-msg.err{background:#fdecea;color:#b3423a}
+.ds-tag{display:inline-block;padding:2px 9px;border-radius:20px;font-size:12px;font-weight:600}
+.ds-tag.sale{background:#e8f3ec;color:#276749}
+.ds-tag.ret{background:#fdecea;color:#b3423a}
+table.pr tr.ds-day td{background:var(--slate-l);font-weight:700;cursor:pointer}
+table.pr tr.ds-day:hover td{background:#dfe8e5}
+table.pr td.ds-neg{color:#b3423a;font-weight:700}
+table.pr td.ds-pos{color:#276749;font-weight:700}
+</style>
+<script>
+(function(){
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const fmt = n => Number(n || 0).toLocaleString('ar-EG', { maximumFractionDigits: 2 });
+  const toNum = v => { const x = parseFloat(String(v ?? '').replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/,/g, '')); return isNaN(x) ? null : x; };
+  const ymd = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  const today = () => ymd(new Date());
+  const isDS = () => (location.hash.replace('#/', '') || 'home').split('/')[0] === 'direct';
+  const sb = () => window.AuthGate && window.AuthGate.sb;
+  const me = () => (window.AuthGate && window.AuthGate.me && window.AuthGate.me()) || {};
+  const myName = () => me().full_name || me().username || '';
+  const dayLabel = k => new Date(k + 'T12:00:00').toLocaleDateString('ar-EG', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
+
+  let S = { rows:null, loading:false, busy:false, err:'', msg:'', msgErr:false,
+            date: today(), kind:'sale', item:'', amount:'', from:'', to:'', q:'' };
+
+  /* ---------- البيانات ---------- */
+  async function load(){
+    if(!sb()) return;
+    S.loading = true; S.err = ''; draw();
+    const { data, error } = await sb().from('direct_sales').select('*')
+      .order('sale_date', { ascending:false }).order('created_at', { ascending:false }).limit(5000);
+    S.loading = false;
+    if(error){
+      S.err = /does not exist|relation|schema cache|Could not find/i.test(error.message)
+        ? 'جدول المبيعات المباشرة لسه مش موجود في Supabase — لازم كود الـ SQL يتشغّل الأول.'
+        : 'مقدرناش نجيب المبيعات: ' + error.message;
+    } else S.rows = data || [];
+    draw();
+  }
+
+  const filtered = () => {
+    const q = S.q.trim().toLowerCase();
+    return (S.rows || []).filter(r =>
+      (!S.from || r.sale_date >= S.from) && (!S.to || r.sale_date <= S.to) &&
+      (!q || String(r.item || '').toLowerCase().includes(q)));
+  };
+  function sums(list){
+    const t = { s:0, r:0, ns:0, nr:0 };
+    list.forEach(x => { if(x.kind === 'return'){ t.r += Number(x.amount); t.nr++; } else { t.s += Number(x.amount); t.ns++; } });
+    t.net = t.s - t.r;
+    return t;
+  }
+  function flash(msg, isErr){ S.msg = msg; S.msgErr = !!isErr; draw(); }
+
+  /* ---------- الرسم ---------- */
+  function draw(){
+    if(!isDS()) return;
+    const main = document.getElementById('main'); if(!main) return;
+    const f = document.activeElement, fid = f && f.id, pos = f && f.selectionStart;
+    main.innerHTML = view();
+    wire(main);
+    if(fid){ const n = document.getElementById(fid); if(n){ n.focus(); try{ n.setSelectionRange(pos, pos); }catch(e){} } }
+  }
+
+  function rangeTitle(){
+    if(!S.from && !S.to) return 'كل الأيام';
+    if(S.from && S.from === S.to) return dayLabel(S.from);
+    return 'من ' + (S.from || 'البداية') + ' لـ ' + (S.to || 'النهارده');
+  }
+
+  function view(){
+    const ret = S.kind === 'return';
+    let h = `<div class="pagehead"><h1>🛒 المبيعات المباشرة</h1><p>سجّل المبيعات والمرتجعات بتاريخها، والسيستم بيحسب محصلة كل يوم (مبيعات − مرتجعات).</p></div>`;
+    if(S.msg) h += `<div class="ds-msg ${S.msgErr ? 'err' : ''}">${esc(S.msg)}</div>`;
+
+    h += `<div class="card">
+      <h3>${ret ? '↩️ تسجيل مرتجع' : '➕ تسجيل مبيعة'}</h3>
+      <div class="ds-kind">
+        <button type="button" class="sale ${!ret ? 'on' : ''}" data-kind="sale">➕ مبيعة</button>
+        <button type="button" class="ret ${ret ? 'on' : ''}" data-kind="return">↩️ مرتجع</button>
+      </div>
+      <div class="ds-form">
+        <div><label for="dsDate">التاريخ</label><input class="ds-in" id="dsDate" type="date" value="${esc(S.date)}"></div>
+        <div><label for="dsItem">${ret ? 'الطلب اللي رجع' : 'الطلب'}</label><input class="ds-in" id="dsItem" placeholder="مثلاً: طقم سلسلة ومحبس" value="${esc(S.item)}" autocomplete="off"></div>
+        <div><label for="dsAmount">${ret ? 'المبلغ اللي رجع' : 'السعر'}</label><input class="ds-in" id="dsAmount" type="number" min="0" step="any" inputmode="decimal" placeholder="0" value="${esc(S.amount)}"></div>
+        <div><button class="ds-btn pri" data-act="add" ${S.busy ? 'disabled' : ''}>${S.busy ? '⏳...' : ret ? 'سجّل المرتجع' : 'سجّل المبيعة'}</button></div>
+      </div>
+    </div>`;
+
+    h += `<div class="card"><div class="ds-bar">
+      <label>من <input class="ds-in" type="date" id="dsFrom" value="${esc(S.from)}"></label>
+      <label>إلى <input class="ds-in" type="date" id="dsTo" value="${esc(S.to)}"></label>
+      <button class="ds-btn" data-range="today">النهارده</button>
+      <button class="ds-btn" data-range="yesterday">امبارح</button>
+      <button class="ds-btn" data-range="month">الشهر ده</button>
+      <button class="ds-btn" data-range="last">الشهر اللي فات</button>
+      <button class="ds-btn" data-range="all">الكل</button>
+      <span style="flex:1"></span>
+      ${window.XLSX ? '<button class="ds-btn" data-act="xlsx">⬇️ Excel</button>' : ''}
+      <button class="ds-btn" data-act="reload">🔄 تحديث</button>
+    </div>
+    <input class="ds-in" id="dsQ" type="search" placeholder="🔍 دوّر باسم الطلب..." value="${esc(S.q)}"></div>`;
+
+    if(S.err) return h + `<div class="ds-msg err">${esc(S.err)}</div>`;
+    if(S.rows === null) return h + `<div class="card"><p class="none">⏳ بيحمّل المبيعات...</p></div>`;
+
+    const list = filtered();
+    const T = sums(list);
+    h += `<div class="ds-kpis">
+      <div class="ds-kpi sale"><div class="n">${fmt(T.s)} ج</div><div class="l">المبيعات (${fmt(T.ns)} عملية) — ${esc(rangeTitle())}</div></div>
+      <div class="ds-kpi ret"><div class="n">${fmt(T.r)} ج</div><div class="l">المرتجعات (${fmt(T.nr)} عملية)</div></div>
+      <div class="ds-kpi net"><div class="n">${fmt(T.net)} ج</div><div class="l">✅ المحصلة (مبيعات − مرتجعات)</div></div>
+    </div>`;
+
+    if(!list.length) return h + `<div class="card"><p class="none">مفيش مبيعات أو مرتجعات ${S.from || S.to ? 'في الفترة دي' : 'متسجلة لسه'}.</p></div>`;
+
+    // تجميع حسب اليوم
+    const days = {};
+    list.forEach(r => (days[r.sale_date] = days[r.sale_date] || []).push(r));
+    const keys = Object.keys(days).sort().reverse();
+    const admin = !!me().is_admin, myId = me().id;
+
+    let tb = '<tr><th>النوع</th><th>الطلب</th><th>المبلغ</th><th>بواسطة</th><th></th></tr>';
+    tb += `<tr class="total"><td class="lbl" colspan="2">إجمالي ${esc(rangeTitle())} — ${fmt(keys.length)} يوم</td><td class="${T.net < 0 ? 'ds-neg' : ''}">${fmt(T.net)} ج</td><td colspan="2">مبيعات ${fmt(T.s)} − مرتجعات ${fmt(T.r)}</td></tr>`;
+    keys.forEach(k => {
+      const d = sums(days[k]);
+      tb += `<tr class="ds-day" data-day="${k}" title="دوس تعرض اليوم ده بس"><td class="lbl" colspan="2">📅 ${esc(dayLabel(k))}</td>
+        <td class="${d.net < 0 ? 'ds-neg' : 'ds-pos'}">محصلة اليوم: ${fmt(d.net)} ج</td>
+        <td colspan="2">مبيعات ${fmt(d.s)}${d.r ? ' − مرتجعات ' + fmt(d.r) : ''}</td></tr>`;
+      days[k].forEach(r => {
+        const isRet = r.kind === 'return';
+        const canDel = admin || (r.created_by && r.created_by === myId);
+        tb += `<tr><td><span class="ds-tag ${isRet ? 'ret' : 'sale'}">${isRet ? '↩️ مرتجع' : '➕ مبيعة'}</span></td>
+          <td class="lbl" style="font-weight:400">${esc(r.item)}</td>
+          <td class="${isRet ? 'ds-neg' : ''}">${isRet ? '−' : ''}${fmt(r.amount)}</td>
+          <td>${esc(r.created_by_name || '—')}</td>
+          <td>${canDel ? `<button class="ds-btn sm" data-del="${r.id}" title="امسح">🗑️</button>` : ''}</td></tr>`;
+      });
+    });
+    h += `<div class="card"><h3>كل العمليات بالتاريخ</h3>
+      <div class="tablewrap" style="max-height:640px;overflow-y:auto"><table class="pr">${tb}</table></div>
+      <p class="none" style="margin-top:8px">دوس على أي يوم عشان تعرضه لوحده. لو سجّلت حاجة غلط امسحها وسجّلها تاني (المسح لصاحب العملية أو الأدمن).</p></div>`;
+    return h;
+  }
+
+  /* ---------- الأحداث ---------- */
+  function setRange(k){
+    const t = new Date(), y = t.getFullYear(), m = t.getMonth();
+    if(k === 'all'){ S.from = S.to = ''; return; }
+    if(k === 'today'){ S.from = S.to = ymd(t); return; }
+    if(k === 'yesterday'){ S.from = S.to = ymd(new Date(t.getTime() - 864e5)); return; }
+    if(k === 'month'){ S.from = ymd(new Date(y, m, 1)); S.to = ymd(t); return; }
+    if(k === 'last'){ S.from = ymd(new Date(y, m - 1, 1)); S.to = ymd(new Date(y, m, 0)); }
+  }
+
+  function wire(root){
+    const $ = id => root.querySelector('#' + id);
+    root.querySelectorAll('[data-kind]').forEach(b => b.onclick = () => { S.kind = b.dataset.kind; S.msg = ''; draw(); const i = document.getElementById('dsItem'); if(i) i.focus(); });
+    const d = $('dsDate'); if(d) d.onchange = () => { S.date = d.value; };
+    const it = $('dsItem'); if(it){ it.oninput = () => { S.item = it.value; }; it.onkeydown = e => { if(e.key === 'Enter'){ e.preventDefault(); const a = document.getElementById('dsAmount'); if(a) a.focus(); } }; }
+    const am = $('dsAmount'); if(am){ am.oninput = () => { S.amount = am.value; }; am.onkeydown = e => { if(e.key === 'Enter'){ e.preventDefault(); add(); } }; }
+    const ad = root.querySelector('[data-act=add]'); if(ad) ad.onclick = add;
+    const fr = $('dsFrom'); if(fr) fr.onchange = () => { S.from = fr.value; draw(); };
+    const to = $('dsTo'); if(to) to.onchange = () => { S.to = to.value; draw(); };
+    root.querySelectorAll('[data-range]').forEach(b => b.onclick = () => { setRange(b.dataset.range); draw(); });
+    const q = $('dsQ'); if(q) q.oninput = () => { S.q = q.value; draw(); };
+    root.querySelectorAll('[data-day]').forEach(tr => tr.onclick = () => { S.from = S.to = tr.dataset.day; draw(); window.scrollTo({ top:0, behavior:'smooth' }); });
+    root.querySelectorAll('[data-del]').forEach(b => b.onclick = e => { e.stopPropagation(); del(b.dataset.del); });
+    const rl = root.querySelector('[data-act=reload]'); if(rl) rl.onclick = () => { S.msg = ''; load(); };
+    const x = root.querySelector('[data-act=xlsx]'); if(x) x.onclick = exportXlsx;
+  }
+
+  async function add(){
+    const item = S.item.trim(), amount = toNum(S.amount);
+    if(!S.date) return flash('اختار التاريخ.', true);
+    if(!item) return flash('اكتب الطلب.', true);
+    if(amount === null || amount <= 0) return flash('اكتب السعر (رقم أكبر من صفر).', true);
+    S.busy = true; draw();
+    const { error } = await sb().from('direct_sales').insert({
+      sale_date: S.date, kind: S.kind, item, amount, created_by_name: myName()
+    });
+    S.busy = false;
+    if(error) return flash('❌ مقدرناش نسجّل: ' + error.message, true);
+    const wasRet = S.kind === 'return';
+    // لو التاريخ برا الفترة المعروضة، اعرض الكل عشان العملية تبان
+    if((S.from && S.date < S.from) || (S.to && S.date > S.to)){ S.from = S.to = ''; }
+    S.item = ''; S.amount = '';
+    S.msg = `✅ اتسجّل ${wasRet ? 'مرتجع' : 'مبيعة'} "${item}" بـ ${fmt(amount)} ج يوم ${dayLabel(S.date)}.`; S.msgErr = false;
+    await load();
+    const i = document.getElementById('dsItem'); if(i) i.focus();
+  }
+
+  async function del(id){
+    const r = (S.rows || []).find(x => String(x.id) === String(id));
+    if(!r || !confirm(`تمسح ${r.kind === 'return' ? 'المرتجع' : 'المبيعة'} "${r.item}" (${fmt(r.amount)} ج)؟`)) return;
+    const { data, error } = await sb().from('direct_sales').delete().eq('id', id).select('id');
+    if(error || !data || !data.length) return flash('❌ مقدرناش نمسح' + (error ? ': ' + error.message : ' — المسح لصاحب العملية أو الأدمن بس.'), true);
+    S.msg = '✅ اتمسحت.'; S.msgErr = false;
+    await load();
+  }
+
+  function exportXlsx(){
+    const list = filtered().slice().sort((a, b) => a.sale_date < b.sale_date ? -1 : a.sale_date > b.sale_date ? 1 : 0);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(list.map(r => ({
+      'التاريخ': r.sale_date, 'النوع': r.kind === 'return' ? 'مرتجع' : 'مبيعة', 'الطلب': r.item,
+      'المبلغ': r.kind === 'return' ? -Number(r.amount) : Number(r.amount), 'بواسطة': r.created_by_name || '' }))), 'كل العمليات');
+    const days = {};
+    list.forEach(r => (days[r.sale_date] = days[r.sale_date] || []).push(r));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(Object.keys(days).sort().map(k => { const t = sums(days[k]);
+      return { 'التاريخ': k, 'المبيعات': t.s, 'المرتجعات': t.r, 'المحصلة': t.net }; })), 'محصلة كل يوم');
+    XLSX.writeFile(wb, 'المبيعات المباشرة ' + (S.from || 'الكل') + (S.to && S.to !== S.from ? ' إلى ' + S.to : '') + '.xlsx');
+  }
+
+  /* ---------- لينك في القائمة (تحت المالية) ---------- */
+  const anchor = document.querySelector('#sidebar a.navlink[href="#/qp"]') || document.querySelector('#sidebar a.navlink[href="#/profits"]');
+  if(anchor && !document.querySelector('#sidebar a.navlink[href="#/direct"]')){
+    const a = document.createElement('a');
+    a.className = 'navlink'; a.href = '#/direct'; a.textContent = '🛒 مبيعات مباشرة';
+    anchor.after(a);
+  }
+
+  /* ---------- الربط بالراوتر ---------- */
+  function mount(){
+    document.querySelectorAll('#sidebar a.navlink').forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#/direct'));
+    draw(); if(S.rows === null && !S.loading && !S.err) load();
+  }
+  const _render = render;
+  render = function(){ _render.apply(this, arguments); if(isDS()) mount(); };
+  window.addEventListener('hashchange', () => { if(isDS()) mount(); });
+  if(isDS()) setTimeout(mount, 0);
 })();
 </script>
 
