@@ -3487,7 +3487,7 @@ table.pr tr.out td{background:#fff5f4}
 
   const TABS = [
     ['stock', '📦 المخزون'], ['in', '➕ إدخال'], ['out', '➖ إخراج'],
-    ['count', '📋 جرد'], ['moves', '🕘 الحركات'], ['buy', '📊 المشتريات'], ['items', '🏷️ الأصناف']
+    ['count', '📋 جرد'], ['moves', '🕘 الحركات'], ['day', '🗓️ ملخص اليوم'], ['buy', '📊 المشتريات'], ['items', '🏷️ الأصناف']
   ];
   const KIND = { in: ['إدخال', 'in'], out: ['إخراج', 'out'], adjust: ['تسوية جرد', 'adj'] };
   const SRC = { purchase:'🛒 مشتريات من مورد', return:'↩️ مرتجع من عميل', other:'📥 إدخال تاني' };
@@ -3517,6 +3517,7 @@ table.pr tr.out td{background:#fff5f4}
   let S = { tab:'stock', items:null, moves:null, loading:false, busy:false, err:'', msg:'', q:'', mq:'',
             lines:[{ item:'', qty:'' }], note:'', countNote:'', count:{}, editing:null,
             showLow:false, req:{}, src:'purchase',
+            day: ymd(new Date()), dayData:null, dayLoading:false, dayErr:'',
             buy:null, buyLoading:false, buyErr:'', buyFrom: ymd(new Date(new Date().getFullYear(), new Date().getMonth(), 1)), buyTo: ymd(new Date()), target:(() => { try{ return Number(localStorage.getItem('inv_target')) || 300; }catch(e){ return 300; } })() };
 
   const active = () => (S.items || []).filter(i => i.active !== false);
@@ -3542,7 +3543,7 @@ table.pr tr.out td{background:#fff5f4}
       S.err = /does not exist|relation|schema cache|Could not find/i.test(e.message)
         ? 'جداول المخزن لسه مش موجودة في Supabase — لازم كود الـ SQL يتشغّل الأول.'
         : 'مقدرناش نجيب بيانات المخزن: ' + e.message;
-    } else { S.items = a.data || []; S.moves = b.data || []; }
+    } else { S.items = a.data || []; S.moves = b.data || []; S.dayData = null; if(S.tab === 'day') setTimeout(loadDay, 0); }
     draw();
   }
 
@@ -3567,7 +3568,7 @@ table.pr tr.out td{background:#fff5f4}
     if(S.items === null) return h + `<div class="card"><p class="none">⏳ بيحمّل المخزن...</p></div>`;
     if(!S.items.length && S.tab !== 'items')
       return h + `<div class="card"><p class="none" style="margin-bottom:10px">لسه مفيش أصناف. ابدأ بإضافة الأصناف ورصيدها الحالي.</p><button class="inv-btn pri" data-tab="items">🏷️ ضيف أول صنف</button></div>`;
-    return h + ({ stock:vStock, in:() => vMove('in'), out:() => vMove('out'), count:vCount, moves:vMoves, buy:vBuy, items:vItems }[S.tab])();
+    return h + ({ stock:vStock, in:() => vMove('in'), out:() => vMove('out'), count:vCount, moves:vMoves, day:vDay, buy:vBuy, items:vItems }[S.tab])();
   }
 
   function vStock(){
@@ -3588,6 +3589,7 @@ table.pr tr.out td{background:#fff5f4}
         <div class="inv-bar">
           <input type="search" id="invQ" class="inv-in" placeholder="🔍 دوّر باسم الصنف أو الكود أو التصنيف..." value="${esc(S.q)}">
           ${window.XLSX ? '<button class="inv-btn" data-act="xlsx">⬇️ Excel</button>' : ''}
+          <button class="inv-btn" data-act="today-sum">🗓️ ملخص النهارده</button>
         </div>
         <div class="tablewrap" style="max-height:560px;overflow-y:auto"><table class="pr">
           <tr><th>الصنف</th><th>الكود</th><th>التصنيف</th><th>الكمية</th><th>الحد الأدنى</th><th>الحالة</th><th></th></tr>
@@ -3814,6 +3816,140 @@ th{background:#3d5553;color:#fff} td.r{text-align:right;font-weight:600} tr:nth-
       <tr class="tot"><td colspan="4">الإجمالي</td><td>${n(c.qty)}</td><td></td><td>${n(Math.round(c.cost))} ج</td></tr></table>`);
   }
 
+  /* =====================================================================
+     🗓️ ملخص اليوم — حصل إيه في المخزن في يوم معيّن + إرساله على واتساب
+     ===================================================================== */
+  const WA_NUMBER = '201095208066'; // رقم الواتساب اللي الملخص بيتبعتله (01095208066) — غيّره من هنا لو حبيت
+  const dayTitle = k => new Date(k + 'T12:00:00').toLocaleDateString('ar-EG', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
+  const sgn = n => (n > 0 ? '+' : n < 0 ? '−' : '') + fmtN(Math.abs(n));
+  const DAY_SECTIONS = [
+    // [المفتاح، العنوان، يظهر القيمة بالجنيه؟]
+    ['purchase', '🛒 مشتريات',                 true],
+    ['return',   '↩️ مرتجعات من عملاء',        true],
+    ['otherIn',  '📥 إدخال تاني / رصيد أول المدة', false],
+    ['out',      '➖ إخراج',                   true],
+    ['adjust',   '📋 تسوية جرد',               false],
+  ];
+
+  async function loadDay(){
+    if(!S.day || S.items === null || !sb()) return;
+    S.dayLoading = true; S.dayErr = ''; draw();
+    const start = new Date(S.day + 'T00:00:00'), endT = new Date(S.day + 'T23:59:59.999').getTime();
+    // بنجيب حركات اليوم وكل اللي بعده عشان نرجّع الرصيد لأول وآخر اليوم
+    const { data, error } = await sb().from('inv_moves')
+      .select('*, inv_items(name, unit, cost)')
+      .gte('created_at', start.toISOString())
+      .order('created_at', { ascending:true }).limit(20000);
+    S.dayLoading = false;
+    if(error){ S.dayErr = 'مقدرناش نجيب حركات اليوم: ' + error.message; S.dayData = null; draw(); return; }
+    const dayMoves = [], after = [];
+    (data || []).forEach(m => (new Date(m.created_at).getTime() <= endT ? dayMoves : after).push(m));
+    S.dayData = calcDay(dayMoves, after);
+    draw();
+  }
+
+  function calcDay(dayMoves, after){
+    const sumBy = list => { const o = {}; list.forEach(m => o[m.item_id] = (o[m.item_id] || 0) + Number(m.qty)); return o; };
+    const aft = sumBy(after), dd = sumBy(dayMoves);
+    let vB = 0, vA = 0, pB = 0, pA = 0, noCost = 0;
+    (S.items || []).forEach(i => {
+      const qA = Number(i.qty || 0) - (aft[i.id] || 0); // الرصيد آخر اليوم
+      const qB = qA - (dd[i.id] || 0);                   // الرصيد أول اليوم
+      pA += qA; pB += qB;
+      if(i.cost != null && i.cost !== ''){ vA += qA * Number(i.cost); vB += qB * Number(i.cost); }
+      else if(qA || qB) noCost++;
+    });
+    const groups = { purchase:[], return:[], otherIn:[], out:[], adjust:[] };
+    dayMoves.forEach(m => {
+      const g = m.kind === 'out' ? 'out' : m.kind === 'adjust' ? 'adjust'
+        : m.source === 'return' ? 'return' : isPurchase(m) ? 'purchase' : 'otherIn';
+      groups[g].push(m);
+    });
+    const agg = list => {
+      const o = {};
+      list.forEach(m => {
+        const it = m.inv_items || itemById(m.item_id) || {};
+        const r = o[m.item_id] = o[m.item_id] || { name: it.name || '—', unit: it.unit || '', qty: 0, value: 0, notes: [] };
+        r.qty += Number(m.qty);
+        const uc = m.unit_cost != null ? Number(m.unit_cost) : (it.cost != null ? Number(it.cost) : 0);
+        r.value += Math.abs(Number(m.qty)) * uc;
+        if(m.note && !r.notes.includes(m.note)) r.notes.push(m.note);
+      });
+      const rows = Object.values(o).sort((a, b) => Math.abs(b.qty) - Math.abs(a.qty));
+      return { rows, qty: rows.reduce((s, r) => s + r.qty, 0), value: rows.reduce((s, r) => s + r.value, 0), n: list.length };
+    };
+    const G = {}; Object.keys(groups).forEach(k => G[k] = agg(groups[k]));
+    const people = [...new Set(dayMoves.map(m => m.created_by_name).filter(Boolean))];
+    return { day: S.day, G, count: dayMoves.length, vB, vA, pB, pA, noCost, people };
+  }
+
+  function vDay(){
+    const t = ymd(new Date()), y = ymd(new Date(Date.now() - 864e5));
+    let h = `<div class="card"><div class="inv-bar" style="margin:0">
+      <label for="dayPick" style="font-size:13px;color:var(--muted)">التاريخ</label>
+      <input type="date" id="dayPick" class="inv-in" style="width:auto" value="${esc(S.day)}" max="${t}">
+      <button class="inv-btn sm" data-dayq="${t}">النهارده</button>
+      <button class="inv-btn sm" data-dayq="${y}">امبارح</button>
+      <button class="inv-btn pri" data-act="day-go" ${S.dayLoading ? 'disabled' : ''}>🗓️ حصل إيه في اليوم ده؟</button>
+      <span style="flex:1"></span>
+      <button class="inv-btn green" data-act="day-wa" ${S.dayData && !S.dayLoading ? '' : 'disabled'}>💬 ابعت على واتساب</button>
+    </div></div>`;
+    if(S.dayErr) return h + `<div class="inv-msg err">${esc(S.dayErr)}</div>`;
+    if(S.dayLoading) return h + `<div class="card"><p class="none">⏳ بيجمع حركات اليوم...</p></div>`;
+    if(!S.dayData) return h + `<div class="card"><p class="none">اختار التاريخ ودوس "حصل إيه في اليوم ده؟".</p></div>`;
+
+    const D = S.dayData, diff = D.vA - D.vB, dp = D.pA - D.pB;
+    const col = n => n > 0 ? '#276749' : n < 0 ? '#b3423a' : 'var(--muted)';
+    h += `<h2 class="sectitle" style="margin-top:6px;color:var(--ink)">🗓️ ${esc(dayTitle(D.day))} — ${fmtN(D.count)} حركة</h2>
+      <div class="inv-kpis">
+        <div class="inv-kpi"><div class="n">${fmtN(Math.round(D.vB))} ج</div><div class="l">💰 قيمة المخزن أول اليوم</div></div>
+        <div class="inv-kpi"><div class="n">${fmtN(Math.round(D.vA))} ج</div><div class="l">💰 قيمة المخزن آخر اليوم</div></div>
+        <div class="inv-kpi"><div class="n" style="color:${col(diff)}">${sgn(Math.round(diff))} ج</div><div class="l">الفرق في القيمة</div></div>
+        <div class="inv-kpi"><div class="n">${fmtN(D.pB)} ← ${fmtN(D.pA)}</div><div class="l">عدد القطع (قبل ← بعد) · <b style="color:${col(dp)}">${sgn(dp)}</b></div></div>
+      </div>`;
+    if(!D.count) return h + `<div class="card"><p class="none">مفيش أي حركة في المخزن اليوم ده.</p></div>`;
+
+    DAY_SECTIONS.forEach(([k, lbl, money]) => {
+      const g = D.G[k]; if(!g.rows.length) return;
+      const tot = k === 'adjust' ? sgn(g.qty) : fmtN(Math.abs(g.qty));
+      h += `<div class="card"><h3>${lbl} — ${fmtN(g.rows.length)} صنف · ${tot} قطعة${money && g.value ? ' · ' + fmtN(Math.round(g.value)) + ' ج' : ''}</h3>
+        <div class="tablewrap"><table class="pr">
+          <tr><th>الصنف</th><th>الكمية</th>${money ? '<th>القيمة</th>' : ''}<th>ملاحظات</th></tr>
+          ${g.rows.map(r => `<tr><td class="lbl">${esc(r.name)}</td>
+            <td class="num" ${k === 'adjust' ? `style="color:${col(r.qty)}"` : ''}>${k === 'adjust' ? sgn(r.qty) : fmtN(Math.abs(r.qty))} <span style="font-weight:400;color:var(--muted)">${esc(r.unit)}</span></td>
+            ${money ? `<td>${r.value ? fmtN(Math.round(r.value)) + ' ج' : '—'}</td>` : ''}
+            <td style="white-space:normal;text-align:right">${esc(r.notes.join(' · ') || '—')}</td></tr>`).join('')}
+        </table></div></div>`;
+    });
+    h += `<p class="none">قيمة المخزن محسوبة بسعر التكلفة الحالي لكل صنف.${D.noCost ? ` فيه ${fmtN(D.noCost)} صنف مالوش سعر تكلفة فمش داخل في القيمة.` : ''}${D.people.length ? ' الحركات اتسجلت بواسطة: ' + esc(D.people.join('، ')) + '.' : ''}</p>`;
+    return h;
+  }
+
+  function dayText(){
+    const D = S.dayData, L = [];
+    L.push('📦 *ملخص المخزن*');
+    L.push('🗓️ ' + dayTitle(D.day));
+    L.push('');
+    if(!D.count) { L.push('مفيش أي حركة في المخزن اليوم ده.'); L.push(''); }
+    DAY_SECTIONS.forEach(([k, lbl, money]) => {
+      const g = D.G[k]; if(!g.rows.length) return;
+      const tot = k === 'adjust' ? sgn(g.qty) : fmtN(Math.abs(g.qty));
+      L.push(`*${lbl}* — ${fmtN(g.rows.length)} صنف · ${tot} قطعة${money && g.value ? ' · ' + fmtN(Math.round(g.value)) + ' ج' : ''}`);
+      g.rows.slice(0, 15).forEach(r => L.push(`• ${r.name}: ${k === 'adjust' ? sgn(r.qty) : fmtN(Math.abs(r.qty))}`));
+      if(g.rows.length > 15) L.push(`• و ${fmtN(g.rows.length - 15)} صنف كمان`);
+      L.push('');
+    });
+    L.push(`💰 *قيمة المخزن:* أول اليوم ${fmtN(Math.round(D.vB))} ج ← آخر اليوم ${fmtN(Math.round(D.vA))} ج (${sgn(Math.round(D.vA - D.vB))} ج)`);
+    L.push(`📦 *عدد القطع:* ${fmtN(D.pB)} ← ${fmtN(D.pA)} (${sgn(D.pA - D.pB)})`);
+    if(D.people.length) L.push('👤 بواسطة: ' + D.people.join('، '));
+    if(myName()) L.push('📤 اتبعت من: ' + myName());
+    return L.join('\n');
+  }
+  function sendDay(){
+    if(!S.dayData) return;
+    window.open('https://wa.me/' + WA_NUMBER + '?text=' + encodeURIComponent(dayText()), '_blank', 'noopener');
+  }
+
   // محتوى القايمة — بيتفلتر بكلام السيرش بار، وEnter بيختار أول نتيجة (المعلّمة)
   function ddListHtml(sel, q){
     const list = matchItems(q);
@@ -3933,7 +4069,7 @@ th{background:#3d5553;color:#fff} td.r{text-align:right;font-weight:600} tr:nth-
 
   /* ---------- الأحداث ---------- */
   function wire(root){
-    root.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { S.tab = b.dataset.tab; S.msg = ''; S.editing = null; S.draft = null; draw(); if(S.tab === 'buy' && S.buy === null && !S.buyLoading) loadBuy(); });
+    root.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { S.tab = b.dataset.tab; S.msg = ''; S.editing = null; S.draft = null; draw(); if(S.tab === 'buy' && S.buy === null && !S.buyLoading) loadBuy(); if(S.tab === 'day' && !S.dayData && !S.dayLoading) loadDay(); });
     root.querySelectorAll('[data-act=reload]').forEach(b => b.onclick = () => { S.msg = ''; load(); });
     root.querySelectorAll('[data-quick]').forEach(b => b.onclick = () => {
       S.tab = b.dataset.quick; S.lines = [{ item:b.dataset.id, qty:'' }]; S.note = ''; S.msg = ''; draw();
@@ -4023,6 +4159,13 @@ th{background:#3d5553;color:#fff} td.r{text-align:right;font-weight:600} tr:nth-
       const t = document.getElementById('invLowTotal'); if(t) t.textContent = fmtN(lowRows().reduce((a, r) => a + r.need, 0));
     });
     const pr = root.querySelector('[data-act=print-low]'); if(pr) pr.onclick = printShortage;
+
+    // 🗓️ ملخص اليوم
+    const dpk = root.querySelector('#dayPick'); if(dpk) dpk.onchange = () => { if(!dpk.value) return; S.day = dpk.value; S.dayData = null; loadDay(); };
+    root.querySelectorAll('[data-dayq]').forEach(b => b.onclick = () => { S.day = b.dataset.dayq; S.dayData = null; loadDay(); });
+    const dg = root.querySelector('[data-act=day-go]'); if(dg) dg.onclick = () => { S.dayData = null; loadDay(); };
+    const dw = root.querySelector('[data-act=day-wa]'); if(dw) dw.onclick = sendDay;
+    const ts = root.querySelector('[data-act=today-sum]'); if(ts) ts.onclick = () => { S.tab = 'day'; S.msg = ''; S.day = ymd(new Date()); S.dayData = null; loadDay(); };
   }
 
   async function saveMove(kind){
