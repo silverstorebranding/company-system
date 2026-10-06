@@ -588,6 +588,8 @@ const PR_RATE_OVERRIDES={
   "rs kids":{ofd:0.70,hold:0.30}
 };
 const prRatesFor=b=>PR_RATE_OVERRIDES[b]||{ofd:PR_OFD_RATE,hold:PR_HOLD_RATE};
+// براندات تكلفة بضاعتها نسبة ثابتة من المبيعات (بدل 65.2 / 94 للقطعة)
+const PR_COGS_PCT={"rs kids":0.50};
 const PR_statusCol=15,PR_priceCol=5,PR_shipCol=6,PR_notesCol=10,PR_contentsCol=12,PR_returnedCol=9,PR_dateCol=11;
 
 // البنود اليدوية — بتتكتب مرة واحدة في الجدول الأساسي وبتتطبق على الجدولين
@@ -660,7 +662,9 @@ function prProcess(rows){
     const isRet=r=>{const v=r[PR_returnedCol-1];return v&&String(v).trim()!==""&&String(v).trim()!=="NaT";};
     const shipUndel=undelRows.filter(r=>!isRet(r)).reduce((s,r)=>s+prNum(r[PR_shipCol-1]),0);
     const wIns=delivered.filter(r=>prHasInsial(r[PR_contentsCol-1])).length;
-    const cogs=wIns*PR_COGS_YES+(delivered.length-wIns)*PR_COGS_NO;
+    const cogs=(brand in PR_COGS_PCT)
+      ? revenue*PR_COGS_PCT[brand]
+      : wIns*PR_COGS_YES+(delivered.length-wIns)*PR_COGS_NO;
     return {n:rs.length,delivered:delivered.length,returned:returned.length,hold,ofd,undel,revenue,shipAll,shipDel,shipRet,shipUndel,cogs};
   }
   prBrandCalc={}; PR_BRANDS.forEach(b=>prBrandCalc[b]=calcOne(b));
@@ -1242,6 +1246,7 @@ function viewProfits(){
     </div>
     <div class="card"><h3>2) الجدول الأساسي — التكاليف والأرباح بعد التوقع (الفعلي + المتوقع)</h3>
       <p style="font-size:13px;color:var(--muted)">المبيعات وشحن التسليمات وتكلفة البضاعة هنا = الفعلي + المتوقع من الأوردرات "تحت التسليم" (35%) و"Hold" (15%) لمعظم البراندات — ما عدا CARA SILVER (30% / 10%)، CARA SILVER UN (25% / 8%)، CARA WA (30% / 10%)، وRS KIDS (70% / 30%). باقي البنود زي ما هي.</p>
+      <p style="font-size:13px;color:var(--muted)">تكلفة البضاعة لـ RS KIDS = 50% من مبيعاته (الفعلي والمتوقع).</p>
       <p style="font-size:13px;color:var(--muted)">اكتب البنود اليدوية (الإعلانات، و"هوالك - نثريات - أخرى") في الخانات الخضراء هنا بس — بتتطبق تلقائيًا على الجدول الفعلي تحت كمان. إعلانات RS KIDS بتتكتب يدوي في عمود RS KIDS.</p>
       <div class="tablewrap"><table class="pr" id="prFullTable"></table></div>
     </div>
