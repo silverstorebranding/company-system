@@ -3130,7 +3130,8 @@ async function exportToSheet(btn) {
     { title:'العمل', items:[
       { key:'tasks',    label:'✅ مهامي',        routes:['tasks'] },
       { key:'handover', label:'🔁 مركز التسليم', routes:['handover'] },
-      { key:'squad',    label:'🏆 Squad',        routes:['squad'] } ]},
+      { key:'squad',    label:'🏆 Squad',        routes:['squad'] },
+      { key:'eod',      label:'📝 EOD',          routes:['eod'] } ]},
     { title:'المالية', items:[
       { key:'profits', label:'💰 الأرباح',    routes:['profits'] },
       { key:'ads',     label:'📢 الإعلانات',  routes:['ads'] },
@@ -3517,7 +3518,7 @@ table.pr tr.out td{background:#fff5f4}
   let S = { tab:'stock', items:null, moves:null, loading:false, busy:false, err:'', msg:'', q:'', mq:'',
             lines:[{ item:'', qty:'' }], note:'', countNote:'', count:{}, editing:null,
             showLow:false, req:{}, src:'purchase',
-            day: ymd(new Date()), dayData:null, dayLoading:false, dayErr:'',
+            day: ymd(new Date()), dayData:null, dayLoading:false, dayErr:'', dayNote:'',
             buy:null, buyLoading:false, buyErr:'', buyFrom: ymd(new Date(new Date().getFullYear(), new Date().getMonth(), 1)), buyTo: ymd(new Date()), target:(() => { try{ return Number(localStorage.getItem('inv_target')) || 300; }catch(e){ return 300; } })() };
 
   const active = () => (S.items || []).filter(i => i.active !== false);
@@ -3907,7 +3908,7 @@ th{background:#3d5553;color:#fff} td.r{text-align:right;font-weight:600} tr:nth-
         <div class="inv-kpi"><div class="n" style="color:${col(diff)}">${sgn(Math.round(diff))} ج</div><div class="l">الفرق في القيمة</div></div>
         <div class="inv-kpi"><div class="n">${fmtN(D.pB)} ← ${fmtN(D.pA)}</div><div class="l">عدد القطع (قبل ← بعد) · <b style="color:${col(dp)}">${sgn(dp)}</b></div></div>
       </div>`;
-    if(!D.count) return h + `<div class="card"><p class="none">مفيش أي حركة في المخزن اليوم ده.</p></div>`;
+    if(!D.count) h += `<div class="card"><p class="none">مفيش أي حركة في المخزن اليوم ده.</p></div>`;
 
     DAY_SECTIONS.forEach(([k, lbl, money]) => {
       const g = D.G[k]; if(!g.rows.length) return;
@@ -3921,6 +3922,15 @@ th{background:#3d5553;color:#fff} td.r{text-align:right;font-weight:600} tr:nth-
             <td style="white-space:normal;text-align:right">${esc(r.notes.join(' · ') || '—')}</td></tr>`).join('')}
         </table></div></div>`;
     });
+    if(D.day === ymd(new Date())){
+      const lows = lowItems();
+      if(lows.length) h += `<div class="card"><h3>⚠️ نواقص المخزن دلوقتي — ${fmtN(lows.length)} صنف</h3><div class="tablewrap"><table class="pr">
+        <tr><th>الصنف</th><th>الموجود</th><th>الحد الأدنى</th></tr>
+        ${lows.map(i => `<tr class="${status(i)[1]}"><td class="lbl">${esc(i.name)}</td><td class="num">${fmtN(i.qty)} <span style="font-weight:400;color:var(--muted)">${esc(i.unit || '')}</span></td><td>${i.min_qty ? fmtN(i.min_qty) : '—'}</td></tr>`).join('')}
+      </table></div></div>`;
+    }
+    h += `<div class="card"><label for="dayNote" style="display:block;font-size:13px;font-weight:600;color:var(--muted);margin-bottom:5px">📝 ملاحظات مسؤولة المخزن (بتتبعت مع الملخص على الواتساب)</label>
+      <textarea class="inv-in" id="dayNote" rows="2" placeholder="مثلاً: مورد اتأخر، صنف وصل تالف، محتاجين نطلب كذا...">${esc(S.dayNote)}</textarea></div>`;
     h += `<p class="none">قيمة المخزن محسوبة بسعر التكلفة الحالي لكل صنف.${D.noCost ? ` فيه ${fmtN(D.noCost)} صنف مالوش سعر تكلفة فمش داخل في القيمة.` : ''}${D.people.length ? ' الحركات اتسجلت بواسطة: ' + esc(D.people.join('، ')) + '.' : ''}</p>`;
     return h;
   }
@@ -3939,9 +3949,19 @@ th{background:#3d5553;color:#fff} td.r{text-align:right;font-weight:600} tr:nth-
       if(g.rows.length > 15) L.push(`• و ${fmtN(g.rows.length - 15)} صنف كمان`);
       L.push('');
     });
+    if(D.day === ymd(new Date())){
+      const lows = lowItems();
+      if(lows.length){
+        L.push(`*⚠️ نواقص دلوقتي* — ${fmtN(lows.length)} صنف`);
+        lows.slice(0, 15).forEach(i => L.push(`• ${i.name}: فاضل ${fmtN(i.qty)}`));
+        if(lows.length > 15) L.push(`• و ${fmtN(lows.length - 15)} صنف كمان`);
+        L.push('');
+      }
+    }
     L.push(`💰 *قيمة المخزن:* أول اليوم ${fmtN(Math.round(D.vB))} ج ← آخر اليوم ${fmtN(Math.round(D.vA))} ج (${sgn(Math.round(D.vA - D.vB))} ج)`);
     L.push(`📦 *عدد القطع:* ${fmtN(D.pB)} ← ${fmtN(D.pA)} (${sgn(D.pA - D.pB)})`);
     if(D.people.length) L.push('👤 بواسطة: ' + D.people.join('، '));
+    if(S.dayNote.trim()) L.push('📝 ملاحظات: ' + S.dayNote.trim());
     if(myName()) L.push('📤 اتبعت من: ' + myName());
     return L.join('\n');
   }
@@ -4165,6 +4185,7 @@ th{background:#3d5553;color:#fff} td.r{text-align:right;font-weight:600} tr:nth-
     root.querySelectorAll('[data-dayq]').forEach(b => b.onclick = () => { S.day = b.dataset.dayq; S.dayData = null; loadDay(); });
     const dg = root.querySelector('[data-act=day-go]'); if(dg) dg.onclick = () => { S.dayData = null; loadDay(); };
     const dw = root.querySelector('[data-act=day-wa]'); if(dw) dw.onclick = sendDay;
+    const dn = root.querySelector('#dayNote'); if(dn) dn.oninput = () => { S.dayNote = dn.value; };
     const ts = root.querySelector('[data-act=today-sum]'); if(ts) ts.onclick = () => { S.tab = 'day'; S.msg = ''; S.day = ymd(new Date()); S.dayData = null; loadDay(); };
   }
 
@@ -4289,6 +4310,12 @@ th{background:#3d5553;color:#fff} td.r{text-align:right;font-weight:600} tr:nth-
   const _render = render;
   render = function(){ _render.apply(this, arguments); if(isInv()) mount(); };
   window.addEventListener('hashchange', () => { if(isInv()) mount(); });
+  // بيفتح ملخص يوم معيّن في المخزن من أي قسم تاني (زي قسم الـ EOD)
+  window.InvOpenDay = d => {
+    S.tab = 'day'; S.msg = ''; S.day = d || ymd(new Date()); S.dayData = null;
+    if(isInv()){ if(S.items) loadDay(); else mount(); }
+    else { location.hash = '#/dept/warehouse'; if(S.items) setTimeout(loadDay, 50); }
+  };
   if(isInv()) setTimeout(mount, 0);
 })();
 </script>
@@ -4556,6 +4583,447 @@ table.pr td.ds-pos{color:#276749;font-weight:700}
   render = function(){ _render.apply(this, arguments); if(isDS()) mount(); };
   window.addEventListener('hashchange', () => { if(isDS()) mount(); });
   if(isDS()) setTimeout(mount, 0);
+})();
+</script>
+
+<!-- =====================================================================
+     📝 قسم الـ EOD — تقرير آخر اليوم لكل فرد (البيكب / خدمة العملاء / المخزن)
+     بيتحفظ في Supabase (جدول eod_reports) وبيتبعت على واتساب
+     ===================================================================== -->
+<style id="eod-style">
+.eod-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px}
+.eod-tab{border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:9px 15px;border-radius:9px;cursor:pointer;font-family:inherit;font-size:14px}
+.eod-tab.on{background:var(--brass);border-color:var(--brass);color:#fff;font-weight:700}
+.eod-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.eod-bar label{font-size:13px;color:var(--muted);display:inline-flex;align-items:center;gap:6px}
+.eod-in{width:100%;padding:9px 11px;border:1.5px solid var(--line);border-radius:8px;font-size:15px;font-family:inherit;background:var(--panel);color:var(--ink);box-sizing:border-box}
+.eod-in:focus{outline:none;border-color:var(--brass)}
+.eod-bar .eod-in{width:auto}
+textarea.eod-in{resize:vertical;min-height:70px}
+.eod-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px 14px}
+.eod-f label{display:block;font-size:13px;font-weight:600;color:var(--muted);margin-bottom:5px}
+.eod-f.wide{grid-column:1/-1}
+.eod-new{font-size:10.5px;background:#fbf0d9;color:#8a6d3b;border-radius:10px;padding:1px 7px;margin-inline-start:4px;font-weight:600;vertical-align:1px}
+.eod-btn{border:1px solid var(--line);background:var(--paper);color:var(--ink);border-radius:8px;padding:7px 13px;font-family:inherit;font-size:13.5px;cursor:pointer;white-space:nowrap}
+.eod-btn.pri{background:var(--brass);border-color:var(--brass);color:#fff;font-weight:700;padding:11px 20px;font-size:15px}
+.eod-btn.wa{background:#25D366;border-color:#25D366;color:#fff;font-weight:700;padding:11px 20px;font-size:15px}
+.eod-btn.sm{padding:3px 9px;font-size:12px}
+.eod-btn:disabled{opacity:.55;cursor:default}
+.eod-msg{padding:10px 13px;border-radius:9px;margin-bottom:14px;font-size:14px;background:#e8f3ec;color:#276749}
+.eod-msg.err{background:#fdecea;color:#b3423a}
+.eod-sum .kpi b.good{color:#276749}
+.eod-sum .kpi b.bad{color:#b3423a}
+.eod-warn{background:#fdf3e1;color:#7a5410;border:1px solid #ecd39c;border-radius:8px;padding:8px 12px;font-size:13.5px;margin-top:8px}
+.eod-status{font-size:13px;color:var(--muted)}
+.eod-status b{color:var(--brass-d)}
+.eod-rep{border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:10px;background:var(--panel)}
+.eod-rep .top{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.eod-rep .nm{font-weight:700}
+.eod-rep .meta{font-size:12.5px;color:var(--muted)}
+.eod-rep .acts{margin-inline-start:auto;display:flex;gap:6px;flex-wrap:wrap}
+.eod-rep pre{white-space:pre-wrap;font-family:inherit;font-size:13.5px;background:var(--paper);border-radius:8px;padding:10px 12px;margin:10px 0 0}
+.eod-tag{display:inline-block;padding:2px 9px;border-radius:20px;font-size:12px;font-weight:600;background:var(--slate-l);color:var(--slate)}
+.eod-tag.pickup{background:#fdf3e1;color:#8a6d3b}
+.eod-tag.cs{background:#e9eef7;color:#3b5b92}
+.eod-day{font-weight:700;color:var(--brass-d);margin:18px 0 8px}
+</style>
+<script>
+(function(){
+  /* ---------- إعدادات ---------- */
+  const WA_NUMBER = '201095208066'; // الرقم اللي التقارير بتتبعتله (01095208066)
+
+  /* ---------- فورم كل تقرير — عدّل أو زوّد خانات من هنا ----------
+     type: n = رقم ، money = فلوس ، text = كلام ، extra = خانة اتضافت كاقتراح (عليها ✨) */
+  const FORMS = {
+    pickup: { title:'EOD البيكب', icon:'📦', who:'المسؤولة عن البيكب', sections:[
+      { t:'🧾 الأوردرات', f:[
+        { k:'total',     l:'إجمالي الأوردرات', type:'n' },
+        { k:'acc',       l:'منهم إكسسوارات', type:'n' },
+        { k:'kids',      l:'منهم ملابس أطفال', type:'n' },
+        { k:'handed',    l:'اتسلّمت للمندوب فعلاً', type:'n', extra:true },
+        { k:'nostock',   l:'مخرجتش لعدم توافر مخزون', type:'n' },
+        { k:'postponed', l:'اتأجلت لبكرة لأي سبب تاني', type:'n', extra:true },
+      ]},
+      { t:'💰 الفلوس', f:[
+        { k:'sales',     l:'إجمالي المبيعات', type:'money' },
+        { k:'collected', l:'إجمالي التحصيل', type:'money' },
+      ]},
+      { t:'↩️ المرتجعات', f:[
+        { k:'ret_courier', l:'المرتجعات حسب المندوب', type:'n' },
+        { k:'ret_actual',  l:'المرتجعات الفعلية (اللي استلمناها)', type:'n' },
+        { k:'ret_damaged', l:'منها تالف أو ناقص', type:'n', extra:true },
+      ]},
+      { t:'📝 ملاحظات', f:[
+        { k:'nostock_items', l:'الأصناف اللي كانت ناقصة', type:'text', extra:true },
+        { k:'notes',         l:'ملاحظات أو شكوى', type:'text' },
+      ]},
+    ]},
+    cs: { title:'EOD خدمة العملاء', icon:'💬', who:'خدمة العملاء', sections:[
+      { t:'🧾 الأوردرات', f:[
+        { k:'wa',        l:'أوردرات الواتساب', type:'n' },
+        { k:'page',      l:'أوردرات البيدج', type:'n' },
+        { k:'retarget',  l:'أوردرات الريتارجت', type:'n' },
+        { k:'followup',  l:'عدد الفولو أب', type:'n' },
+        { k:'fu_orders', l:'أوردرات جت من الفولو أب', type:'n', extra:true },
+        { k:'cancelled', l:'أوردرات اتلغت', type:'n', extra:true },
+      ]},
+      { t:'⏸️ الهولد', f:[
+        { k:'hold',          l:'عدد الهولد', type:'n' },
+        { k:'hold_followed', l:'اتتابع منهم', type:'n' },
+        { k:'hold_replied',  l:'ردّوا من العملاء', type:'n' },
+        { k:'hold_solved',   l:'اتحلّوا (هيستلموا)', type:'n', extra:true },
+      ]},
+      { t:'🔴 الأندلفرد', f:[
+        { k:'undel',          l:'عدد الأندلفرد', type:'n' },
+        { k:'undel_followed', l:'اتتابع منهم', type:'n' },
+        { k:'undel_replied',  l:'ردّوا من العملاء', type:'n' },
+        { k:'undel_solved',   l:'اتحلّوا (هيستلموا)', type:'n', extra:true },
+      ]},
+      { t:'💬 المحادثات والشكاوى', f:[
+        { k:'chats',      l:'محادثات اتردّ عليها', type:'n', extra:true },
+        { k:'pending',    l:'محادثات لسه مستنية رد آخر اليوم', type:'n', extra:true },
+        { k:'complaints', l:'عدد الشكاوى', type:'n', extra:true },
+        { k:'notes',      l:'ملاحظات أو شكاوى مهمة', type:'text' },
+      ]},
+    ]},
+  };
+  const TYPES = Object.keys(FORMS);
+  const fieldsOf = type => FORMS[type].sections.flatMap(s => s.f);
+
+  /* ---------- helpers ---------- */
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const fmt = n => Number(n || 0).toLocaleString('ar-EG', { maximumFractionDigits: 2 });
+  const toNum = v => { if(v === '' || v == null) return null; const x = parseFloat(String(v).replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/,/g, '')); return isNaN(x) ? null : x; };
+  const sgn = n => (n > 0 ? '+' : n < 0 ? '−' : '') + fmt(Math.abs(n));
+  const ymd = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  const today = () => ymd(new Date());
+  const dayTitle = k => new Date(k + 'T12:00:00').toLocaleDateString('ar-EG', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
+  const isEOD = () => (location.hash.replace('#/', '') || 'home').split('/')[0] === 'eod';
+  const sb = () => window.AuthGate && window.AuthGate.sb;
+  const me = () => (window.AuthGate && window.AuthGate.me && window.AuthGate.me()) || {};
+  const myName = () => me().full_name || me().username || '';
+  const waUrl = text => 'https://wa.me/' + WA_NUMBER + '?text=' + encodeURIComponent(text);
+
+  let S = { tab:'pickup', date: today(), data:{}, existing:null, loadingOne:false, loadedKey:'', busy:false,
+            msg:'', msgErr:false, err:'',
+            list:null, listLoading:false, from: ymd(new Date(Date.now() - 6 * 864e5)), to: today(), ftype:'all', open:{},
+            whDate: today() };
+
+  /* ---------- الحسبة والتنبيهات ---------- */
+  function derive(type, d){
+    const n = k => toNum(d[k]) ?? 0, has = k => toNum(d[k]) !== null;
+    const pct = (a, b) => b ? Math.round(a / b * 100) + '%' : '—';
+    const L = [], W = [];
+    if(type === 'pickup'){
+      if(has('total')){
+        if((has('acc') || has('kids')) && n('acc') + n('kids') !== n('total'))
+          W.push(`إكسسوارات + ملابس أطفال = ${fmt(n('acc') + n('kids'))} ومش بيساوي إجمالي الأوردرات (${fmt(n('total'))})`);
+        if(has('handed')) L.push(['نسبة اللي خرج للمندوب', pct(n('handed'), n('total'))]);
+        if(has('nostock')) L.push(['نسبة اللي وقف بسبب المخزون', pct(n('nostock'), n('total')), n('nostock') ? 'bad' : 'good']);
+      }
+      if(has('ret_courier') || has('ret_actual')){
+        const df = n('ret_courier') - n('ret_actual');
+        L.push(['فرق المرتجعات (المندوب − الفعلي)', sgn(df), df ? 'bad' : 'good']);
+        if(df) W.push(`فيه فرق ${fmt(Math.abs(df))} مرتجع بين كلام المندوب واللي استلمناه فعلاً — لازم يتراجع معاه`);
+      }
+      if(has('sales') || has('collected')){
+        const df = n('collected') - n('sales');
+        L.push(['فرق التحصيل عن المبيعات', sgn(df) + ' ج', df < 0 ? 'bad' : df > 0 ? '' : 'good']);
+      }
+      if(n('nostock') > 0 && !String(d.nostock_items || '').trim()) W.push('اكتب الأصناف اللي كانت ناقصة عشان المخزن يطلبها');
+    } else {
+      const tot = n('wa') + n('page') + n('retarget') + n('fu_orders');
+      L.push(['إجمالي الأوردرات (واتساب + بيدج + ريتارجت + فولو أب)', fmt(tot)]);
+      if(has('followup') && has('fu_orders')) L.push(['نسبة تحويل الفولو أب لأوردر', pct(n('fu_orders'), n('followup'))]);
+      [['hold', 'الهولد'], ['undel', 'الأندلفرد']].forEach(([p, l]) => {
+        if(!has(p)) return;
+        L.push([`نسبة متابعة ${l}`, pct(n(p + '_followed'), n(p))]);
+        L.push([`نسبة الرد في ${l}`, pct(n(p + '_replied'), n(p + '_followed'))]);
+        if(has(p + '_solved')) L.push([`اتحلّ من ${l}`, pct(n(p + '_solved'), n(p)), 'good']);
+        const left = n(p) - n(p + '_followed');
+        if(left > 0) W.push(`لسه ${fmt(left)} من ${l} ماتتابعوش`);
+        if(left < 0) W.push(`المتابَع في ${l} أكتر من عدد ${l} نفسه — راجع الأرقام`);
+        if(n(p + '_replied') > n(p + '_followed')) W.push(`اللي ردّوا في ${l} أكتر من اللي اتتابعوا — راجع الأرقام`);
+      });
+      if(n('pending') > 0) W.push(`فيه ${fmt(n('pending'))} محادثة لسه مستنية رد`);
+    }
+    return { L, W };
+  }
+
+  function reportText(type, date, name, d){
+    const F = FORMS[type], { L, W } = derive(type, d), out = [];
+    out.push(`${F.icon} *${F.title}*`);
+    out.push('🗓️ ' + dayTitle(date));
+    out.push('👤 ' + (name || '—'));
+    out.push('');
+    F.sections.forEach(s => {
+      const nums = s.f.filter(f => f.type !== 'text' && toNum(d[f.k]) !== null);
+      const texts = s.f.filter(f => f.type === 'text' && String(d[f.k] || '').trim());
+      if(!nums.length && !texts.length) return;
+      out.push(`*${s.t}*`);
+      nums.forEach(f => out.push(`• ${f.l}: ${fmt(toNum(d[f.k]))}${f.type === 'money' ? ' ج' : ''}`));
+      texts.forEach(f => out.push(`• ${f.l}: ${String(d[f.k]).trim()}`));
+      out.push('');
+    });
+    if(L.length){ out.push('*📊 الحسبة*'); L.forEach(([l, v]) => out.push(`• ${l}: ${v}`)); out.push(''); }
+    if(W.length){ out.push('*⚠️ تنبيهات*'); W.forEach(w => out.push('• ' + w)); }
+    return out.join('\n').trim();
+  }
+
+  function clean(type, d){
+    const o = {};
+    fieldsOf(type).forEach(f => {
+      if(f.type === 'text'){ const t = String(d[f.k] || '').trim(); if(t) o[f.k] = t; }
+      else { const v = toNum(d[f.k]); if(v !== null) o[f.k] = v; }
+    });
+    return o;
+  }
+
+  /* ---------- البيانات ---------- */
+  async function loadOne(tries){
+    if(!TYPES.includes(S.tab)) return;
+    if(!sb() || !me().id){ // لسه بوابة الدخول بتحمّل
+      if((tries || 0) < 40) setTimeout(() => loadOne((tries || 0) + 1), 300);
+      return;
+    }
+    const key = S.tab + '|' + S.date;
+    S.loadingOne = true; S.err = ''; draw();
+    const { data, error } = await sb().from('eod_reports').select('*')
+      .eq('type', S.tab).eq('report_date', S.date).eq('created_by', me().id).maybeSingle();
+    S.loadingOne = false;
+    if(error){
+      S.err = /does not exist|relation|schema cache|Could not find/i.test(error.message)
+        ? 'جدول الـ EOD لسه مش موجود في Supabase — لازم كود الـ SQL يتشغّل الأول.'
+        : 'مقدرناش نجيب تقريرك: ' + error.message;
+    } else {
+      S.existing = data || null;
+      S.data = data ? { ...data.data } : {};
+      S.loadedKey = key;
+    }
+    draw();
+  }
+
+  async function loadList(){
+    if(!sb()) return;
+    S.listLoading = true; S.err = ''; draw();
+    let q = sb().from('eod_reports').select('*').order('report_date', { ascending:false }).order('updated_at', { ascending:false }).limit(1000);
+    if(S.from) q = q.gte('report_date', S.from);
+    if(S.to) q = q.lte('report_date', S.to);
+    if(S.ftype !== 'all') q = q.eq('type', S.ftype);
+    const { data, error } = await q;
+    S.listLoading = false;
+    if(error) S.err = /does not exist|relation|schema cache|Could not find/i.test(error.message)
+      ? 'جدول الـ EOD لسه مش موجود في Supabase — لازم كود الـ SQL يتشغّل الأول.'
+      : 'مقدرناش نجيب التقارير: ' + error.message;
+    else S.list = data || [];
+    draw();
+  }
+
+  function flash(msg, isErr){ S.msg = msg; S.msgErr = !!isErr; draw(); window.scrollTo({ top:0, behavior:'smooth' }); }
+
+  async function save(send){
+    const w = send ? window.open('', '_blank') : null; // بنفتح التاب قبل الحفظ عشان المتصفح مايمنعهوش
+    const data = clean(S.tab, S.data);
+    if(!Object.keys(data).length){ if(w) w.close(); return flash('اكتب أي رقم في التقرير الأول.', true); }
+    S.busy = true; draw();
+    const row = { type:S.tab, report_date:S.date, data, created_by: me().id, created_by_name: myName(), updated_at: new Date().toISOString() };
+    const { data: saved, error } = await sb().from('eod_reports').upsert(row, { onConflict:'type,report_date,created_by' }).select().single();
+    S.busy = false;
+    if(error){ if(w) w.close(); return flash('❌ مقدرناش نحفظ التقرير: ' + error.message, true); }
+    S.existing = saved; S.data = { ...saved.data }; S.list = null;
+    if(w){ w.opener = null; w.location.href = waUrl(reportText(S.tab, S.date, myName(), saved.data)); }
+    flash(send ? '✅ اتحفظ التقرير واتفتح الواتساب — دوس إرسال هناك.' : '✅ اتحفظ التقرير.');
+  }
+
+  async function delReport(id){
+    const r = (S.list || []).find(x => String(x.id) === String(id)); if(!r) return;
+    if(!confirm(`تمسح ${FORMS[r.type].title} بتاع ${r.created_by_name || '—'} يوم ${dayTitle(r.report_date)}؟`)) return;
+    const { data, error } = await sb().from('eod_reports').delete().eq('id', id).select('id');
+    if(error || !data || !data.length) return flash('❌ مقدرناش نمسح' + (error ? ': ' + error.message : ' — المسح لصاحب التقرير أو الأدمن بس.'), true);
+    S.msg = '✅ اتمسح التقرير.'; S.msgErr = false;
+    if(S.existing && String(S.existing.id) === String(id)){ S.existing = null; S.data = {}; }
+    loadList();
+  }
+
+  /* ---------- الرسم ---------- */
+  function draw(){
+    if(!isEOD()) return;
+    const main = document.getElementById('main'); if(!main) return;
+    const f = document.activeElement, fid = f && f.id, pos = f && f.selectionStart;
+    main.innerHTML = view();
+    wire(main);
+    if(fid){ const n = document.getElementById(fid); if(n){ n.focus(); try{ n.setSelectionRange(pos, pos); }catch(e){} } }
+  }
+
+  function view(){
+    const tabs = [...TYPES.map(t => [t, FORMS[t].icon + ' ' + FORMS[t].title]), ['wh', '🏬 EOD المخزن'], ['list', '📊 كل التقارير']];
+    let h = `<div class="pagehead"><h1>📝 EOD — تقرير آخر اليوم</h1><p>كل واحد يملأ تقريره آخر اليوم، يتحفظ باسمه وبتاريخه، ويتبعت على الواتساب.</p></div>
+      <div class="eod-tabs">${tabs.map(([k, l]) => `<button class="eod-tab ${S.tab === k ? 'on' : ''}" data-tab="${k}">${l}</button>`).join('')}</div>`;
+    if(S.msg) h += `<div class="eod-msg ${S.msgErr ? 'err' : ''}">${esc(S.msg)}</div>`;
+    if(S.err) return h + `<div class="eod-msg err">${esc(S.err)}</div>`;
+    if(S.tab === 'wh') return h + vWarehouse();
+    if(S.tab === 'list') return h + vList();
+    return h + vForm();
+  }
+
+  function fieldHtml(f){
+    const v = S.data[f.k] ?? '';
+    const tag = f.extra ? '<span class="eod-new" title="خانة مقترحة اتضافت">✨ إضافة</span>' : '';
+    if(f.type === 'text') return `<div class="eod-f wide"><label for="eod_${f.k}">${esc(f.l)}${tag}</label>
+      <textarea class="eod-in" id="eod_${f.k}" data-k="${f.k}" rows="2">${esc(v)}</textarea></div>`;
+    return `<div class="eod-f"><label for="eod_${f.k}">${esc(f.l)}${f.type === 'money' ? ' (ج)' : ''}${tag}</label>
+      <input class="eod-in" id="eod_${f.k}" data-k="${f.k}" type="number" min="0" step="any" inputmode="decimal" placeholder="0" value="${esc(v)}"></div>`;
+  }
+
+  function sumHtml(){
+    const { L, W } = derive(S.tab, S.data);
+    if(!L.length && !W.length) return '<p class="none">الحسبة والتنبيهات هتظهر هنا وإنت بتكتب.</p>';
+    return L.map(([l, v, c]) => `<div class="kpi">${esc(l)} <b class="${c || ''}">${esc(v)}</b></div>`).join('') +
+      W.map(w => `<div class="eod-warn">⚠️ ${esc(w)}</div>`).join('');
+  }
+
+  function vForm(){
+    const F = FORMS[S.tab];
+    const t = today(), y = ymd(new Date(Date.now() - 864e5));
+    const ex = S.existing;
+    let h = `<div class="card"><div class="eod-bar">
+      <label>التاريخ <input class="eod-in" type="date" id="eodDate" value="${esc(S.date)}" max="${t}"></label>
+      <button class="eod-btn" data-date="${t}">النهارده</button>
+      <button class="eod-btn" data-date="${y}">امبارح</button>
+      <span style="flex:1"></span>
+      <span class="eod-status">👤 <b>${esc(myName() || '...')}</b></span>
+    </div>
+    <p class="eod-status" style="margin:10px 0 0">${S.loadingOne ? '⏳ بيشوف لو ليك تقرير متسجل...' :
+      ex ? `✏️ إنت مسجّل ${esc(F.title)} لليوم ده (آخر تعديل ${new Date(ex.updated_at).toLocaleTimeString('ar-EG', { hour:'2-digit', minute:'2-digit' })}) — أي تعديل هيتحفظ مكانه.` :
+      `📄 تقرير جديد — ${esc(F.who)} — ${esc(dayTitle(S.date))}`}</p></div>`;
+    if(S.loadingOne) return h;
+    F.sections.forEach(s => {
+      h += `<div class="card"><h3>${esc(s.t)}</h3><div class="eod-grid">${s.f.map(fieldHtml).join('')}</div></div>`;
+    });
+    h += `<div class="card eod-sum"><h3>📊 الحسبة والتنبيهات</h3><div id="eodSum">${sumHtml()}</div></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px">
+        <button class="eod-btn pri" data-act="save" ${S.busy ? 'disabled' : ''}>${S.busy ? '⏳ بيحفظ...' : '💾 احفظ التقرير'}</button>
+        <button class="eod-btn wa" data-act="send" ${S.busy ? 'disabled' : ''}>💬 احفظ وابعت على واتساب</button>
+      </div>`;
+    return h;
+  }
+
+  function vWarehouse(){
+    return `<div class="card"><h3>🏬 EOD المخزن</h3>
+      <p style="font-size:14px;margin:0 0 12px">الـ EOD بتاع المخزن بيتعمل أوتوماتيك من حركات المخزن نفسها: المشتريات، والمرتجعات، والإخراج، والجرد، وقيمة المخزن أول اليوم وآخره، والنواقص. مسؤولة المخزن بتكتب ملاحظاتها هناك وتبعته واتساب على نفس الرقم.</p>
+      <div class="eod-bar">
+        <label>التاريخ <input class="eod-in" type="date" id="eodWhDate" value="${esc(S.whDate)}" max="${today()}"></label>
+        <button class="eod-btn pri" data-act="wh-open">🏬 افتح ملخص المخزن لليوم ده</button>
+      </div>
+      ${typeof window.InvOpenDay === 'function' ? '' : '<div class="eod-warn">قسم المخزن مش موجود في الصفحة.</div>'}
+    </div>`;
+  }
+
+  function keyLine(r){
+    const d = r.data || {}, n = k => toNum(d[k]) ?? 0;
+    if(r.type === 'pickup')
+      return `${fmt(n('total'))} أوردر · مبيعات ${fmt(n('sales'))} ج · تحصيل ${fmt(n('collected'))} ج · مرتجعات ${fmt(n('ret_actual'))}`;
+    const tot = n('wa') + n('page') + n('retarget') + n('fu_orders');
+    return `${fmt(tot)} أوردر · هولد ${fmt(n('hold_followed'))}/${fmt(n('hold'))} · أندلفرد ${fmt(n('undel_followed'))}/${fmt(n('undel'))}`;
+  }
+
+  function vList(){
+    let h = `<div class="card"><div class="eod-bar">
+      <label>من <input class="eod-in" type="date" id="eodFrom" value="${esc(S.from)}"></label>
+      <label>إلى <input class="eod-in" type="date" id="eodTo" value="${esc(S.to)}"></label>
+      <label>النوع <select class="eod-in" id="eodType">
+        <option value="all" ${S.ftype === 'all' ? 'selected' : ''}>الكل</option>
+        ${TYPES.map(t => `<option value="${t}" ${S.ftype === t ? 'selected' : ''}>${FORMS[t].title}</option>`).join('')}
+      </select></label>
+      <button class="eod-btn" data-act="list-go">🔄 اعرض</button>
+    </div></div>`;
+    if(S.listLoading || S.list === null) return h + `<div class="card"><p class="none">⏳ بيجيب التقارير...</p></div>`;
+    if(!S.list.length) return h + `<div class="card"><p class="none">مفيش تقارير في الفترة دي.</p></div>`;
+    const days = {};
+    S.list.forEach(r => (days[r.report_date] = days[r.report_date] || []).push(r));
+    const admin = !!me().is_admin, myId = me().id;
+    Object.keys(days).sort().reverse().forEach(k => {
+      h += `<div class="eod-day">🗓️ ${esc(dayTitle(k))} — ${fmt(days[k].length)} تقرير</div>`;
+      days[k].forEach(r => {
+        const { W } = derive(r.type, r.data || {});
+        const mine = r.created_by === myId;
+        h += `<div class="eod-rep"><div class="top">
+          <span class="eod-tag ${r.type}">${FORMS[r.type].icon} ${esc(FORMS[r.type].title)}</span>
+          <span class="nm">${esc(r.created_by_name || '—')}</span>
+          <span class="meta">${new Date(r.updated_at).toLocaleTimeString('ar-EG', { hour:'2-digit', minute:'2-digit' })}${W.length ? ` · ⚠️ ${fmt(W.length)} تنبيه` : ''}</span>
+          <div class="acts">
+            <button class="eod-btn sm" data-view="${r.id}">${S.open[r.id] ? '🙈 اقفل' : '👁 التفاصيل'}</button>
+            <button class="eod-btn sm" data-wa="${r.id}">💬 ابعت</button>
+            ${mine ? `<button class="eod-btn sm" data-edit="${r.id}">✏️ عدّل</button>` : ''}
+            ${mine || admin ? `<button class="eod-btn sm" data-del="${r.id}">🗑️</button>` : ''}
+          </div></div>
+          <div class="meta" style="margin-top:6px">${esc(keyLine(r))}</div>
+          ${S.open[r.id] ? `<pre>${esc(reportText(r.type, r.report_date, r.created_by_name, r.data || {}))}</pre>` : ''}
+        </div>`;
+      });
+    });
+    return h;
+  }
+
+  /* ---------- الأحداث ---------- */
+  function openTab(t){
+    S.tab = t; S.msg = '';
+    if(TYPES.includes(t)){ if(S.loadedKey !== t + '|' + S.date){ S.data = {}; S.existing = null; loadOne(); } else draw(); }
+    else if(t === 'list'){ draw(); if(S.list === null && !S.listLoading) loadList(); }
+    else draw();
+  }
+  function setDate(d){ if(!d) return; S.date = d; S.msg = ''; S.data = {}; S.existing = null; loadOne(); }
+
+  function wire(root){
+    root.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => openTab(b.dataset.tab));
+    const dt = root.querySelector('#eodDate'); if(dt) dt.onchange = () => setDate(dt.value);
+    root.querySelectorAll('[data-date]').forEach(b => b.onclick = () => setDate(b.dataset.date));
+    root.querySelectorAll('[data-k]').forEach(el => el.oninput = () => {
+      S.data[el.dataset.k] = el.value;
+      const s = document.getElementById('eodSum'); if(s) s.innerHTML = sumHtml();
+    });
+    const sv = root.querySelector('[data-act=save]'); if(sv) sv.onclick = () => save(false);
+    const sd = root.querySelector('[data-act=send]'); if(sd) sd.onclick = () => save(true);
+
+    const wd = root.querySelector('#eodWhDate'); if(wd) wd.onchange = () => { S.whDate = wd.value; };
+    const wo = root.querySelector('[data-act=wh-open]'); if(wo) wo.onclick = () => { if(window.InvOpenDay) window.InvOpenDay(S.whDate); };
+
+    const fr = root.querySelector('#eodFrom'); if(fr) fr.onchange = () => { S.from = fr.value; };
+    const to = root.querySelector('#eodTo'); if(to) to.onchange = () => { S.to = to.value; };
+    const ty = root.querySelector('#eodType'); if(ty) ty.onchange = () => { S.ftype = ty.value; loadList(); };
+    const lg = root.querySelector('[data-act=list-go]'); if(lg) lg.onclick = loadList;
+    const find = id => (S.list || []).find(x => String(x.id) === String(id));
+    root.querySelectorAll('[data-view]').forEach(b => b.onclick = () => { S.open[b.dataset.view] = !S.open[b.dataset.view]; draw(); });
+    root.querySelectorAll('[data-wa]').forEach(b => b.onclick = () => {
+      const r = find(b.dataset.wa); if(r) window.open(waUrl(reportText(r.type, r.report_date, r.created_by_name, r.data || {})), '_blank', 'noopener');
+    });
+    root.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => {
+      const r = find(b.dataset.edit); if(!r) return;
+      S.tab = r.type; S.date = r.report_date; S.existing = r; S.data = { ...(r.data || {}) }; S.loadedKey = r.type + '|' + r.report_date; S.msg = '';
+      draw(); window.scrollTo({ top:0, behavior:'smooth' });
+    });
+    root.querySelectorAll('[data-del]').forEach(b => b.onclick = () => delReport(b.dataset.del));
+  }
+
+  /* ---------- لينك في القائمة (تحت العمل) ---------- */
+  const anchor = document.querySelector('#sidebar a.navlink[href="#/squad"]');
+  if(anchor && !document.querySelector('#sidebar a.navlink[href="#/eod"]')){
+    const a = document.createElement('a');
+    a.className = 'navlink'; a.href = '#/eod'; a.textContent = '📝 EOD';
+    anchor.after(a);
+  }
+
+  /* ---------- الربط بالراوتر ---------- */
+  function mount(){
+    document.querySelectorAll('#sidebar a.navlink').forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#/eod'));
+    draw();
+    if(TYPES.includes(S.tab) && S.loadedKey !== S.tab + '|' + S.date && !S.loadingOne) loadOne();
+    if(S.tab === 'list' && S.list === null && !S.listLoading) loadList();
+  }
+  const _render = render;
+  render = function(){ _render.apply(this, arguments); if(isEOD()) mount(); };
+  window.addEventListener('hashchange', () => { if(isEOD()) mount(); });
+  if(isEOD()) setTimeout(mount, 0);
 })();
 </script>
 
