@@ -129,6 +129,7 @@ table.sum th,table.sum td{border:1px solid var(--line);padding:10px 12px;text-al
 table.sum th.grp{font-size:16px;color:#fff}
 table.sum th.g-dream{background:#5b3f7a}
 table.sum th.g-cara{background:#2f5f73}
+table.sum th.g-rs{background:#a0456e}
 table.sum th.act{background:#e7eeec;color:#3f5a56}
 table.sum th.exp{background:#fbf0d9;color:#5f4b28}
 table.sum td.act{background:var(--panel)}
@@ -563,7 +564,7 @@ const SOPS = [
 const CHANNELS = "WhatsApp, Messenger, Instagram, TikTok, Phone";
 
 /* ---------------- PROFITS DATA/LOGIC ---------------- */
-const PR_BRANDS=["dream","dream msg site","dream wa","msg","lo gel nails","fastplt","cara silver","cara silver un","cara wa"];
+const PR_BRANDS=["dream","dream msg site","dream wa","msg","lo gel nails","fastplt","cara silver","cara silver un","cara wa","rs kids"];
 const PR_PNL_BRANDS=PR_BRANDS.filter(b=>b!=="lo gel nails");
 const PR_SOLO="lo gel nails";
 const PR_MSG_GROUP=["msg","dream msg site","fastplt"];
@@ -573,7 +574,8 @@ const PR_COLS=[
  {type:"brand",key:"msg",h:"MSG"},{type:"brand",key:"fastplt",h:"FASTPLT"},
  {type:"brand",key:"cara silver",h:"CARA SILVER"},{type:"brand",key:"cara silver un",h:"CARA SILVER UN"},
  {type:"brand",key:"cara wa",h:"CARA WA"},
- {type:"agg",key:"cara_group",h:"CARA مجمع",brands:["cara silver","cara silver un","cara wa"]}
+ {type:"agg",key:"cara_group",h:"CARA مجمع",brands:["cara silver","cara silver un","cara wa"]},
+ {type:"brand",key:"rs kids",h:"RS KIDS",sum:true} // براند جديد — بيظهر كمان في جدول الخلاصة
 ];
 // راتب مساعد مدير المكتب: 16000 شهريًا
 const PR_A_SAL_D=16000/30, PR_MSG_SAL_D=150, PR_SHR_SAL_D=300, PR_RENT_D=200;
@@ -599,6 +601,7 @@ let prBrandCalc={}, prPendingTotal=0, prRealCols=[], prExpCols=[], prUnbranded=[
 
 function prGetBrand(note){
   const n=String(note||"").toLowerCase().trim().split("\n")[0].trim();
+  if(n.startsWith("rs kids")||n.startsWith("rskids")||n.startsWith("rs-kids")||n.startsWith("rs_kids"))return"rs kids"; // براند RS KIDS
   if(n.startsWith("dream msg site"))return"dream msg site";
   if(n.startsWith("drew wa"))return"dream wa"; // خطأ إملائي شائع لـ dream wa
   if(n.startsWith("dream wa"))return"dream wa";
@@ -790,7 +793,7 @@ function prRecalc(){
       setT(`${pfx}_cost_${c.key}`,prFmt(cost));
       setT(`${pfx}_prof_${c.key}`,prFmt(prof));
       setT(`${pfx}_pct_${c.key}`,pct(prof,rev[i]));
-      if(c.type==='agg'){
+      if(c.type==='agg'||c.sum){ // المجمعات + أي براند ظاهر في جدول الخلاصة (زي RS KIDS)
         const sid=k=>`S_${k}_${c.key}_${pfx}`;
         setT(sid('rev'),prFmt(rev[i])); setT(sid('cost'),prFmt(cost)); setT(sid('prof'),prFmt(prof));
         setT(sid('pct'),pct(prof,rev[i])); setT(sid('ads'),pct(colMan('ads',c),rev[i]));
@@ -1216,18 +1219,19 @@ function viewProfits(){
       <input type="file" id="prFileIn" accept=".xlsx,.xls,.csv">
       <button class="mockbtn" onclick="prRunReport()">▶️ شغّل التقرير</button>
     </div>
-    <div class="mono-note">الشيت لازم يكون بنفس ترتيب أعمدة "orders" الأصلي: أول صف عناوين، وبعدين الأعمدة بالترتيب — العمود E = السعر، F = الشحن، I = تاريخ الإرجاع، J = الملاحظة (اسم البراند)، K = التاريخ، L = المحتويات، O = الحالة.</div>
+    <div class="mono-note">الشيت لازم يكون بنفس ترتيب أعمدة "orders" الأصلي: أول صف عناوين، وبعدين الأعمدة بالترتيب — العمود E = السعر، F = الشحن، I = تاريخ الإرجاع، J = الملاحظة (اسم البراند)، K = التاريخ، L = المحتويات، O = الحالة.<br>👶 أوردرات براند <b>RS KIDS</b>: اكتب في أول العمود J كلمة <b>rs kids</b> (أو rskids) — كابيتال أو سمول مش فارقة.</div>
     <div id="prStatus" style="font-size:13px;color:var(--muted);margin-top:8px"></div>
   </div>
   <div id="prResults" style="display:none">
-    <div class="card"><h3>⭐ الخلاصة — DREAM مقابل CARA</h3>
+    <div class="card"><h3>⭐ الخلاصة — DREAM و CARA و RS KIDS</h3>
       <div class="tablewrap"><table class="sum">
-        <tr><th rowspan="2">البند</th><th colspan="2" class="grp g-dream">DREAM المجمع</th><th colspan="2" class="grp g-cara sep">CARA المجمع</th></tr>
-        <tr><th class="act">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th><th class="act sep">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th></tr>
+        <tr><th rowspan="2">البند</th><th colspan="2" class="grp g-dream">DREAM المجمع</th><th colspan="2" class="grp g-cara sep">CARA المجمع</th><th colspan="2" class="grp g-rs sep">RS KIDS</th></tr>
+        <tr><th class="act">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th><th class="act sep">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th><th class="act sep">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th></tr>
         ${[['rev','📥 المبيعات',''],['cost','🔴 التكاليف',''],['prof','✅ الأرباح','big'],['pct','📊 نسبة الأرباح','big'],['ads','📢 نسبة الإعلانات','']].map(([k,l,cls])=>`
         <tr class="${cls}"><td class="lbl">${l}</td>
           <td class="act" id="S_${k}_dream_group_A">—</td><td class="exp" id="S_${k}_dream_group_F">—</td>
-          <td class="act sep" id="S_${k}_cara_group_A">—</td><td class="exp" id="S_${k}_cara_group_F">—</td></tr>`).join('')}
+          <td class="act sep" id="S_${k}_cara_group_A">—</td><td class="exp" id="S_${k}_cara_group_F">—</td>
+          <td class="act sep" id="S_${k}_rs kids_A">—</td><td class="exp" id="S_${k}_rs kids_F">—</td></tr>`).join('')}
       </table></div>
       <div class="legend">
         <span><i style="background:var(--panel)"></i>✔️ فعلي = الأوردرات اللي اتسلمت فعلًا</span>
@@ -1236,8 +1240,8 @@ function viewProfits(){
       </div>
     </div>
     <div class="card"><h3>2) الجدول الأساسي — التكاليف والأرباح بعد التوقع (الفعلي + المتوقع)</h3>
-      <p style="font-size:13px;color:var(--muted)">المبيعات وشحن التسليمات وتكلفة البضاعة هنا = الفعلي + المتوقع من الأوردرات "تحت التسليم" (35%) و"Hold" (15%) لمعظم البراندات — ما عدا CARA SILVER (30% / 10%)، CARA SILVER UN (25% / 8%)، وCARA WA (30% / 10%). باقي البنود زي ما هي.</p>
-      <p style="font-size:13px;color:var(--muted)">اكتب البنود اليدوية (الإعلانات، و"هوالك - نثريات - أخرى") في الخانات الخضراء هنا بس — بتتطبق تلقائيًا على الجدول الفعلي تحت كمان.</p>
+      <p style="font-size:13px;color:var(--muted)">المبيعات وشحن التسليمات وتكلفة البضاعة هنا = الفعلي + المتوقع من الأوردرات "تحت التسليم" (35%) و"Hold" (15%) لمعظم البراندات (ومنها RS KIDS) — ما عدا CARA SILVER (30% / 10%)، CARA SILVER UN (25% / 8%)، وCARA WA (30% / 10%). باقي البنود زي ما هي.</p>
+      <p style="font-size:13px;color:var(--muted)">اكتب البنود اليدوية (الإعلانات، و"هوالك - نثريات - أخرى") في الخانات الخضراء هنا بس — بتتطبق تلقائيًا على الجدول الفعلي تحت كمان. إعلانات RS KIDS بتتكتب يدوي في عمود RS KIDS.</p>
       <div class="tablewrap"><table class="pr" id="prFullTable"></table></div>
     </div>
     <div class="card"><h3>3) الجدول الفعلي — التكاليف والأرباح قبل التوقع</h3>
