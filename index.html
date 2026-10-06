@@ -1377,9 +1377,39 @@ const Squad = (function(){
     return Math.round((Number(o && o.commission) || 0) * 100) / 100;
   }
 
-  const sb = (window.supabase && window.supabase.createClient)
-    ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
-    : null;
+  /* ✅ عميل Supabase واحد مشترك للصفحة كلها (Squad + الدخول + المخزن + EOD + ...)
+     قبل كده كان فيه عميلين بيجدّدوا التوكن في نفس الوقت، فواحد فيهم يفضل ماسك
+     توكن قديم ويطلع "JWT expired". ولو حصل وانتهى التوكن، الطلب بيجدّده ويعيد نفسه مرة. */
+  const sb = window.__sbClient || (window.__sbClient = (function(){
+    if(!(window.supabase && window.supabase.createClient)) return null;
+    let client = null;
+    const isExpired = async r => {
+      if(r.status !== 401) return false;
+      try{ return /jwt expired|invalid jwt|jwt/i.test(await r.clone().text()); }catch(e){ return false; }
+    };
+    const smartFetch = async (input, init) => {
+      let res = await fetch(input, init);
+      const url = typeof input === 'string' ? input : ((input && input.url) || '');
+      if(client && !url.includes('/auth/v1/') && await isExpired(res)){
+        const { data, error } = await client.auth.refreshSession();
+        if(!error && data && data.session){
+          const headers = new Headers((init && init.headers) || {});
+          headers.set('Authorization', 'Bearer ' + data.session.access_token);
+          res = await fetch(input, { ...(init || {}), headers });
+        } else {
+          window.dispatchEvent(new Event('sb-session-dead')); // الجلسة خلصت خالص → بوابة الدخول بتطلب تسجيل دخول تاني
+        }
+      }
+      return res;
+    };
+    client = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: { persistSession:true, autoRefreshToken:true, detectSessionInUrl:false },
+      global: { fetch: smartFetch }
+    });
+    // لما الشاشة ترجع بعد ما الجهاز نام أو التاب اتساب فترة، جدّد الجلسة على طول
+    document.addEventListener('visibilitychange', () => { if(!document.hidden) client.auth.getSession(); });
+    return client;
+  })());
 
   let state = {
     ready: false,
@@ -1560,14 +1590,16 @@ const Squad = (function(){
   }
 
   async function updateOrderStatus(orderId, status){
-    await sb.from('orders').update({ status }).eq('id', orderId);
+    const { data, error } = await sb.from('orders').update({ status }).eq('id', orderId).select('id');
+    if(error || !data || !data.length)
+      showToast('الحالة مااتغيرتش' + (error ? ': ' + error.message : ' — قاعدة البيانات رفضت التعديل.'), 'error');
     await loadMyOrders();
     loadLeaderboard();
   }
 
   async function submitEditOrder(orderId, payload){
     setState({ loading:true, error:'' });
-    const { error } = await sb.from('orders').update({
+    const { data: upd, error } = await sb.from('orders').update({
       customer_name: payload.customer_name,
       customer_phone: payload.customer_phone,
       customer_address: payload.customer_address,
@@ -1575,8 +1607,9 @@ const Squad = (function(){
       amount: payload.amount ? Number(payload.amount) : null,
       order_details: payload.order_details,
       commission: calcCommission(payload.amount)
-    }).eq('id', orderId);
+    }).eq('id', orderId).select('id');
     if(error){ setState({ loading:false, error:'مقدرناش نعدّل الأوردر: ' + error.message }); return; }
+    if(!upd || !upd.length){ setState({ loading:false, error:'التعديل مااتحفظش — قاعدة البيانات رفضت التعديل. لازم كود الـ SQL الجديد يتشغّل في Supabase.' }); return; }
     await loadMyOrders();
     loadLeaderboard();
     setState({ loading:false, editingOrder:null });
@@ -1586,8 +1619,14 @@ const Squad = (function(){
   async function deleteOrder(order){
     const label = order.customer_name ? `أوردر "${order.customer_name}"` : 'الأوردر ده';
     if(!window.confirm(`متأكد إنك عايز تمسح ${label}؟ الخطوة دي مش هترجع.`)) return;
-    const { error } = await sb.from('orders').delete().eq('id', order.id);
+    // .select() بيرجّع الصفوف اللي اتمسحت فعلاً — لو رجع فاضي يبقى قاعدة البيانات رفضت المسح من غير ما تطلع إيرور
+    const { data, error } = await sb.from('orders').delete().eq('id', order.id).select('id');
     if(error){ showToast('مقدرناش نمسح الأوردر: ' + error.message, 'error'); return; }
+    if(!data || !data.length){
+      showToast('الأوردر مااتمسحش — قاعدة البيانات مش مدية صلاحية المسح. لازم كود الـ SQL الجديد يتشغّل في Supabase.', 'error');
+      await loadMyOrders();
+      return;
+    }
     await loadMyOrders();
     loadLeaderboard();
     showToast('اتمسح الأوردر.', 'success');
@@ -3111,7 +3150,9 @@ async function exportToSheet(btn) {
   const SB_URL = "https://vjpunudivnsanxjiwvnu.supabase.co";
   const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZqcHVudWRpdm5zYW54aml3dm51Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkzMjgwNDMsImV4cCI6MjEwNDkwNDA0M30.7fWvRfpn5hErv9VCuzvFYza7ilEGB86lLomXLoWh4CE";
   const EMAIL_DOMAIN = "agents-app.com";
-  const sb = (window.supabase && window.supabase.createClient) ? window.supabase.createClient(SB_URL, SB_KEY) : null;
+  // بيستخدم نفس عميل Supabase اللي اتعمل في قسم الـ Squad (عميل واحد بس للصفحة كلها)
+  const sb = window.__sbClient || (window.__sbClient = (window.supabase && window.supabase.createClient)
+    ? window.supabase.createClient(SB_URL, SB_KEY, { auth:{ persistSession:true, autoRefreshToken:true, detectSessionInUrl:false } }) : null);
 
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -3235,6 +3276,15 @@ async function exportToSheet(btn) {
   }
 
   async function logout(){ await sb.auth.signOut(); location.reload(); }
+
+  // لو التوكن خلص ومينفعش يتجدد (مثلاً الحساب اتعمله خروج من جهاز تاني) → اطلب دخول تاني بدل رسالة "JWT expired"
+  let deadShown = false;
+  window.addEventListener('sb-session-dead', async () => {
+    if(deadShown) return; deadShown = true;
+    try{ await sb.auth.signOut({ scope:'local' }); }catch(e){}
+    document.documentElement.classList.remove('auth-ok');
+    showLogin('login', 'جلسة الدخول خلصت — سجّل دخول تاني وكمّل من مكانك.');
+  });
   window.AuthGate = { logout, sb, me: () => me };
 
   function showWaiting(){
