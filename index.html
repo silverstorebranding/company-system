@@ -3136,7 +3136,8 @@ async function exportToSheet(btn) {
       { key:'tasks',    label:'✅ مهامي',        routes:['tasks'] },
       { key:'handover', label:'🔁 مركز التسليم', routes:['handover'] },
       { key:'squad',    label:'🏆 Squad',        routes:['squad'] },
-      { key:'eod',      label:'📝 EOD',          routes:['eod'] } ]},
+      { key:'eod',      label:'📝 EOD',          routes:['eod'] },
+      { key:'breakdown', label:'🧩 تحليل مكونات الطلبات', routes:['breakdown'] } ]},
     { title:'المالية', items:[
       { key:'profits', label:'💰 الأرباح',    routes:['profits'] },
       { key:'ads',     label:'📢 الإعلانات',  routes:['ads'] },
@@ -5029,6 +5030,279 @@ textarea.eod-in{resize:vertical;min-height:70px}
   render = function(){ _render.apply(this, arguments); if(isEOD()) mount(); };
   window.addEventListener('hashchange', () => { if(isEOD()) mount(); });
   if(isEOD()) setTimeout(mount, 0);
+})();
+</script>
+
+<!-- =====================================================================
+     🧩 تحليل مكونات الطلبات — بتلصق عمود "الطلب" من جوجل شيت، والسيستم يفكّ
+     كل طلب لمكوناته ويطلع إجمالي اللي خرج (تقرير عرض بس، مش بيخصم من المخزن)
+     ===================================================================== -->
+<style id="bd-style">
+.bd-ta{width:100%;min-height:200px;padding:11px 13px;border:1.5px solid var(--line);border-radius:9px;font-size:14px;font-family:inherit;background:var(--panel);color:var(--ink);box-sizing:border-box;resize:vertical;line-height:1.6}
+.bd-ta:focus{outline:none;border-color:var(--brass)}
+.bd-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px}
+.bd-btn{border:1px solid var(--line);background:var(--paper);color:var(--ink);border-radius:8px;padding:7px 13px;font-family:inherit;font-size:13.5px;cursor:pointer;white-space:nowrap}
+.bd-btn.pri{background:var(--brass);border-color:var(--brass);color:#fff;font-weight:700;padding:10px 20px;font-size:15px}
+.bd-btn:disabled{opacity:.55;cursor:default}
+.bd-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px}
+.bd-kpi{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+.bd-kpi .n{font-size:24px;font-weight:700;color:var(--brass-d)}
+.bd-kpi .l{font-size:12.5px;color:var(--muted);margin-top:4px}
+.bd-kpi.bad{border:2px solid #b3423a;cursor:pointer}
+.bd-kpi.bad .n{color:#b3423a}
+.bd-big td.q{font-size:18px;font-weight:700;color:var(--brass-d)}
+table.pr tr.bd-cat td{background:var(--slate-l);font-weight:700}
+.bd-chip{display:inline-block;background:var(--slate-l);color:var(--slate);border-radius:6px;padding:1px 8px;margin:2px;font-size:12.5px;white-space:nowrap}
+.bd-chip.unk{background:#fdecea;color:#b3423a}
+.bd-msg{padding:10px 13px;border-radius:9px;margin-bottom:14px;font-size:14px;background:#e8f3ec;color:#276749}
+.bd-msg.err{background:#fdecea;color:#b3423a}
+</style>
+<script>
+(function(){
+  /* =====================================================================
+     📚 قواعد التحليل — لو فيه منتج جديد ضيفه هنا
+     all: كلمات لازم تكون كلها موجودة في السطر ، any: يكفي كلمة واحدة منهم
+     (اكتب الكلمات من غير تشكيل، والتاء المربوطة "ه": سلسله / دبله / دفايه)
+     items: المكونات [الاسم، النوع، العدد] — النوع: j مجوهرات ، p تغليف ، k ملابس أطفال
+     set: true = بيتحسب "طقم" (كل طقم ليه شنطة) ، jewelry: true = الأوردر بياخد شنطة
+     ===================================================================== */
+  const RULES = [
+    { name:'طقم سلسلة ومحبس وحلق (ايطالي)', all:['سلسله', 'محبس', 'حلق'], set:true, jewelry:true,
+      items: l => { const m = l.match(/(\d+)\s*حلق/);   // "و٢حلق" = 2 حلق
+        return [['سلسلة ايطالي', 'j', 1], ['محبس ايطالي', 'j', 1], ['حلق ايطالي', 'j', m ? +m[1] : 1], ['علبة قطيفة', 'p', 1]]; } },
+    { name:'طقم Shine Jewelry Zirconia', all:['shine'], set:true, jewelry:true,
+      items: () => [['سلسلة فص', 'j', 1], ['حلق فص', 'j', 1], ['خاتم فص', 'j', 1], ['علبة طقم', 'p', 1]] },
+    { name:'دبلة تنجستين (هدية)', any:['تنجستين', 'دبله'], jewelry:true,
+      items: () => [['دبلة تنجستين', 'j', 1]] },
+    { name:'باكدج هدايا', any:['باكدج', 'باكيدج', 'package'],
+      items: () => [['باكدج', 'p', 1]] },
+    { name:'انسيال فصوص زاركونيا', any:['انسيال'], jewelry:true,
+      items: () => [['انسيال زاركونيا', 'j', 1], ['علبة انسيال', 'p', 1]] },
+    { name:'طقم الدفاية', any:['دفايه'],
+      items: () => [['طقم الدفاية', 'k', 1]] },
+    { name:'طقم الأسد ولادي وبناتي', any:['الاسد'],
+      items: () => [['طقم الأسد ولادي وبناتي', 'k', 1]] },
+  ];
+  // الشنطة: شنطة واحدة للأوردر، ولو فيه أكتر من طقم يبقى شنطة لكل طقم (أوردرات المجوهرات بس)
+  const BAG = ['شنطة', 'p'];
+  const CATS = { j:'💍 مجوهرات', p:'🎁 علب وتغليف', k:'👕 ملابس أطفال' };
+  const HEADERS = ['الطلب', 'الطلبات', 'الاوردر', 'الاوردرات', 'تفاصيل الطلب'];
+
+  /* ---------- helpers ---------- */
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const fmt = n => Number(n || 0).toLocaleString('ar-EG');
+  const norm = s => String(s || '').toLowerCase()
+    .replace(/[\u064B-\u0652\u0640]/g, '')
+    .replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي')
+    .replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d))
+    .replace(/[^\p{L}\p{N}\s×*]/gu, ' ')
+    .replace(/\s+/g, ' ').trim();
+  const isBD = () => (location.hash.replace('#/', '') || 'home').split('/')[0] === 'breakdown';
+  const RN = RULES.map(r => ({ ...r, all: (r.all || []).map(norm), any: (r.any || []).map(norm) }));
+
+  /* ---------- قراءة اللصق من جوجل شيت (الخلية اللي فيها كذا سطر بتيجي بين "...") ---------- */
+  function parseCells(text){
+    text = String(text || '').replace(/\r\n?/g, '\n');
+    const cells = []; let i = 0;
+    while(i < text.length){
+      if(text[i] === '"'){
+        let j = i + 1, cur = '';
+        while(j < text.length){
+          if(text[j] === '"'){ if(text[j + 1] === '"'){ cur += '"'; j += 2; continue; } j++; break; }
+          cur += text[j++];
+        }
+        while(j < text.length && text[j] !== '\n') j++; // أي أعمدة تانية بعد الخلية بتتجاهل
+        cells.push(cur); i = j + 1;
+      } else {
+        let j = text.indexOf('\n', i); if(j < 0) j = text.length;
+        cells.push(text.slice(i, j).split('\t')[0]); i = j + 1;
+      }
+    }
+    return cells.filter(c => c.trim() && !HEADERS.includes(norm(c)));
+  }
+
+  // عدد مكتوب على السطر نفسه: "×2" ، "x2" ، "عدد 2" ، "2 طقم ..."
+  function lineMult(l){
+    let m;
+    if((m = l.match(/(?:^|\s)(?:x|×|\*)\s*(\d{1,2})$/))) return +m[1];
+    if((m = l.match(/^(\d{1,2})\s*(?:x|×|\*)\s/))) return +m[1];
+    if((m = l.match(/عدد\s*(\d{1,2})/))) return +m[1];
+    if((m = l.match(/^(\d{1,2})\s+(?!حلق)/))) return +m[1];
+    return 1;
+  }
+
+  function analyze(text){
+    const cells = parseCells(text);
+    const comps = {}, products = {}, unknown = {}, orders = [];
+    let lines = 0, unkLines = 0, sets = 0;
+    const addComp = (o, name, cat, q) => {
+      (comps[name] = comps[name] || { cat, qty:0 }).qty += q;
+      o.comps[name] = (o.comps[name] || 0) + q;
+    };
+    cells.forEach(raw => {
+      const o = { raw: raw.trim(), comps:{}, unknown:[], sets:0, jewelry:false, prods:{} };
+      raw.split('\n').map(s => s.trim()).filter(Boolean).forEach(line => {
+        const l = norm(line); if(!l) return;
+        lines++;
+        const hits = RN.filter(r => (!r.all.length || r.all.every(w => l.includes(w))) && (!r.any.length || r.any.some(w => l.includes(w))));
+        if(!hits.length){ unkLines++; o.unknown.push(line); unknown[line] = (unknown[line] || 0) + 1; return; }
+        const mult = Math.min(99, Math.max(1, lineMult(l)));
+        hits.forEach(r => {
+          r.items(l).forEach(([name, cat, q]) => addComp(o, name, cat, q * mult));
+          o.prods[r.name] = (o.prods[r.name] || 0) + mult;
+          if(r.set) o.sets += mult;
+          if(r.jewelry) o.jewelry = true;
+        });
+      });
+      Object.entries(o.prods).forEach(([n, q]) => {
+        const p = products[n] = products[n] || { qty:0, orders:0 };
+        p.qty += q; p.orders++;
+      });
+      if(o.jewelry) addComp(o, BAG[0], BAG[1], Math.max(1, o.sets));
+      sets += o.sets;
+      orders.push(o);
+    });
+    return { orders, comps, products, unknown, lines, unkLines, sets };
+  }
+
+  /* ---------- الحالة والرسم ---------- */
+  let S = { text:'', res:null, msg:'', msgErr:false };
+
+  function draw(){
+    if(!isBD()) return;
+    const main = document.getElementById('main'); if(!main) return;
+    main.innerHTML = view();
+    wire(main);
+  }
+
+  function compsGrouped(R){
+    return Object.keys(CATS).map(c => ({ c, rows: Object.entries(R.comps).filter(([, v]) => v.cat === c).sort((a, b) => b[1].qty - a[1].qty) }))
+      .filter(g => g.rows.length);
+  }
+
+  function view(){
+    let h = `<div class="pagehead"><h1>🧩 تحليل مكونات الطلبات</h1><p>الصق عمود "الطلب" من جوجل شيت، والسيستم يفكّ كل طلب لمكوناته ويطلعلك إجمالي اللي خرج من كل حاجة.</p></div>
+      <div class="card">
+        <label for="bdText" style="display:block;font-size:13px;font-weight:600;color:var(--muted);margin-bottom:6px">📋 الصق هنا (حدد عمود الطلب في الشيت ← Ctrl+C ← وهنا Ctrl+V)</label>
+        <textarea class="bd-ta" id="bdText" placeholder="سلسله ومحبس وحلق ( ايطالي ) + دبله تنجستين هديه&#10;طقم الدفايه&#10;...">${esc(S.text)}</textarea>
+        <div class="bd-bar">
+          <button class="bd-btn pri" data-act="go">🧩 حلّل الطلبات</button>
+          <button class="bd-btn" data-act="clear">🗑️ امسح</button>
+          <span style="font-size:12.5px;color:var(--muted)">الخلية اللي فيها كذا سطر = كل سطر منتج لوحده. ده تقرير عرض بس ومش بيخصم من المخزن.</span>
+        </div>
+      </div>`;
+    if(S.msg) h += `<div class="bd-msg ${S.msgErr ? 'err' : ''}">${esc(S.msg)}</div>`;
+    const R = S.res; if(!R) return h + rulesCard();
+
+    const jewel = Object.values(R.comps).filter(v => v.cat === 'j').reduce((s, v) => s + v.qty, 0);
+    const kids = Object.values(R.comps).filter(v => v.cat === 'k').reduce((s, v) => s + v.qty, 0);
+    const unkN = Object.keys(R.unknown).length;
+    h += `<div class="bd-kpis">
+      <div class="bd-kpi"><div class="n">${fmt(R.orders.length)}</div><div class="l">أوردر</div></div>
+      <div class="bd-kpi"><div class="n">${fmt(R.sets)}</div><div class="l">طقم مجوهرات</div></div>
+      <div class="bd-kpi"><div class="n">${fmt(jewel)}</div><div class="l">💍 قطعة مجوهرات</div></div>
+      <div class="bd-kpi"><div class="n">${fmt(kids)}</div><div class="l">👕 قطعة ملابس أطفال</div></div>
+      <div class="bd-kpi ${R.unkLines ? 'bad' : ''}" ${R.unkLines ? 'data-act="to-unk"' : ''}><div class="n">${fmt(R.unkLines)}</div><div class="l">${R.unkLines ? '⚠️ سطر مش مفهوم · دوس تشوفهم' : '✅ كل الأسطر اتفهمت'}</div></div>
+    </div>`;
+
+    // إجمالي المكونات
+    let tb = '<tr><th>المكوّن</th><th>العدد اللي خرج</th></tr>';
+    compsGrouped(R).forEach(g => {
+      const sub = g.rows.reduce((s, [, v]) => s + v.qty, 0);
+      tb += `<tr class="bd-cat"><td class="lbl">${CATS[g.c]}</td><td>${fmt(sub)}</td></tr>`;
+      g.rows.forEach(([n, v]) => tb += `<tr><td class="lbl" style="font-weight:400">${esc(n)}</td><td class="q">${fmt(v.qty)}</td></tr>`);
+    });
+    h += `<div class="card"><div class="bd-bar" style="margin:0 0 10px;justify-content:space-between"><h3 style="margin:0;border:none;padding:0">📦 إجمالي المكونات اللي خرجت</h3>
+        <div style="display:flex;gap:8px"><button class="bd-btn" data-act="copy">📋 انسخ الجدول</button>${window.XLSX ? '<button class="bd-btn" data-act="xlsx">⬇️ Excel</button>' : ''}</div></div>
+      <div class="tablewrap"><table class="pr bd-big">${tb}</table></div>
+      <p class="none" style="margin-top:8px">الشنطة: واحدة لكل أوردر مجوهرات، ولو الأوردر فيه أكتر من طقم بتبقى شنطة لكل طقم.</p></div>`;
+
+    // عدد كل منتج
+    const prods = Object.entries(R.products).sort((a, b) => b[1].qty - a[1].qty);
+    h += `<div class="card"><h3>🧾 عدد كل منتج</h3><div class="tablewrap"><table class="pr">
+      <tr><th>المنتج</th><th>العدد</th><th>في كام أوردر</th></tr>
+      ${prods.map(([n, p]) => `<tr><td class="lbl">${esc(n)}</td><td class="num">${fmt(p.qty)}</td><td>${fmt(p.orders)}</td></tr>`).join('') || '<tr><td colspan="3" class="none">—</td></tr>'}
+    </table></div></div>`;
+
+    // الأسطر المش مفهومة
+    if(unkN){
+      h += `<div class="card" id="bdUnk"><h3 style="color:#b3423a">⚠️ أسطر مش مفهومة — ${fmt(R.unkLines)} سطر (${fmt(unkN)} شكل مختلف)</h3>
+        <p class="none" style="margin-bottom:8px">الأسطر دي مش داخلة في الحسبة. ابعتلي مكوناتها وأضيفها في قواعد التحليل.</p>
+        <div class="tablewrap"><table class="pr"><tr><th>السطر</th><th>اتكرر</th></tr>
+        ${Object.entries(R.unknown).sort((a, b) => b[1] - a[1]).map(([l, n]) => `<tr><td class="lbl" style="font-weight:400">${esc(l)}</td><td>${fmt(n)}</td></tr>`).join('')}
+        </table></div></div>`;
+    }
+
+    // تفاصيل كل أوردر
+    h += `<details class="card"><summary style="cursor:pointer;font-weight:700;color:var(--brass-d)">🔍 مكونات كل أوردر (${fmt(R.orders.length)})</summary>
+      <div class="tablewrap" style="margin-top:12px;max-height:600px;overflow-y:auto"><table class="pr">
+        <tr><th>#</th><th>الطلب</th><th>المكونات</th></tr>
+        ${R.orders.map((o, i) => `<tr><td>${fmt(i + 1)}</td>
+          <td class="lbl" style="font-weight:400;white-space:pre-line">${esc(o.raw)}</td>
+          <td style="white-space:normal;text-align:right">${Object.entries(o.comps).map(([n, q]) => `<span class="bd-chip">${esc(n)} × ${fmt(q)}</span>`).join('')}${o.unknown.map(u => `<span class="bd-chip unk">❓ ${esc(u)}</span>`).join('')}</td></tr>`).join('')}
+      </table></div></details>`;
+    return h + rulesCard();
+  }
+
+  function rulesCard(){
+    return `<details class="card"><summary style="cursor:pointer;font-weight:700;color:var(--brass-d)">📚 قواعد التحليل الحالية</summary>
+      <div class="tablewrap" style="margin-top:12px"><table class="pr">
+        <tr><th>المنتج</th><th>بيتعرف لو السطر فيه</th><th>المكونات</th></tr>
+        ${RULES.map(r => `<tr><td class="lbl">${esc(r.name)}</td>
+          <td style="white-space:normal">${[(r.all || []).length ? 'كل دول: ' + r.all.join(' + ') : '', (r.any || []).length ? 'أي واحدة: ' + r.any.join(' / ') : ''].filter(Boolean).map(esc).join('<br>')}</td>
+          <td style="white-space:normal;text-align:right">${r.items('').map(([n, , q]) => `<span class="bd-chip">${esc(n)} × ${fmt(q)}</span>`).join('')}${r.jewelry ? '<span class="bd-chip">+ شنطة</span>' : ''}</td></tr>`).join('')}
+      </table></div>
+      <p class="none" style="margin-top:8px">"و٢حلق" بتتحسب 2 حلق. ولو السطر مكتوب فيه عدد زي "×2" أو "عدد 2" أو "2 طقم..."، كل مكوناته بتتضرب في العدد ده.</p></details>`;
+  }
+
+  function tableTSV(){
+    const rows = [['المكوّن', 'العدد']];
+    compsGrouped(S.res).forEach(g => { rows.push([CATS[g.c], '']); g.rows.forEach(([n, v]) => rows.push([n, v.qty])); });
+    return rows.map(r => r.join('\t')).join('\n');
+  }
+
+  function wire(root){
+    const ta = root.querySelector('#bdText'); if(ta) ta.oninput = () => { S.text = ta.value; };
+    const go = root.querySelector('[data-act=go]'); if(go) go.onclick = () => {
+      if(!S.text.trim()){ S.msg = 'الصق الطلبات الأول.'; S.msgErr = true; S.res = null; draw(); return; }
+      S.res = analyze(S.text);
+      S.msg = S.res.orders.length ? '' : 'ملقيتش أي طلبات في اللي اتلصق.'; S.msgErr = !S.res.orders.length;
+      draw();
+    };
+    const cl = root.querySelector('[data-act=clear]'); if(cl) cl.onclick = () => { S.text = ''; S.res = null; S.msg = ''; draw(); };
+    const tu = root.querySelector('[data-act=to-unk]'); if(tu) tu.onclick = () => { const u = document.getElementById('bdUnk'); if(u) u.scrollIntoView({ behavior:'smooth', block:'start' }); };
+    const cp = root.querySelector('[data-act=copy]'); if(cp) cp.onclick = async () => {
+      try{ await navigator.clipboard.writeText(tableTSV()); cp.textContent = '✅ اتنسخ — الصقه في الشيت'; }
+      catch(e){ cp.textContent = '❌ النسخ اترفض'; }
+    };
+    const xl = root.querySelector('[data-act=xlsx]'); if(xl) xl.onclick = () => {
+      const R = S.res, wb = XLSX.utils.book_new();
+      const c = []; compsGrouped(R).forEach(g => g.rows.forEach(([n, v]) => c.push({ 'النوع': CATS[g.c], 'المكوّن': n, 'العدد': v.qty })));
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(c), 'المكونات');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(Object.entries(R.products).map(([n, p]) => ({ 'المنتج': n, 'العدد': p.qty, 'في كام أوردر': p.orders }))), 'المنتجات');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(R.orders.map((o, i) => ({ '#': i + 1, 'الطلب': o.raw,
+        'المكونات': Object.entries(o.comps).map(([n, q]) => n + ' × ' + q).join('، '), 'مش مفهوم': o.unknown.join('، ') }))), 'كل أوردر');
+      XLSX.writeFile(wb, 'تحليل مكونات الطلبات ' + new Date().toISOString().slice(0, 10) + '.xlsx');
+    };
+  }
+
+  /* ---------- لينك في القائمة (تحت العمل) ---------- */
+  const anchor = document.querySelector('#sidebar a.navlink[href="#/eod"]') || document.querySelector('#sidebar a.navlink[href="#/squad"]');
+  if(anchor && !document.querySelector('#sidebar a.navlink[href="#/breakdown"]')){
+    const a = document.createElement('a');
+    a.className = 'navlink'; a.href = '#/breakdown'; a.textContent = '🧩 تحليل مكونات الطلبات';
+    anchor.after(a);
+  }
+
+  /* ---------- الربط بالراوتر ---------- */
+  function mount(){
+    document.querySelectorAll('#sidebar a.navlink').forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#/breakdown'));
+    draw();
+  }
+  const _render = render;
+  render = function(){ _render.apply(this, arguments); if(isBD()) mount(); };
+  window.addEventListener('hashchange', () => { if(isBD()) mount(); });
+  if(isBD()) setTimeout(mount, 0);
 })();
 </script>
 
