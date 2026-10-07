@@ -270,6 +270,19 @@ input.plainIn{padding:6px 10px;border:1px solid var(--line);border-radius:6px;wi
 #sq-root .sq-commnote .s{font-size:12.5px;color:var(--muted);margin-top:4px}
 #sq-root .sq-table td.sq-det{max-width:230px;font-size:13px;line-height:1.5}
 #sq-root .sq-table td small{color:var(--muted);font-size:11.5px}
+#sq-root .sq-rate{color:var(--muted);font-weight:400;font-size:12.5px}
+#sq-root .sq-srcs{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
+#sq-root .sq-src{display:inline-block;background:var(--slate-l);color:var(--slate);border-radius:20px;padding:2px 9px;font-size:12px;font-weight:600}
+#sq-root .sq-src b{color:var(--brass-d)}
+#sq-root .sq-viewbtn{margin-top:7px;background:transparent;border:1.5px solid var(--brass);color:var(--brass-d);border-radius:7px;padding:4px 10px;font-family:inherit;font-size:12.5px;font-weight:700;cursor:pointer}
+#sq-root .sq-viewbtn:hover{background:var(--brass);color:#fff}
+#sq-root .sq-agentbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:16px}
+#sq-root .sq-agentsrc{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:14px;font-size:13.5px;color:var(--muted)}
+#sq-root .sq-agentsrc .sq-srcs{margin:0}
+#sq-root .sq-fchip{border:1.5px solid var(--line);background:var(--panel);color:var(--ink);border-radius:20px;padding:6px 13px;font-family:inherit;font-size:13px;cursor:pointer}
+#sq-root .sq-fchip.on{background:var(--brass-d);border-color:var(--brass-d);color:#fff}
+#sq-root .sq-agentq{flex:1;min-width:180px;padding:8px 11px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;background:var(--panel);color:var(--ink)}
+#sq-root .sq-btn.sq-sm{padding:7px 13px;font-size:13.5px}
 
 /* الإشعارات بتظهر في أي صفحة من النظام */
 .sq-toasts{position:fixed;top:16px;inset-inline-end:16px;z-index:80;display:flex;flex-direction:column;gap:10px;max-width:320px}
@@ -1516,7 +1529,20 @@ const Squad = (function(){
     myOrders: [],
     board: null,
     boardLoading: false,
+    viewAgent: null,      // {id, name} — الأدمن بيتفرج على أوردرات حد
+    agentOrders: null,
+    agentFilter: 'all',
+    agentQ: '',
   };
+  const canViewAll = () => !!(window.AuthGate && window.AuthGate.isFull && window.AuthGate.isFull());
+  // عدد الأوردرات من كل مصدر: [['إرسال صفحة',7],['واتساب',3]]
+  function sourceCounts(orders){
+    const m = {};
+    (orders || []).forEach(o => { const k = (o.page_name || '').trim() || 'بدون مصدر'; m[k] = (m[k] || 0) + 1; });
+    return Object.entries(m).sort((a, b) => b[1] - a[1]);
+  }
+  const sourceChips = list => list.length
+    ? `<div class="sq-srcs">${list.map(([k, n]) => `<span class="sq-src">${esc(k)} <b>${n}</b></span>`).join('')}</div>` : '';
   let profileNameMap = {};
   let pendingView = null; // لو حد داس "فتح نظام الطلبات" من صفحة تانية قبل ما يسجل دخول
 
@@ -1729,7 +1755,7 @@ const Squad = (function(){
     (data||[]).forEach(o => (byAgent[o.agent_id] = byAgent[o.agent_id] || []).push(o));
     const rows = Object.keys(byAgent).map(id => {
       const s = commissionSummary(byAgent[id]);
-      return { id, name: nameMap[id] || 'موظف', total: s.total, delivered: s.delivered, rate: s.rate, commission: s.commission };
+      return { id, name: nameMap[id] || 'موظف', total: s.total, delivered: s.delivered, rate: s.rate, commission: s.commission, sources: sourceCounts(byAgent[id]) };
     }).sort((a,b) => b.delivered - a.delivered || b.total - a.total);
     setState({ boardLoading:false, board: rows });
   }
@@ -1984,6 +2010,73 @@ const Squad = (function(){
       </div>`;
   }
 
+  /* ---------- 👁 أوردرات موظف معيّن (للأدمن ومن عنده كل الصلاحيات) ---------- */
+  async function openAgent(id, name){
+    if(!canViewAll()) return;
+    setState({ view:'agent-orders', viewAgent:{ id, name }, agentOrders:null, agentFilter:'all', agentQ:'', error:'' });
+    window.scrollTo({ top:0, behavior:'smooth' });
+    const { data, error } = await sb.from('orders').select('*').eq('agent_id', id).order('created_at', { ascending:false });
+    if(state.view !== 'agent-orders' || !state.viewAgent || state.viewAgent.id !== id) return;
+    if(error){ setState({ agentOrders:[], error:'مقدرناش نجيب أوردرات الموظف: ' + error.message }); return; }
+    setState({ agentOrders: data || [] });
+  }
+
+  function agentFiltered(){
+    const q = state.agentQ.trim().toLowerCase();
+    return (state.agentOrders || []).filter(o =>
+      (state.agentFilter === 'all' || (state.agentFilter === 'pending' ? (o.status !== 'delivered' && o.status !== 'cancelled') : o.status === state.agentFilter)) &&
+      (!q || [o.customer_name, o.customer_phone, o.order_details, o.page_name, o.customer_address].some(v => String(v || '').toLowerCase().includes(q))));
+  }
+
+  function AgentOrdersView(){
+    const a = state.viewAgent || {};
+    const back = `<button type="button" class="sq-btn ghost" id="sq-agent-back">→ رجوع للترتيب</button>`;
+    if(!canViewAll()) return head('غير متاح', '') + back;
+    let h = head(`أوردرات ${esc(a.name || '')}`, 'كل الأوردرات اللي الموظف ده سجلها.') + `<div class="sq-agentbar">${back}</div>`;
+    if(state.error) h += `<div class="sq-err">${esc(state.error)}</div>`;
+    if(state.agentOrders === null) return h + `<div class="sq-loading">بنجيب الأوردرات...</div>`;
+    const all = state.agentOrders, s = commissionSummary(all), list = agentFiltered();
+    const chip = (k, l, n) => `<button type="button" class="sq-fchip ${state.agentFilter === k ? 'on' : ''}" data-afilter="${k}">${l} <b>${n}</b></button>`;
+    h += `<div class="sq-stats">
+        <div class="sq-stat"><div class="n">${s.total}</div><div class="l">إجمالي الأوردرات</div></div>
+        <div class="sq-stat"><div class="n green">${s.delivered}</div><div class="l">اتسلم</div></div>
+        <div class="sq-stat"><div class="n">${rateTxt(s.rate)}</div><div class="l">نسبة التسليم</div></div>
+        <div class="sq-stat"><div class="n gold">${s.commission} ج</div><div class="l">إجمالي العمولة</div></div>
+      </div>
+      <div class="sq-agentsrc"><span>مصادر الأوردرات:</span>${sourceChips(sourceCounts(all)) || '<span class="sq-src">—</span>'}</div>
+      <div class="sq-agentbar">
+        ${chip('all', 'الكل', s.total)}${chip('pending', 'قيد التنفيذ', s.pending)}${chip('delivered', 'اتسلم', s.delivered)}${chip('cancelled', 'اتلغى', s.cancelled)}
+        <input type="search" id="sq-agent-q" class="sq-agentq" placeholder="🔍 بحث بالاسم أو الموبايل أو الطلب..." value="${esc(state.agentQ)}">
+        ${window.XLSX ? '<button type="button" class="sq-btn ghost sq-sm" id="sq-agent-xlsx">⬇️ Excel</button>' : ''}
+      </div>
+      <div class="sq-tablecard">
+        ${list.length ? `<table class="sq-table">
+          <thead><tr><th>العميل</th><th>الموبايل</th><th>العنوان</th><th>الطلب</th><th>المصدر</th><th>القيمة</th><th>العمولة</th><th>الحالة</th><th>التاريخ</th></tr></thead>
+          <tbody>${list.map(o => { const st = statusLabel(o.status); return `<tr>
+            <td data-label="العميل">${esc(o.customer_name || '—')}</td>
+            <td class="mut" data-label="الموبايل">${esc(o.customer_phone || '—')}</td>
+            <td class="sq-det" data-label="العنوان">${esc(o.customer_address || '—')}</td>
+            <td class="sq-det" data-label="الطلب">${esc(o.order_details || '—')}</td>
+            <td class="mut" data-label="المصدر">${esc(o.page_name || '—')}</td>
+            <td class="amount" data-label="القيمة">${o.amount ? esc(o.amount) + ' ج' : '—'}</td>
+            <td class="mut" data-label="العمولة">${commCell(o, s.active)}</td>
+            <td data-label="الحالة"><span class="sq-badge ${st.cls}">${st.text}</span></td>
+            <td class="mut" data-label="التاريخ">${fmtDate(o.created_at)}</td></tr>`; }).join('')}</tbody></table>`
+        : `<div class="sq-empty">${all.length ? 'مفيش أوردرات بالفلتر ده.' : 'الموظف ده لسه مسجلش أوردرات.'}</div>`}
+      </div>`;
+    return h;
+  }
+
+  function exportAgent(){
+    const a = state.viewAgent || {}, list = agentFiltered();
+    const ws = XLSX.utils.json_to_sheet(list.map(o => ({
+      'العميل': o.customer_name || '', 'الموبايل': o.customer_phone || '', 'العنوان': o.customer_address || '',
+      'الطلب': o.order_details || '', 'المصدر': o.page_name || '', 'القيمة': o.amount ?? '',
+      'الحالة': statusLabel(o.status).text, 'التاريخ': cairoStamp(new Date(o.created_at)).full })));
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'الأوردرات');
+    XLSX.writeFile(wb, `أوردرات ${a.name || ''} ${localYmd(new Date())}.xlsx`);
+  }
+
   function LeaderboardView(){
     if(!state.board) return head('ترتيب الـSquad', 'ترتيب حسب عدد الأوردرات اللي اتسلمت.') + `<div class="sq-loading">بنجيب النتائج...</div>`;
     const rows = state.board;
@@ -1993,7 +2086,9 @@ const Squad = (function(){
         ${rows.length ? rows.map((r,i) => `
           <div class="sq-board-row">
             <div class="sq-rank ${i===0?'r1':i===1?'r2':i===2?'r3':''}">${i+1}</div>
-            <div class="sq-name"><bdi>${esc(r.name)}</bdi> <small style="color:var(--muted);font-weight:400">· تسليم ${rateTxt(r.rate)}</small></div>
+            <div class="sq-name"><bdi>${esc(r.name)}</bdi> <small class="sq-rate">· نسبة التسليم ${rateTxt(r.rate)}</small>
+              ${sourceChips(r.sources)}
+              ${canViewAll() ? `<button type="button" class="sq-viewbtn" data-view-agent="${esc(r.id)}" data-agent-name="${esc(r.name)}">👁 عرض الأوردرات</button>` : ''}</div>
             <div class="sq-metric c">${r.total}</div>
             <div class="sq-metric c">${r.delivered}</div>
             <div class="sq-metric gold c">${r.commission} ج</div>
@@ -2018,6 +2113,7 @@ const Squad = (function(){
     let body;
     if(state.view === 'new-order') body = NewOrderView();
     else if(state.view === 'leaderboard') body = LeaderboardView();
+    else if(state.view === 'agent-orders') body = AgentOrdersView();
     else body = DashboardView();
     root.innerHTML = Bar() + body;
     wireAppEvents();
@@ -2047,6 +2143,19 @@ const Squad = (function(){
       };
     });
     if($('sq-logout')) $('sq-logout').onclick = doLogout;
+
+    // 👁 أوردرات أي موظف (للأدمن ومن عنده كل الصلاحيات)
+    document.querySelectorAll('#sq-root [data-view-agent]').forEach(b => {
+      b.onclick = () => openAgent(b.getAttribute('data-view-agent'), b.getAttribute('data-agent-name'));
+    });
+    if($('sq-agent-back')) $('sq-agent-back').onclick = () => { setState({ view:'leaderboard', viewAgent:null, agentOrders:null, error:'' }); loadLeaderboard(); };
+    document.querySelectorAll('#sq-root [data-afilter]').forEach(b => { b.onclick = () => setState({ agentFilter: b.getAttribute('data-afilter') }); });
+    if($('sq-agent-q')) $('sq-agent-q').oninput = e => {
+      const pos = e.target.selectionStart;
+      setState({ agentQ: e.target.value });
+      const n = $('sq-agent-q'); if(n){ n.focus(); try{ n.setSelectionRange(pos, pos); }catch(x){} }
+    };
+    if($('sq-agent-xlsx')) $('sq-agent-xlsx').onclick = exportAgent;
 
     // 📋 ليستة الطلب: تفعيل خانة العدد لما الحاجة تتختار
     document.querySelectorAll('#sq-root .sq-pick input[type=checkbox]').forEach(cb => {
@@ -3418,7 +3527,9 @@ async function exportToSheet(btn) {
     document.documentElement.classList.remove('auth-ok');
     showLogin('login', 'جلسة الدخول خلصت — سجّل دخول تاني وكمّل من مكانك.');
   });
-  window.AuthGate = { logout, sb, me: () => me, openMenu: () => openMyMenu() };
+  // أدمن أو حساب واخد كل الأقسام = يقدر يشوف أوردرات أي حد في الـ Squad
+  const isFull = () => !!me && (me.is_admin || allSections().every(s => allowedSet().has(s.key)));
+  window.AuthGate = { logout, sb, me: () => me, openMenu: () => openMyMenu(), isFull };
 
   function showWaiting(){
     const g = gate(`
