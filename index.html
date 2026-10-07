@@ -1439,6 +1439,7 @@ const Squad = (function(){
      - عمولة الأوردر قبل التسليم بتتفعّل بس لو نسبة تسليمات الموظف أكتر من 50%
        (نسبة التسليم = اللي اتسلم ÷ (اللي اتسلم + اللي اتلغى)، والأوردرات اللي لسه قيد التنفيذ مش داخلة فيها)
      - النظام ده بيتطبق على كل الأوردرات، القديمة والجديدة
+     - ⚠️ النسبة اللي بتظهر للموظفين في الشاشات (delRate) = اللي اتسلم ÷ إجمالي الأوردرات
      ===================================================================== */
   const RULES_FROM = '2026-10-07';
   const STD_COMM = { order:5, delivered:15 };
@@ -1483,10 +1484,12 @@ const Squad = (function(){
     const rate = decided ? delivered / decided : null;
     const active = rate !== null && rate > MIN_RATE;
     const r2 = n => Math.round(n * 100) / 100;
-    return { total:(orders || []).length, delivered, cancelled, pending, rate, active,
+    const totalN = (orders || []).length;
+    const delRate = totalN ? delivered / totalN : null; // ✅ نسبة التسليم الصح = اتسلم ÷ إجمالي الأوردرات
+    return { total:totalN, delivered, cancelled, pending, rate, delRate, active,
       delComm:r2(delComm), pendComm:r2(pendComm), commission:r2(delComm + (active ? pendComm : 0)) };
   }
-  const rateTxt = r => r === null ? '—' : Math.round(r * 100) + '%';
+  const rateTxt = r => r === null || r === undefined ? '—' : (Math.round(r * 1000) / 10) + '%';
 
   /* ✅ عميل Supabase واحد مشترك للصفحة كلها (Squad + الدخول + المخزن + EOD + ...)
      قبل كده كان فيه عميلين بيجدّدوا التوكن في نفس الوقت، فواحد فيهم يفضل ماسك
@@ -1761,7 +1764,7 @@ const Squad = (function(){
     (data||[]).forEach(o => (byAgent[o.agent_id] = byAgent[o.agent_id] || []).push(o));
     const rows = Object.keys(byAgent).map(id => {
       const s = commissionSummary(byAgent[id]);
-      return { id, name: nameMap[id] || 'موظف', total: s.total, delivered: s.delivered, rate: s.rate, commission: s.commission, sources: sourceCounts(byAgent[id]) };
+      return { id, name: nameMap[id] || 'موظف', total: s.total, delivered: s.delivered, rate: s.rate, delRate: s.delRate, commission: s.commission, sources: sourceCounts(byAgent[id]) };
     }).sort((a,b) => b.delivered - a.delivered || b.total - a.total);
     setState({ boardLoading:false, board: rows });
   }
@@ -1902,7 +1905,7 @@ const Squad = (function(){
       <div class="sq-stats">
         <div class="sq-stat"><div class="n">${s.total}</div><div class="l">إجمالي الأوردرات (${s.pending} قيد التنفيذ)</div></div>
         <div class="sq-stat"><div class="n green">${s.delivered}</div><div class="l">اتسلم</div></div>
-        <div class="sq-stat"><div class="n">${rateTxt(s.rate)}</div><div class="l">نسبة التسليم</div></div>
+        <div class="sq-stat"><div class="n">${rateTxt(s.delRate)}</div><div class="l">نسبة التسليم</div></div>
         <div class="sq-stat"><div class="n gold">${s.commission} ج</div><div class="l">إجمالي العمولة</div></div>
       </div>
       <div class="sq-tablecard">
@@ -2199,7 +2202,7 @@ const Squad = (function(){
     h += `<div class="sq-stats">
         <div class="sq-stat"><div class="n">${s.total}</div><div class="l">إجمالي الأوردرات</div></div>
         <div class="sq-stat"><div class="n green">${s.delivered}</div><div class="l">اتسلم</div></div>
-        <div class="sq-stat"><div class="n">${rateTxt(s.rate)}</div><div class="l">نسبة التسليم</div></div>
+        <div class="sq-stat"><div class="n">${rateTxt(s.delRate)}</div><div class="l">نسبة التسليم</div></div>
         <div class="sq-stat"><div class="n gold">${s.commission} ج</div><div class="l">إجمالي العمولة</div></div>
       </div>
       <div class="sq-agentsrc"><span>مصادر الأوردرات:</span>${sourceChips(sourceCounts(all)) || '<span class="sq-src">—</span>'}</div>
@@ -2245,7 +2248,7 @@ const Squad = (function(){
         ${rows.length ? rows.map((r,i) => `
           <div class="sq-board-row">
             <div class="sq-rank ${i===0?'r1':i===1?'r2':i===2?'r3':''}">${i+1}</div>
-            <div class="sq-name"><bdi>${esc(r.name)}</bdi> <small class="sq-rate">· نسبة التسليم ${rateTxt(r.rate)}</small>
+            <div class="sq-name"><bdi>${esc(r.name)}</bdi> <small class="sq-rate">· نسبة التسليم ${rateTxt(r.delRate)}</small>
               ${sourceChips(r.sources)}
               ${canViewAll() ? `<button type="button" class="sq-viewbtn" data-view-agent="${esc(r.id)}" data-agent-name="${esc(r.name)}">👁 عرض الأوردرات</button>` : ''}</div>
             <div class="sq-metric c">${r.total}</div>
