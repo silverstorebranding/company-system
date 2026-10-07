@@ -322,6 +322,29 @@ html:not(.auth-ok) #app{display:none}
 .adm-actions button{border:1px solid var(--line);background:var(--paper);color:var(--ink);border-radius:8px;padding:6px 12px;font-family:inherit;font-size:13px;cursor:pointer}
 .adm-actions button.save{background:var(--brass);color:#fff;border-color:var(--brass);font-weight:700}
 .adm-actions .adm-st{font-size:12.5px;color:var(--muted)}
+/* ===== 📋 زرار "أقسامي" — ليستة الأقسام المفتوحة لكل مستخدم ===== */
+#myMenuBtn{position:fixed;bottom:calc(18px + env(safe-area-inset-bottom,0px));inset-inline-end:18px;z-index:60;background:var(--brass-d);color:#fff;border:none;border-radius:30px;padding:11px 18px;font-family:inherit;font-size:14.5px;font-weight:700;cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,.22);display:flex;align-items:center;gap:6px}
+#myMenuBtn:hover{background:var(--brass)}
+#myMenuBtn:focus-visible,.mm-side:focus-visible,.mm-item:focus-visible{outline:3px solid var(--brass);outline-offset:2px}
+.mm-side{display:block;width:100%;margin-top:8px;background:#f3ede0;color:var(--brass-d);border:none;border-radius:7px;padding:8px;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer}
+.mm-bg{position:fixed;inset:0;z-index:90;background:rgba(28,35,33,.5);display:flex;align-items:center;justify-content:center;padding:16px;direction:rtl}
+.mm-box{background:var(--panel);color:var(--ink);border-radius:12px;width:100%;max-width:580px;max-height:86vh;display:flex;flex-direction:column;padding:20px 20px 14px;box-shadow:0 14px 40px rgba(0,0,0,.25)}
+.mm-head{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.mm-head h2{font-size:19px;margin:0}
+.mm-x{background:none;border:none;font-size:20px;color:var(--muted);cursor:pointer;padding:4px 8px;border-radius:6px}
+.mm-x:hover{background:var(--paper)}
+.mm-sub{font-size:13px;color:var(--muted);margin:4px 0 12px}
+.mm-q{width:100%;padding:9px 12px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;background:var(--paper);color:var(--ink);margin-bottom:12px;box-sizing:border-box}
+.mm-q:focus{outline:none;border-color:var(--brass)}
+.mm-list{overflow-y:auto;padding-bottom:4px}
+.mm-grp{margin-bottom:14px}
+.mm-grp h4{font-size:12px;color:var(--muted);margin:0 0 6px;font-weight:600}
+.mm-items{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:6px}
+.mm-item{display:block;padding:10px 12px;border:1px solid var(--line);border-radius:9px;text-decoration:none;color:var(--ink);font-size:14px;background:var(--paper)}
+.mm-item:hover{border-color:var(--brass)}
+.mm-item.on{border-color:var(--brass);background:var(--slate-l);font-weight:700}
+.mm-empty{color:var(--muted);font-size:13.5px;text-align:center;padding:18px 0}
+@media print{#myMenuBtn{display:none}}
 </style>
 
 </head>
@@ -3395,7 +3418,7 @@ async function exportToSheet(btn) {
     document.documentElement.classList.remove('auth-ok');
     showLogin('login', 'جلسة الدخول خلصت — سجّل دخول تاني وكمّل من مكانك.');
   });
-  window.AuthGate = { logout, sb, me: () => me };
+  window.AuthGate = { logout, sb, me: () => me, openMenu: () => openMyMenu() };
 
   function showWaiting(){
     const g = gate(`
@@ -3524,6 +3547,72 @@ async function exportToSheet(btn) {
     });
   }
 
+  /* ---------- 📋 زرار "أقسامي": ليستة بالأقسام المفتوحة للمستخدم ---------- */
+  const hrefOf = s => s.key.startsWith('dept:') ? '#/dept/' + s.key.slice(5) : '#/' + s.routes[0];
+  function mySections(){
+    const groups = GROUPS().map(g => ({ title:g.title, items:g.items.filter(s => canSee(hrefOf(s))).map(s => ({ label:s.label, href:hrefOf(s) })) }))
+      .filter(g => g.items.length);
+    if(me && me.is_admin) groups.push({ title:'الإدارة', items:[{ label:'⚙️ الحسابات والصلاحيات', href:'#/admin' }] });
+    return groups;
+  }
+  function onMenuKey(e){ if(e.key === 'Escape') closeMyMenu(); }
+  function closeMyMenu(){
+    const m = document.getElementById('myMenu'); if(m) m.remove();
+    document.removeEventListener('keydown', onMenuKey);
+  }
+  function openMyMenu(){
+    if(!me) return;
+    closeMyMenu();
+    const groups = mySections();
+    const count = groups.reduce((s, g) => s + g.items.length, 0);
+    const cur = location.hash || '#/home';
+    const bg = document.createElement('div');
+    bg.id = 'myMenu'; bg.className = 'mm-bg';
+    bg.innerHTML = `<div class="mm-box" role="dialog" aria-modal="true" aria-labelledby="mmTitle">
+      <div class="mm-head"><h2 id="mmTitle">📋 الأقسام المفتوحالك</h2><button type="button" class="mm-x" aria-label="إغلاق">✕</button></div>
+      <div class="mm-sub">أهلاً ${esc(me.full_name || me.username)} — ${me.is_admin ? 'إنت أدمن ومفتوحلك كل الأقسام' : `مفتوحلك ${count} قسم`}. دوس على أي قسم يفتحلك على طول.</div>
+      ${count > 6 ? '<input type="search" class="mm-q" placeholder="🔍 دوّر على قسم..." aria-label="دوّر على قسم">' : ''}
+      <div class="mm-list">${count ? groups.map(g => `<div class="mm-grp"><h4>${esc(g.title)}</h4><div class="mm-items">
+        ${g.items.map(i => `<a class="mm-item ${cur === i.href || cur.startsWith(i.href + '/') ? 'on' : ''}" href="${i.href}" data-t="${esc(i.label)}">${esc(i.label)}</a>`).join('')}
+      </div></div>`).join('') : '<div class="mm-empty">لسه مفيش أقسام مفتوحالك — كلّم الأدمن.</div>'}</div>
+    </div>`;
+    document.body.appendChild(bg);
+    bg.onclick = e => { if(e.target === bg) closeMyMenu(); };
+    bg.querySelector('.mm-x').onclick = closeMyMenu;
+    bg.querySelectorAll('.mm-item').forEach(a => a.onclick = closeMyMenu);
+    const q = bg.querySelector('.mm-q');
+    if(q){
+      q.oninput = () => {
+        const t = q.value.trim().toLowerCase();
+        bg.querySelectorAll('.mm-grp').forEach(g => {
+          let any = false;
+          g.querySelectorAll('.mm-item').forEach(a => { const ok = !t || a.dataset.t.toLowerCase().includes(t); a.style.display = ok ? '' : 'none'; if(ok) any = true; });
+          g.style.display = any ? '' : 'none';
+        });
+      };
+      q.focus();
+    } else { const f = bg.querySelector('.mm-item'); if(f) f.focus(); }
+    document.addEventListener('keydown', onMenuKey);
+  }
+  function addMyMenuBtn(){
+    if(!me) return;
+    if(!document.getElementById('myMenuBtn')){
+      const b = document.createElement('button');
+      b.type = 'button'; b.id = 'myMenuBtn'; b.innerHTML = '📋 أقسامي';
+      b.setAttribute('aria-label', 'افتح ليستة الأقسام المفتوحالك');
+      b.onclick = openMyMenu;
+      document.body.appendChild(b);
+    }
+    const box = document.getElementById('userbox');
+    if(box && !box.querySelector('.mm-side')){
+      const s = document.createElement('button');
+      s.type = 'button'; s.className = 'mm-side'; s.textContent = '📋 الأقسام المفتوحالي';
+      s.onclick = openMyMenu;
+      box.appendChild(s);
+    }
+  }
+  window.addEventListener('hashchange', closeMyMenu);
+
   /* ---------- الربط بالراوتر ---------- */
   // capture: بيشتغل قبل الراوتر الأصلي، فالصفحة الممنوعة ماتترسمش أصلاً
   window.addEventListener('hashchange', e => {
@@ -3573,6 +3662,7 @@ async function exportToSheet(btn) {
     document.documentElement.classList.add('auth-ok');
     hideGate();
     afterRender();
+    addMyMenuBtn();
 
     let tm;
     const bar = document.getElementById('sidebar');
