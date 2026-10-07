@@ -1473,6 +1473,9 @@ const Squad = (function(){
     return Math.round((Number(o && o.commission) || 0) * 100) / 100;
   }
   const pendingCommission = o => isNewRule(o) ? rulesFor(o).order : 0;
+  // 📏 لو عمود المقاس لسه مش متضاف في Supabase، الأوردر بيتسجل من غيره بدل ما يفشل خالص
+  const missingSizeCol = e => !!e && /size/i.test(e.message || '') && /column|schema/i.test(e.message || '');
+  const SIZE_SQL_MSG = 'المقاس مااتحفظش في قاعدة البيانات — لازم سطر الـ SQL بتاع عمود المقاس يتشغّل في Supabase. (المقاس اتبعت للشيت عادي)';
   function commissionSummary(orders){
     let delivered = 0, cancelled = 0, pending = 0, delComm = 0, pendComm = 0;
     (orders || []).forEach(o => {
@@ -1662,7 +1665,7 @@ const Squad = (function(){
 
   async function createOrder(payload){
     setState({ loading:true, error:'' });
-    const { data: row, error } = await sb.from('orders').insert({
+    const newRow = {
       agent_id: state.session.user.id,
       customer_name: payload.customer_name,
       customer_phone: payload.customer_phone,
@@ -1670,9 +1673,16 @@ const Squad = (function(){
       page_name: payload.page_name,
       amount: payload.amount ? Number(payload.amount) : null,
       order_details: payload.order_details,
+      size: payload.size || null,
       status: 'pending',
       commission: rulesFor(payload).delivered
-    }).select().maybeSingle();
+    };
+    let { data: row, error } = await sb.from('orders').insert(newRow).select().maybeSingle();
+    if(missingSizeCol(error)){
+      delete newRow.size;
+      ({ data: row, error } = await sb.from('orders').insert(newRow).select().maybeSingle());
+      if(!error) showToast(SIZE_SQL_MSG, 'error');
+    }
     if(error){ setState({ loading:false, error:'مقدرناش نضيف الأوردر: ' + error.message }); return; }
     // الوقت بالظبط اللي الأوردر اتسجل بيه في السيستم (من قاعدة البيانات نفسها)
     sendOrderToGoogleSheet(payload, row && row.created_at ? new Date(row.created_at) : new Date());
@@ -1686,7 +1696,7 @@ const Squad = (function(){
     const agentUsername = state.profile?.username
       || (state.session?.user?.email ? emailToUsername(state.session.user.email) : '');
     const st = cairoStamp(when || new Date());
-    // A اسم / B رقم تلفون / C عنوان / D سعر / E اسم المستخدم / F فاضي / G الطلب / H مصدر البيدج
+    // A اسم / B رقم تلفون / C عنوان / D سعر / E اسم المستخدم / F فاضي / G الطلب / H مصدر البيدج / I المقاس
     // + order_datetime / order_date / order_time = وقت تسجيل الأوردر بالظبط (بتوقيت القاهرة)
     fetch(GOOGLE_SHEET_WEBHOOK_URL, {
       method: 'POST',
@@ -1700,6 +1710,7 @@ const Squad = (function(){
         agent_username: agentUsername,
         order_details: payload.order_details,
         page_name: payload.page_name,
+        size: payload.size || '',
         order_datetime: st.full,
         order_date: st.date,
         order_time: st.time,
@@ -1718,15 +1729,22 @@ const Squad = (function(){
 
   async function submitEditOrder(order, payload){
     setState({ loading:true, error:'' });
-    const { data: upd, error } = await sb.from('orders').update({
+    const patch = {
       customer_name: payload.customer_name,
       customer_phone: payload.customer_phone,
       customer_address: payload.customer_address,
       page_name: payload.page_name,
       amount: payload.amount ? Number(payload.amount) : null,
       order_details: payload.order_details,
+      size: payload.size || null,
       commission: isNewRule(order) ? rulesFor(payload).delivered : oldCommission(payload.amount)
-    }).eq('id', order.id).select('id');
+    };
+    let { data: upd, error } = await sb.from('orders').update(patch).eq('id', order.id).select('id');
+    if(missingSizeCol(error)){
+      delete patch.size;
+      ({ data: upd, error } = await sb.from('orders').update(patch).eq('id', order.id).select('id'));
+      if(!error) showToast(SIZE_SQL_MSG, 'error');
+    }
     if(error){ setState({ loading:false, error:'مقدرناش نعدّل الأوردر: ' + error.message }); return; }
     if(!upd || !upd.length){ setState({ loading:false, error:'التعديل مااتحفظش — قاعدة البيانات رفضت التعديل. لازم كود الـ SQL الجديد يتشغّل في Supabase.' }); return; }
     await loadMyOrders();
@@ -1881,6 +1899,7 @@ const Squad = (function(){
         <td data-label="العميل">${esc(o.customer_name || '—')}</td>
         <td class="mut" data-label="الموبايل">${esc(o.customer_phone || '—')}</td>
         <td class="sq-det" data-label="الطلب">${esc(o.order_details || '—')}</td>
+        <td data-label="المقاس">${esc(o.size || '—')}</td>
         <td class="mut" data-label="المصدر">${esc(o.page_name || '—')}</td>
         <td class="amount" data-label="القيمة">${o.amount ? esc(o.amount) + ' ج' : '—'}</td>
         <td class="mut" data-label="العمولة">${commCell(o, s.active)}</td>
@@ -1910,7 +1929,7 @@ const Squad = (function(){
       </div>
       <div class="sq-tablecard">
         ${orders.length ? `<table class="sq-table">
-          <thead><tr><th>العميل</th><th>الموبايل</th><th>الطلب</th><th>المصدر</th><th>القيمة</th><th>العمولة</th><th>الحالة</th><th>التاريخ</th><th>تحديث الحالة</th><th>إجراءات</th></tr></thead>
+          <thead><tr><th>العميل</th><th>الموبايل</th><th>الطلب</th><th>المقاس</th><th>المصدر</th><th>القيمة</th><th>العمولة</th><th>الحالة</th><th>التاريخ</th><th>تحديث الحالة</th><th>إجراءات</th></tr></thead>
           <tbody>${rows}</tbody></table>`
         : `<div class="sq-empty">لسه مفيش أوردرات. دوس على "أوردر جديد" وابدأ.</div>`}
       </div>
@@ -1973,6 +1992,8 @@ const Squad = (function(){
             return opts.map(x => `<option value="${esc(x)}" ${o.page_name === x ? 'selected' : ''}>${esc(x)}</option>`).join('');
           })()}
         </select></div>
+      <div class="sq-field"><label for="${prefix}-size">المقاس <span class="sq-hint">مثلاً 16 أو 18 — ولو أكتر من قطعة اكتبهم: محبس 18 / دبلة 22</span></label>
+        <input type="text" id="${prefix}-size" value="${esc(o.size||'')}" placeholder="اكتب المقاس" autocomplete="off"></div>
       ${productPicker(prefix, o.order_details)}`;
   }
   function readFields(prefix){
@@ -1984,6 +2005,7 @@ const Squad = (function(){
       page_name: v('page-name'),
       amount: v('amount'),
       order_details: readPicks(prefix),
+      size: v('size').trim(),
     };
   }
 
@@ -2187,7 +2209,7 @@ const Squad = (function(){
     const q = state.agentQ.trim().toLowerCase();
     return (state.agentOrders || []).filter(o =>
       (state.agentFilter === 'all' || (state.agentFilter === 'pending' ? (o.status !== 'delivered' && o.status !== 'cancelled') : o.status === state.agentFilter)) &&
-      (!q || [o.customer_name, o.customer_phone, o.order_details, o.page_name, o.customer_address].some(v => String(v || '').toLowerCase().includes(q))));
+      (!q || [o.customer_name, o.customer_phone, o.order_details, o.size, o.page_name, o.customer_address].some(v => String(v || '').toLowerCase().includes(q))));
   }
 
   function AgentOrdersView(){
@@ -2213,12 +2235,13 @@ const Squad = (function(){
       </div>
       <div class="sq-tablecard">
         ${list.length ? `<table class="sq-table">
-          <thead><tr><th>العميل</th><th>الموبايل</th><th>العنوان</th><th>الطلب</th><th>المصدر</th><th>القيمة</th><th>العمولة</th><th>الحالة</th><th>التاريخ</th></tr></thead>
+          <thead><tr><th>العميل</th><th>الموبايل</th><th>العنوان</th><th>الطلب</th><th>المقاس</th><th>المصدر</th><th>القيمة</th><th>العمولة</th><th>الحالة</th><th>التاريخ</th></tr></thead>
           <tbody>${list.map(o => { const st = statusLabel(o.status); return `<tr>
             <td data-label="العميل">${esc(o.customer_name || '—')}</td>
             <td class="mut" data-label="الموبايل">${esc(o.customer_phone || '—')}</td>
             <td class="sq-det" data-label="العنوان">${esc(o.customer_address || '—')}</td>
             <td class="sq-det" data-label="الطلب">${esc(o.order_details || '—')}</td>
+            <td data-label="المقاس">${esc(o.size || '—')}</td>
             <td class="mut" data-label="المصدر">${esc(o.page_name || '—')}</td>
             <td class="amount" data-label="القيمة">${o.amount ? esc(o.amount) + ' ج' : '—'}</td>
             <td class="mut" data-label="العمولة">${commCell(o, s.active)}</td>
@@ -2233,7 +2256,7 @@ const Squad = (function(){
     const a = state.viewAgent || {}, list = agentFiltered();
     const ws = XLSX.utils.json_to_sheet(list.map(o => ({
       'العميل': o.customer_name || '', 'الموبايل': o.customer_phone || '', 'العنوان': o.customer_address || '',
-      'الطلب': o.order_details || '', 'المصدر': o.page_name || '', 'القيمة': o.amount ?? '',
+      'الطلب': o.order_details || '', 'المقاس': o.size || '', 'المصدر': o.page_name || '', 'القيمة': o.amount ?? '',
       'الحالة': statusLabel(o.status).text, 'التاريخ': cairoStamp(new Date(o.created_at)).full })));
     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'الأوردرات');
     XLSX.writeFile(wb, `أوردرات ${a.name || ''} ${localYmd(new Date())}.xlsx`);
