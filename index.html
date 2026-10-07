@@ -1808,20 +1808,9 @@ const Squad = (function(){
     if(o.status === 'cancelled') return '—';
     const c = pendingCommission(o);
     if(!c) return '—';
-    return active ? `${c} ج` : `<s>${c} ج</s> <small>مش مفعّلة</small>`;
+    return active ? `${c} ج` : '—';
   }
 
-  function CommissionNote(s){
-    const rules = Object.entries(SOURCE_COMM).map(([k, v]) => `${k}: ${v.order} ج على الأوردر / ${v.delivered} ج لو اتسلم`).join(' · ');
-    return `<div class="sq-commnote ${s.active ? 'on' : 'off'}">
-      <div class="t">💰 عمولة التسليمات: <b>${s.delComm} ج</b> · عمولة الأوردرات اللي لسه قيد التنفيذ: <b>${s.pendComm} ج</b></div>
-      <div class="t">${s.active
-        ? `✅ عمولة الأوردر مفعّلة — نسبة تسليمك ${rateTxt(s.rate)} (أكتر من 50%)`
-        : `⛔ عمولة الأوردر مش مفعّلة — لازم نسبة تسليمك تبقى أكتر من 50% (نسبتك دلوقتي ${rateTxt(s.rate)})`}</div>
-      <div class="s">لما الأوردر يتسلم، عمولة الأوردر بتتلغي وبتاخد عمولة التسليم بدالها. نسبة التسليم = اللي اتسلم ÷ (اللي اتسلم + اللي اتلغى).</div>
-      <div class="s">${esc(rules)}</div>
-    </div>`;
-  }
 
   function DashboardView(){
     const orders = state.myOrders || [];
@@ -1860,7 +1849,6 @@ const Squad = (function(){
         <div class="sq-stat"><div class="n">${rateTxt(s.rate)}</div><div class="l">نسبة التسليم</div></div>
         <div class="sq-stat"><div class="n gold">${s.commission} ج</div><div class="l">إجمالي العمولة</div></div>
       </div>
-      ${CommissionNote(s)}
       <div class="sq-tablecard">
         ${orders.length ? `<table class="sq-table">
           <thead><tr><th>العميل</th><th>الموبايل</th><th>الطلب</th><th>المصدر</th><th>القيمة</th><th>العمولة</th><th>الحالة</th><th>التاريخ</th><th>تحديث الحالة</th><th>إجراءات</th></tr></thead>
@@ -1903,11 +1891,6 @@ const Squad = (function(){
       return cb.dataset.pick + (q > 1 ? ' ×' + q : '');
     }).filter(Boolean).join(' + ');
   }
-  function commPreview(src){
-    if(!src) return 'اختار المصدر عشان تشوف العمولة.';
-    const r = SOURCE_COMM[src] || STD_COMM;
-    return `💰 عمولة الأوردر ده: <b>${r.order} ج</b> وهو قيد التنفيذ (لو نسبة تسليمك أكتر من 50%) ← <b>${r.delivered} ج</b> لو اتسلم`;
-  }
 
   function orderFields(prefix, o){
     o = o || {};
@@ -1923,7 +1906,7 @@ const Squad = (function(){
       <div class="sq-field"><label for="${prefix}-customer-address">العنوان</label>
         <input type="text" id="${prefix}-customer-address" value="${esc(o.customer_address||'')}"></div>
       <div class="sq-field"><label for="${prefix}-page-name">المصدر</label>
-        <select id="${prefix}-page-name" data-comm-target="${prefix}-comm" required>
+        <select id="${prefix}-page-name" required>
           <option value="" disabled ${o.page_name ? '' : 'selected'}>اختار المصدر اللي جه منه الأوردر</option>
           ${(() => {
             const opts = ORDER_SOURCES.slice();
@@ -1931,7 +1914,6 @@ const Squad = (function(){
             return opts.map(x => `<option value="${esc(x)}" ${o.page_name === x ? 'selected' : ''}>${esc(x)}</option>`).join('');
           })()}
         </select></div>
-      <div class="sq-commprev" id="${prefix}-comm">${commPreview(o.page_name)}</div>
       ${productPicker(prefix, o.order_details)}`;
   }
   function readFields(prefix){
@@ -2052,10 +2034,6 @@ const Squad = (function(){
         q.disabled = !cb.checked;
         if(!cb.checked) q.value = 1;
       };
-    });
-    // 💰 معاينة العمولة حسب المصدر
-    document.querySelectorAll('#sq-root select[data-comm-target]').forEach(sel => {
-      sel.onchange = () => { const t = $(sel.dataset.commTarget); if(t) t.innerHTML = commPreview(sel.value); };
     });
 
     if($('sq-order-form')) $('sq-order-form').onsubmit = e => {
