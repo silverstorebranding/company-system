@@ -1397,7 +1397,7 @@ const Squad = (function(){
      - delivered = عمولة التسليم (بتحل مكان عمولة الأوردر، مش بتتجمع عليها)
      - عمولة الأوردر قبل التسليم بتتفعّل بس لو نسبة تسليمات الموظف أكتر من 50%
        (نسبة التسليم = اللي اتسلم ÷ (اللي اتسلم + اللي اتلغى)، والأوردرات اللي لسه قيد التنفيذ مش داخلة فيها)
-     - الأوردرات اللي اتسجلت قبل RULES_FROM بتفضل على النظام القديم (حسب السعر وعلى التسليم بس)
+     - النظام ده بيتطبق على كل الأوردرات، القديمة والجديدة
      ===================================================================== */
   const RULES_FROM = '2026-10-07';
   const STD_COMM = { order:5, delivered:15 };
@@ -1422,7 +1422,7 @@ const Squad = (function(){
   }
   const pad2 = n => String(n).padStart(2, '0');
   const localYmd = d => d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
-  const isNewRule = o => !o || !o.created_at || localYmd(new Date(o.created_at)) >= RULES_FROM;
+  const isNewRule = () => true; // كل الأوردرات (القديمة والجديدة) بتتحسب بالنظام الجديد
   const rulesFor = o => SOURCE_COMM[o && o.page_name] || STD_COMM;
   function deliveredCommission(o){
     if(isNewRule(o)) return rulesFor(o).delivered;
