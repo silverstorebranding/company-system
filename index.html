@@ -251,6 +251,26 @@ input.plainIn{padding:6px 10px;border:1px solid var(--line);border-radius:6px;wi
 #sq-root .sq-modal-actions{display:flex;gap:10px;margin-top:6px}
 #sq-root .sq-modal-actions .sq-btn{flex:1}
 
+/* 📋 ليستة الطلب + 💰 العمولة */
+#sq-root .sq-hint{font-weight:400;color:var(--muted);font-size:12px;margin-inline-start:6px}
+#sq-root .sq-picks{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px}
+#sq-root .sq-pick{display:flex;align-items:center;gap:8px;border:1.5px solid var(--line);border-radius:9px;padding:8px 10px;background:var(--panel)}
+#sq-root .sq-pick.on{border-color:var(--brass);background:var(--slate-l)}
+#sq-root .sq-pick.extra{border-style:dashed}
+#sq-root .sq-pick label{flex:1;display:flex;align-items:center;gap:8px;cursor:pointer;font-size:14px;font-weight:600;color:var(--ink);margin:0}
+#sq-root .sq-pick input[type=checkbox]{width:18px;height:18px;accent-color:var(--brass);flex:none;margin:0;padding:0}
+#sq-root .sq-field .sq-pick input.sq-qty{width:58px;flex:none;padding:5px 6px;text-align:center;font-size:14px}
+#sq-root .sq-field .sq-pick input.sq-qty:disabled{opacity:.35}
+#sq-root .sq-commprev{font-size:13px;color:var(--muted);background:var(--slate-l);border-radius:8px;padding:8px 12px;margin:-4px 0 14px}
+#sq-root .sq-commprev b{color:var(--brass-d)}
+#sq-root .sq-commnote{background:var(--panel);border:1px solid var(--line);border-inline-start:5px solid var(--muted);border-radius:10px;padding:12px 16px;margin-bottom:20px;font-size:14px}
+#sq-root .sq-commnote.on{border-inline-start-color:var(--ok)}
+#sq-root .sq-commnote.off{border-inline-start-color:#b3423a}
+#sq-root .sq-commnote .t{margin-bottom:4px}
+#sq-root .sq-commnote .s{font-size:12.5px;color:var(--muted);margin-top:4px}
+#sq-root .sq-table td.sq-det{max-width:230px;font-size:13px;line-height:1.5}
+#sq-root .sq-table td small{color:var(--muted);font-size:11.5px}
+
 /* الإشعارات بتظهر في أي صفحة من النظام */
 .sq-toasts{position:fixed;top:16px;inset-inline-end:16px;z-index:80;display:flex;flex-direction:column;gap:10px;max-width:320px}
 .sq-toast{background:var(--brass-d);color:#fff;padding:12px 15px;border-radius:9px;font-size:13.5px;font-weight:600;display:flex;align-items:center;gap:10px;box-shadow:0 6px 18px rgba(0,0,0,.2);animation:sqToastIn .2s ease}
@@ -1352,17 +1372,46 @@ const Squad = (function(){
   const EMAIL_DOMAIN = "agents-app.com";
   const GOOGLE_SHEET_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbxWqmUu2kjzYWEMMlfcjGdyDPkO3onLqDorNcgKQObNZwKMQi_RDuwMeP12-GsThRdE/exec";
 
-  /*
-    جدول العمولة حسب قيمة الأوردر:
-      - 350 وأقل        => 20 ج
-      - 351 : 500       => 45 ج
-      - 501 : 700       => 60 ج
-      - 701 : 850       => 85 ج
-      - أكتر من 850     => 10% من قيمة الأوردر
-    العمولة بتتحسب من السعر على طول (حتى للأوردرات القديمة)،
-    وبتتضاف في الإجمالي بس لما الحالة تبقى "اتسلم".
-  */
-  function calcCommission(amount){
+  /* =====================================================================
+     📋 ليستة الطلبات — خدمة العملاء بتختار منها (حاجة أو أكتر) بدل الكتابة
+     زوّد أو شيل منتجات من هنا
+     ===================================================================== */
+  const ORDER_PRODUCTS = [
+    'طقم محبس',
+    'طقم فص',
+    'طقم محبس وانسيال',
+    'طقم فص وانسيال',
+    'طقم محبس ودبلة تنجستين',
+    'طقم فص ودبلة تنجستين',
+    'طقم لازوردي',
+    'طقم ضهر حية',
+    'طقم ضهر حية وانسيال',
+  ];
+
+  // مصادر الأوردر اللي بتظهر في القايمة — زوّد أو شيل من هنا
+  const ORDER_SOURCES = ['واتساب', 'بيدج كارا', 'بيدج دريم', 'فون', 'إرسال صفحة'];
+
+  /* =====================================================================
+     💰 العمولة
+     - order     = عمولة الأوردر وهو لسه قيد التنفيذ
+     - delivered = عمولة التسليم (بتحل مكان عمولة الأوردر، مش بتتجمع عليها)
+     - عمولة الأوردر قبل التسليم بتتفعّل بس لو نسبة تسليمات الموظف أكتر من 50%
+       (نسبة التسليم = اللي اتسلم ÷ (اللي اتسلم + اللي اتلغى)، والأوردرات اللي لسه قيد التنفيذ مش داخلة فيها)
+     - الأوردرات اللي اتسجلت قبل RULES_FROM بتفضل على النظام القديم (حسب السعر وعلى التسليم بس)
+     ===================================================================== */
+  const RULES_FROM = '2026-10-07';
+  const STD_COMM = { order:5, delivered:15 };
+  const SOURCE_COMM = {
+    'واتساب':      STD_COMM,
+    'بيدج كارا':   STD_COMM,
+    'بيدج دريم':   STD_COMM,
+    'فون':         STD_COMM,
+    'إرسال صفحة':  { order:10, delivered:30 },
+  };
+  const MIN_RATE = 0.5;
+
+  // النظام القديم (حسب السعر) — للأوردرات اللي قبل RULES_FROM بس
+  function oldCommission(amount){
     const amt = Number(amount);
     if(!amt || amt <= 0) return 0;
     if(amt <= 350) return 20;
@@ -1371,11 +1420,32 @@ const Squad = (function(){
     if(amt <= 850) return 85;
     return Math.round(amt * 0.10 * 100) / 100;
   }
-  function orderCommission(o){
+  const pad2 = n => String(n).padStart(2, '0');
+  const localYmd = d => d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+  const isNewRule = o => !o || !o.created_at || localYmd(new Date(o.created_at)) >= RULES_FROM;
+  const rulesFor = o => SOURCE_COMM[o && o.page_name] || STD_COMM;
+  function deliveredCommission(o){
+    if(isNewRule(o)) return rulesFor(o).delivered;
     const amt = Number(o && o.amount);
-    if(amt && amt > 0) return calcCommission(amt);
+    if(amt && amt > 0) return oldCommission(amt);
     return Math.round((Number(o && o.commission) || 0) * 100) / 100;
   }
+  const pendingCommission = o => isNewRule(o) ? rulesFor(o).order : 0;
+  function commissionSummary(orders){
+    let delivered = 0, cancelled = 0, pending = 0, delComm = 0, pendComm = 0;
+    (orders || []).forEach(o => {
+      if(o.status === 'delivered'){ delivered++; delComm += deliveredCommission(o); }
+      else if(o.status === 'cancelled') cancelled++;
+      else { pending++; pendComm += pendingCommission(o); }
+    });
+    const decided = delivered + cancelled;
+    const rate = decided ? delivered / decided : null;
+    const active = rate !== null && rate > MIN_RATE;
+    const r2 = n => Math.round(n * 100) / 100;
+    return { total:(orders || []).length, delivered, cancelled, pending, rate, active,
+      delComm:r2(delComm), pendComm:r2(pendComm), commission:r2(delComm + (active ? pendComm : 0)) };
+  }
+  const rateTxt = r => r === null ? '—' : Math.round(r * 100) + '%';
 
   /* ✅ عميل Supabase واحد مشترك للصفحة كلها (Squad + الدخول + المخزن + EOD + ...)
      قبل كده كان فيه عميلين بيجدّدوا التوكن في نفس الوقت، فواحد فيهم يفضل ماسك
@@ -1435,8 +1505,16 @@ const Squad = (function(){
   const emailToUsername = e => e.split('@')[0];
   function fmtDate(iso){
     const d = new Date(iso);
-    return d.toLocaleDateString('ar-EG', { day:'numeric', month:'short' }) + ' — ' +
+    return d.toLocaleDateString('ar-EG', { day:'numeric', month:'short', year:'numeric' }) + ' — ' +
            d.toLocaleTimeString('ar-EG', { hour:'2-digit', minute:'2-digit' });
+  }
+  // التاريخ والساعة بالظبط بتوقيت القاهرة (للشيت)
+  function cairoStamp(d){
+    const p = {};
+    new Intl.DateTimeFormat('en-GB', { timeZone:'Africa/Cairo', year:'numeric', month:'2-digit', day:'2-digit',
+      hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false }).formatToParts(d).forEach(x => p[x.type] = x.value);
+    const date = `${p.year}-${p.month}-${p.day}`, time = `${p.hour === '24' ? '00' : p.hour}:${p.minute}:${p.second}`;
+    return { date, time, full: date + ' ' + time };
   }
   function statusLabel(s){
     if(s === 'delivered') return { text:'اتسلم', cls:'delivered' };
@@ -1521,36 +1599,12 @@ const Squad = (function(){
     const { data, error } = await sb.from('orders').select('*')
       .eq('agent_id', state.session.user.id)
       .order('created_at', { ascending:false });
-    if(!error){
-      setState({ myOrders: data || [] });
-      backfillCommissions(data || []);
-    }
-  }
-
-  // تصحيح العمولات القديمة المتخزنة على الجدول الجديد (مرة واحدة في الخلفية)
-  let backfillDone = false;
-  async function backfillCommissions(orders){
-    if(backfillDone) return;
-    backfillDone = true;
-    const toFix = (orders || []).filter(o => {
-      const amt = Number(o.amount);
-      if(!amt || amt <= 0) return false;
-      return Math.abs((Number(o.commission) || 0) - calcCommission(amt)) > 0.009;
-    });
-    if(!toFix.length) return;
-    for(const o of toFix){
-      try{ await sb.from('orders').update({ commission: calcCommission(o.amount) }).eq('id', o.id); }catch(e){}
-    }
-    const { data } = await sb.from('orders').select('*')
-      .eq('agent_id', state.session.user.id)
-      .order('created_at', { ascending:false });
-    if(data) setState({ myOrders: data });
-    loadLeaderboard();
+    if(!error) setState({ myOrders: data || [] });
   }
 
   async function createOrder(payload){
     setState({ loading:true, error:'' });
-    const { error } = await sb.from('orders').insert({
+    const { data: row, error } = await sb.from('orders').insert({
       agent_id: state.session.user.id,
       customer_name: payload.customer_name,
       customer_phone: payload.customer_phone,
@@ -1559,20 +1613,23 @@ const Squad = (function(){
       amount: payload.amount ? Number(payload.amount) : null,
       order_details: payload.order_details,
       status: 'pending',
-      commission: calcCommission(payload.amount)
-    });
+      commission: rulesFor(payload).delivered
+    }).select().maybeSingle();
     if(error){ setState({ loading:false, error:'مقدرناش نضيف الأوردر: ' + error.message }); return; }
+    // الوقت بالظبط اللي الأوردر اتسجل بيه في السيستم (من قاعدة البيانات نفسها)
+    sendOrderToGoogleSheet(payload, row && row.created_at ? new Date(row.created_at) : new Date());
     await loadMyOrders();
-    sendOrderToGoogleSheet(payload);
     setState({ loading:false, view:'dashboard', info:'اتضاف الأوردر بنجاح.' });
     showToast('اتسجل الأوردر بنجاح وبقى تحت اسمك 🎉', 'success');
   }
 
-  function sendOrderToGoogleSheet(payload){
+  function sendOrderToGoogleSheet(payload, when){
     if(!GOOGLE_SHEET_WEBHOOK_URL || GOOGLE_SHEET_WEBHOOK_URL.startsWith('PASTE-')) return;
     const agentUsername = state.profile?.username
       || (state.session?.user?.email ? emailToUsername(state.session.user.email) : '');
+    const st = cairoStamp(when || new Date());
     // A اسم / B رقم تلفون / C عنوان / D سعر / E اسم المستخدم / F فاضي / G الطلب / H مصدر البيدج
+    // + order_datetime / order_date / order_time = وقت تسجيل الأوردر بالظبط (بتوقيت القاهرة)
     fetch(GOOGLE_SHEET_WEBHOOK_URL, {
       method: 'POST',
       mode: 'no-cors',
@@ -1584,7 +1641,11 @@ const Squad = (function(){
         amount: payload.amount,
         agent_username: agentUsername,
         order_details: payload.order_details,
-        page_name: payload.page_name
+        page_name: payload.page_name,
+        order_datetime: st.full,
+        order_date: st.date,
+        order_time: st.time,
+        created_at: (when || new Date()).toISOString()
       })
     }).catch(() => {});
   }
@@ -1597,7 +1658,7 @@ const Squad = (function(){
     loadLeaderboard();
   }
 
-  async function submitEditOrder(orderId, payload){
+  async function submitEditOrder(order, payload){
     setState({ loading:true, error:'' });
     const { data: upd, error } = await sb.from('orders').update({
       customer_name: payload.customer_name,
@@ -1606,8 +1667,8 @@ const Squad = (function(){
       page_name: payload.page_name,
       amount: payload.amount ? Number(payload.amount) : null,
       order_details: payload.order_details,
-      commission: calcCommission(payload.amount)
-    }).eq('id', orderId).select('id');
+      commission: isNewRule(order) ? rulesFor(payload).delivered : oldCommission(payload.amount)
+    }).eq('id', order.id).select('id');
     if(error){ setState({ loading:false, error:'مقدرناش نعدّل الأوردر: ' + error.message }); return; }
     if(!upd || !upd.length){ setState({ loading:false, error:'التعديل مااتحفظش — قاعدة البيانات رفضت التعديل. لازم كود الـ SQL الجديد يتشغّل في Supabase.' }); return; }
     await loadMyOrders();
@@ -1634,29 +1695,19 @@ const Squad = (function(){
 
   async function loadLeaderboard(){
     setState({ boardLoading:true });
-    const { data, error } = await sb.from('orders').select('agent_id, status, amount, commission');
+    const { data, error } = await sb.from('orders').select('agent_id, status, amount, commission, page_name, created_at');
     if(error){ setState({ boardLoading:false, boardError:'مقدرناش نجيب بيانات اللوحة.' }); return; }
     const { data: profiles } = await sb.from('profiles').select('id, username, full_name');
     const nameMap = {};
     (profiles||[]).forEach(p => nameMap[p.id] = p.full_name || p.username || 'موظف');
     profileNameMap = nameMap;
 
-    const agg = {};
-    (data||[]).forEach(o => {
-      if(!agg[o.agent_id]) agg[o.agent_id] = { total:0, delivered:0, commission:0 };
-      agg[o.agent_id].total++;
-      if(o.status === 'delivered'){
-        agg[o.agent_id].delivered++;
-        agg[o.agent_id].commission += orderCommission(o);
-      }
-    });
-    const rows = Object.keys(agg).map(id => ({
-      id,
-      name: nameMap[id] || 'موظف',
-      total: agg[id].total,
-      delivered: agg[id].delivered,
-      commission: Math.round((agg[id].commission || 0) * 100) / 100
-    })).sort((a,b) => b.delivered - a.delivered || b.total - a.total);
+    const byAgent = {};
+    (data||[]).forEach(o => (byAgent[o.agent_id] = byAgent[o.agent_id] || []).push(o));
+    const rows = Object.keys(byAgent).map(id => {
+      const s = commissionSummary(byAgent[id]);
+      return { id, name: nameMap[id] || 'موظف', total: s.total, delivered: s.delivered, rate: s.rate, commission: s.commission };
+    }).sort((a,b) => b.delivered - a.delivered || b.total - a.total);
     setState({ boardLoading:false, board: rows });
   }
 
@@ -1752,22 +1803,40 @@ const Squad = (function(){
       <div class="s">${rankText}${gap > 0 ? ` — قدامك ${gap} أوردر بس عشان توصله` : ''}</div></div></div>`;
   }
 
+  function commCell(o, active){
+    if(o.status === 'delivered') return `<b>${deliveredCommission(o)} ج</b>`;
+    if(o.status === 'cancelled') return '—';
+    const c = pendingCommission(o);
+    if(!c) return '—';
+    return active ? `${c} ج` : `<s>${c} ج</s> <small>مش مفعّلة</small>`;
+  }
+
+  function CommissionNote(s){
+    const rules = Object.entries(SOURCE_COMM).map(([k, v]) => `${k}: ${v.order} ج على الأوردر / ${v.delivered} ج لو اتسلم`).join(' · ');
+    return `<div class="sq-commnote ${s.active ? 'on' : 'off'}">
+      <div class="t">💰 عمولة التسليمات: <b>${s.delComm} ج</b> · عمولة الأوردرات اللي لسه قيد التنفيذ: <b>${s.pendComm} ج</b></div>
+      <div class="t">${s.active
+        ? `✅ عمولة الأوردر مفعّلة — نسبة تسليمك ${rateTxt(s.rate)} (أكتر من 50%)`
+        : `⛔ عمولة الأوردر مش مفعّلة — لازم نسبة تسليمك تبقى أكتر من 50% (نسبتك دلوقتي ${rateTxt(s.rate)})`}</div>
+      <div class="s">لما الأوردر يتسلم، عمولة الأوردر بتتلغي وبتاخد عمولة التسليم بدالها. نسبة التسليم = اللي اتسلم ÷ (اللي اتسلم + اللي اتلغى).</div>
+      <div class="s">${esc(rules)}</div>
+    </div>`;
+  }
+
   function DashboardView(){
     const orders = state.myOrders || [];
-    const delivered = orders.filter(o => o.status === 'delivered').length;
-    const pending = orders.filter(o => o.status === 'pending').length;
-    const commission = Math.round(orders.filter(o => o.status === 'delivered')
-      .reduce((s, o) => s + orderCommission(o), 0) * 100) / 100;
+    const s = commissionSummary(orders);
 
     const rows = orders.map(o => {
-      const s = statusLabel(o.status);
-      const c = orderCommission(o);
+      const st = statusLabel(o.status);
       return `<tr>
         <td data-label="العميل">${esc(o.customer_name || '—')}</td>
         <td class="mut" data-label="الموبايل">${esc(o.customer_phone || '—')}</td>
+        <td class="sq-det" data-label="الطلب">${esc(o.order_details || '—')}</td>
+        <td class="mut" data-label="المصدر">${esc(o.page_name || '—')}</td>
         <td class="amount" data-label="القيمة">${o.amount ? esc(o.amount) + ' ج' : '—'}</td>
-        <td class="mut" data-label="العمولة">${c ? c + ' ج' : '—'}</td>
-        <td data-label="الحالة"><span class="sq-badge ${s.cls}">${s.text}</span></td>
+        <td class="mut" data-label="العمولة">${commCell(o, s.active)}</td>
+        <td data-label="الحالة"><span class="sq-badge ${st.cls}">${st.text}</span></td>
         <td class="mut" data-label="التاريخ">${fmtDate(o.created_at)}</td>
         <td data-label="تحديث الحالة">
           <select class="sq-status" data-order-id="${esc(o.id)}" aria-label="تحديث حالة الأوردر">
@@ -1786,22 +1855,59 @@ const Squad = (function(){
     return head(`أهلاً، ${esc(state.profile?.full_name || state.profile?.username || '')}`, 'ده ملخص أدائك وكل الأوردرات اللي رفعتها.') + `
       ${HypeBanner()}
       <div class="sq-stats">
-        <div class="sq-stat"><div class="n">${orders.length}</div><div class="l">إجمالي الأوردرات</div></div>
-        <div class="sq-stat"><div class="n green">${delivered}</div><div class="l">اتسلم</div></div>
-        <div class="sq-stat"><div class="n">${pending}</div><div class="l">قيد التنفيذ</div></div>
-        <div class="sq-stat"><div class="n gold">${commission} ج</div><div class="l">إجمالي العمولة</div></div>
+        <div class="sq-stat"><div class="n">${s.total}</div><div class="l">إجمالي الأوردرات (${s.pending} قيد التنفيذ)</div></div>
+        <div class="sq-stat"><div class="n green">${s.delivered}</div><div class="l">اتسلم</div></div>
+        <div class="sq-stat"><div class="n">${rateTxt(s.rate)}</div><div class="l">نسبة التسليم</div></div>
+        <div class="sq-stat"><div class="n gold">${s.commission} ج</div><div class="l">إجمالي العمولة</div></div>
       </div>
+      ${CommissionNote(s)}
       <div class="sq-tablecard">
         ${orders.length ? `<table class="sq-table">
-          <thead><tr><th>العميل</th><th>الموبايل</th><th>القيمة</th><th>العمولة</th><th>الحالة</th><th>التاريخ</th><th>تحديث الحالة</th><th>إجراءات</th></tr></thead>
+          <thead><tr><th>العميل</th><th>الموبايل</th><th>الطلب</th><th>المصدر</th><th>القيمة</th><th>العمولة</th><th>الحالة</th><th>التاريخ</th><th>تحديث الحالة</th><th>إجراءات</th></tr></thead>
           <tbody>${rows}</tbody></table>`
         : `<div class="sq-empty">لسه مفيش أوردرات. دوس على "أوردر جديد" وابدأ.</div>`}
       </div>
       ${EditOrderModal()}`;
   }
 
-  // مصادر الأوردر اللي بتظهر في القايمة — زوّد أو شيل من هنا
-  const ORDER_SOURCES = ['واتساب', 'بيدج كارا', 'بيدج دريم', 'فون'];
+  /* ---------- 📋 اختيار الطلب من الليستة ---------- */
+  // "طقم محبس ×2 + طقم فص" ← [{name:'طقم محبس',qty:2},{name:'طقم فص',qty:1}]
+  function parseDetails(s){
+    const out = [];
+    String(s || '').split(/\s*\+\s*|\n/).map(x => x.trim()).filter(Boolean).forEach(p => {
+      const m = p.match(/^(.*?)\s*×\s*(\d+)$/);
+      const name = (m ? m[1] : p).trim(), qty = m ? +m[2] : 1;
+      const ex = out.find(x => x.name === name);
+      if(ex) ex.qty += qty; else out.push({ name, qty });
+    });
+    return out;
+  }
+  function productPicker(prefix, details){
+    const sel = parseDetails(details);
+    const names = ORDER_PRODUCTS.slice();
+    sel.forEach(x => { if(!names.includes(x.name)) names.push(x.name); }); // أوردر قديم مكتوب بالإيد بيفضل ظاهر
+    return `<div class="sq-field"><label>الطلب <span class="sq-hint">اختار حاجة أو أكتر، وغيّر العدد لو العميل طالب أكتر من واحدة</span></label>
+      <div class="sq-picks" id="${prefix}-picks">
+      ${names.map(n => { const s = sel.find(x => x.name === n), extra = !ORDER_PRODUCTS.includes(n);
+        return `<div class="sq-pick ${s ? 'on' : ''}${extra ? ' extra' : ''}">
+          <label><input type="checkbox" data-pick="${esc(n)}" ${s ? 'checked' : ''}><span>${esc(n)}</span></label>
+          <input type="number" class="sq-qty" min="1" step="1" value="${s ? s.qty : 1}" ${s ? '' : 'disabled'} aria-label="عدد ${esc(n)}">
+        </div>`; }).join('')}
+      </div></div>`;
+  }
+  function readPicks(prefix){
+    return [...document.querySelectorAll(`#${prefix}-picks .sq-pick`)].map(div => {
+      const cb = div.querySelector('input[type=checkbox]');
+      if(!cb || !cb.checked) return null;
+      const q = Math.max(1, parseInt(div.querySelector('.sq-qty').value, 10) || 1);
+      return cb.dataset.pick + (q > 1 ? ' ×' + q : '');
+    }).filter(Boolean).join(' + ');
+  }
+  function commPreview(src){
+    if(!src) return 'اختار المصدر عشان تشوف العمولة.';
+    const r = SOURCE_COMM[src] || STD_COMM;
+    return `💰 عمولة الأوردر ده: <b>${r.order} ج</b> وهو قيد التنفيذ (لو نسبة تسليمك أكتر من 50%) ← <b>${r.delivered} ج</b> لو اتسلم`;
+  }
 
   function orderFields(prefix, o){
     o = o || {};
@@ -1817,7 +1923,7 @@ const Squad = (function(){
       <div class="sq-field"><label for="${prefix}-customer-address">العنوان</label>
         <input type="text" id="${prefix}-customer-address" value="${esc(o.customer_address||'')}"></div>
       <div class="sq-field"><label for="${prefix}-page-name">المصدر</label>
-        <select id="${prefix}-page-name" required>
+        <select id="${prefix}-page-name" data-comm-target="${prefix}-comm" required>
           <option value="" disabled ${o.page_name ? '' : 'selected'}>اختار المصدر اللي جه منه الأوردر</option>
           ${(() => {
             const opts = ORDER_SOURCES.slice();
@@ -1825,8 +1931,8 @@ const Squad = (function(){
             return opts.map(x => `<option value="${esc(x)}" ${o.page_name === x ? 'selected' : ''}>${esc(x)}</option>`).join('');
           })()}
         </select></div>
-      <div class="sq-field"><label for="${prefix}-order-details">الطلب</label>
-        <textarea id="${prefix}-order-details" placeholder="تفاصيل المنتج/الطلب..." required>${esc(o.order_details||'')}</textarea></div>`;
+      <div class="sq-commprev" id="${prefix}-comm">${commPreview(o.page_name)}</div>
+      ${productPicker(prefix, o.order_details)}`;
   }
   function readFields(prefix){
     const v = id => document.getElementById(`${prefix}-${id}`).value;
@@ -1836,7 +1942,7 @@ const Squad = (function(){
       customer_address: v('customer-address'),
       page_name: v('page-name'),
       amount: v('amount'),
-      order_details: v('order-details'),
+      order_details: readPicks(prefix),
     };
   }
 
@@ -1863,7 +1969,7 @@ const Squad = (function(){
   }
 
   function NewOrderView(){
-    return head('أوردر جديد', 'املأ بيانات الأوردر وهيتسجل على اسمك فورًا.') + `
+    return head('أوردر جديد', 'املأ بيانات الأوردر واختار الطلب من الليستة، وهيتسجل على اسمك فورًا بالتاريخ والساعة.') + `
       <div class="sq-form">
         ${state.error ? `<div class="sq-err">${esc(state.error)}</div>` : ''}
         <form id="sq-order-form">
@@ -1882,7 +1988,7 @@ const Squad = (function(){
         ${rows.length ? rows.map((r,i) => `
           <div class="sq-board-row">
             <div class="sq-rank ${i===0?'r1':i===1?'r2':i===2?'r3':''}">${i+1}</div>
-            <div class="sq-name"><bdi>${esc(r.name)}</bdi></div>
+            <div class="sq-name"><bdi>${esc(r.name)}</bdi> <small style="color:var(--muted);font-weight:400">· تسليم ${rateTxt(r.rate)}</small></div>
             <div class="sq-metric c">${r.total}</div>
             <div class="sq-metric c">${r.delivered}</div>
             <div class="sq-metric gold c">${r.commission} ج</div>
@@ -1936,7 +2042,28 @@ const Squad = (function(){
       };
     });
     if($('sq-logout')) $('sq-logout').onclick = doLogout;
-    if($('sq-order-form')) $('sq-order-form').onsubmit = e => { e.preventDefault(); createOrder(readFields('sq-new')); };
+
+    // 📋 ليستة الطلب: تفعيل خانة العدد لما الحاجة تتختار
+    document.querySelectorAll('#sq-root .sq-pick input[type=checkbox]').forEach(cb => {
+      cb.onchange = () => {
+        const div = cb.closest('.sq-pick');
+        div.classList.toggle('on', cb.checked);
+        const q = div.querySelector('.sq-qty');
+        q.disabled = !cb.checked;
+        if(!cb.checked) q.value = 1;
+      };
+    });
+    // 💰 معاينة العمولة حسب المصدر
+    document.querySelectorAll('#sq-root select[data-comm-target]').forEach(sel => {
+      sel.onchange = () => { const t = $(sel.dataset.commTarget); if(t) t.innerHTML = commPreview(sel.value); };
+    });
+
+    if($('sq-order-form')) $('sq-order-form').onsubmit = e => {
+      e.preventDefault();
+      const p = readFields('sq-new');
+      if(!p.order_details){ showToast('اختار الطلب من الليستة الأول.', 'error'); return; }
+      createOrder(p);
+    };
 
     document.querySelectorAll('#sq-root .sq-status').forEach(sel => {
       sel.onchange = () => updateOrderStatus(sel.getAttribute('data-order-id'), sel.value);
@@ -1950,7 +2077,12 @@ const Squad = (function(){
     });
 
     const close = () => setState({ editingOrder:null, error:'' });
-    if($('sq-edit-form')) $('sq-edit-form').onsubmit = e => { e.preventDefault(); submitEditOrder(state.editingOrder.id, readFields('sq-edit')); };
+    if($('sq-edit-form')) $('sq-edit-form').onsubmit = e => {
+      e.preventDefault();
+      const p = readFields('sq-edit');
+      if(!p.order_details){ showToast('اختار الطلب من الليستة الأول.', 'error'); return; }
+      submitEditOrder(state.editingOrder, p);
+    };
     if($('sq-edit-close')) $('sq-edit-close').onclick = close;
     if($('sq-edit-cancel')) $('sq-edit-cancel').onclick = close;
     if($('sq-edit-bg')) $('sq-edit-bg').onclick = e => { if(e.target.id === 'sq-edit-bg') close(); };
