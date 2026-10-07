@@ -3573,7 +3573,7 @@ table.pr tr.out td{background:#fff5f4}
 
   let S = { tab:'stock', items:null, moves:null, loading:false, busy:false, err:'', msg:'', q:'', mq:'',
             lines:[{ item:'', qty:'' }], note:'', countNote:'', count:{}, editing:null,
-            showLow:false, req:{}, src:'purchase',
+            showLow:false, req:{}, src:'purchase', resetMode:'moves', resetTxt:'',
             day: ymd(new Date()), dayData:null, dayLoading:false, dayErr:'', dayNote:'',
             buy:null, buyLoading:false, buyErr:'', buyFrom: ymd(new Date(new Date().getFullYear(), new Date().getMonth(), 1)), buyTo: ymd(new Date()), target:(() => { try{ return Number(localStorage.getItem('inv_target')) || 300; }catch(e){ return 300; } })() };
 
@@ -3617,15 +3617,17 @@ table.pr tr.out td{background:#fff5f4}
   }
 
   function view(){
+    const tabs = me().is_admin ? [...TABS, ['admin', '🧹 تصفير ونسخة احتياطية']] : TABS;
+    if(S.tab === 'admin' && !me().is_admin) S.tab = 'stock';
     let h = `<div class="pagehead"><h1>🏬 المخزن</h1><p>إدخال وإخراج الأصناف، والمخزون الحالي، والجرد — كله متسجل باسم اللي عمله.</p></div>
-      <div class="inv-tabs">${TABS.map(([k, l]) => `<button class="inv-tab ${S.tab === k ? 'on' : ''}" data-tab="${k}">${l}</button>`).join('')}
+      <div class="inv-tabs">${tabs.map(([k, l]) => `<button class="inv-tab ${S.tab === k ? 'on' : ''}" data-tab="${k}">${l}</button>`).join('')}
         <button class="inv-btn" data-act="reload" style="margin-inline-start:auto">🔄 تحديث</button></div>`;
     if(S.msg) h += `<div class="inv-msg ${S.msgErr ? 'err' : ''}">${esc(S.msg)}</div>`;
     if(S.err) return h + `<div class="inv-msg err">${esc(S.err)}</div>`;
     if(S.items === null) return h + `<div class="card"><p class="none">⏳ بيحمّل المخزن...</p></div>`;
-    if(!S.items.length && S.tab !== 'items')
+    if(!S.items.length && S.tab !== 'items' && S.tab !== 'admin')
       return h + `<div class="card"><p class="none" style="margin-bottom:10px">لسه مفيش أصناف. ابدأ بإضافة الأصناف ورصيدها الحالي.</p><button class="inv-btn pri" data-tab="items">🏷️ ضيف أول صنف</button></div>`;
-    return h + ({ stock:vStock, in:() => vMove('in'), out:() => vMove('out'), count:vCount, moves:vMoves, day:vDay, buy:vBuy, items:vItems }[S.tab])();
+    return h + ({ stock:vStock, in:() => vMove('in'), out:() => vMove('out'), count:vCount, moves:vMoves, day:vDay, buy:vBuy, items:vItems, admin:vAdmin }[S.tab])();
   }
 
   function vStock(){
@@ -4109,6 +4111,119 @@ th{background:#3d5553;color:#fff} td.r{text-align:right;font-weight:600} tr:nth-
     </div>`;
   }
 
+  /* =====================================================================
+     🧹 تصفير المخزن + ⬇️ نسخة كاملة (للأدمن بس)
+     ===================================================================== */
+  const RESET_WORD = 'امسح المخزن';
+
+  // بيجيب كل الصفوف على دفعات (Supabase بيرجّع 1000 بالكتير في المرة)
+  async function fetchAll(table, select, order){
+    const out = [];
+    for(let from = 0; ; from += 1000){
+      const { data, error } = await sb().from(table).select(select)
+        .order(order, { ascending:true }).range(from, from + 999);
+      if(error) throw new Error(error.message);
+      out.push(...(data || []));
+      if(!data || data.length < 1000) break;
+    }
+    return out;
+  }
+
+  async function downloadBackup(){
+    if(!window.XLSX) throw new Error('مكتبة الإكسل ماتحمّلتش — حدّث الصفحة.');
+    const [items, moves] = await Promise.all([
+      fetchAll('inv_stock', '*', 'name'),
+      fetchAll('inv_moves', '*, inv_items(name, sku, unit)', 'created_at')
+    ]);
+    const sheet = rows => XLSX.utils.json_to_sheet(rows.length ? rows : [{ 'ملاحظة': 'مفيش بيانات' }]);
+    const wb = XLSX.utils.book_new();
+
+    // 1) المخزون الحالي
+    XLSX.utils.book_append_sheet(wb, sheet(items.filter(i => i.active !== false).map(i => ({
+      'الصنف': i.name, 'الكود': i.sku || '', 'التصنيف': i.category || '', 'الكمية': Number(i.qty || 0),
+      'الوحدة': i.unit || '', 'الحد الأدنى': Number(i.min_qty || 0), 'التكلفة': i.cost ?? '',
+      'قيمة المخزون': i.cost != null ? Number(i.qty || 0) * Number(i.cost) : '', 'الحالة': status(i)[0] }))), 'المخزون الحالي');
+
+    // 2) كل الأصناف (حتى المتوقفة)
+    XLSX.utils.book_append_sheet(wb, sheet(items.map(i => ({
+      'رقم الصنف': i.id, 'الصنف': i.name, 'الكود': i.sku || '', 'التصنيف': i.category || '', 'الوحدة': i.unit || '',
+      'الحد الأدنى': Number(i.min_qty || 0), 'التكلفة': i.cost ?? '', 'الكمية': Number(i.qty || 0),
+      'نشط': i.active === false ? 'متوقف' : 'نشط' }))), 'كل الأصناف');
+
+    // 3) ملخص كل صنف من الحركات
+    const sm = {};
+    moves.forEach(m => {
+      const it = m.inv_items || {};
+      const r = sm[m.item_id] = sm[m.item_id] || { 'الصنف': it.name || '—', 'الكود': it.sku || '', 'رصيد أول المدة': 0,
+        'مشتريات': 0, 'مرتجعات': 0, 'إدخال تاني': 0, 'إخراج': 0, 'تسويات جرد': 0, 'تكلفة المشتريات': 0, 'الرصيد': 0 };
+      const q = Number(m.qty);
+      r['الرصيد'] += q;
+      if(m.kind === 'out') r['إخراج'] += Math.abs(q);
+      else if(m.kind === 'adjust') r['تسويات جرد'] += q;
+      else if(m.source === 'opening' || m.note === 'رصيد أول المدة') r['رصيد أول المدة'] += q;
+      else if(m.source === 'return') r['مرتجعات'] += q;
+      else if(isPurchase(m)){ r['مشتريات'] += q; if(m.unit_cost != null) r['تكلفة المشتريات'] += q * Number(m.unit_cost); }
+      else r['إدخال تاني'] += q;
+    });
+    XLSX.utils.book_append_sheet(wb, sheet(Object.values(sm)), 'ملخص كل صنف');
+
+    // 4) كل الحركات من أول يوم
+    XLSX.utils.book_append_sheet(wb, sheet(moves.map(m => {
+      const it = m.inv_items || {}, d = new Date(m.created_at);
+      return { 'التاريخ': ymd(d), 'الوقت': d.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' }),
+        'الصنف': it.name || '', 'الكود': it.sku || '', 'النوع': moveLabel(m), 'الكمية': Number(m.qty), 'الوحدة': it.unit || '',
+        'سعر القطعة': m.unit_cost ?? '', 'الإجمالي': m.unit_cost != null ? Math.abs(Number(m.qty)) * Number(m.unit_cost) : '',
+        'ملاحظة': m.note || '', 'بواسطة': m.created_by_name || '' };
+    })), 'كل الحركات');
+
+    const now = new Date();
+    XLSX.writeFile(wb, `نسخة المخزن الكاملة ${ymd(now)} ${String(now.getHours()).padStart(2,'0')}-${String(now.getMinutes()).padStart(2,'0')}.xlsx`);
+    return { items: items.length, moves: moves.length };
+  }
+
+  function vAdmin(){
+    const all = S.resetMode === 'all';
+    return `<div class="card">
+      <h3 style="margin-top:0">⬇️ نسخة كاملة من المخزن</h3>
+      <p class="none" style="margin:0 0 12px">ملف Excel فيه: المخزون الحالي، كل الأصناف (حتى المتوقفة)، ملخص كل صنف، وكل الحركات من أول يوم.</p>
+      <button class="inv-btn pri" data-act="backup" ${S.busy ? 'disabled' : ''}>${S.busy ? '⏳ بيجهّز الشيت...' : '⬇️ نزّل شيت بكل اللي فات'}</button>
+    </div>
+    <div class="card" style="border:2px solid #b3423a">
+      <h3 style="margin-top:0;color:#b3423a">🧹 تصفير المخزن والبدء من جديد</h3>
+      <div class="inv-tabs" style="margin-bottom:10px">
+        <button class="inv-tab ${!all ? 'on' : ''}" data-rmode="moves">امسح الحركات بس (الأصناف تفضل ورصيدها صفر)</button>
+        <button class="inv-tab ${all ? 'on' : ''}" data-rmode="all">امسح كل حاجة (الأصناف + الحركات)</button>
+      </div>
+      <div class="inv-msg err">⚠️ الخطوة دي <b>مش بترجع</b>. ${all ? 'هتتمسح كل الأصناف وكل الحركات (إدخال، إخراج، جرد، مشتريات).' : 'هتتمسح كل الحركات (إدخال، إخراج، جرد، مشتريات)، والأصناف هتفضل موجودة برصيد صفر.'}
+        قبل المسح السيستم هينزّل نسخة كاملة أوتوماتيك، ولو النسخة فشلت مش هيمسح حاجة.</div>
+      <label for="invResetTxt" style="display:block;font-size:13px;font-weight:600;color:var(--muted);margin:10px 0 5px">للتأكيد اكتب: <b>${RESET_WORD}</b></label>
+      <input class="inv-in" id="invResetTxt" autocomplete="off" value="${esc(S.resetTxt)}" placeholder="${RESET_WORD}">
+      <div style="margin-top:14px"><button class="inv-btn red" id="invResetBtn" ${S.busy || S.resetTxt.trim() !== RESET_WORD ? 'disabled' : ''}>🧹 نزّل نسخة وصفّر المخزن</button></div>
+    </div>`;
+  }
+
+  async function resetInv(){
+    if(!me().is_admin) return flash('التصفير للأدمن بس.', true);
+    if(S.resetTxt.trim() !== RESET_WORD) return flash(`اكتب "${RESET_WORD}" بالظبط عشان تأكد.`, true);
+    const all = S.resetMode === 'all';
+    if(!confirm(all ? 'متأكد؟ هتتمسح كل الأصناف وكل الحركات نهائيًا.' : 'متأكد؟ هتتمسح كل الحركات والأرصدة هترجع صفر.')) return;
+    S.busy = true; S.msg = '⏳ بينزّل نسخة احتياطية الأول...'; S.msgErr = false; draw();
+    try{ await downloadBackup(); }
+    catch(e){ S.busy = false; return flash('❌ النسخة الاحتياطية فشلت، فماتمسحش حاجة: ' + e.message, true); }
+    S.msg = '⏳ بيصفّر المخزن...'; draw();
+    const { error } = await sb().rpc('inv_reset', { keep_items: !all });
+    S.busy = false;
+    if(error) return flash(/admins only/i.test(error.message) ? '❌ التصفير للأدمن بس.'
+      : /inv_reset|function|schema cache/i.test(error.message) ? '❌ لازم كود الـ SQL بتاع التصفير يتشغّل في Supabase الأول.'
+      : '❌ مقدرناش نصفّر: ' + error.message, true);
+    S.resetTxt = ''; S.buy = null; S.dayData = null; S.count = {}; S.req = {}; S.lines = [{ item:'', qty:'' }]; S.note = '';
+    S.tab = all ? 'items' : 'stock';
+    S.msg = all ? '✅ اتصفّر المخزن بالكامل واتنزّلت نسخة احتياطية. ابدأ بإضافة الأصناف من جديد.'
+                : '✅ اتمسحت كل الحركات والأرصدة بقت صفر، واتنزّلت نسخة احتياطية.';
+    S.msgErr = false;
+    await load();
+  }
+
   function vItems(){
     const e = S.editing ? itemById(S.editing) : null;
     const src = S.draft || e;
@@ -4235,6 +4350,19 @@ th{background:#3d5553;color:#fff} td.r{text-align:right;font-weight:600} tr:nth-
       const t = document.getElementById('invLowTotal'); if(t) t.textContent = fmtN(lowRows().reduce((a, r) => a + r.need, 0));
     });
     const pr = root.querySelector('[data-act=print-low]'); if(pr) pr.onclick = printShortage;
+
+    // 🧹 تصفير + ⬇️ نسخة كاملة
+    const bk = root.querySelector('[data-act=backup]'); if(bk) bk.onclick = async () => {
+      S.busy = true; draw();
+      try{ const r = await downloadBackup(); S.busy = false; flash(`✅ اتنزّل الشيت: ${fmtN(r.items)} صنف و ${fmtN(r.moves)} حركة.`); }
+      catch(e){ S.busy = false; flash('❌ مقدرناش ننزّل الشيت: ' + e.message, true); }
+    };
+    root.querySelectorAll('[data-rmode]').forEach(b => b.onclick = () => { S.resetMode = b.dataset.rmode; draw(); });
+    const rt = root.querySelector('#invResetTxt'); if(rt) rt.oninput = () => {
+      S.resetTxt = rt.value;
+      const b = document.getElementById('invResetBtn'); if(b) b.disabled = S.busy || rt.value.trim() !== RESET_WORD;
+    };
+    const rb = root.querySelector('#invResetBtn'); if(rb) rb.onclick = resetInv;
 
     // 🗓️ ملخص اليوم
     const dpk = root.querySelector('#dayPick'); if(dpk) dpk.onchange = () => { if(!dpk.value) return; S.day = dpk.value; S.dayData = null; loadDay(); };
