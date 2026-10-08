@@ -6081,8 +6081,15 @@ table.pr tr.bd-cat td{background:var(--slate-l);font-weight:700}
      💼 قسم الحسابات — الإيرادات والمصروفات يوم بيوم (Supabase: جدول accounts_entries)
      ===================================================================== -->
 <style id="ac-style">
-.ac-kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px}
-@media (max-width:620px){.ac-kpis{grid-template-columns:1fr}}
+.ac-kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:16px}
+@media (max-width:1100px){.ac-kpis{grid-template-columns:repeat(3,1fr)}}
+@media (max-width:620px){.ac-kpis{grid-template-columns:1fr 1fr}}
+.ac-kpi.bal .n{color:#2b5a8a}
+.ac-kpi.bal.neg .n{color:#b3423a}
+.ac-kind button.on.opn{background:#2b5a8a;border-color:#2b5a8a;color:#fff}
+.ac-tag.opn{background:#e6eef7;color:#2b5a8a}
+table.pr td.ac-bal{color:#2b5a8a;font-weight:700}
+.ac-note{font-size:13px;color:var(--muted);margin:-4px 0 12px;line-height:1.7}
 .ac-kpi{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
 .ac-kpi .n{font-size:24px;font-weight:700}
 .ac-kpi .l{font-size:12.5px;color:var(--muted);margin-top:4px}
@@ -6174,10 +6181,51 @@ table.pr td.ac-pos{color:#276749;font-weight:700}
   };
   function sums(list){
     const t = { i:0, e:0, ni:0, ne:0 };
-    list.forEach(x => { if(x.kind === 'income'){ t.i += Number(x.amount); t.ni++; } else { t.e += Number(x.amount); t.ne++; } });
+    list.forEach(x => { if(isOpen(x)) return; if(x.kind === 'income'){ t.i += Number(x.amount); t.ni++; } else { t.e += Number(x.amount); t.ne++; } });
     t.net = t.i - t.e;
     return t;
   }
+  /* ---------- 🏦 رصيد أول المدة / الترحيل ----------
+     - "رصيد أول المدة" (kind = opening) = الفلوس اللي في إيدك في أول يوم التاريخ ده، قبل أي عملية فيه
+     - الرصيد في أي يوم = آخر رصيد أول مدة متسجل قبله + (الإيرادات − المصروفات) من تاريخه لحد اليوم ده
+     - رصيد آخر الشهر بيترحّل تلقائي ويبقى رصيد أول الشهر اللي بعده */
+  const OPENING_CAT = 'رصيد أول المدة';
+  const isOpen = r => r.kind === 'opening';
+  const nextDay = k => ymd(new Date(new Date(k + 'T12:00:00').getTime() + 864e5));
+  function balanceAt(X){ // الرصيد في بداية يوم X (قبل عمليات اليوم ده)
+    const rows = S.rows || [];
+    let O = null;
+    rows.forEach(r => { if(isOpen(r) && r.entry_date <= X && (!O || r.entry_date > O.entry_date || (r.entry_date === O.entry_date && r.created_at > O.created_at))) O = r; });
+    let bal = O ? Number(O.amount) : 0;
+    const from = O ? O.entry_date : '';
+    rows.forEach(r => {
+      if(isOpen(r) || r.entry_date >= X || r.entry_date < from) return;
+      bal += r.kind === 'income' ? Number(r.amount) : -Number(r.amount);
+    });
+    return bal;
+  }
+  const firstDate = () => (S.rows || []).reduce((m, r) => !m || r.entry_date < m ? r.entry_date : m, '');
+  const hasOpening = () => (S.rows || []).some(isOpen);
+  function periodBalances(){
+    const f = S.from || firstDate() || today();
+    const t = S.to || today();
+    return { start: balanceAt(f), end: balanceAt(nextDay(t)), startDate: f, endDate: t };
+  }
+  function monthsSummary(){
+    const fd = firstDate(); if(!fd) return [];
+    const out = []; const now = new Date();
+    let y = +fd.slice(0, 4), m = +fd.slice(5, 7) - 1;
+    while(y < now.getFullYear() || (y === now.getFullYear() && m <= now.getMonth())){
+      const a = ymd(new Date(y, m, 1)), b = ymd(new Date(y, m + 1, 1));
+      const t = sums((S.rows || []).filter(r => r.entry_date >= a && r.entry_date < b));
+      out.push({ key: a.slice(0, 7), from: a, to: ymd(new Date(y, m + 1, 0)),
+        label: new Date(y, m, 15).toLocaleDateString('ar-EG', { month:'long', year:'numeric' }),
+        start: balanceAt(a), i: t.i, e: t.e, net: t.net, end: balanceAt(b) });
+      m++; if(m > 11){ m = 0; y++; }
+    }
+    return out.reverse();
+  }
+
   function byCat(list, kind){
     const m = {};
     list.filter(r => r.kind === kind).forEach(r => { const k = r.category || 'بدون بند'; m[k] = (m[k] || 0) + Number(r.amount); });
@@ -6211,7 +6259,7 @@ table.pr td.ac-pos{color:#276749;font-weight:700}
   }
 
   function view(){
-    const inc = S.kind === 'income';
+    const inc = S.kind === 'income', opn = S.kind === 'opening';
     let h = `<div class="pagehead"><h1>💼 الحسابات</h1><p>سجّل الإيرادات والمصروفات بتاريخها، والسيستم بيحسب صافي كل يوم (إيرادات − مصروفات) وإجمالي أي فترة.</p></div>`;
     if(S.msg) h += `<div class="ac-msg ${S.msgErr ? 'err' : ''}">${esc(S.msg)}</div>`;
 
@@ -6221,23 +6269,28 @@ table.pr td.ac-pos{color:#276749;font-weight:700}
       h += `<div class="card" style="padding:12px 16px"><b>📅 النهارده:</b>
         إيرادات <b style="color:#276749">${fmt(T0.i)} ج</b> ·
         مصروفات <b style="color:#b3423a">${fmt(T0.e)} ج</b> ·
-        الصافي <b style="color:${T0.net < 0 ? '#b3423a' : 'var(--brass-d)'}">${fmt(T0.net)} ج</b></div>`;
+        الصافي <b style="color:${T0.net < 0 ? '#b3423a' : 'var(--brass-d)'}">${fmt(T0.net)} ج</b> ·
+        🏦 الرصيد دلوقتي <b style="color:#2b5a8a">${fmt(balanceAt(nextDay(today())))} ج</b></div>`;
     }
 
     h += `<div class="card">
-      <h3>${inc ? '➕ تسجيل إيراد' : '➖ تسجيل مصروف'}</h3>
+      <h3>${opn ? '🏦 تسجيل رصيد أول المدة' : inc ? '➕ تسجيل إيراد' : '➖ تسجيل مصروف'}</h3>
       <div class="ac-kind">
-        <button type="button" class="exp ${!inc ? 'on' : ''}" data-kind="expense">➖ مصروف</button>
+        <button type="button" class="exp ${S.kind === 'expense' ? 'on' : ''}" data-kind="expense">➖ مصروف</button>
         <button type="button" class="inc ${inc ? 'on' : ''}" data-kind="income">➕ إيراد</button>
+        <button type="button" class="opn ${opn ? 'on' : ''}" data-kind="opening">🏦 رصيد أول المدة</button>
       </div>
+      ${opn ? `<p class="ac-note">اكتب الفلوس اللي كانت موجودة فعلاً (في الخزنة + المحافظ + البنك) في <b>أول يوم</b> التاريخ ده قبل أي عملية فيه.
+        بتسجّله <b>مرة واحدة بس</b> في البداية (مثلاً أول الشهر اللي بدأت تسجّل فيه)، وبعد كده السيستم بيرحّل رصيد آخر كل شهر للشهر اللي بعده لوحده.
+        ولو عملت جرد وطلع الرصيد الحقيقي مختلف، سجّل رصيد أول مدة جديد بتاريخ الجرد وهو هيبدأ يحسب منه.</p>` : ''}
       <div class="ac-form">
-        <div><label for="acDate">التاريخ</label><input class="ac-in" id="acDate" type="date" value="${esc(S.date)}"></div>
-        <div><label for="acCat">البند</label><input class="ac-in" id="acCat" list="acCatList" placeholder="اختار أو اكتب" value="${esc(S.category)}" autocomplete="off">
-          <datalist id="acCatList">${CATS[S.kind].map(c => `<option value="${esc(c)}">`).join('')}</datalist></div>
-        <div><label for="acItem">البيان</label><input class="ac-in" id="acItem" placeholder="${inc ? 'مثلاً: تحصيل QP أسبوع 1' : 'مثلاً: إعلانات فيسبوك بيدج كارا'}" value="${esc(S.item)}" autocomplete="off"></div>
-        <div><label for="acAmount">المبلغ</label><input class="ac-in" id="acAmount" type="number" min="0" step="any" inputmode="decimal" placeholder="0" value="${esc(S.amount)}"></div>
-        <div><label for="acMethod">طريقة الدفع</label><select class="ac-in" id="acMethod">${METHODS.map(m => `<option ${S.method === m ? 'selected' : ''}>${esc(m)}</option>`).join('')}</select></div>
-        <div><button class="ac-btn pri" data-act="add" ${S.busy ? 'disabled' : ''}>${S.busy ? '⏳...' : inc ? 'سجّل الإيراد' : 'سجّل المصروف'}</button></div>
+        <div><label for="acDate">${opn ? 'رصيد يوم' : 'التاريخ'}</label><input class="ac-in" id="acDate" type="date" value="${esc(S.date)}"></div>
+        ${opn ? `<div><label>البند</label><input class="ac-in" value="${OPENING_CAT}" disabled></div>` : `<div><label for="acCat">البند</label><input class="ac-in" id="acCat" list="acCatList" placeholder="اختار أو اكتب" value="${esc(S.category)}" autocomplete="off">
+          <datalist id="acCatList">${(CATS[S.kind] || []).map(c => `<option value="${esc(c)}">`).join('')}</datalist></div>`}
+        <div><label for="acItem">البيان</label><input class="ac-in" id="acItem" placeholder="${opn ? 'مثلاً: مرحّل من شهر سبتمبر' : inc ? 'مثلاً: تحصيل QP أسبوع 1' : 'مثلاً: إعلانات فيسبوك بيدج كارا'}" value="${esc(S.item)}" autocomplete="off"></div>
+        <div><label for="acAmount">${opn ? 'الرصيد' : 'المبلغ'}</label><input class="ac-in" id="acAmount" type="number" ${opn ? '' : 'min="0"'} step="any" inputmode="decimal" placeholder="0" value="${esc(S.amount)}"></div>
+        <div><label for="acMethod">${opn ? 'فين الفلوس' : 'طريقة الدفع'}</label><select class="ac-in" id="acMethod">${(opn ? ['الإجمالي (كله)', ...METHODS] : METHODS).map(m => `<option ${S.method === m ? 'selected' : ''}>${esc(m)}</option>`).join('')}</select></div>
+        <div><button class="ac-btn pri" data-act="add" ${S.busy ? 'disabled' : ''}>${S.busy ? '⏳...' : opn ? 'سجّل الرصيد' : inc ? 'سجّل الإيراد' : 'سجّل المصروف'}</button></div>
       </div>
     </div>`;
 
@@ -6257,6 +6310,7 @@ table.pr td.ac-pos{color:#276749;font-weight:700}
       <button class="ac-btn ${S.show === 'all' ? 'on' : ''}" data-show="all">الكل</button>
       <button class="ac-btn ${S.show === 'income' ? 'on' : ''}" data-show="income">الإيرادات بس</button>
       <button class="ac-btn ${S.show === 'expense' ? 'on' : ''}" data-show="expense">المصروفات بس</button>
+      <button class="ac-btn ${S.show === 'opening' ? 'on' : ''}" data-show="opening">🏦 أرصدة أول المدة</button>
     </div>
     <input class="ac-in" id="acQ" type="search" placeholder="🔍 دوّر بالبند أو البيان أو اسم اللي سجّل..." value="${esc(S.q)}"></div>`;
 
@@ -6265,11 +6319,23 @@ table.pr td.ac-pos{color:#276749;font-weight:700}
 
     const list = filtered();
     const T = sums(list);
+    const PB = periodBalances();
+    if(!hasOpening()) h += `<div class="ac-msg err">🏦 لسه مفيش "رصيد أول المدة" متسجل، فالسيستم بيحسب الرصيد كأنك بدأت من صفر. دوس "🏦 رصيد أول المدة" فوق وسجّل الفلوس اللي كانت معاك في أول يوم بدأت تسجّل فيه.</div>`;
     h += `<div class="ac-kpis">
+      <div class="ac-kpi bal ${PB.start < 0 ? 'neg' : ''}"><div class="n">${fmt(PB.start)} ج</div><div class="l">🏦 رصيد أول المدة (مرحّل لحد ${esc(PB.startDate)})</div></div>
       <div class="ac-kpi inc"><div class="n">${fmt(T.i)} ج</div><div class="l">الإيرادات (${fmt(T.ni)} عملية) — ${esc(rangeTitle())}</div></div>
       <div class="ac-kpi exp"><div class="n">${fmt(T.e)} ج</div><div class="l">المصروفات (${fmt(T.ne)} عملية)</div></div>
       <div class="ac-kpi net ${T.net < 0 ? 'neg' : ''}"><div class="n">${fmt(T.net)} ج</div><div class="l">${T.net < 0 ? '🔻 عجز' : '✅ الصافي'} (إيرادات − مصروفات)</div></div>
+      <div class="ac-kpi bal ${PB.end < 0 ? 'neg' : ''}"><div class="n">${fmt(PB.end)} ج</div><div class="l">🏦 رصيد آخر المدة (في آخر ${esc(PB.endDate)}) — بيترحّل للي بعده</div></div>
     </div>`;
+    const MS = monthsSummary();
+    if(MS.length) h += `<div class="card"><h3>📆 الترحيل شهر بشهر</h3>
+      <p class="ac-note">رصيد آخر كل شهر بيترحّل تلقائي ويبقى رصيد أول الشهر اللي بعده. دوس على أي شهر عشان تعرضه.</p>
+      <div class="tablewrap"><table class="pr"><tr><th>الشهر</th><th>رصيد أول الشهر (مرحّل)</th><th>الإيرادات</th><th>المصروفات</th><th>صافي الشهر</th><th>رصيد آخر الشهر</th></tr>
+      ${MS.map(x => `<tr class="ac-day" data-month="${x.from}|${x.to}"><td class="lbl">${esc(x.label)}</td>
+        <td class="ac-bal">${fmt(x.start)}</td><td class="ac-pos">${fmt(x.i)}</td><td class="ac-neg">${fmt(x.e)}</td>
+        <td class="${x.net < 0 ? 'ac-neg' : 'ac-pos'}">${fmt(x.net)}</td><td class="ac-bal">${fmt(x.end)}</td></tr>`).join('')}
+      </table></div></div>`;
 
     if(!list.length) return h + `<div class="card"><p class="none">مفيش عمليات ${S.from || S.to ? 'في الفترة دي' : 'متسجلة لسه'}.</p></div>`;
 
@@ -6289,9 +6355,17 @@ table.pr td.ac-pos{color:#276749;font-weight:700}
       const d = sums(days[k]);
       tb += `<tr class="ac-day" data-day="${k}" title="دوس تعرض اليوم ده بس"><td class="lbl" colspan="3">📅 ${esc(dayLabel(k))}</td>
         <td class="${d.net < 0 ? 'ac-neg' : 'ac-pos'}">صافي اليوم: ${fmt(d.net)} ج</td>
-        <td colspan="3">إيرادات ${fmt(d.i)} − مصروفات ${fmt(d.e)}</td></tr>`;
+        <td colspan="2">إيرادات ${fmt(d.i)} − مصروفات ${fmt(d.e)}</td><td class="ac-bal">🏦 ${fmt(balanceAt(nextDay(k)))}</td></tr>`;
       days[k].forEach(r => {
         const isInc = r.kind === 'income';
+        if(isOpen(r)){
+          const canDel = admin || (r.created_by && r.created_by === myId);
+          tb += `<tr><td><span class="ac-tag opn">🏦 رصيد أول المدة</span></td><td>${esc(r.category || OPENING_CAT)}</td>
+            <td class="lbl" style="font-weight:400">${esc(r.item || '—')}</td><td class="ac-bal">${fmt(r.amount)}</td>
+            <td>${esc(r.method || '—')}</td><td>${esc(r.created_by_name || '—')}</td>
+            <td>${canDel ? `<button class="ac-btn sm" data-del="${r.id}" title="امسح">🗑️</button>` : ''}</td></tr>`;
+          return;
+        }
         const canDel = admin || (r.created_by && r.created_by === myId);
         tb += `<tr><td><span class="ac-tag ${isInc ? 'inc' : 'exp'}">${isInc ? '➕ إيراد' : '➖ مصروف'}</span></td>
           <td>${esc(r.category || '—')}</td>
@@ -6304,7 +6378,7 @@ table.pr td.ac-pos{color:#276749;font-weight:700}
     });
     h += `<div class="card"><h3>كل العمليات يوم بيوم</h3>
       <div class="tablewrap" style="max-height:640px;overflow-y:auto"><table class="pr">${tb}</table></div>
-      <p class="none" style="margin-top:8px">دوس على أي يوم عشان تعرضه لوحده. لو سجّلت حاجة غلط امسحها وسجّلها تاني (المسح لصاحب العملية أو الأدمن).</p></div>`;
+      <p class="none" style="margin-top:8px">🏦 الرقم الأزرق في سطر كل يوم = الرصيد في آخر اليوم ده. دوس على أي يوم عشان تعرضه لوحده. لو سجّلت حاجة غلط امسحها وسجّلها تاني (المسح لصاحب العملية أو الأدمن).</p></div>`;
     return h;
   }
 
@@ -6322,6 +6396,8 @@ table.pr td.ac-pos{color:#276749;font-weight:700}
     const $ = id => root.querySelector('#' + id);
     root.querySelectorAll('[data-kind]').forEach(b => b.onclick = () => {
       if(S.kind !== b.dataset.kind) S.category = '';
+      if(b.dataset.kind === 'opening' && S.kind !== 'opening'){ S.date = monthStart(); S.method = 'الإجمالي (كله)'; }
+      else if(b.dataset.kind !== 'opening' && S.kind === 'opening'){ S.date = today(); S.method = 'كاش'; }
       S.kind = b.dataset.kind; S.msg = ''; draw();
       const i = document.getElementById('acCat'); if(i) i.focus();
     });
@@ -6336,6 +6412,7 @@ table.pr td.ac-pos{color:#276749;font-weight:700}
     root.querySelectorAll('[data-range]').forEach(b => b.onclick = () => { setRange(b.dataset.range); draw(); });
     root.querySelectorAll('[data-show]').forEach(b => b.onclick = () => { S.show = b.dataset.show; draw(); });
     const q = $('acQ'); if(q) q.oninput = () => { S.q = q.value; draw(); };
+    root.querySelectorAll('[data-month]').forEach(tr => tr.onclick = () => { const [a, b] = tr.dataset.month.split('|'); S.from = a; S.to = b > today() ? today() : b; draw(); window.scrollTo({ top:0, behavior:'smooth' }); });
     root.querySelectorAll('[data-day]').forEach(tr => tr.onclick = () => { S.from = S.to = tr.dataset.day; draw(); window.scrollTo({ top:0, behavior:'smooth' }); });
     root.querySelectorAll('[data-del]').forEach(b => b.onclick = e => { e.stopPropagation(); del(b.dataset.del); });
     const rl = root.querySelector('[data-act=reload]'); if(rl) rl.onclick = () => { S.msg = ''; load(); };
@@ -6343,10 +6420,15 @@ table.pr td.ac-pos{color:#276749;font-weight:700}
   }
 
   async function add(){
-    const category = S.category.trim(), item = S.item.trim(), amount = toNum(S.amount);
+    const opn = S.kind === 'opening';
+    const category = opn ? OPENING_CAT : S.category.trim(), item = S.item.trim(), amount = toNum(S.amount);
     if(!S.date) return flash('اختار التاريخ.', true);
     if(!category) return flash('اختار البند أو اكتبه.', true);
-    if(amount === null || amount <= 0) return flash('اكتب المبلغ (رقم أكبر من صفر).', true);
+    if(opn){
+      if(amount === null) return flash('اكتب الرصيد (ممكن يبقى صفر، أو بالسالب لو عليك فلوس).', true);
+      const same = (S.rows || []).find(r => isOpen(r) && r.entry_date === S.date);
+      if(same && !confirm(`فيه رصيد أول مدة متسجل بالفعل يوم ${S.date} (${fmt(same.amount)} ج). السيستم هيعتمد على الجديد. تكمل؟`)) return;
+    } else if(amount === null || amount <= 0) return flash('اكتب المبلغ (رقم أكبر من صفر).', true);
     S.busy = true; draw();
     const { error } = await sb().from('accounts_entries').insert({
       entry_date: S.date, kind: S.kind, category, item, amount, method: S.method, created_by_name: myName()
@@ -6354,6 +6436,12 @@ table.pr td.ac-pos{color:#276749;font-weight:700}
     S.busy = false;
     if(error) return flash('❌ مقدرناش نسجّل: ' + error.message, true);
     const wasInc = S.kind === 'income';
+    if(opn){
+      S.item = ''; S.amount = ''; S.kind = 'expense'; S.method = 'كاش';
+      S.msg = `✅ اتسجّل رصيد أول المدة ${fmt(amount)} ج يوم ${dayLabel(S.date)}. أي حساب بعد التاريخ ده هيبدأ منه.`; S.msgErr = false;
+      S.date = today();
+      await load(); return;
+    }
     if((S.from && S.date < S.from) || (S.to && S.date > S.to)){ S.from = S.to = ''; }
     S.item = ''; S.amount = '';
     S.msg = `✅ اتسجّل ${wasInc ? 'إيراد' : 'مصروف'} "${category}${item ? ' — ' + item : ''}" بـ ${fmt(amount)} ج يوم ${dayLabel(S.date)}.`; S.msgErr = false;
@@ -6363,7 +6451,7 @@ table.pr td.ac-pos{color:#276749;font-weight:700}
 
   async function del(id){
     const r = (S.rows || []).find(x => String(x.id) === String(id));
-    if(!r || !confirm(`تمسح ${r.kind === 'income' ? 'الإيراد' : 'المصروف'} "${r.category}${r.item ? ' — ' + r.item : ''}" (${fmt(r.amount)} ج)؟`)) return;
+    if(!r || !confirm(`تمسح ${isOpen(r) ? 'رصيد أول المدة' : r.kind === 'income' ? 'الإيراد' : 'المصروف'} "${r.category}${r.item ? ' — ' + r.item : ''}" (${fmt(r.amount)} ج)؟`)) return;
     const { data, error } = await sb().from('accounts_entries').delete().eq('id', id).select('id');
     if(error || !data || !data.length) return flash('❌ مقدرناش نمسح' + (error ? ': ' + error.message : ' — المسح لصاحب العملية أو الأدمن بس.'), true);
     S.msg = '✅ اتمسحت.'; S.msgErr = false;
@@ -6374,12 +6462,14 @@ table.pr td.ac-pos{color:#276749;font-weight:700}
     const list = filtered().slice().sort((a, b) => a.entry_date < b.entry_date ? -1 : a.entry_date > b.entry_date ? 1 : 0);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(list.map(r => ({
-      'التاريخ': r.entry_date, 'النوع': r.kind === 'income' ? 'إيراد' : 'مصروف', 'البند': r.category || '', 'البيان': r.item || '',
-      'المبلغ': r.kind === 'income' ? Number(r.amount) : -Number(r.amount), 'طريقة الدفع': r.method || '', 'بواسطة': r.created_by_name || '' }))), 'كل العمليات');
+      'التاريخ': r.entry_date, 'النوع': isOpen(r) ? 'رصيد أول المدة' : r.kind === 'income' ? 'إيراد' : 'مصروف', 'البند': r.category || '', 'البيان': r.item || '',
+      'المبلغ': r.kind === 'expense' ? -Number(r.amount) : Number(r.amount), 'طريقة الدفع': r.method || '', 'بواسطة': r.created_by_name || '' }))), 'كل العمليات');
     const days = {};
     list.forEach(r => (days[r.entry_date] = days[r.entry_date] || []).push(r));
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(Object.keys(days).sort().map(k => { const t = sums(days[k]);
-      return { 'التاريخ': k, 'الإيرادات': t.i, 'المصروفات': t.e, 'الصافي': t.net }; })), 'صافي كل يوم');
+      return { 'التاريخ': k, 'رصيد أول اليوم': balanceAt(k), 'الإيرادات': t.i, 'المصروفات': t.e, 'الصافي': t.net, 'رصيد آخر اليوم': balanceAt(nextDay(k)) }; })), 'صافي كل يوم');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(monthsSummary().reverse().map(x => ({
+      'الشهر': x.key, 'رصيد أول الشهر (مرحّل)': x.start, 'الإيرادات': x.i, 'المصروفات': x.e, 'صافي الشهر': x.net, 'رصيد آخر الشهر': x.end }))), 'الترحيل الشهري');
     const cats = [...byCat(list, 'income').map(([k, v]) => ({ 'النوع':'إيراد', 'البند':k, 'الإجمالي':v })),
                   ...byCat(list, 'expense').map(([k, v]) => ({ 'النوع':'مصروف', 'البند':k, 'الإجمالي':v }))];
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(cats), 'حسب البند');
