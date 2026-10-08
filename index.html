@@ -258,6 +258,10 @@ input.plainIn{padding:6px 10px;border:1px solid var(--line);border-radius:6px;wi
 #sq-root .sq-pick{display:flex;align-items:center;gap:8px;border:1.5px solid var(--line);border-radius:9px;padding:8px 10px;background:var(--panel)}
 #sq-root .sq-pick.on{border-color:var(--brass);background:var(--slate-l)}
 #sq-root .sq-pick.extra{border-style:dashed}
+#sq-root .sq-types{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+#sq-root .sq-type{border:1.5px solid var(--line);background:var(--panel);color:var(--ink);border-radius:10px;padding:12px 10px;font-family:inherit;font-size:15px;font-weight:700;cursor:pointer}
+#sq-root .sq-type.on{background:var(--brass-d);border-color:var(--brass-d);color:#fff}
+#sq-root .sq-hide{display:none}
 #sq-root .sq-pick label{flex:1;display:flex;align-items:center;gap:8px;cursor:pointer;font-size:14px;font-weight:600;color:var(--ink);margin:0}
 #sq-root .sq-pick input[type=checkbox]{width:18px;height:18px;accent-color:var(--brass);flex:none;margin:0;padding:0}
 #sq-root .sq-field .sq-pick input.sq-qty{width:58px;flex:none;padding:5px 6px;text-align:center;font-size:14px}
@@ -1696,6 +1700,7 @@ const Squad = (function(){
     if(error){ setState({ loading:false, error:'مقدرناش نضيف الأوردر: ' + error.message }); return; }
     // الوقت بالظبط اللي الأوردر اتسجل بيه في السيستم (من قاعدة البيانات نفسها)
     sendOrderToGoogleSheet(payload, row && row.created_at ? new Date(row.created_at) : new Date());
+    newOrderType = '';
     await loadMyOrders();
     setState({ loading:false, view:'dashboard', info:'اتضاف الأوردر بنجاح.' });
     showToast('اتسجل الأوردر بنجاح وبقى تحت اسمك 🎉', 'success');
@@ -1721,6 +1726,7 @@ const Squad = (function(){
         order_details: payload.order_details,
         page_name: payload.page_name,
         size: payload.size || '',
+        order_type: payload.order_type || '',
         order_datetime: st.full,
         order_date: st.date,
         order_time: st.time,
@@ -1980,9 +1986,42 @@ const Squad = (function(){
     }).filter(Boolean).join(' + ');
   }
 
+  // 👕 البراند في "أوردر جديد": اكسسوارات (المصدر/الطلب/المقاس بالليستة زي ما هي) أو RS / Bloom (ملابس: الخانات دي فاضية والموظف يكتبها)
+  let newOrderType = ''; // '' | 'acc' | 'rs' | 'bloom'
+  const ORDER_BRANDS = { acc:'اكسسوارات', rs:'RS', bloom:'Bloom' };
+  const isClothes = t => t === 'rs' || t === 'bloom';
+  function typePicker(prefix){
+    const b = (k, l) => `<button type="button" class="sq-type ${newOrderType === k ? 'on' : ''}" data-otype="${k}">${l}</button>`;
+    return `<div class="sq-field"><label>البراند <span class="sq-hint">حدد الأول الأوردر ده تبع أنهي براند</span></label>
+      <div class="sq-types" id="${prefix}-types">${b('acc', '💍 اكسسوارات')}${b('rs', '👕 RS')}${b('bloom', '🌸 Bloom')}</div></div>`;
+  }
+  function clothesFields(prefix){
+    return `
+      <div class="sq-field"><label for="${prefix}-c-page-name">المصدر</label>
+        <input type="text" id="${prefix}-c-page-name" value="" placeholder="اكتب المصدر" autocomplete="off"></div>
+      <div class="sq-field"><label for="${prefix}-c-size">المقاس</label>
+        <input type="text" id="${prefix}-c-size" value="" placeholder="اكتب المقاس" autocomplete="off"></div>
+      <div class="sq-field"><label for="${prefix}-c-order">الطلب</label>
+        <textarea id="${prefix}-c-order" placeholder="اكتب الطلب"></textarea></div>`;
+  }
+  function setOrderType(prefix, t){
+    newOrderType = t;
+    document.querySelectorAll(`#${prefix}-types .sq-type`).forEach(b => b.classList.toggle('on', b.dataset.otype === t));
+    const acc = document.getElementById(`${prefix}-acc`), clo = document.getElementById(`${prefix}-clothes`);
+    if(acc){ acc.classList.toggle('sq-hide', t !== 'acc'); acc.querySelectorAll('input,select').forEach(x => { if(!x.classList.contains('sq-qty')) x.disabled = t !== 'acc'; }); }
+    if(clo){
+      const was = clo.dataset.brand || '';
+      clo.classList.toggle('sq-hide', !isClothes(t)); clo.querySelectorAll('input,textarea').forEach(x => x.disabled = !isClothes(t));
+      clo.dataset.brand = isClothes(t) ? t : was;
+    }
+  }
+
   function orderFields(prefix, o){
     o = o || {};
+    const isNew = prefix === 'sq-new';
+    const t = newOrderType;
     return `
+      ${isNew ? typePicker(prefix) : ''}
       <div class="sq-field"><label for="${prefix}-customer-name">اسم العميل</label>
         <input type="text" id="${prefix}-customer-name" value="${esc(o.customer_name||'')}" required></div>
       <div class="sq-row2">
@@ -1993,8 +2032,9 @@ const Squad = (function(){
       </div>
       <div class="sq-field"><label for="${prefix}-customer-address">العنوان</label>
         <input type="text" id="${prefix}-customer-address" value="${esc(o.customer_address||'')}"></div>
+      ${isNew ? `<div id="${prefix}-acc" class="${t === 'acc' ? '' : 'sq-hide'}">` : ''}
       <div class="sq-field"><label for="${prefix}-page-name">المصدر</label>
-        <select id="${prefix}-page-name" required>
+        <select id="${prefix}-page-name" required ${isNew && t !== 'acc' ? 'disabled' : ''}>
           <option value="" disabled ${o.page_name ? '' : 'selected'}>اختار المصدر اللي جه منه الأوردر</option>
           ${(() => {
             const opts = ORDER_SOURCES.slice();
@@ -2003,12 +2043,27 @@ const Squad = (function(){
           })()}
         </select></div>
       <div class="sq-field"><label for="${prefix}-size">المقاس <span class="sq-hint">مثلاً 16 أو 18 — ولو أكتر من قطعة اكتبهم: محبس 18 / دبلة 22</span></label>
-        <input type="text" id="${prefix}-size" value="${esc(o.size||'')}" placeholder="اكتب المقاس" autocomplete="off"></div>
-      ${productPicker(prefix, o.order_details)}`;
+        <input type="text" id="${prefix}-size" value="${esc(o.size||'')}" placeholder="اكتب المقاس" autocomplete="off" ${isNew && t !== 'acc' ? 'disabled' : ''}></div>
+      ${productPicker(prefix, o.order_details)}
+      ${isNew ? `</div>
+      <div id="${prefix}-clothes" class="${isClothes(t) ? '' : 'sq-hide'}">${clothesFields(prefix)}</div>` : ''}`;
   }
   function readFields(prefix){
     const v = id => document.getElementById(`${prefix}-${id}`).value;
+    if(prefix === 'sq-new' && isClothes(newOrderType)){
+      return {
+        order_type: ORDER_BRANDS[newOrderType],
+        customer_name: v('customer-name'),
+        customer_phone: v('customer-phone'),
+        customer_address: v('customer-address'),
+        page_name: v('c-page-name').trim(),
+        amount: v('amount'),
+        order_details: v('c-order').trim(),
+        size: v('c-size').trim(),
+      };
+    }
     return {
+      order_type: prefix === 'sq-new' ? ORDER_BRANDS.acc : undefined,
       customer_name: v('customer-name'),
       customer_phone: v('customer-phone'),
       customer_address: v('customer-address'),
@@ -2382,10 +2437,14 @@ const Squad = (function(){
       };
     });
 
+    document.querySelectorAll('#sq-new-types .sq-type').forEach(b => {
+      b.onclick = () => setOrderType('sq-new', b.dataset.otype);
+    });
     if($('sq-order-form')) $('sq-order-form').onsubmit = e => {
       e.preventDefault();
+      if(!newOrderType){ showToast('حدد الأول البراند: اكسسوارات ولا RS ولا Bloom.', 'error'); return; }
       const p = readFields('sq-new');
-      if(!p.order_details){ showToast('اختار الطلب من الليستة الأول.', 'error'); return; }
+      if(newOrderType === 'acc' && !p.order_details){ showToast('اختار الطلب من الليستة الأول.', 'error'); return; }
       createOrder(p);
     };
 
