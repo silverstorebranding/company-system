@@ -378,6 +378,14 @@ html:not(.auth-ok) #app{display:none}
     <div id="userbox">
       <select id="whoami" onchange="setWho(this.value)" style="display:none"></select>
     </div>
+    <div class="grp"><div class="grp-title">المالية</div>
+      <a class="navlink" href="#/profits">💰 الأرباح</a>
+    </div>
+    <div class="grp"><div class="grp-title">العمل</div>
+      <a class="navlink" href="#/tasks">✅ مهامي</a>
+      <a class="navlink" href="#/handover">🔁 مركز التسليم</a>
+      <a class="navlink" href="#/squad">🏆 Squad</a>
+    </div>
     <div class="grp"><div class="grp-title">الأقسام</div>
       <div id="deptlinks"></div>
     </div>
@@ -391,14 +399,6 @@ html:not(.auth-ok) #app{display:none}
       <a class="navlink" href="#/staff">👥 الموظفين الحاليون</a>
       <a class="navlink" href="#/flow">🔄 تدفق العمل بالشركة</a>
       <a class="navlink" href="#/policies">📜 السياسات</a>
-    </div>
-    <div class="grp"><div class="grp-title">العمل</div>
-      <a class="navlink" href="#/tasks">✅ مهامي</a>
-      <a class="navlink" href="#/handover">🔁 مركز التسليم</a>
-      <a class="navlink" href="#/squad">🏆 Squad</a>
-    </div>
-    <div class="grp"><div class="grp-title">المالية</div>
-      <a class="navlink" href="#/profits">💰 الأرباح</a>
     </div>
     <div class="grp"><div class="grp-title">المعرفة</div>
       <a class="navlink" href="#/sop">📚 مكتبة الإجراءات</a>
@@ -3685,6 +3685,19 @@ async function exportToSheet(btn) {
     }catch(e){ return []; }
   }
   const GROUPS = () => [
+    { title:'المالية', items:[
+      { key:'accounts', label:'💼 الحسابات',  routes:['accounts'] },
+      { key:'profits', label:'💰 الأرباح',    routes:['profits'] },
+      { key:'ads',     label:'📢 الإعلانات',  routes:['ads'] },
+      { key:'compass', label:'🧭 البوصلة',    routes:['compass'] },
+      { key:'qp',      label:'🚚 QP',         routes:['qp'] },
+      { key:'direct',  label:'🛒 مبيعات مباشرة', routes:['direct'] } ]},
+    { title:'العمل', items:[
+      { key:'tasks',    label:'✅ مهامي',        routes:['tasks'] },
+      { key:'handover', label:'🔁 مركز التسليم', routes:['handover'] },
+      { key:'squad',    label:'🏆 Squad',        routes:['squad'] },
+      { key:'eod',      label:'📝 EOD',          routes:['eod'] },
+      { key:'breakdown', label:'🧩 تحليل مكونات الطلبات', routes:['breakdown'] } ]},
     { title:'الرئيسية', items:[
       { key:'home',       label:'🏠 الرئيسية',             routes:['home'] },
       { key:'whatnow',    label:'❓ أعمل إيه دلوقتي؟',     routes:['whatnow'] },
@@ -3695,18 +3708,6 @@ async function exportToSheet(btn) {
       { key:'staff',    label:'👥 الموظفين الحاليون',   routes:['staff','employee'] },
       { key:'flow',     label:'🔄 تدفق العمل بالشركة', routes:['flow'] },
       { key:'policies', label:'📜 السياسات',            routes:['policies'] } ]},
-    { title:'العمل', items:[
-      { key:'tasks',    label:'✅ مهامي',        routes:['tasks'] },
-      { key:'handover', label:'🔁 مركز التسليم', routes:['handover'] },
-      { key:'squad',    label:'🏆 Squad',        routes:['squad'] },
-      { key:'eod',      label:'📝 EOD',          routes:['eod'] },
-      { key:'breakdown', label:'🧩 تحليل مكونات الطلبات', routes:['breakdown'] } ]},
-    { title:'المالية', items:[
-      { key:'profits', label:'💰 الأرباح',    routes:['profits'] },
-      { key:'ads',     label:'📢 الإعلانات',  routes:['ads'] },
-      { key:'compass', label:'🧭 البوصلة',    routes:['compass'] },
-      { key:'qp',      label:'🚚 QP',         routes:['qp'] },
-      { key:'direct',  label:'🛒 مبيعات مباشرة', routes:['direct'] } ]},
     { title:'المعرفة', items:[
       { key:'sop',      label:'📚 مكتبة الإجراءات', routes:['sop','sopdetail'] },
       { key:'training', label:'🎓 مركز التدريب',    routes:['training'] },
@@ -6072,6 +6073,336 @@ table.pr tr.bd-cat td{background:var(--slate-l);font-weight:700}
   render = function(){ _render.apply(this, arguments); if(isBD()) mount(); };
   window.addEventListener('hashchange', () => { if(isBD()) mount(); });
   if(isBD()) setTimeout(mount, 0);
+})();
+</script>
+
+
+<!-- =====================================================================
+     💼 قسم الحسابات — الإيرادات والمصروفات يوم بيوم (Supabase: جدول accounts_entries)
+     ===================================================================== -->
+<style id="ac-style">
+.ac-kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px}
+@media (max-width:620px){.ac-kpis{grid-template-columns:1fr}}
+.ac-kpi{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+.ac-kpi .n{font-size:24px;font-weight:700}
+.ac-kpi .l{font-size:12.5px;color:var(--muted);margin-top:4px}
+.ac-kpi.inc .n{color:#276749}
+.ac-kpi.exp .n{color:#b3423a}
+.ac-kpi.net{border:2px solid var(--brass)}
+.ac-kpi.net .n{color:var(--brass-d)}
+.ac-kpi.net.neg .n{color:#b3423a}
+.ac-kind{display:flex;gap:6px;margin-bottom:12px}
+.ac-kind button{flex:1;max-width:180px;border:1.5px solid var(--line);background:var(--panel);color:var(--ink);padding:9px 12px;border-radius:9px;cursor:pointer;font-family:inherit;font-size:14px;font-weight:600}
+.ac-kind button.on.inc{background:#276749;border-color:#276749;color:#fff}
+.ac-kind button.on.exp{background:#b3423a;border-color:#b3423a;color:#fff}
+.ac-form{display:grid;grid-template-columns:150px 180px 1fr 130px 150px auto;gap:10px;align-items:end}
+@media (max-width:900px){.ac-form{grid-template-columns:1fr 1fr}}
+.ac-form label{display:block;font-size:13px;font-weight:600;color:var(--muted);margin-bottom:5px}
+.ac-in{width:100%;padding:9px 11px;border:1.5px solid var(--line);border-radius:8px;font-size:14.5px;font-family:inherit;background:var(--panel);color:var(--ink);box-sizing:border-box}
+.ac-in:focus{outline:none;border-color:var(--brass)}
+.ac-btn{border:1px solid var(--line);background:var(--paper);color:var(--ink);border-radius:8px;padding:7px 13px;font-family:inherit;font-size:13.5px;cursor:pointer;white-space:nowrap}
+.ac-btn.pri{background:var(--brass);border-color:var(--brass);color:#fff;font-weight:700;padding:10px 18px;font-size:14.5px}
+.ac-btn.sm{padding:3px 9px;font-size:12px}
+.ac-btn.on{background:var(--brass-d);border-color:var(--brass-d);color:#fff}
+.ac-btn:disabled{opacity:.55;cursor:default}
+.ac-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.ac-bar label{font-size:13px;color:var(--muted);display:inline-flex;align-items:center;gap:6px}
+.ac-bar input[type=date]{width:auto}
+.ac-msg{padding:10px 13px;border-radius:9px;margin-bottom:14px;font-size:14px;background:#e8f3ec;color:#276749}
+.ac-msg.err{background:#fdecea;color:#b3423a}
+.ac-tag{display:inline-block;padding:2px 9px;border-radius:20px;font-size:12px;font-weight:600;white-space:nowrap}
+.ac-tag.inc{background:#e8f3ec;color:#276749}
+.ac-tag.exp{background:#fdecea;color:#b3423a}
+.ac-cats{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media (max-width:700px){.ac-cats{grid-template-columns:1fr}}
+.ac-cat{display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13.5px}
+.ac-cat .nm{width:130px;flex:none}
+.ac-cat .bar{flex:1;height:10px;background:var(--slate-l);border-radius:6px;overflow:hidden}
+.ac-cat .bar i{display:block;height:100%}
+.ac-cat .v{width:110px;flex:none;text-align:left;font-weight:700}
+table.pr tr.ac-day td{background:var(--slate-l);font-weight:700;cursor:pointer}
+table.pr tr.ac-day:hover td{background:#dfe8e5}
+table.pr td.ac-neg{color:#b3423a;font-weight:700}
+table.pr td.ac-pos{color:#276749;font-weight:700}
+</style>
+<script>
+(function(){
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const fmt = n => Number(n || 0).toLocaleString('ar-EG', { maximumFractionDigits: 2 });
+  const toNum = v => { const x = parseFloat(String(v ?? '').replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/,/g, '')); return isNaN(x) ? null : x; };
+  const ymd = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  const today = () => ymd(new Date());
+  const monthStart = () => { const t = new Date(); return ymd(new Date(t.getFullYear(), t.getMonth(), 1)); };
+  const isAC = () => (location.hash.replace('#/', '') || 'home').split('/')[0] === 'accounts';
+  const sb = () => window.AuthGate && window.AuthGate.sb;
+  const me = () => (window.AuthGate && window.AuthGate.me && window.AuthGate.me()) || {};
+  const myName = () => me().full_name || me().username || '';
+  const dayLabel = k => new Date(k + 'T12:00:00').toLocaleDateString('ar-EG', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
+
+  // البنود الجاهزة — زوّد أو شيل من هنا (والموظف يقدر يكتب بند جديد بإيده)
+  const CATS = {
+    income:  ['مبيعات أونلاين', 'تحصيل شركة الشحن', 'مبيعات مباشرة', 'إيرادات أخرى'],
+    expense: ['إعلانات', 'بضاعة وخامات', 'شحن', 'تغليف', 'مرتبات', 'عمولات', 'إيجار', 'كهربا ونت وموبايلات', 'مواصلات', 'مصاريف أخرى'],
+  };
+  const METHODS = ['كاش', 'فودافون كاش', 'إنستاباي', 'تحويل بنكي'];
+
+  let S = { rows:null, loading:false, busy:false, err:'', msg:'', msgErr:false,
+            date: today(), kind:'expense', category:'', item:'', amount:'', method:'كاش',
+            from: monthStart(), to: today(), q:'', show:'all' };
+
+  /* ---------- البيانات ---------- */
+  async function load(){
+    if(!sb()) return;
+    S.loading = true; S.err = ''; draw();
+    const { data, error } = await sb().from('accounts_entries').select('*')
+      .order('entry_date', { ascending:false }).order('created_at', { ascending:false }).limit(10000);
+    S.loading = false;
+    if(error){
+      S.err = /does not exist|relation|schema cache|Could not find/i.test(error.message)
+        ? 'جدول الحسابات لسه مش موجود في Supabase — لازم كود الـ SQL يتشغّل الأول.'
+        : 'مقدرناش نجيب الحسابات: ' + error.message;
+    } else S.rows = data || [];
+    draw();
+  }
+
+  const inRange = r => (!S.from || r.entry_date >= S.from) && (!S.to || r.entry_date <= S.to);
+  const filtered = () => {
+    const q = S.q.trim().toLowerCase();
+    return (S.rows || []).filter(r => inRange(r) &&
+      (S.show === 'all' || r.kind === S.show) &&
+      (!q || [r.category, r.item, r.method, r.created_by_name].some(v => String(v || '').toLowerCase().includes(q))));
+  };
+  function sums(list){
+    const t = { i:0, e:0, ni:0, ne:0 };
+    list.forEach(x => { if(x.kind === 'income'){ t.i += Number(x.amount); t.ni++; } else { t.e += Number(x.amount); t.ne++; } });
+    t.net = t.i - t.e;
+    return t;
+  }
+  function byCat(list, kind){
+    const m = {};
+    list.filter(r => r.kind === kind).forEach(r => { const k = r.category || 'بدون بند'; m[k] = (m[k] || 0) + Number(r.amount); });
+    return Object.entries(m).sort((a, b) => b[1] - a[1]);
+  }
+  function flash(msg, isErr){ S.msg = msg; S.msgErr = !!isErr; draw(); }
+
+  /* ---------- الرسم ---------- */
+  function draw(){
+    if(!isAC()) return;
+    const main = document.getElementById('main'); if(!main) return;
+    const f = document.activeElement, fid = f && f.id, pos = f && f.selectionStart;
+    main.innerHTML = view();
+    wire(main);
+    if(fid){ const n = document.getElementById(fid); if(n){ n.focus(); try{ n.setSelectionRange(pos, pos); }catch(e){} } }
+  }
+
+  function rangeTitle(){
+    if(!S.from && !S.to) return 'كل الأيام';
+    if(S.from && S.from === S.to) return dayLabel(S.from);
+    return 'من ' + (S.from || 'البداية') + ' لـ ' + (S.to || 'النهارده');
+  }
+
+  function catBars(list, kind){
+    const rows = byCat(list, kind);
+    if(!rows.length) return '<p class="none">مفيش.</p>';
+    const max = rows[0][1] || 1, col = kind === 'income' ? '#276749' : '#b3423a';
+    return rows.map(([k, v]) => `<div class="ac-cat"><span class="nm">${esc(k)}</span>
+      <span class="bar"><i style="width:${Math.max(2, v / max * 100)}%;background:${col}"></i></span>
+      <span class="v">${fmt(v)} ج</span></div>`).join('');
+  }
+
+  function view(){
+    const inc = S.kind === 'income';
+    let h = `<div class="pagehead"><h1>💼 الحسابات</h1><p>سجّل الإيرادات والمصروفات بتاريخها، والسيستم بيحسب صافي كل يوم (إيرادات − مصروفات) وإجمالي أي فترة.</p></div>`;
+    if(S.msg) h += `<div class="ac-msg ${S.msgErr ? 'err' : ''}">${esc(S.msg)}</div>`;
+
+    // ملخص النهارده دايمًا ظاهر
+    if(S.rows){
+      const T0 = sums(S.rows.filter(r => r.entry_date === today()));
+      h += `<div class="card" style="padding:12px 16px"><b>📅 النهارده:</b>
+        إيرادات <b style="color:#276749">${fmt(T0.i)} ج</b> ·
+        مصروفات <b style="color:#b3423a">${fmt(T0.e)} ج</b> ·
+        الصافي <b style="color:${T0.net < 0 ? '#b3423a' : 'var(--brass-d)'}">${fmt(T0.net)} ج</b></div>`;
+    }
+
+    h += `<div class="card">
+      <h3>${inc ? '➕ تسجيل إيراد' : '➖ تسجيل مصروف'}</h3>
+      <div class="ac-kind">
+        <button type="button" class="exp ${!inc ? 'on' : ''}" data-kind="expense">➖ مصروف</button>
+        <button type="button" class="inc ${inc ? 'on' : ''}" data-kind="income">➕ إيراد</button>
+      </div>
+      <div class="ac-form">
+        <div><label for="acDate">التاريخ</label><input class="ac-in" id="acDate" type="date" value="${esc(S.date)}"></div>
+        <div><label for="acCat">البند</label><input class="ac-in" id="acCat" list="acCatList" placeholder="اختار أو اكتب" value="${esc(S.category)}" autocomplete="off">
+          <datalist id="acCatList">${CATS[S.kind].map(c => `<option value="${esc(c)}">`).join('')}</datalist></div>
+        <div><label for="acItem">البيان</label><input class="ac-in" id="acItem" placeholder="${inc ? 'مثلاً: تحصيل QP أسبوع 1' : 'مثلاً: إعلانات فيسبوك بيدج كارا'}" value="${esc(S.item)}" autocomplete="off"></div>
+        <div><label for="acAmount">المبلغ</label><input class="ac-in" id="acAmount" type="number" min="0" step="any" inputmode="decimal" placeholder="0" value="${esc(S.amount)}"></div>
+        <div><label for="acMethod">طريقة الدفع</label><select class="ac-in" id="acMethod">${METHODS.map(m => `<option ${S.method === m ? 'selected' : ''}>${esc(m)}</option>`).join('')}</select></div>
+        <div><button class="ac-btn pri" data-act="add" ${S.busy ? 'disabled' : ''}>${S.busy ? '⏳...' : inc ? 'سجّل الإيراد' : 'سجّل المصروف'}</button></div>
+      </div>
+    </div>`;
+
+    h += `<div class="card"><div class="ac-bar">
+      <label>من <input class="ac-in" type="date" id="acFrom" value="${esc(S.from)}"></label>
+      <label>إلى <input class="ac-in" type="date" id="acTo" value="${esc(S.to)}"></label>
+      <button class="ac-btn" data-range="today">النهارده</button>
+      <button class="ac-btn" data-range="yesterday">امبارح</button>
+      <button class="ac-btn" data-range="month">الشهر ده</button>
+      <button class="ac-btn" data-range="last">الشهر اللي فات</button>
+      <button class="ac-btn" data-range="all">الكل</button>
+      <span style="flex:1"></span>
+      ${window.XLSX ? '<button class="ac-btn" data-act="xlsx">⬇️ Excel</button>' : ''}
+      <button class="ac-btn" data-act="reload">🔄 تحديث</button>
+    </div>
+    <div class="ac-bar" style="margin-bottom:8px">
+      <button class="ac-btn ${S.show === 'all' ? 'on' : ''}" data-show="all">الكل</button>
+      <button class="ac-btn ${S.show === 'income' ? 'on' : ''}" data-show="income">الإيرادات بس</button>
+      <button class="ac-btn ${S.show === 'expense' ? 'on' : ''}" data-show="expense">المصروفات بس</button>
+    </div>
+    <input class="ac-in" id="acQ" type="search" placeholder="🔍 دوّر بالبند أو البيان أو اسم اللي سجّل..." value="${esc(S.q)}"></div>`;
+
+    if(S.err) return h + `<div class="ac-msg err">${esc(S.err)}</div>`;
+    if(S.rows === null) return h + `<div class="card"><p class="none">⏳ بيحمّل الحسابات...</p></div>`;
+
+    const list = filtered();
+    const T = sums(list);
+    h += `<div class="ac-kpis">
+      <div class="ac-kpi inc"><div class="n">${fmt(T.i)} ج</div><div class="l">الإيرادات (${fmt(T.ni)} عملية) — ${esc(rangeTitle())}</div></div>
+      <div class="ac-kpi exp"><div class="n">${fmt(T.e)} ج</div><div class="l">المصروفات (${fmt(T.ne)} عملية)</div></div>
+      <div class="ac-kpi net ${T.net < 0 ? 'neg' : ''}"><div class="n">${fmt(T.net)} ج</div><div class="l">${T.net < 0 ? '🔻 عجز' : '✅ الصافي'} (إيرادات − مصروفات)</div></div>
+    </div>`;
+
+    if(!list.length) return h + `<div class="card"><p class="none">مفيش عمليات ${S.from || S.to ? 'في الفترة دي' : 'متسجلة لسه'}.</p></div>`;
+
+    h += `<div class="card"><h3>📊 حسب البند — ${esc(rangeTitle())}</h3><div class="ac-cats">
+      <div><h4 style="margin:0 0 6px;color:#276749">الإيرادات</h4>${catBars(list, 'income')}</div>
+      <div><h4 style="margin:0 0 6px;color:#b3423a">المصروفات</h4>${catBars(list, 'expense')}</div>
+    </div></div>`;
+
+    const days = {};
+    list.forEach(r => (days[r.entry_date] = days[r.entry_date] || []).push(r));
+    const keys = Object.keys(days).sort().reverse();
+    const admin = !!me().is_admin, myId = me().id;
+
+    let tb = '<tr><th>النوع</th><th>البند</th><th>البيان</th><th>المبلغ</th><th>طريقة الدفع</th><th>بواسطة</th><th></th></tr>';
+    tb += `<tr class="total"><td class="lbl" colspan="3">إجمالي ${esc(rangeTitle())} — ${fmt(keys.length)} يوم</td><td class="${T.net < 0 ? 'ac-neg' : ''}">${fmt(T.net)} ج</td><td colspan="3">إيرادات ${fmt(T.i)} − مصروفات ${fmt(T.e)}</td></tr>`;
+    keys.forEach(k => {
+      const d = sums(days[k]);
+      tb += `<tr class="ac-day" data-day="${k}" title="دوس تعرض اليوم ده بس"><td class="lbl" colspan="3">📅 ${esc(dayLabel(k))}</td>
+        <td class="${d.net < 0 ? 'ac-neg' : 'ac-pos'}">صافي اليوم: ${fmt(d.net)} ج</td>
+        <td colspan="3">إيرادات ${fmt(d.i)} − مصروفات ${fmt(d.e)}</td></tr>`;
+      days[k].forEach(r => {
+        const isInc = r.kind === 'income';
+        const canDel = admin || (r.created_by && r.created_by === myId);
+        tb += `<tr><td><span class="ac-tag ${isInc ? 'inc' : 'exp'}">${isInc ? '➕ إيراد' : '➖ مصروف'}</span></td>
+          <td>${esc(r.category || '—')}</td>
+          <td class="lbl" style="font-weight:400">${esc(r.item || '—')}</td>
+          <td class="${isInc ? 'ac-pos' : 'ac-neg'}">${isInc ? '' : '−'}${fmt(r.amount)}</td>
+          <td>${esc(r.method || '—')}</td>
+          <td>${esc(r.created_by_name || '—')}</td>
+          <td>${canDel ? `<button class="ac-btn sm" data-del="${r.id}" title="امسح">🗑️</button>` : ''}</td></tr>`;
+      });
+    });
+    h += `<div class="card"><h3>كل العمليات يوم بيوم</h3>
+      <div class="tablewrap" style="max-height:640px;overflow-y:auto"><table class="pr">${tb}</table></div>
+      <p class="none" style="margin-top:8px">دوس على أي يوم عشان تعرضه لوحده. لو سجّلت حاجة غلط امسحها وسجّلها تاني (المسح لصاحب العملية أو الأدمن).</p></div>`;
+    return h;
+  }
+
+  /* ---------- الأحداث ---------- */
+  function setRange(k){
+    const t = new Date(), y = t.getFullYear(), m = t.getMonth();
+    if(k === 'all'){ S.from = S.to = ''; return; }
+    if(k === 'today'){ S.from = S.to = ymd(t); return; }
+    if(k === 'yesterday'){ S.from = S.to = ymd(new Date(t.getTime() - 864e5)); return; }
+    if(k === 'month'){ S.from = ymd(new Date(y, m, 1)); S.to = ymd(t); return; }
+    if(k === 'last'){ S.from = ymd(new Date(y, m - 1, 1)); S.to = ymd(new Date(y, m, 0)); }
+  }
+
+  function wire(root){
+    const $ = id => root.querySelector('#' + id);
+    root.querySelectorAll('[data-kind]').forEach(b => b.onclick = () => {
+      if(S.kind !== b.dataset.kind) S.category = '';
+      S.kind = b.dataset.kind; S.msg = ''; draw();
+      const i = document.getElementById('acCat'); if(i) i.focus();
+    });
+    const d = $('acDate'); if(d) d.onchange = () => { S.date = d.value; };
+    const ct = $('acCat'); if(ct) ct.oninput = () => { S.category = ct.value; };
+    const it = $('acItem'); if(it){ it.oninput = () => { S.item = it.value; }; it.onkeydown = e => { if(e.key === 'Enter'){ e.preventDefault(); const a = document.getElementById('acAmount'); if(a) a.focus(); } }; }
+    const am = $('acAmount'); if(am){ am.oninput = () => { S.amount = am.value; }; am.onkeydown = e => { if(e.key === 'Enter'){ e.preventDefault(); add(); } }; }
+    const mt = $('acMethod'); if(mt) mt.onchange = () => { S.method = mt.value; };
+    const ad = root.querySelector('[data-act=add]'); if(ad) ad.onclick = add;
+    const fr = $('acFrom'); if(fr) fr.onchange = () => { S.from = fr.value; draw(); };
+    const to = $('acTo'); if(to) to.onchange = () => { S.to = to.value; draw(); };
+    root.querySelectorAll('[data-range]').forEach(b => b.onclick = () => { setRange(b.dataset.range); draw(); });
+    root.querySelectorAll('[data-show]').forEach(b => b.onclick = () => { S.show = b.dataset.show; draw(); });
+    const q = $('acQ'); if(q) q.oninput = () => { S.q = q.value; draw(); };
+    root.querySelectorAll('[data-day]').forEach(tr => tr.onclick = () => { S.from = S.to = tr.dataset.day; draw(); window.scrollTo({ top:0, behavior:'smooth' }); });
+    root.querySelectorAll('[data-del]').forEach(b => b.onclick = e => { e.stopPropagation(); del(b.dataset.del); });
+    const rl = root.querySelector('[data-act=reload]'); if(rl) rl.onclick = () => { S.msg = ''; load(); };
+    const x = root.querySelector('[data-act=xlsx]'); if(x) x.onclick = exportXlsx;
+  }
+
+  async function add(){
+    const category = S.category.trim(), item = S.item.trim(), amount = toNum(S.amount);
+    if(!S.date) return flash('اختار التاريخ.', true);
+    if(!category) return flash('اختار البند أو اكتبه.', true);
+    if(amount === null || amount <= 0) return flash('اكتب المبلغ (رقم أكبر من صفر).', true);
+    S.busy = true; draw();
+    const { error } = await sb().from('accounts_entries').insert({
+      entry_date: S.date, kind: S.kind, category, item, amount, method: S.method, created_by_name: myName()
+    });
+    S.busy = false;
+    if(error) return flash('❌ مقدرناش نسجّل: ' + error.message, true);
+    const wasInc = S.kind === 'income';
+    if((S.from && S.date < S.from) || (S.to && S.date > S.to)){ S.from = S.to = ''; }
+    S.item = ''; S.amount = '';
+    S.msg = `✅ اتسجّل ${wasInc ? 'إيراد' : 'مصروف'} "${category}${item ? ' — ' + item : ''}" بـ ${fmt(amount)} ج يوم ${dayLabel(S.date)}.`; S.msgErr = false;
+    await load();
+    const i = document.getElementById('acItem'); if(i) i.focus();
+  }
+
+  async function del(id){
+    const r = (S.rows || []).find(x => String(x.id) === String(id));
+    if(!r || !confirm(`تمسح ${r.kind === 'income' ? 'الإيراد' : 'المصروف'} "${r.category}${r.item ? ' — ' + r.item : ''}" (${fmt(r.amount)} ج)؟`)) return;
+    const { data, error } = await sb().from('accounts_entries').delete().eq('id', id).select('id');
+    if(error || !data || !data.length) return flash('❌ مقدرناش نمسح' + (error ? ': ' + error.message : ' — المسح لصاحب العملية أو الأدمن بس.'), true);
+    S.msg = '✅ اتمسحت.'; S.msgErr = false;
+    await load();
+  }
+
+  function exportXlsx(){
+    const list = filtered().slice().sort((a, b) => a.entry_date < b.entry_date ? -1 : a.entry_date > b.entry_date ? 1 : 0);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(list.map(r => ({
+      'التاريخ': r.entry_date, 'النوع': r.kind === 'income' ? 'إيراد' : 'مصروف', 'البند': r.category || '', 'البيان': r.item || '',
+      'المبلغ': r.kind === 'income' ? Number(r.amount) : -Number(r.amount), 'طريقة الدفع': r.method || '', 'بواسطة': r.created_by_name || '' }))), 'كل العمليات');
+    const days = {};
+    list.forEach(r => (days[r.entry_date] = days[r.entry_date] || []).push(r));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(Object.keys(days).sort().map(k => { const t = sums(days[k]);
+      return { 'التاريخ': k, 'الإيرادات': t.i, 'المصروفات': t.e, 'الصافي': t.net }; })), 'صافي كل يوم');
+    const cats = [...byCat(list, 'income').map(([k, v]) => ({ 'النوع':'إيراد', 'البند':k, 'الإجمالي':v })),
+                  ...byCat(list, 'expense').map(([k, v]) => ({ 'النوع':'مصروف', 'البند':k, 'الإجمالي':v }))];
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(cats), 'حسب البند');
+    XLSX.writeFile(wb, 'الحسابات ' + (S.from || 'الكل') + (S.to && S.to !== S.from ? ' إلى ' + S.to : '') + '.xlsx');
+  }
+
+  /* ---------- لينك في القائمة (أول حاجة تحت المالية) ---------- */
+  const anchor = document.querySelector('#sidebar a.navlink[href="#/profits"]');
+  if(anchor && !document.querySelector('#sidebar a.navlink[href="#/accounts"]')){
+    const a = document.createElement('a');
+    a.className = 'navlink'; a.href = '#/accounts'; a.textContent = '💼 الحسابات';
+    anchor.before(a);
+  }
+
+  /* ---------- الربط بالراوتر ---------- */
+  function mount(){
+    document.querySelectorAll('#sidebar a.navlink').forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#/accounts'));
+    draw(); if(S.rows === null && !S.loading && !S.err) load();
+  }
+  const _render = render;
+  render = function(){ _render.apply(this, arguments); if(isAC()) mount(); };
+  window.addEventListener('hashchange', () => { if(isAC()) mount(); });
+  if(isAC()) setTimeout(mount, 0);
 })();
 </script>
 
