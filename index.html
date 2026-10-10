@@ -3754,6 +3754,7 @@ async function exportToSheet(btn) {
   const GROUPS = () => [
     { title:'المالية', items:[
       { key:'accounts', label:'💼 الحسابات',  routes:['accounts'] },
+      { key:'bloom_accounts', label:'🌸 حسابات Bloom', routes:['bloom-accounts'] },
       { key:'profits', label:'💰 الأرباح',    routes:['profits'] },
       { key:'ads',     label:'📢 الإعلانات',  routes:['ads'] },
       { key:'compass', label:'🧭 البوصلة',    routes:['compass'] },
@@ -6206,14 +6207,17 @@ table.pr td.ac-neg{color:#b3423a;font-weight:700}
 table.pr td.ac-pos{color:#276749;font-weight:700}
 </style>
 <script>
-(function(){
+/* 🧩 نفس نظام الحسابات بيتعمل منه أكتر من قسم، كل قسم بجدول منفصل في Supabase:
+   - 💼 الحسابات       → جدول accounts_entries        → #/accounts
+   - 🌸 حسابات Bloom   → جدول accounts_entries_bloom  → #/bloom-accounts  */
+function makeAccounts(CFG){
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const fmt = n => Number(n || 0).toLocaleString('ar-EG', { maximumFractionDigits: 2 });
   const toNum = v => { const x = parseFloat(String(v ?? '').replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/,/g, '')); return isNaN(x) ? null : x; };
   const ymd = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   const today = () => ymd(new Date());
   const monthStart = () => { const t = new Date(); return ymd(new Date(t.getFullYear(), t.getMonth(), 1)); };
-  const isAC = () => (location.hash.replace('#/', '') || 'home').split('/')[0] === 'accounts';
+  const isAC = () => (location.hash.replace('#/', '') || 'home').split('/')[0] === CFG.route;
   const sb = () => window.AuthGate && window.AuthGate.sb;
   const me = () => (window.AuthGate && window.AuthGate.me && window.AuthGate.me()) || {};
   const myName = () => me().full_name || me().username || '';
@@ -6237,12 +6241,12 @@ table.pr td.ac-pos{color:#276749;font-weight:700}
   async function load(){
     if(!sb()) return;
     S.loading = true; S.err = ''; draw();
-    const { data, error } = await sb().from('accounts_entries').select('*')
+    const { data, error } = await sb().from(CFG.table).select('*')
       .order('entry_date', { ascending:false }).order('created_at', { ascending:false }).limit(10000);
     S.loading = false;
     if(error){
       S.err = /does not exist|relation|schema cache|Could not find/i.test(error.message)
-        ? 'جدول الحسابات لسه مش موجود في Supabase — لازم كود الـ SQL يتشغّل الأول.'
+        ? 'جدول ' + CFG.title + ' (' + CFG.table + ') لسه مش موجود في Supabase — لازم كود الـ SQL يتشغّل الأول.'
         : 'مقدرناش نجيب الحسابات: ' + error.message;
     } else S.rows = data || [];
     draw();
@@ -6353,7 +6357,7 @@ table.pr td.ac-pos{color:#276749;font-weight:700}
 
   function view(){
     const inc = S.kind === 'income', opn = S.kind === 'opening', trf = S.kind === 'transfer';
-    let h = `<div class="pagehead"><h1>💼 الحسابات</h1><p>سجّل الإيرادات والمصروفات بتاريخها، والسيستم بيحسب صافي كل يوم (إيرادات − مصروفات) وإجمالي أي فترة.</p></div>`;
+    let h = `<div class="pagehead"><h1>${CFG.icon} ${CFG.title}</h1><p>${CFG.desc}</p></div>`;
     if(S.msg) h += `<div class="ac-msg ${S.msgErr ? 'err' : ''}">${esc(S.msg)}</div>`;
 
     // ملخص النهارده دايمًا ظاهر
@@ -6577,7 +6581,7 @@ table.pr td.ac-pos{color:#276749;font-weight:700}
       if(same && !confirm(`فيه رصيد أول مدة متسجل بالفعل يوم ${S.date} (${fmt(same.amount)} ج). السيستم هيعتمد على الجديد. تكمل؟`)) return;
     } else if(amount === null || amount <= 0) return flash('اكتب المبلغ (رقم أكبر من صفر).', true);
     S.busy = true; draw();
-    const { error } = await sb().from('accounts_entries').insert({
+    const { error } = await sb().from(CFG.table).insert({
       entry_date: S.date, kind: S.kind, category, item, amount, method: S.method, created_by_name: myName()
     });
     S.busy = false;
@@ -6605,7 +6609,7 @@ table.pr td.ac-pos{color:#276749;font-weight:700}
     if(dup.length && !confirm(`فيه رصيد أول مدة متسجل بالفعل يوم ${S.date} لـ: ${dup.join('، ')}. السيستم هيعتمد على الجديد. تكمل؟`)) return;
     S.busy = true; draw();
     const item = S.item.trim();
-    const { error } = await sb().from('accounts_entries').insert(list.map(x => ({
+    const { error } = await sb().from(CFG.table).insert(list.map(x => ({
       entry_date: S.date, kind: 'opening', category: OPENING_CAT, item, amount: x.n, method: x.m, created_by_name: myName() })));
     S.busy = false;
     if(error) return flash('❌ مقدرناش نسجّل: ' + error.message, true);
@@ -6622,7 +6626,7 @@ table.pr td.ac-pos{color:#276749;font-weight:700}
     S.busy = true; draw();
     const item = `من ${S.tFrom} إلى ${S.tTo}` + (note ? ' — ' + note : '');
     const base = { entry_date: S.date, category: TRANSFER_CAT, item, amount, created_by_name: myName() };
-    const { error } = await sb().from('accounts_entries').insert([
+    const { error } = await sb().from(CFG.table).insert([
       { ...base, kind: 'expense', method: S.tFrom }, { ...base, kind: 'income', method: S.tTo } ]);
     S.busy = false;
     if(error) return flash('❌ مقدرناش نسجّل: ' + error.message, true);
@@ -6640,7 +6644,7 @@ table.pr td.ac-pos{color:#276749;font-weight:700}
       const twin = (S.rows || []).find(x => x.id !== r.id && isTrf(x) && x.created_at === r.created_at && x.item === r.item && Number(x.amount) === Number(r.amount));
       if(twin) ids.push(twin.id);
     }
-    const { data, error } = await sb().from('accounts_entries').delete().in('id', ids).select('id');
+    const { data, error } = await sb().from(CFG.table).delete().in('id', ids).select('id');
     if(error || !data || !data.length) return flash('❌ مقدرناش نمسح' + (error ? ': ' + error.message : ' — المسح لصاحب العملية أو الأدمن بس.'), true);
     S.msg = '✅ اتمسحت.'; S.msgErr = false;
     await load();
@@ -6664,27 +6668,38 @@ table.pr td.ac-pos{color:#276749;font-weight:700}
     { const PB = periodBalances();
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(wallets().map(w => { const fl = walletFlow(w, PB.startDate, PB.endDate);
         return { 'الحساب': w, 'رصيد أول المدة': walletAt(w, PB.startDate), 'داخل': fl.in, 'خارج': fl.out, 'رصيد آخر المدة': walletAt(w, nextDay(PB.endDate)), 'الرصيد دلوقتي': walletAt(w, nextDay(today())) }; })), 'رصيد كل حساب'); }
-    XLSX.writeFile(wb, 'الحسابات ' + (S.from || 'الكل') + (S.to && S.to !== S.from ? ' إلى ' + S.to : '') + '.xlsx');
+    XLSX.writeFile(wb, CFG.title + ' ' + (S.from || 'الكل') + (S.to && S.to !== S.from ? ' إلى ' + S.to : '') + '.xlsx');
   }
 
-  /* ---------- لينك في القائمة (أول حاجة تحت المالية) ---------- */
-  const anchor = document.querySelector('#sidebar a.navlink[href="#/profits"]');
-  if(anchor && !document.querySelector('#sidebar a.navlink[href="#/accounts"]')){
+  /* ---------- لينك في القائمة (تحت المالية) ---------- */
+  const anchor = document.querySelector(CFG.anchor);
+  if(anchor && !document.querySelector(`#sidebar a.navlink[href="#/${CFG.route}"]`)){
     const a = document.createElement('a');
-    a.className = 'navlink'; a.href = '#/accounts'; a.textContent = '💼 الحسابات';
-    anchor.before(a);
+    a.className = 'navlink'; a.href = '#/' + CFG.route; a.textContent = CFG.icon + ' ' + CFG.title;
+    if(CFG.before) anchor.before(a); else anchor.after(a);
   }
 
   /* ---------- الربط بالراوتر ---------- */
   function mount(){
-    document.querySelectorAll('#sidebar a.navlink').forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#/accounts'));
+    document.querySelectorAll('#sidebar a.navlink').forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#/' + CFG.route));
     draw(); if(S.rows === null && !S.loading && !S.err) load();
   }
   const _render = render;
   render = function(){ _render.apply(this, arguments); if(isAC()) mount(); };
   window.addEventListener('hashchange', () => { if(isAC()) mount(); });
   if(isAC()) setTimeout(mount, 0);
-})();
+}
+
+// 💼 حساباتنا
+makeAccounts({ route:'accounts', table:'accounts_entries', icon:'💼', title:'الحسابات',
+  desc:'سجّل الإيرادات والمصروفات بتاريخها، والسيستم بيحسب صافي كل يوم (إيرادات − مصروفات) وإجمالي أي فترة.',
+  anchor:'#sidebar a.navlink[href="#/profits"]', before:true });
+
+// 🌸 حسابات Bloom — منفصلة تمامًا (جدول تاني في Supabase)، نفس النظام بالظبط
+makeAccounts({ route:'bloom-accounts', table:'accounts_entries_bloom', icon:'🌸', title:'حسابات Bloom',
+  desc:'حسابات براند Bloom لوحدها — منفصلة تمامًا عن حسابات الشركة. سجّل الإيرادات والمصروفات بتاريخها، والسيستم بيحسب صافي كل يوم وإجمالي أي فترة.',
+  anchor:'#sidebar a.navlink[href="#/accounts"]', before:false });
+
 </script>
 
 </body>
