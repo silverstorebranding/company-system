@@ -1460,6 +1460,7 @@ const Squad = (function(){
      💰 العمولة
      - order     = عمولة الأوردر وهو لسه قيد التنفيذ
      - delivered = عمولة التسليم (بتحل مكان عمولة الأوردر، مش بتتجمع عليها)
+     - أي أوردر سعره أكبر من 625 ج: عمولة التسليم بتاعته = 30 ج (HIGH_PRICE / HIGH_COMM تحت)
      - عمولة الأوردر قبل التسليم بتتفعّل بس لو نسبة تسليمات الموظف أكتر من 50%
        (نسبة التسليم = اللي اتسلم ÷ (اللي اتسلم + اللي اتلغى)، والأوردرات اللي لسه قيد التنفيذ مش داخلة فيها)
      - النظام ده بيتطبق على كل الأوردرات، القديمة والجديدة
@@ -1475,6 +1476,13 @@ const Squad = (function(){
     'إرسال صفحة':  { order:10, delivered:30 },
   };
   const MIN_RATE = 0.5;
+  // 💰 عمولة التسليم للأوردرات الغالية: لو سعر الأوردر أكبر من 625 ج، عمولة التسليم = 30 ج
+  const HIGH_PRICE = 625, HIGH_COMM = 30;
+  // عمولة التسليم حسب المصدر والسعر (لو المصدر عمولته أعلى من 30 أصلاً بتفضل زي ما هي)
+  const deliveredFor = o => {
+    const base = rulesFor(o).delivered;
+    return Number(o && o.amount) > HIGH_PRICE ? Math.max(base, HIGH_COMM) : base;
+  };
 
   // النظام القديم (حسب السعر) — للأوردرات اللي قبل RULES_FROM بس
   function oldCommission(amount){
@@ -1491,7 +1499,7 @@ const Squad = (function(){
   const isNewRule = () => true; // كل الأوردرات (القديمة والجديدة) بتتحسب بالنظام الجديد
   const rulesFor = o => SOURCE_COMM[o && o.page_name] || STD_COMM;
   function deliveredCommission(o){
-    if(isNewRule(o)) return rulesFor(o).delivered;
+    if(isNewRule(o)) return deliveredFor(o);
     const amt = Number(o && o.amount);
     if(amt && amt > 0) return oldCommission(amt);
     return Math.round((Number(o && o.commission) || 0) * 100) / 100;
@@ -1699,7 +1707,7 @@ const Squad = (function(){
       order_details: payload.order_details,
       size: payload.size || null,
       status: 'pending',
-      commission: rulesFor(payload).delivered
+      commission: deliveredFor(payload)
     };
     let { data: row, error } = await sb.from('orders').insert(newRow).select().maybeSingle();
     if(missingSizeCol(error)){
@@ -1763,7 +1771,7 @@ const Squad = (function(){
       amount: payload.amount ? Number(payload.amount) : null,
       order_details: payload.order_details,
       size: payload.size || null,
-      commission: isNewRule(order) ? rulesFor(payload).delivered : oldCommission(payload.amount)
+      commission: isNewRule(order) ? deliveredFor(payload) : oldCommission(payload.amount)
     };
     let { data: upd, error } = await sb.from('orders').update(patch).eq('id', order.id).select('id');
     if(missingSizeCol(error)){
