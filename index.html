@@ -1325,7 +1325,7 @@ function viewProfits(){
     <div class="card"><h3>2) الجدول الأساسي — التكاليف والأرباح بعد التوقع (الفعلي + المتوقع)</h3>
       <p style="font-size:13px;color:var(--muted)">المبيعات وشحن التسليمات وتكلفة البضاعة هنا = الفعلي + المتوقع من الأوردرات "تحت التسليم" و"Pending" (35%) و"Hold" (15%) لمعظم البراندات — ما عدا CARA SILVER (30% / 10%)، CARA SILVER UN (25% / 8%)، CARA WA (30% / 10%)، RS KIDS (70% / 30%)، وBLOOM (60% / 30%). الأوردرات الـ Pending بتاخد نفس نسبة "تحت التسليم" بالظبط في كل براند. باقي البنود زي ما هي.</p>
       <p style="font-size:13px;color:var(--muted)">تكلفة البضاعة لـ RS KIDS = 50% من مبيعاته، ولـ BLOOM = 45% من مبيعاته (الفعلي والمتوقع).</p>
-      <p style="font-size:13px;color:var(--muted)">اكتب البنود اليدوية (الإعلانات، و"هوالك - نثريات - أخرى") في الخانات الخضراء هنا بس — بتتطبق تلقائيًا على الجدول الفعلي تحت كمان. إعلانات RS KIDS وBLOOM بتتكتب يدوي في عمودهم.</p>
+      <p style="font-size:13px;color:var(--muted)">اكتب البنود اليدوية (الإعلانات، و"هوالك - نثريات - أخرى") في الخانات الخضراء هنا بس — بتتطبق تلقائيًا على الجدول الفعلي تحت كمان. إعلانات RS KIDS بتتجاب من شيت الإعلانات (العمود P) مع DREAM وCARA وFASTPLT، وإعلانات BLOOM بتتكتب يدوي في عمودها.</p>
       <div class="tablewrap"><table class="pr" id="prFullTable"></table></div>
     </div>
     <div class="card"><h3>3) الجدول الفعلي — التكاليف والأرباح قبل التوقع</h3>
@@ -2575,6 +2575,8 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
     { key:'dream',   name:'DREAM',   color:'#5b3f7a', spend:1, orders:2,  msgs:3,    pr:'dream',       prBrands:['dream','dream msg site','dream wa'] },
     { key:'cara',    name:'CARA',    color:'#2f5f73', spend:5, orders:6,  msgs:7,    pr:'cara silver', prBrands:['cara silver','cara silver un','cara wa'] },
     { key:'fastplt', name:'FASTPLT', color:'#8a6d3b', spend:9, orders:10, msgs:null, pr:'fastplt',     prBrands:['fastplt'] },
+    // 👶 RS KIDS: صرف الإعلانات في العمود P (رقم 15) — من غير عمود أوردرات، فمش داخل في حسبة البوصلة
+    { key:'rs',      name:'RS KIDS', color:'#a0456e', spend:15, orders:null, msgs:null, pr:'rs kids',   prBrands:['rs kids'] },
   ];
   const MONTHS = ['january','february','march','april','may','june','july','august','september','october','november','december'];
 
@@ -2785,7 +2787,7 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
     const box = document.createElement('div');
     box.id = 'adsFillBox'; box.className = 'ads-fill';
     box.innerHTML = `<button class="mockbtn" onclick="Ads.fill()">📢 املأ الإعلانات من جوجل شيت</button>
-      <span id="adsFillStatus">بيجمع الصرف لنفس فترة ملف الأوردرات: DREAM في عمود DREAM، وCARA في CARA SILVER، وFASTPLT في FASTPLT.</span>`;
+      <span id="adsFillStatus">بيجمع الصرف لنفس فترة ملف الأوردرات: DREAM في عمود DREAM، وCARA في CARA SILVER، وFASTPLT في FASTPLT، وRS KIDS في RS KIDS.</span>`;
     tbl.closest('.card').insertBefore(box, tbl.parentElement);
   }
 
@@ -2808,6 +2810,8 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
      🧭 البوصلة — الربح المتوقع لكل يوم من أرقام الإعلانات
      التكاليف نسبة من المبيعات المتوقعة، والإعلانات بالمبلغ الفعلي من الشيت
      ===================================================================== */
+  // البوصلة محتاجة عدد أوردرات، فبتاخد البراندات اللي ليها عمود أوردرات في الشيت بس
+  const CMP_GROUPS = ADS_GROUPS.filter(G => G.orders != null);
   const COMPASS_COSTS = [
     { lbl:'🧾 نثريات',        pct:0.03 },
     { lbl:'📦 بضاعة',         pct:0.11 },
@@ -2837,7 +2841,7 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
   // بيحسب كل براند لوحده وبعدين الإجمالي
   function cmpCalcRows(rows){
     const per = {};
-    ADS_GROUPS.forEach(G => {
+    CMP_GROUPS.forEach(G => {
       const s = rows.reduce((a,r) => a + r.g[G.key].spend, 0), o = rows.reduce((a,r) => a + r.g[G.key].orders, 0);
       per[G.key] = cmpCalc(s, o, +cmpSet.aov[G.key] || 0);
     });
@@ -2855,7 +2859,7 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
   function cmpAovFromProfits(){
     if(typeof prBrandCalc === 'undefined' || !prBrandCalc || !Object.keys(prBrandCalc).length) return null;
     const out = {};
-    ADS_GROUPS.forEach(G => {
+    CMP_GROUPS.forEach(G => {
       let rev = 0, del = 0;
       G.prBrands.forEach(b => { const c = prBrandCalc[b]; if(c){ rev += c.revenue; del += c.delivered; } });
       if(del) out[G.key] = Math.round(rev / del);
@@ -2867,7 +2871,7 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
 
   function viewCompass(){
     let h = `<div class="pagehead"><h1>🧭 البوصلة</h1><p>الربح المتوقع لكل يوم، محسوب من الصرف وعدد الأوردرات اللي في شيت الإعلانات.</p></div>`;
-    const days = adsData ? adsData.filter(r => r.g && ADS_GROUPS.some(G => r.g[G.key].spend > 0 || r.g[G.key].orders > 0)) : [];
+    const days = adsData ? adsData.filter(r => r.g && CMP_GROUPS.some(G => r.g[G.key].spend > 0 || r.g[G.key].orders > 0)) : [];
     if(days.length && !days.some(d => d.key === cmpDay)) cmpDay = days[days.length-1].key;
     const r = days.find(d => d.key === cmpDay);
 
@@ -2882,7 +2886,7 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
     // الإعدادات
     h += `<div class="card"><h3>⚙️ متوسط سعر الأوردر ونسبة التسليم</h3>
       <div class="cmp-set">
-        ${ADS_GROUPS.map(G => `<label>${G.name} <input type="number" min="0" value="${cmpSet.aov[G.key] || ''}" placeholder="مثلاً 650" onchange="Compass.setAov('${G.key}',this.value)"> ج</label>`).join('')}
+        ${CMP_GROUPS.map(G => `<label>${G.name} <input type="number" min="0" value="${cmpSet.aov[G.key] || ''}" placeholder="مثلاً 650" onchange="Compass.setAov('${G.key}',this.value)"> ج</label>`).join('')}
         <label>نسبة التسليم المتوقعة <input type="number" min="0" max="100" value="${cmpSet.dr}" onchange="Compass.setDr(this.value)"> %</label>
       </div>
       <div class="ads-fill"><button class="linkbtn" onclick="Compass.fromProfits()">خد متوسط السعر من تقرير الأرباح</button><span>${cmpMsg}</span></div>
@@ -2890,15 +2894,15 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
     </div>`;
 
     const { per, tot } = cmpCalcRows([r]);
-    const missing = ADS_GROUPS.filter(G => per[G.key].orders > 0 && !per[G.key].aov);
+    const missing = CMP_GROUPS.filter(G => per[G.key].orders > 0 && !per[G.key].aov);
     if(missing.length) h += `<div class="mono-note">اكتب متوسط سعر الأوردر لـ ${missing.map(G => G.name).join(' و')} فوق، من غيره مبيعاته هتتحسب صفر.</div>`;
 
     // جدول تفاصيل اليوم
-    const cols = [tot, ...ADS_GROUPS.map(G => per[G.key])];
+    const cols = [tot, ...CMP_GROUPS.map(G => per[G.key])];
     const z = v => v ? fmt(v) : '—';
     const row = (lbl, f, cls, tdCls) => `<tr${cls ? ` class="${cls}"` : ''}><td class="lbl">${lbl}</td>` +
       cols.map((c,i) => `<td class="${i===0 ? 'tot ' : ''}${tdCls ? tdCls(c) : ''}">${f(c)}</td>`).join('') + '</tr>';
-    let tb = '<tr><th>البند</th><th class="tot">الإجمالي</th>' + ADS_GROUPS.map(G => `<th style="background:${G.color}">${G.name}</th>`).join('') + '</tr>';
+    let tb = '<tr><th>البند</th><th class="tot">الإجمالي</th>' + CMP_GROUPS.map(G => `<th style="background:${G.color}">${G.name}</th>`).join('') + '</tr>';
     tb += row('🛒 عدد الأوردرات', c => z(c.orders));
     tb += row('🎯 سعر الكونفرجن (CPO)', c => c.cpo == null ? '—' : fmt(c.cpo));
     tb += row('💵 متوسط سعر الأوردر', c => z(c.aov));
