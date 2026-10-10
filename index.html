@@ -647,6 +647,7 @@ const PR_COLS=[
 // راتب مساعد مدير المكتب: 16000 شهريًا
 const PR_A_SAL_D=16000/30, PR_MSG_SAL_D=150, PR_SHR_SAL_D=300, PR_RENT_D=200;
 const PR_COGS_NO=65.2, PR_COGS_YES=94, PR_BRANCH_PCT=0.145, PR_PEND_VAL=75;
+// نسبة التوقع: ofd = للأوردرات "تحت التسليم" و "Pending" (نفس المعاملة)، hold = للـ Hold
 const PR_OFD_RATE=0.35, PR_HOLD_RATE=0.15;
 const PR_RATE_OVERRIDES={
   "cara silver":{ofd:0.30,hold:0.10},
@@ -659,6 +660,8 @@ const prRatesFor=b=>PR_RATE_OVERRIDES[b]||{ofd:PR_OFD_RATE,hold:PR_HOLD_RATE};
 // براندات تكلفة بضاعتها نسبة ثابتة من المبيعات (بدل 65.2 / 94 للقطعة)
 const PR_COGS_PCT={"rs kids":0.50,"bloom":0.45};
 const PR_statusCol=15,PR_priceCol=5,PR_shipCol=6,PR_notesCol=10,PR_contentsCol=12,PR_returnedCol=9,PR_dateCol=11;
+// ⏳ حالة Pending (كابيتال أو سمول مش فارقة) — بتتعامل في التوقع زي "تحت التسليم" بالظبط
+const prIsPending=r=>String(r[PR_statusCol-1]||'').trim().toLowerCase()==='pending';
 
 // البنود اليدوية — بتتكتب مرة واحدة في الجدول الأساسي وبتتطبق على الجدولين
 const PR_MANUAL=[
@@ -722,8 +725,9 @@ function prProcess(rows){
     const returned=rs.filter(r=>{const v=r[PR_returnedCol-1];return v&&String(v).trim()!==""&&String(v).trim()!=="NaT";});
     const holdRows=rs.filter(r=>r[PR_statusCol-1]==="Hold");
     const ofdRows=rs.filter(r=>r[PR_statusCol-1]==="Out for Delivery");
+    const pendRows=rs.filter(prIsPending); // ⏳ Pending
     const undelRows=rs.filter(r=>r[PR_statusCol-1]==="Undelivered");
-    const hold=holdRows.length, ofd=ofdRows.length, undel=undelRows.length;
+    const hold=holdRows.length, ofd=ofdRows.length, pend=pendRows.length, undel=undelRows.length;
     const revenue=delivered.reduce((s,r)=>s+prNum(r[PR_priceCol-1]),0);
     const shipAll=rs.reduce((s,r)=>s+prNum(r[PR_shipCol-1]),0);
     const shipDel=delivered.reduce((s,r)=>s+prNum(r[PR_shipCol-1]),0);
@@ -735,7 +739,7 @@ function prProcess(rows){
     const cogs=(brand in PR_COGS_PCT)
       ? revenue*PR_COGS_PCT[brand]
       : wIns*PR_COGS_YES+(delivered.length-wIns)*PR_COGS_NO;
-    return {n:rs.length,delivered:delivered.length,returned:returned.length,hold,ofd,undel,revenue,shipAll,shipDel,shipRet,shipUndel,cogs};
+    return {n:rs.length,delivered:delivered.length,returned:returned.length,hold,ofd,pend,undel,revenue,shipAll,shipDel,shipRet,shipUndel,cogs};
   }
   prBrandCalc={}; PR_BRANDS.forEach(b=>prBrandCalc[b]=calcOne(b));
 
@@ -760,7 +764,8 @@ function prProcess(rows){
     const avgCogs=c.delivered?c.cogs/c.delivered:0;
     const avgShip=c.delivered?c.shipDel/c.delivered:0;
     const rt=prRatesFor(b);
-    const count=c.ofd*rt.ofd+c.hold*rt.hold;
+    // ⏳ الـ Pending بيتحسب بنفس نسبة "تحت التسليم" (ofd)
+    const count=(c.ofd+c.pend)*rt.ofd+c.hold*rt.hold;
     return {key:b,count,revenue:count*avgPrice,shipExp:count*avgShip,cogsExp:count*avgCogs};
   });
 
@@ -812,8 +817,10 @@ function prBuildTable(pfx){
 
   let h='<tr><th>البند</th><th class="tot">الإجمالي</th>'+PR_COLS.map(c=>`<th>${c.h}</th>`).join('')+'</tr>';
   if(full){
+    const gp=b=>(prBrandCalc[b]||{}).pend||0;
     const gc=b=>expVal(b,'count'), gr=b=>expVal(b,'revenue');
-    h+=tr('🔮 أوردرات متوقع تسليمها (من OFD و Hold)',rowFor(gc),totalFor(gc),'info');
+    h+=tr('⏳ أوردرات Pending (بتتحسب زي تحت التسليم)',rowFor(gp),totalFor(gp),'info');
+    h+=tr('🔮 أوردرات متوقع تسليمها (من OFD و Pending و Hold)',rowFor(gc),totalFor(gc),'info');
     h+=tr('↳ منها مبيعات متوقعة (داخلة في المبيعات تحت)',rowFor(gr),totalFor(gr),'info');
   }
   const rev=autoRow('📥 مبيعات التسليمات'+sfx,'revenue');
@@ -903,20 +910,20 @@ function prRecalc(){
 function prAggRow(label,brands){
   const agg=brands.reduce((a,b)=>{
     const c=prBrandCalc[b];
-    a.n+=c.n;a.delivered+=c.delivered;a.returned+=c.returned;a.hold+=c.hold;a.ofd+=c.ofd;a.undel+=c.undel;a.revenue+=c.revenue;a.shipAll+=c.shipAll;
+    a.n+=c.n;a.delivered+=c.delivered;a.returned+=c.returned;a.hold+=c.hold;a.ofd+=c.ofd;a.pend+=c.pend;a.undel+=c.undel;a.revenue+=c.revenue;a.shipAll+=c.shipAll;
     return a;
-  },{n:0,delivered:0,returned:0,hold:0,ofd:0,undel:0,revenue:0,shipAll:0});
+  },{n:0,delivered:0,returned:0,hold:0,ofd:0,pend:0,undel:0,revenue:0,shipAll:0});
   const rate=agg.n?((agg.delivered/agg.n)*100).toFixed(1)+'%':'0%';
-  return `<tr class="total"><td class="lbl">${label}</td><td>${agg.n}</td><td>${agg.delivered}</td><td>${agg.returned}</td><td>${agg.hold}</td><td>${agg.ofd}</td><td>${agg.undel}</td><td>${prFmt(agg.revenue)}</td><td>${prFmt(agg.shipAll)}</td><td>${rate}</td></tr>`;
+  return `<tr class="total"><td class="lbl">${label}</td><td>${agg.n}</td><td>${agg.delivered}</td><td>${agg.returned}</td><td>${agg.hold}</td><td>${agg.ofd}</td><td>${agg.pend}</td><td>${agg.undel}</td><td>${prFmt(agg.revenue)}</td><td>${prFmt(agg.shipAll)}</td><td>${rate}</td></tr>`;
 }
 
 function prBuildSummaryTable(){
   const t=document.getElementById('prSummaryTable');
-  let h='<tr><th>البراند</th><th>إجمالي</th><th>مُسلَّم</th><th>مرتجع</th><th>Hold</th><th>OFD</th><th>Undelivered</th><th>مبيعات</th><th>شحن</th><th>نسبة تسليم</th></tr>';
+  let h='<tr><th>البراند</th><th>إجمالي</th><th>مُسلَّم</th><th>مرتجع</th><th>Hold</th><th>OFD</th><th>Pending</th><th>Undelivered</th><th>مبيعات</th><th>شحن</th><th>نسبة تسليم</th></tr>';
   PR_BRANDS.filter(b=>b!==PR_SOLO).forEach(b=>{
     const c=prBrandCalc[b];
     const rate=c.n?((c.delivered/c.n)*100).toFixed(1)+'%':'0%';
-    h+=`<tr><td class="lbl">${b.toUpperCase()}</td><td>${c.n}</td><td>${c.delivered}</td><td>${c.returned}</td><td>${c.hold}</td><td>${c.ofd}</td><td>${c.undel}</td><td>${prFmt(c.revenue)}</td><td>${prFmt(c.shipAll)}</td><td>${rate}</td></tr>`;
+    h+=`<tr><td class="lbl">${b.toUpperCase()}</td><td>${c.n}</td><td>${c.delivered}</td><td>${c.returned}</td><td>${c.hold}</td><td>${c.ofd}</td><td>${c.pend}</td><td>${c.undel}</td><td>${prFmt(c.revenue)}</td><td>${prFmt(c.shipAll)}</td><td>${rate}</td></tr>`;
   });
   h+=prAggRow('DREAM مجمع',['dream','dream msg site','dream wa']);
   h+=prAggRow('CARA مجمع',['cara silver','cara silver un','cara wa']);
@@ -1294,7 +1301,7 @@ function viewProfits(){
       <input type="file" id="prFileIn" accept=".xlsx,.xls,.csv">
       <button class="mockbtn" onclick="prRunReport()">▶️ شغّل التقرير</button>
     </div>
-    <div class="mono-note">الشيت لازم يكون بنفس ترتيب أعمدة "orders" الأصلي: أول صف عناوين، وبعدين الأعمدة بالترتيب — العمود E = السعر، F = الشحن، I = تاريخ الإرجاع، J = الملاحظة (اسم البراند)، K = التاريخ، L = المحتويات، O = الحالة.<br>👶 أوردرات براند <b>RS KIDS</b>: اكتب في أول العمود J كلمة <b>rs kids</b> أو <b>rs</b> (أو rskids) — كابيتال أو سمول مش فارقة.<br>🌸 أوردرات براند <b>BLOOM</b>: اكتب في أول العمود J كلمة <b>bloom</b> — كابيتال أو سمول مش فارقة.</div>
+    <div class="mono-note">الشيت لازم يكون بنفس ترتيب أعمدة "orders" الأصلي: أول صف عناوين، وبعدين الأعمدة بالترتيب — العمود E = السعر، F = الشحن، I = تاريخ الإرجاع، J = الملاحظة (اسم البراند)، K = التاريخ، L = المحتويات، O = الحالة.<br>⏳ الأوردرات اللي حالتها <b>Pending</b> في العمود O بتتحسب في التوقع زي الأوردرات اللي تحت التسليم بالظبط.<br>👶 أوردرات براند <b>RS KIDS</b>: اكتب في أول العمود J كلمة <b>rs kids</b> أو <b>rs</b> (أو rskids) — كابيتال أو سمول مش فارقة.<br>🌸 أوردرات براند <b>BLOOM</b>: اكتب في أول العمود J كلمة <b>bloom</b> — كابيتال أو سمول مش فارقة.</div>
     <div id="prStatus" style="font-size:13px;color:var(--muted);margin-top:8px"></div>
   </div>
   <div id="prResults" style="display:none">
@@ -1311,12 +1318,12 @@ function viewProfits(){
       </table></div>
       <div class="legend">
         <span><i style="background:var(--panel)"></i>✔️ فعلي = الأوردرات اللي اتسلمت فعلًا</span>
-        <span><i style="background:#fdf8ec"></i>🔮 بعد التوقع = الفعلي + المتوقع يتسلم من OFD و Hold</span>
+        <span><i style="background:#fdf8ec"></i>🔮 بعد التوقع = الفعلي + المتوقع يتسلم من OFD و Pending و Hold</span>
         <span style="color:#1f7a45">أخضر = مكسب</span><span style="color:#b3261e">أحمر = خسارة</span>
       </div>
     </div>
     <div class="card"><h3>2) الجدول الأساسي — التكاليف والأرباح بعد التوقع (الفعلي + المتوقع)</h3>
-      <p style="font-size:13px;color:var(--muted)">المبيعات وشحن التسليمات وتكلفة البضاعة هنا = الفعلي + المتوقع من الأوردرات "تحت التسليم" (35%) و"Hold" (15%) لمعظم البراندات — ما عدا CARA SILVER (30% / 10%)، CARA SILVER UN (25% / 8%)، CARA WA (30% / 10%)، RS KIDS (70% / 30%)، وBLOOM (60% / 30%). باقي البنود زي ما هي.</p>
+      <p style="font-size:13px;color:var(--muted)">المبيعات وشحن التسليمات وتكلفة البضاعة هنا = الفعلي + المتوقع من الأوردرات "تحت التسليم" و"Pending" (35%) و"Hold" (15%) لمعظم البراندات — ما عدا CARA SILVER (30% / 10%)، CARA SILVER UN (25% / 8%)، CARA WA (30% / 10%)، RS KIDS (70% / 30%)، وBLOOM (60% / 30%). الأوردرات الـ Pending بتاخد نفس نسبة "تحت التسليم" بالظبط في كل براند. باقي البنود زي ما هي.</p>
       <p style="font-size:13px;color:var(--muted)">تكلفة البضاعة لـ RS KIDS = 50% من مبيعاته، ولـ BLOOM = 45% من مبيعاته (الفعلي والمتوقع).</p>
       <p style="font-size:13px;color:var(--muted)">اكتب البنود اليدوية (الإعلانات، و"هوالك - نثريات - أخرى") في الخانات الخضراء هنا بس — بتتطبق تلقائيًا على الجدول الفعلي تحت كمان. إعلانات RS KIDS وBLOOM بتتكتب يدوي في عمودهم.</p>
       <div class="tablewrap"><table class="pr" id="prFullTable"></table></div>
