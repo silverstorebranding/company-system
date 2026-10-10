@@ -192,14 +192,14 @@ input.plainIn{padding:6px 10px;border:1px solid var(--line);border-radius:6px;wi
 #sq-root .sq-hype .t{font-size:15.5px;font-weight:700;margin-bottom:2px}
 #sq-root .sq-hype .s{font-size:13px;opacity:.85}
 
-#sq-root .sq-stats{display:grid;grid-template-columns:repeat(4,1fr);border:1px solid var(--line);border-radius:10px;background:var(--panel);overflow:hidden;margin-bottom:22px}
+#sq-root .sq-stats{display:grid;grid-template-columns:repeat(5,1fr);border:1px solid var(--line);border-radius:10px;background:var(--panel);overflow:hidden;margin-bottom:22px}
 #sq-root .sq-stat{padding:18px 20px;border-inline-start:1px solid var(--line)}
 #sq-root .sq-stat:first-child{border-inline-start:none}
 #sq-root .sq-stat .n{font-size:26px;font-weight:700;line-height:1}
 #sq-root .sq-stat .n.gold{color:var(--brass)}
 #sq-root .sq-stat .n.green{color:var(--ok)}
 #sq-root .sq-stat .l{font-size:13px;color:var(--muted);margin-top:8px}
-@media (max-width:720px){#sq-root .sq-stats{grid-template-columns:repeat(2,1fr)}#sq-root .sq-stat:nth-child(3){border-inline-start:none}}
+@media (max-width:820px){#sq-root .sq-stats{grid-template-columns:repeat(2,1fr)}#sq-root .sq-stat:nth-child(odd){border-inline-start:none}#sq-root .sq-stat{border-top:1px solid var(--line)}}
 
 #sq-root .sq-form{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:24px;max-width:560px}
 #sq-root .sq-row2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
@@ -231,11 +231,11 @@ input.plainIn{padding:6px 10px;border:1px solid var(--line);border-radius:6px;wi
   #sq-root .sq-table tbody td::before{content:attr(data-label);font-size:12px;font-weight:600;color:var(--muted);flex-shrink:0}
 }
 
-#sq-root .sq-board-row{display:grid;grid-template-columns:44px 1fr 90px 90px 110px;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--line)}
+#sq-root .sq-board-row{display:grid;grid-template-columns:44px 1fr 80px 80px 130px 100px;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--line)}
 #sq-root .sq-board-row:last-child{border-bottom:none}
 #sq-root .sq-board-row.head{background:var(--slate-l);font-size:12px;font-weight:600;color:var(--muted);padding:11px 18px}
 #sq-root .sq-board-row .c{text-align:center}
-@media (max-width:640px){#sq-root .sq-board-row{grid-template-columns:32px 1fr 60px 60px 84px;padding:12px 10px;gap:6px;font-size:13px}}
+@media (max-width:640px){#sq-root .sq-board-row{grid-template-columns:28px 1fr 46px 46px 84px 64px;padding:12px 10px;gap:6px;font-size:13px}}
 #sq-root .sq-rank{width:30px;height:30px;border-radius:50%;background:var(--paper);color:var(--muted);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px}
 #sq-root .sq-rank.r1{background:#f4e3b0;color:#7a5a0e}
 #sq-root .sq-rank.r2{background:#e4e8ec;color:#4b5a6b}
@@ -243,6 +243,7 @@ input.plainIn{padding:6px 10px;border:1px solid var(--line);border-radius:6px;wi
 #sq-root .sq-name{font-weight:600}
 #sq-root .sq-metric{font-weight:700;font-size:16px}
 #sq-root .sq-metric.gold{color:var(--brass)}
+#sq-root .sq-metric.green{color:var(--ok)}
 
 #sq-root .sq-modal-bg{position:fixed;inset:0;background:rgba(28,35,33,.5);display:flex;align-items:center;justify-content:center;padding:20px;z-index:50}
 #sq-root .sq-modal{width:100%;max-width:520px;max-height:90vh;overflow-y:auto;background:var(--panel);border-radius:10px;padding:26px}
@@ -1509,9 +1510,9 @@ const Squad = (function(){
   const missingSizeCol = e => !!e && /size/i.test(e.message || '') && /column|schema/i.test(e.message || '');
   const SIZE_SQL_MSG = 'المقاس مااتحفظش في قاعدة البيانات — لازم سطر الـ SQL بتاع عمود المقاس يتشغّل في Supabase. (المقاس اتبعت للشيت عادي)';
   function commissionSummary(orders){
-    let delivered = 0, cancelled = 0, pending = 0, delComm = 0, pendComm = 0;
+    let delivered = 0, cancelled = 0, pending = 0, delComm = 0, pendComm = 0, delValue = 0;
     (orders || []).forEach(o => {
-      if(o.status === 'delivered'){ delivered++; delComm += deliveredCommission(o); }
+      if(o.status === 'delivered'){ delivered++; delComm += deliveredCommission(o); delValue += Number(o.amount) || 0; }
       else if(o.status === 'cancelled') cancelled++;
       else { pending++; pendComm += pendingCommission(o); }
     });
@@ -1521,9 +1522,10 @@ const Squad = (function(){
     const r2 = n => Math.round(n * 100) / 100;
     const totalN = (orders || []).length;
     const delRate = totalN ? delivered / totalN : null; // ✅ نسبة التسليم الصح = اتسلم ÷ إجمالي الأوردرات
-    return { total:totalN, delivered, cancelled, pending, rate, delRate, active,
+    return { total:totalN, delivered, cancelled, pending, rate, delRate, active, delValue:r2(delValue),
       delComm:r2(delComm), pendComm:r2(pendComm), commission:r2(delComm + (active ? pendComm : 0)) };
   }
+  const money = n => Number(n || 0).toLocaleString('ar-EG', { maximumFractionDigits: 2 }) + ' ج';
   const rateTxt = r => r === null || r === undefined ? '—' : (Math.round(r * 1000) / 10) + '%';
 
   /* ✅ عميل Supabase واحد مشترك للصفحة كلها (Squad + الدخول + المخزن + EOD + ...)
@@ -1816,7 +1818,7 @@ const Squad = (function(){
     (data||[]).forEach(o => (byAgent[o.agent_id] = byAgent[o.agent_id] || []).push(o));
     const rows = Object.keys(byAgent).map(id => {
       const s = commissionSummary(byAgent[id]);
-      return { id, name: nameMap[id] || 'موظف', total: s.total, delivered: s.delivered, rate: s.rate, delRate: s.delRate, commission: s.commission, sources: sourceCounts(byAgent[id]) };
+      return { id, name: nameMap[id] || 'موظف', total: s.total, delivered: s.delivered, delValue: s.delValue, rate: s.rate, delRate: s.delRate, commission: s.commission, sources: sourceCounts(byAgent[id]) };
     }).sort((a,b) => b.delivered - a.delivered || b.total - a.total);
     setState({ boardLoading:false, board: rows });
   }
@@ -1957,7 +1959,8 @@ const Squad = (function(){
       ${HypeBanner()}
       <div class="sq-stats">
         <div class="sq-stat"><div class="n">${s.total}</div><div class="l">إجمالي الأوردرات (${s.pending} قيد التنفيذ)</div></div>
-        <div class="sq-stat"><div class="n green">${s.delivered}</div><div class="l">اتسلم</div></div>
+        <div class="sq-stat"><div class="n green">${s.delivered}</div><div class="l">أوردر اتسلم</div></div>
+        <div class="sq-stat"><div class="n green">${money(s.delValue)}</div><div class="l">💰 قيمة الأوردرات اللي اتسلمت</div></div>
         <div class="sq-stat"><div class="n">${rateTxt(s.delRate)}</div><div class="l">نسبة التسليم</div></div>
         <div class="sq-stat"><div class="n gold">${s.commission} ج</div><div class="l">إجمالي العمولة</div></div>
       </div>
@@ -2306,7 +2309,8 @@ const Squad = (function(){
     const chip = (k, l, n) => `<button type="button" class="sq-fchip ${state.agentFilter === k ? 'on' : ''}" data-afilter="${k}">${l} <b>${n}</b></button>`;
     h += `<div class="sq-stats">
         <div class="sq-stat"><div class="n">${s.total}</div><div class="l">إجمالي الأوردرات</div></div>
-        <div class="sq-stat"><div class="n green">${s.delivered}</div><div class="l">اتسلم</div></div>
+        <div class="sq-stat"><div class="n green">${s.delivered}</div><div class="l">أوردر اتسلم</div></div>
+        <div class="sq-stat"><div class="n green">${money(s.delValue)}</div><div class="l">💰 قيمة الأوردرات اللي اتسلمت</div></div>
         <div class="sq-stat"><div class="n">${rateTxt(s.delRate)}</div><div class="l">نسبة التسليم</div></div>
         <div class="sq-stat"><div class="n gold">${s.commission} ج</div><div class="l">إجمالي العمولة</div></div>
       </div>
@@ -2350,7 +2354,7 @@ const Squad = (function(){
     const rows = state.board;
     return head('ترتيب الـSquad', 'ترتيب حسب عدد الأوردرات اللي اتسلمت.') + `
       <div class="sq-tablecard">
-        <div class="sq-board-row head"><div>#</div><div>الاسم</div><div class="c">إجمالي</div><div class="c">اتسلم</div><div class="c">العمولة</div></div>
+        <div class="sq-board-row head"><div>#</div><div>الاسم</div><div class="c">إجمالي</div><div class="c">اتسلم</div><div class="c">قيمة اللي اتسلم</div><div class="c">العمولة</div></div>
         ${rows.length ? rows.map((r,i) => `
           <div class="sq-board-row">
             <div class="sq-rank ${i===0?'r1':i===1?'r2':i===2?'r3':''}">${i+1}</div>
@@ -2359,8 +2363,14 @@ const Squad = (function(){
               ${canViewAll() ? `<button type="button" class="sq-viewbtn" data-view-agent="${esc(r.id)}" data-agent-name="${esc(r.name)}">👁 عرض الأوردرات</button>` : ''}</div>
             <div class="sq-metric c">${r.total}</div>
             <div class="sq-metric c">${r.delivered}</div>
+            <div class="sq-metric green c">${money(r.delValue)}</div>
             <div class="sq-metric gold c">${r.commission} ج</div>
-          </div>`).join('') : `<div class="sq-empty">لسه مفيش أوردرات متسجلة من حد.</div>`}
+          </div>`).join('') + (() => {
+            const T = rows.reduce((a, r) => ({ total:a.total + r.total, delivered:a.delivered + r.delivered, delValue:a.delValue + (r.delValue || 0), commission:a.commission + r.commission }), { total:0, delivered:0, delValue:0, commission:0 });
+            return `<div class="sq-board-row head" style="font-size:13.5px;color:var(--ink)"><div></div><div><b>الإجمالي</b></div>
+              <div class="c"><b>${T.total}</b></div><div class="c"><b>${T.delivered}</b></div>
+              <div class="c"><b>${money(T.delValue)}</b></div><div class="c"><b>${Math.round(T.commission * 100) / 100} ج</b></div></div>`;
+          })() : `<div class="sq-empty">لسه مفيش أوردرات متسجلة من حد.</div>`}
       </div>`;
   }
 
