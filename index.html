@@ -674,7 +674,7 @@ const prMan=(id,b)=>(prManualVals[id]&&prManualVals[id][b])||0;
 let prBrandCalc={}, prPendingTotal=0, prRealCols=[], prExpCols=[], prUnbranded=[];
 
 function prGetBrand(note){
-  const n=String(note||"").toLowerCase().trim().split("\n")[0].trim();
+  const n=String(note||"").toLowerCase().trim().split("\n")[0].trim().replace(/\s+/g," "); // المسافات الزيادة بتتوحّد لمسافة واحدة
   if(n.startsWith("bloom"))return"bloom"; // 🌸 براند BLOOM
   if(n.startsWith("rs kids")||n.startsWith("rskids")||n.startsWith("rs-kids")||n.startsWith("rs_kids"))return"rs kids"; // براند RS KIDS
   if(/^rs(\s|$|[^a-z])/.test(n))return"rs kids"; // ملاحظة "rs" لوحدها = براند RS
@@ -687,6 +687,7 @@ function prGetBrand(note){
   if(n.startsWith("lo gel nails")||n.startsWith("lo gel")||n.startsWith("logel"))return"lo gel nails";
   if(n.startsWith("fastlpt"))return"fastplt"; // خطأ إملائي شائع لـ fastplt
   if(n.startsWith("fastplt"))return"fastplt";
+  if(/^cara[\s_-]*wa(\s|$|[^a-z])/.test(n))return"cara wa"; // ملاحظة "cara wa" (أو carawa / cara-wa) = براند CARA WA
   if(n.startsWith("cara silver un"))return"cara silver un";
   if(n.startsWith("cara siver"))return"cara silver"; // خطأ إملائي شائع لـ cara silver
   if(n.startsWith("cara silver"))return"cara silver";
