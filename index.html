@@ -216,6 +216,8 @@ input.plainIn{padding:6px 10px;border:1px solid var(--line);border-radius:6px;wi
 #sq-root .sq-badge.pending{background:var(--sq-pend-soft);color:var(--sq-pend)}
 #sq-root .sq-badge.delivered{background:var(--sq-green-soft);color:var(--sq-green)}
 #sq-root .sq-badge.cancelled{background:var(--sq-red-soft);color:var(--sq-red)}
+#sq-root .sq-badge.undelivered{background:#efe7f4;color:#6b3f86}
+#sq-root .sq-syncck.und{accent-color:#6b3f86}
 #sq-root select.sq-status{padding:6px 8px;font-size:13px;border-radius:6px;border:1.5px solid var(--line);background:var(--panel);color:var(--ink);font-weight:600;cursor:pointer;font-family:inherit}
 #sq-root .sq-actions{display:flex;gap:6px}
 #sq-root .sq-icon{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:7px;border:1.5px solid var(--line);background:var(--panel);cursor:pointer;font-size:14px}
@@ -1510,19 +1512,20 @@ const Squad = (function(){
   const missingSizeCol = e => !!e && /size/i.test(e.message || '') && /column|schema/i.test(e.message || '');
   const SIZE_SQL_MSG = 'المقاس مااتحفظش في قاعدة البيانات — لازم سطر الـ SQL بتاع عمود المقاس يتشغّل في Supabase. (المقاس اتبعت للشيت عادي)';
   function commissionSummary(orders){
-    let delivered = 0, cancelled = 0, pending = 0, delComm = 0, pendComm = 0, delValue = 0;
+    let delivered = 0, cancelled = 0, undelivered = 0, pending = 0, delComm = 0, pendComm = 0, delValue = 0;
     (orders || []).forEach(o => {
       if(o.status === 'delivered'){ delivered++; delComm += deliveredCommission(o); delValue += Number(o.amount) || 0; }
       else if(o.status === 'cancelled') cancelled++;
+      else if(o.status === 'undelivered') undelivered++; // اندلفرد في شركة الشحن = مش قيد التنفيذ ومالوش عمولة
       else { pending++; pendComm += pendingCommission(o); }
     });
-    const decided = delivered + cancelled;
+    const decided = delivered + cancelled + undelivered;
     const rate = decided ? delivered / decided : null;
     const active = rate !== null && rate > MIN_RATE;
     const r2 = n => Math.round(n * 100) / 100;
     const totalN = (orders || []).length;
     const delRate = totalN ? delivered / totalN : null; // ✅ نسبة التسليم الصح = اتسلم ÷ إجمالي الأوردرات
-    return { total:totalN, delivered, cancelled, pending, rate, delRate, active, delValue:r2(delValue),
+    return { total:totalN, delivered, cancelled, undelivered, pending, rate, delRate, active, delValue:r2(delValue),
       delComm:r2(delComm), pendComm:r2(pendComm), commission:r2(delComm + (active ? pendComm : 0)) };
   }
   const money = n => Number(n || 0).toLocaleString('ar-EG', { maximumFractionDigits: 2 }) + ' ج';
@@ -1578,7 +1581,7 @@ const Squad = (function(){
     agentOrders: null,
     agentFilter: 'all',
     agentQ: '',
-    sync: { from:'', loading:false, msg:'', err:'', done:'', result:null, sel:new Set(), applying:false },
+    sync: { from:'', loading:false, msg:'', err:'', done:'', result:null, sel:new Set(), selU:new Set(), applying:false },
   };
   const canViewAll = () => !!(window.AuthGate && window.AuthGate.isFull && window.AuthGate.isFull());
   // عدد الأوردرات من كل مصدر: [['إرسال صفحة',7],['واتساب',3]]
@@ -1614,6 +1617,7 @@ const Squad = (function(){
   function statusLabel(s){
     if(s === 'delivered') return { text:'اتسلم', cls:'delivered' };
     if(s === 'cancelled') return { text:'اتلغى', cls:'cancelled' };
+    if(s === 'undelivered') return { text:'اندلفرد', cls:'undelivered' };
     return { text:'قيد التنفيذ', cls:'pending' };
   }
 
@@ -1918,7 +1922,7 @@ const Squad = (function(){
 
   function commCell(o, active){
     if(o.status === 'delivered') return `<b>${deliveredCommission(o)} ج</b>`;
-    if(o.status === 'cancelled') return '—';
+    if(o.status === 'cancelled' || o.status === 'undelivered') return '—';
     const c = pendingCommission(o);
     if(!c) return '—';
     return active ? `${c} ج` : '—';
@@ -1946,6 +1950,7 @@ const Squad = (function(){
             <option value="pending" ${o.status==='pending'?'selected':''}>قيد التنفيذ</option>
             <option value="delivered" ${o.status==='delivered'?'selected':''}>اتسلم</option>
             <option value="cancelled" ${o.status==='cancelled'?'selected':''}>اتلغى</option>
+            <option value="undelivered" ${o.status==='undelivered'?'selected':''}>اندلفرد</option>
           </select>
         </td>
         <td data-label="إجراءات"><div class="sq-actions">
@@ -2179,7 +2184,7 @@ const Squad = (function(){
       (idx[k] = idx[k] || []); if(!idx[k].includes(q)) idx[k].push(q);
     }));
     const used = new Set();
-    const res = { deliver:[], review:[], shipping:[], nomatch:[], skipped: pend.length - list.length, qpCount: qp.length, from };
+    const res = { deliver:[], undel:[], review:[], shipping:[], nomatch:[], skipped: pend.length - list.length, qpCount: qp.length, from };
     list.forEach(o => {
       const k = phoneKey(o.customer_phone);
       if(!k){ res.nomatch.push({ o, why:'رقم الموبايل مش مكتوب صح' }); return; }
@@ -2196,38 +2201,55 @@ const Squad = (function(){
       const cats = new Set(c.map(q => api.category(q)));
       if(c.length === 1 || cats.size === 1){
         used.add(c[0].serial);
-        (api.category(c[0]) === 'delivered' ? res.deliver : res.shipping).push({ o, q:c[0] });
+        const cat0 = api.category(c[0]);
+        (cat0 === 'delivered' ? res.deliver : cat0 === 'undelivered' ? res.undel : res.shipping).push({ o, q:c[0] });
       } else if(!anyDel){
         res.shipping.push({ o, q:c[0] });
       } else {
         res.review.push({ o, cands:c });
       }
     });
-    setSync({ loading:false, msg:'', result:res, sel:new Set(res.deliver.map(x => String(x.o.id))) });
+    setSync({ loading:false, msg:'', result:res, sel:new Set(res.deliver.map(x => String(x.o.id))), selU:new Set(res.undel.map(x => String(x.o.id))) });
   }
 
   async function applySync(){
-    const ids = [...state.sync.sel];
-    if(!ids.length) return;
-    if(!window.confirm(`هيتعلم ${ids.length} أوردر "اتسلم" والعمولة هتتحسب عليهم. تكمل؟`)) return;
+    const del = [...state.sync.sel], und = [...state.sync.selU];
+    if(!del.length && !und.length) return;
+    const parts = [];
+    if(del.length) parts.push(`${del.length} أوردر "اتسلم" (والعمولة هتتحسب عليهم)`);
+    if(und.length) parts.push(`${und.length} أوردر "اندلفرد" (هيطلعوا من قيد التنفيذ)`);
+    if(!window.confirm('هيتعلم ' + parts.join(' و ') + '. تكمل؟')) return;
     setSync({ applying:true, err:'' });
-    let ok = 0;
-    for(let i = 0; i < ids.length; i += 100){
-      const part = ids.slice(i, i + 100);
-      const { data, error } = await sb.from('orders').update({ status:'delivered' }).in('id', part).select('id');
-      if(error){ setSync({ applying:false, err:'حصل خطأ أثناء التحديث: ' + error.message }); return; }
-      ok += (data || []).length;
+    const push = async (ids, status) => {
+      let ok = 0;
+      for(let i = 0; i < ids.length; i += 100){
+        const { data, error } = await sb.from('orders').update({ status }).in('id', ids.slice(i, i + 100)).select('id');
+        if(error) throw error;
+        ok += (data || []).length;
+      }
+      return ok;
+    };
+    let okD = 0, okU = 0;
+    try{
+      okD = await push(del, 'delivered');
+      okU = await push(und, 'undelivered');
+    }catch(error){
+      setSync({ applying:false, err: /check constraint|violates|invalid input/i.test(error.message || '')
+        ? 'قاعدة البيانات رافضة حالة "اندلفرد" — لازم سطر الـ SQL بتاع الحالة الجديدة يتشغّل في Supabase الأول.'
+        : 'حصل خطأ أثناء التحديث: ' + error.message });
+      loadMyOrders(); loadLeaderboard();
+      return;
     }
-    const fail = ids.length - ok;
-    setSync({ applying:false, result:null, sel:new Set(),
-      done: `✅ اتعلم ${ok} أوردر "اتسلم".` + (fail ? ` ⚠️ ${fail} أوردر مااتحدّثش — قاعدة البيانات رافضة إن الأدمن يعدّل أوردرات غيره، لازم كود الـ SQL يتشغّل.` : '') });
+    const fail = del.length + und.length - okD - okU;
+    setSync({ applying:false, result:null, sel:new Set(), selU:new Set(),
+      done: `✅ اتعلم ${okD} أوردر "اتسلم" و ${okU} أوردر "اندلفرد".` + (fail ? ` ⚠️ ${fail} أوردر مااتحدّثش — قاعدة البيانات رافضة إن الأدمن يعدّل أوردرات غيره، لازم كود الـ SQL يتشغّل.` : '') });
     loadMyOrders(); loadLeaderboard();
   }
 
   function SyncView(){
     if(!isAdminUser()) return head('غير متاح', 'المطابقة مع QP للأدمن بس.');
     const S = state.sync, api = qpApi(), logged = !!(api && api.hasCreds());
-    let h = head('🔄 مطابقة مع QP', 'بيقارن الأوردرات اللي لسه قيد التنفيذ بأوردرات QP برقم موبايل العميل، واللي اتسلم هناك تقدر تعلّمه "اتسلم" هنا.') + `
+    let h = head('🔄 مطابقة مع QP', 'بيقارن الأوردرات اللي لسه قيد التنفيذ بأوردرات QP برقم موبايل العميل: اللي اتسلم هناك يتعلم "اتسلم" هنا، واللي اندلفرد هناك يتعلم "اندلفرد" ويطلع من قيد التنفيذ.') + `
       <div class="sq-form" style="max-width:none;margin-bottom:18px">
         ${logged ? '' : '<div class="sq-err">لازم تسجّل دخول QP الأول من قسم <a href="#/qp">🚚 QP</a> على الجهاز ده.</div>'}
         <div class="sq-agentbar" style="margin:0">
@@ -2249,17 +2271,19 @@ const Squad = (function(){
       <td class="mut" data-label="الموبايل">${esc(o.customer_phone || '—')}</td><td class="sq-det" data-label="الطلب">${esc(o.order_details || '—')}</td>
       <td class="mut" data-label="القيمة">${o.amount ? esc(o.amount) + ' ج' : '—'}</td><td class="mut" data-label="تاريخ الأوردر">${fmtDate(o.created_at)}</td>`;
     const ck = o => `<td data-label="تعليم"><input type="checkbox" class="sq-syncck" data-sync-ck="${esc(o.id)}" ${S.sel.has(String(o.id)) ? 'checked' : ''} aria-label="علّمه اتسلم"></td>`;
+    const ckU = o => `<td data-label="تعليم"><input type="checkbox" class="sq-syncck und" data-sync-uck="${esc(o.id)}" ${S.selU.has(String(o.id)) ? 'checked' : ''} aria-label="علّمه اندلفرد"></td>`;
     const thead = extra => `<thead><tr>${extra ? '<th></th>' : ''}<th>الموظف</th><th>العميل</th><th>الموبايل</th><th>الطلب</th><th>القيمة</th><th>تاريخ الأوردر</th><th>في QP</th></tr></thead>`;
 
     h += `<div class="sq-stats">
       <div class="sq-stat"><div class="n green">${R.deliver.length}</div><div class="l">اتسلمت في QP</div></div>
+      <div class="sq-stat"><div class="n" style="color:#6b3f86">${R.undel.length}</div><div class="l">اندلفرد في QP</div></div>
       <div class="sq-stat"><div class="n gold">${R.review.length}</div><div class="l">محتاجة مراجعة</div></div>
       <div class="sq-stat"><div class="n">${R.shipping.length}</div><div class="l">لسه عند الشحن</div></div>
       <div class="sq-stat"><div class="n">${R.nomatch.length}</div><div class="l">مالهاش مطابقة</div></div>
     </div>
     <div class="sq-agentbar">
-      <button type="button" class="sq-btn" id="sq-sync-apply" ${S.applying || !S.sel.size ? 'disabled' : ''}>${S.applying ? '⏳ بيحدّث...' : `✅ تأكيد — علّم <span id="sq-sync-n">${S.sel.size}</span> أوردر "اتسلم"`}</button>
-      <button type="button" class="sq-btn ghost sq-sm" data-sync-all="1">تحديد كل اللي اتسلم</button>
+      <button type="button" class="sq-btn" id="sq-sync-apply" ${S.applying || !(S.sel.size + S.selU.size) ? 'disabled' : ''}>${S.applying ? '⏳ بيحدّث...' : `✅ تأكيد — <span id="sq-sync-n">${S.sel.size}</span> "اتسلم" و <span id="sq-sync-u">${S.selU.size}</span> "اندلفرد"`}</button>
+      <button type="button" class="sq-btn ghost sq-sm" data-sync-all="1">تحديد الكل</button>
       <button type="button" class="sq-btn ghost sq-sm" data-sync-all="0">شيل التحديد</button>
       <span class="sq-hint" style="margin:0">اتقارن ${R.qpCount} أوردر من QP${R.skipped ? ` · ${R.skipped} أوردر أقدم من التاريخ المختار مش داخلين` : ''}</span>
     </div>`;
@@ -2267,6 +2291,12 @@ const Squad = (function(){
     h += `<h3 class="sq-synch">✅ اتسلمت في QP — ${R.deliver.length}</h3><div class="sq-tablecard">${R.deliver.length
       ? `<table class="sq-table">${thead(true)}<tbody>${R.deliver.map(x => `<tr>${ck(x.o)}${base(x.o)}<td data-label="في QP">${qInfo(x.q)}</td></tr>`).join('')}</tbody></table>`
       : '<div class="sq-empty">مفيش أوردرات اتسلمت في QP من اللي لسه قيد التنفيذ.</div>'}</div>`;
+
+    h += `<h3 class="sq-synch">🔴 اندلفرد في QP (هتطلع من قيد التنفيذ) — ${R.undel.length}</h3>
+      <p class="sq-hint" style="margin:0 0 8px">الأوردرات دي حالتها في شركة الشحن Undelivered. لما تأكد، حالتها هنا هتبقى "اندلفرد" بدل "قيد التنفيذ"، ومالهاش عمولة.</p>
+      <div class="sq-tablecard">${R.undel.length
+      ? `<table class="sq-table">${thead(true)}<tbody>${R.undel.map(x => `<tr>${ckU(x.o)}${base(x.o)}<td data-label="في QP">${qInfo(x.q)}</td></tr>`).join('')}</tbody></table>`
+      : '<div class="sq-empty">مفيش أوردرات اندلفرد في QP من اللي لسه قيد التنفيذ.</div>'}</div>`;
 
     if(R.review.length) h += `<h3 class="sq-synch">⚠️ محتاجة مراجعة — ${R.review.length}</h3>
       <p class="sq-hint" style="margin:0 0 8px">العميل ليه أكتر من أوردر في QP بحالات مختلفة ومش واضح أنهي فيهم. راجعها وعلّم اللي متأكد إنه اتسلم.</p>
@@ -2294,7 +2324,7 @@ const Squad = (function(){
   function agentFiltered(){
     const q = state.agentQ.trim().toLowerCase();
     return (state.agentOrders || []).filter(o =>
-      (state.agentFilter === 'all' || (state.agentFilter === 'pending' ? (o.status !== 'delivered' && o.status !== 'cancelled') : o.status === state.agentFilter)) &&
+      (state.agentFilter === 'all' || (state.agentFilter === 'pending' ? (o.status !== 'delivered' && o.status !== 'cancelled' && o.status !== 'undelivered') : o.status === state.agentFilter)) &&
       (!q || [o.customer_name, o.customer_phone, o.order_details, o.size, o.page_name, o.customer_address].some(v => String(v || '').toLowerCase().includes(q))));
   }
 
@@ -2316,7 +2346,7 @@ const Squad = (function(){
       </div>
       <div class="sq-agentsrc"><span>مصادر الأوردرات:</span>${sourceChips(sourceCounts(all)) || '<span class="sq-src">—</span>'}</div>
       <div class="sq-agentbar">
-        ${chip('all', 'الكل', s.total)}${chip('pending', 'قيد التنفيذ', s.pending)}${chip('delivered', 'اتسلم', s.delivered)}${chip('cancelled', 'اتلغى', s.cancelled)}
+        ${chip('all', 'الكل', s.total)}${chip('pending', 'قيد التنفيذ', s.pending)}${chip('delivered', 'اتسلم', s.delivered)}${chip('cancelled', 'اتلغى', s.cancelled)}${chip('undelivered', 'اندلفرد', s.undelivered)}
         <input type="search" id="sq-agent-q" class="sq-agentq" placeholder="🔍 بحث بالاسم أو الموبايل أو الطلب..." value="${esc(state.agentQ)}">
         ${window.XLSX ? '<button type="button" class="sq-btn ghost sq-sm" id="sq-agent-xlsx">⬇️ Excel</button>' : ''}
       </div>
@@ -2429,15 +2459,20 @@ const Squad = (function(){
     if($('sq-sync-apply')) $('sq-sync-apply').onclick = applySync;
     const syncCount = () => {
       const n = $('sq-sync-n'); if(n) n.textContent = state.sync.sel.size;
-      const b = $('sq-sync-apply'); if(b) b.disabled = state.sync.applying || !state.sync.sel.size;
+      const u = $('sq-sync-u'); if(u) u.textContent = state.sync.selU.size;
+      const b = $('sq-sync-apply'); if(b) b.disabled = state.sync.applying || !(state.sync.sel.size + state.sync.selU.size);
     };
     document.querySelectorAll('#sq-root [data-sync-ck]').forEach(cb => {
       cb.onchange = () => { const id = cb.getAttribute('data-sync-ck'); if(cb.checked) state.sync.sel.add(id); else state.sync.sel.delete(id); syncCount(); };
     });
+    document.querySelectorAll('#sq-root [data-sync-uck]').forEach(cb => {
+      cb.onchange = () => { const id = cb.getAttribute('data-sync-uck'); if(cb.checked) state.sync.selU.add(id); else state.sync.selU.delete(id); syncCount(); };
+    });
     document.querySelectorAll('#sq-root [data-sync-all]').forEach(b => {
       b.onclick = () => {
         const R = state.sync.result; if(!R) return;
-        setSync({ sel: b.getAttribute('data-sync-all') === '1' ? new Set(R.deliver.map(x => String(x.o.id))) : new Set() });
+        const all = b.getAttribute('data-sync-all') === '1';
+        setSync({ sel: all ? new Set(R.deliver.map(x => String(x.o.id))) : new Set(), selU: all ? new Set(R.undel.map(x => String(x.o.id))) : new Set() });
       };
     });
 
