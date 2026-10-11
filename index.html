@@ -3112,6 +3112,39 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
 .qp-ret{background:#f4e2de;color:var(--warn)}
 .qp-prog{height:8px;background:var(--line);border-radius:8px;overflow:hidden;margin:8px 0}
 .qp-prog i{display:block;height:100%;background:var(--brass);width:0;transition:width .2s}
+/* 📊 لوحة QP */
+.qp-tabs{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap}
+.qp-tabs button{padding:8px 16px;border:1px solid var(--line);border-radius:9px;background:var(--panel);color:var(--ink);font-family:inherit;font-size:14px;font-weight:600;cursor:pointer}
+.qp-tabs button.on{background:var(--brass-d);border-color:var(--brass-d);color:#fff}
+.qpd-range{font-size:18px;font-weight:700;color:var(--ink);direction:ltr;unicode-bidi:isolate}
+.qpd-kpi-big .n{font-size:26px}
+.qpd-kpi-big .sub{font-size:12.5px;color:var(--muted);margin-top:3px}
+.qpd-grid{display:grid;grid-template-columns:1.4fr 1fr;gap:14px;margin-bottom:16px}
+@media (max-width:900px){.qpd-grid{grid-template-columns:1fr}}
+.qpd-grid .card{margin:0}
+.qpd-donut-wrap{display:flex;align-items:center;gap:20px;flex-wrap:wrap;justify-content:center}
+.qpd-donut{width:190px;height:190px;border-radius:50%;position:relative;flex-shrink:0}
+.qpd-donut::after{content:'';position:absolute;inset:38px;border-radius:50%;background:var(--panel)}
+.qpd-donut .mid{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:1;font-weight:700;font-size:22px;color:var(--ink)}
+.qpd-donut .mid small{font-size:11.5px;font-weight:500;color:var(--muted)}
+.qpd-legend{display:flex;flex-direction:column;gap:7px;font-size:13.5px;min-width:200px}
+.qpd-legend .r{display:flex;align-items:center;gap:8px}
+.qpd-legend i{width:12px;height:12px;border-radius:50%;flex-shrink:0}
+.qpd-legend b{margin-inline-start:auto;font-variant-numeric:tabular-nums}
+.qpd-legend .pc{color:var(--muted);font-size:12px;min-width:44px;text-align:left}
+.qpd-hbar{display:grid;grid-template-columns:110px 1fr 60px;align-items:center;gap:8px;font-size:13.5px;margin-bottom:7px}
+.qpd-hbar .t{height:18px;background:var(--line);border-radius:5px;overflow:hidden;display:flex}
+.qpd-hbar .t i{display:block;height:100%}
+.qpd-hbar .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qpd-hbar .v{text-align:left;font-variant-numeric:tabular-nums;font-weight:600}
+.qpd-days{display:flex;align-items:flex-end;gap:3px;height:170px;padding-top:6px;overflow-x:auto}
+.qpd-day{flex:1 0 14px;display:flex;flex-direction:column;justify-content:flex-end;height:100%;position:relative;cursor:default}
+.qpd-day .b{width:100%;border-radius:3px 3px 0 0;display:flex;flex-direction:column-reverse;overflow:hidden;min-height:2px}
+.qpd-day .b span{display:block;width:100%}
+.qpd-day.today .b{outline:2px solid var(--brass-d);outline-offset:1px}
+.qpd-days-lbl{display:flex;justify-content:space-between;font-size:11.5px;color:var(--muted);margin-top:6px}
+.qpd-keys{display:flex;gap:14px;font-size:12.5px;color:var(--muted);margin-bottom:6px;flex-wrap:wrap}
+.qpd-keys i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-inline-end:5px;vertical-align:middle}
 </style>
 
 <script>
@@ -3216,6 +3249,7 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
   }
   function qpLogout(){
     creds = null; token = null; qpOrders = null; qpErr = ''; qpInfo = '';
+    dOrders = null; dErr = ''; dTried = false; dFetchedAt = null;
     try{ localStorage.removeItem(QP_LS); }catch(e){}
     qpRerender();
   }
@@ -3228,6 +3262,7 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
       await qpGetToken(true);
       qpLoading = false; qpInfo = 'تم الدخول ✅ دوس "جيب الأوردرات".'; qpErr = '';
       qpRerender();
+      if(qpTab === 'dash' && !dOrders) qpDashFetch();
     }catch(e){
       qpLoading = false; qpErr = e.message; creds = null;
       try{ localStorage.removeItem(QP_LS); }catch(x){}
@@ -3316,6 +3351,151 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
     return l;
   };
 
+  /* =====================================================================
+     📊 لوحة QP — نفس فكرة صفحة Analytics في موقع QP، محسوبة من الأوردرات نفسها
+     - بتفتح أول ما تدخل قسم QP، وبتجيب آخر شهر أوتوماتيك (زي QP)
+     - ⚡ "تحديث النهارده" بيجيب أوردرات النهارده بس بسرعة (مبيعات لحد دلوقتي)
+     - Pickup / Collect / Wallet مش متاحين في الـ API فمش ظاهرين هنا
+     ===================================================================== */
+  let qpTab = 'dash';
+  const dayKey = d => { d = new Date(d); if(isNaN(d)) return ''; return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); };
+  const todayKey = () => dayKey(new Date());
+  const shiftDay = (key, n) => { const d = new Date(key + 'T12:00:00'); d.setDate(d.getDate() + n); return dayKey(d); };
+  const monthAgo = () => { const d = new Date(); d.setMonth(d.getMonth() - 1); return dayKey(d); };
+  let dFrom = monthAgo(), dTo = todayKey();
+  let dOrders = null, dLoading = false, dErr = '', dInfo = '', dProg = 0, dFetchedAt = null, dTried = false, dAllCities = false;
+
+  // حالات QP زي ما هي في الـ API (1..6) بنفس ألوان لوحة QP تقريبًا
+  const QPD_ST = {
+    '1': { n:'Pending — بيندينج',             c:'#f6ad3b' },
+    '2': { n:'Out For Delivery — مع المندوب',  c:'#6cc070' },
+    '3': { n:'Delivered — اتسلم',              c:'#7b83d6' },
+    '4': { n:'Hold — هولد',                    c:'#3f8f4f' },
+    '5': { n:'Undelivered — مستلمش',           c:'#6b7186' },
+    '6': { n:'Rejected — مرفوض',               c:'#c04fb0' },
+  };
+  const qpdSt = k => QPD_ST[k] || { n:(qpNames[k] || 'حالة') + ' #' + k, c:'#a39e8f' };
+
+  async function qpDashFetch(onlyToday){
+    if(dLoading) return;
+    dLoading = true; dErr = ''; dProg = 0; dTried = true;
+    dInfo = onlyToday ? 'بيحدّث أوردرات النهارده...' : 'بيجيب أوردرات الفترة...';
+    qpRerender();
+    try{
+      if(onlyToday && dOrders){
+        const t = todayKey();
+        const fresh = await qpFetchRange(t, t, n => { dInfo = 'بيحدّث النهارده... ' + n + ' أوردر'; qpRerender(); });
+        const bySerial = new Map(dOrders.map(o => [o.serial, o]));
+        fresh.forEach(o => bySerial.set(o.serial, o));
+        dOrders = [...bySerial.values()];
+        if(dTo < t) dTo = t;
+      } else {
+        dOrders = await qpFetchRange(dFrom, dTo, (n, pct) => { dProg = pct; dInfo = 'بيجيب... ' + n + ' أوردر'; qpRerender(); });
+      }
+      qpDetectNames(dOrders);
+      dFetchedAt = new Date(); dLoading = false; dProg = 100; dInfo = '';
+    }catch(e){
+      dLoading = false;
+      dErr = /Failed to fetch|NetworkError/i.test(e.message) ? 'مش قادر يوصل لموقع الشحن. اتأكد إن فيه إنترنت وإن الموقع شغّال.' : e.message;
+    }
+    qpRerender();
+  }
+
+  function qpDashStats(list){
+    const t = todayKey(), y = shiftDay(t, -1);
+    const S = { total:list.length, today:{n:0,v:0}, yest:{n:0,v:0}, st:{}, city:{}, days:{}, del:0, salesDel:0, fees:0, feesDel:0, sales:0, stuck:0 };
+    list.forEach(o => {
+      const k = stCode(o), d = dayKey(o.order_date), price = num(o.price), fee = num(o.total_fees), isDel = catOf(o) === 'delivered';
+      S.st[k] = (S.st[k] || 0) + 1;
+      const c = String(o.city || '—').trim() || '—'; S.city[c] = (S.city[c] || 0) + 1;
+      if(d){ const D = S.days[d] = S.days[d] || { n:0, del:0, v:0 }; D.n++; D.v += price; if(isDel) D.del++; }
+      if(d === t){ S.today.n++; S.today.v += price; }
+      if(d === y){ S.yest.n++; S.yest.v += price; }
+      S.sales += price; S.fees += fee;
+      if(isDel){ S.del++; S.salesDel += price; S.feesDel += fee; }
+      if(isStuckReturn(o)) S.stuck++;
+    });
+    S.rate = S.total ? S.del / S.total * 100 : 0;
+    return S;
+  }
+
+  function viewDash(){
+    const now = new Date();
+    let h = `<div class="qp-toolbar">
+      <span class="qpd-range">${esc(dFrom)} : ${esc(dTo)}</span>
+      <label>شهر <input type="month" value="${esc(dFrom.slice(0,7))}" onchange="QP.dashMonth(this.value)"></label>
+      <label>من <input type="date" value="${esc(dFrom)}" onchange="QP.dashDate('from',this.value)"></label>
+      <label>إلى <input type="date" value="${esc(dTo)}" onchange="QP.dashDate('to',this.value)"></label>
+      <button class="linkbtn" onclick="QP.dashLast30()">آخر شهر</button>
+      <button class="mockbtn" onclick="QP.dashFetch()" ${dLoading ? 'disabled' : ''}>${dLoading ? '⏳ بيجيب...' : '🔄 حدّث الفترة'}</button>
+      <button class="linkbtn" onclick="QP.dashToday()" ${dLoading || !dOrders ? 'disabled' : ''}>⚡ تحديث النهارده بس</button>
+      ${dFetchedAt ? `<span class="qp-userline">آخر تحديث: ${dFetchedAt.toLocaleTimeString('ar-EG',{hour:'2-digit',minute:'2-digit'})}</span>` : ''}
+    </div>`;
+    if(dLoading) h += `<div class="card"><p class="qp-userline">${esc(dInfo || 'بيشتغل...')}</p><div class="qp-prog"><i style="width:${dProg}%"></i></div></div>`;
+    if(dErr) h += `<div class="mono-note">${esc(dErr)}</div>`;
+    if(!dOrders){
+      if(!dLoading) h += `<div class="card"><p class="none">دوس "🔄 حدّث الفترة" عشان تجيب أرقام QP.</p></div>`;
+      return h;
+    }
+
+    const S = qpDashStats(dOrders);
+    const inRange = todayKey() >= dFrom && todayKey() <= dTo;
+    const yInRange = shiftDay(todayKey(), -1) >= dFrom && shiftDay(todayKey(), -1) <= dTo;
+
+    // الكروت الأساسية
+    h += `<div class="qp-kpis">
+      <div class="qp-kpi qpd-kpi-big" style="border-top:4px solid var(--brass)"><div class="l">🛒 أوردرات النهارده (لحد ${now.toLocaleTimeString('ar-EG',{hour:'2-digit',minute:'2-digit'})})</div>
+        <div class="n">${inRange ? fmt(S.today.n) : '—'}</div><div class="sub">${inRange ? 'بقيمة ' + fmt(S.today.v) + ' ج' : 'النهارده مش جوه الفترة المختارة'}</div></div>
+      <div class="qp-kpi qpd-kpi-big"><div class="l">📅 أوردرات امبارح</div>
+        <div class="n">${yInRange ? fmt(S.yest.n) : '—'}</div><div class="sub">${yInRange ? 'بقيمة ' + fmt(S.yest.v) + ' ج' : 'امبارح مش جوه الفترة المختارة'}</div></div>
+      <div class="qp-kpi qpd-kpi-big" onclick="QP.dashStuck()" style="cursor:pointer;border-top:4px solid var(--warn)"><div class="l">📦 Ready To Return — راجع لينا</div>
+        <div class="n" style="color:var(--warn)">${fmt(S.stuck)}</div><div class="sub">Undelivered ومن غير تاريخ إرجاع · دوس تعرضهم</div></div>
+      <div class="qp-kpi qpd-kpi-big" style="border-top:4px solid var(--ok)"><div class="l">💰 Revenue — قيمة المُسلَّم</div>
+        <div class="n green">${fmt(S.salesDel)} ج</div><div class="sub">${fmt(S.del)} أوردر اتسلم</div></div>
+    </div>
+    <div class="qp-kpis">
+      <div class="qp-kpi"><div class="n">${fmt(S.total)}</div><div class="l">إجمالي أوردرات الفترة</div></div>
+      <div class="qp-kpi"><div class="n">${fmt(S.sales)} ج</div><div class="l">قيمة كل الأوردرات</div></div>
+      <div class="qp-kpi"><div class="n">${S.rate.toFixed(1)}%</div><div class="l">✅ نسبة التسليم</div></div>
+      <div class="qp-kpi"><div class="n">${fmt(S.fees)} ج</div><div class="l">🚚 إجمالي الشحن</div></div>
+      <div class="qp-kpi"><div class="n">${fmt(S.salesDel - S.fees)} ج</div><div class="l">المُسلَّم − كل الشحن</div></div>
+    </div>`;
+
+    // أوردرات كل يوم
+    const days = [];
+    for(let k = dFrom; k <= dTo && days.length < 400; k = shiftDay(k, 1)) days.push(k);
+    const maxN = Math.max(1, ...days.map(k => (S.days[k] || {}).n || 0));
+    h += `<div class="card"><h3>أوردرات كل يوم</h3>
+      <div class="qpd-keys"><span><i style="background:#7b83d6"></i>اتسلم</span><span><i style="background:#d9d3c2"></i>باقي الأوردرات</span></div>
+      <div class="qpd-days">${days.map(k => { const D = S.days[k] || { n:0, del:0, v:0 };
+        const hp = D.n / maxN * 100, dp = D.n ? D.del / D.n * 100 : 0;
+        return `<div class="qpd-day${k === todayKey() ? ' today' : ''}" title="${k}: ${D.n} أوردر · اتسلم ${D.del} · ${Math.round(D.v).toLocaleString('ar-EG')} ج">
+          <div class="b" style="height:${hp}%;background:#d9d3c2"><span style="height:${dp}%;background:#7b83d6"></span></div></div>`; }).join('')}</div>
+      <div class="qpd-days-lbl"><span>${esc(dFrom)}</span><span>${esc(dTo)}</span></div></div>`;
+
+    // المدن + الحالات
+    const cities = Object.entries(S.city).sort((a,b) => b[1] - a[1]);
+    const shown = dAllCities ? cities : cities.slice(0, 8);
+    const maxC = cities.length ? cities[0][1] : 1;
+    const stKeys = Object.keys(S.st).sort((a,b) => Number(a) - Number(b));
+    let acc = 0;
+    const grad = stKeys.map(k => { const a = acc / S.total * 360; acc += S.st[k]; return `${qpdSt(k).c} ${a}deg ${acc / S.total * 360}deg`; }).join(',');
+    h += `<div class="qpd-grid">
+      <div class="card"><h3 style="display:flex;justify-content:space-between;align-items:center">Top Cities — أكتر المدن
+        ${cities.length > 8 ? `<button class="linkbtn" onclick="QP.dashCities()">${dAllCities ? 'أقل' : 'اعرض الكل (' + cities.length + ')'}</button>` : ''}</h3>
+        ${shown.map(([c, n]) => `<div class="qpd-hbar"><span class="nm" title="${esc(c)}">${esc(c)}</span><span class="t"><i style="width:${n / maxC * 100}%;background:#5560c8"></i></span><span class="v">${fmt(n)}</span></div>`).join('') || '<p class="none">مفيش داتا.</p>'}
+      </div>
+      <div class="card"><h3>Order Status — حالات الأوردرات</h3>
+        <div class="qpd-donut-wrap">
+          <div class="qpd-donut" style="background:conic-gradient(${grad || 'var(--line) 0 360deg'})"><div class="mid">${fmt(S.total)}<small>أوردر</small></div></div>
+          <div class="qpd-legend">${stKeys.map(k => `<div class="r"><i style="background:${qpdSt(k).c}"></i>${esc(qpdSt(k).n)}<b>${fmt(S.st[k])}</b><span class="pc">${(S.st[k] / S.total * 100).toFixed(1)}%</span></div>`).join('')}</div>
+        </div>
+      </div>
+    </div>`;
+    h += `<p class="qp-userline">الأرقام محسوبة من أوردرات QP في الفترة دي (حسب تاريخ الأوردر). Pickup و Collect و Wallet مش متاحين في الـ API فمش ظاهرين هنا — شوفهم من موقع QP.</p>`;
+    return h;
+  }
+
   /* ---------- الصفحة ---------- */
   function viewQP(){
     let h = `<div class="pagehead"><h1>🚚 QP</h1><p>الأوردرات جاية مباشرة من موقع شركة الشحن QP Express.</p></div>`;
@@ -3330,6 +3510,12 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
         <button class="mockbtn" onclick="QP.login()" ${qpLoading ? 'disabled' : ''}>${qpLoading ? 'بيتحقق...' : 'دخول'}</button>
       </div>`;
     }
+
+    h += `<div class="qp-tabs">
+      <button class="${qpTab === 'dash' ? 'on' : ''}" onclick="QP.tab('dash')">📊 لوحة QP</button>
+      <button class="${qpTab === 'orders' ? 'on' : ''}" onclick="QP.tab('orders')">📋 الأوردرات والتفاصيل</button>
+    </div>`;
+    if(qpTab === 'dash') return h + viewDash();
 
     h += `<div class="qp-toolbar">
       <span class="qp-userline">داخل باسم <b>${esc(creds.u)}</b></span>
@@ -3453,7 +3639,7 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
   function qpAfterRender(){
     const r = route();
     document.querySelectorAll('#sidebar a.navlink').forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#/' + r));
-    if(r === 'qp') qpRerender();
+    if(r === 'qp'){ qpRerender(); if(creds && qpTab === 'dash' && !dOrders && !dLoading && !dTried) qpDashFetch(); }
     else if(r === 'profits' && qpOrders && qpOrders.length) qpInjectProfitsBtn();
   }
   function qpInjectProfitsBtn(){
@@ -3497,6 +3683,16 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
     login(){ qpDoLogin(document.getElementById('qpU').value, document.getElementById('qpP').value); },
     logout: qpLogout,
     fetch: qpFetch,
+    tab(t){ qpTab = t; qpRerender(); if(t === 'dash' && creds && !dOrders && !dLoading) qpDashFetch(); },
+    dashFetch(){ qpDashFetch(false); },
+    dashToday(){ qpDashFetch(true); },
+    dashDate(k, v){ if(!v) return; if(k === 'from') dFrom = v; else dTo = v; if(dFrom > dTo){ const x = dFrom; dFrom = dTo; dTo = x; } qpRerender(); },
+    dashMonth(v){ if(!v) return; const [y, m] = v.split('-').map(Number);
+      dFrom = v + '-01'; const last = dayKey(new Date(y, m, 0)); dTo = last > todayKey() ? todayKey() : last; qpDashFetch(false); },
+    dashLast30(){ dFrom = monthAgo(); dTo = todayKey(); qpDashFetch(false); },
+    dashCities(){ dAllCities = !dAllCities; qpRerender(); },
+    // يفتح تاب الأوردرات على المرتجعات اللي عند QP، بنفس فترة اللوحة
+    dashStuck(){ if(!dOrders) return; qpOrders = dOrders; qpFrom = dFrom; qpTo = dTo; qpFetchedAt = dFetchedAt; qpStFilter = 'stuck'; qpTab = 'orders'; qpRerender(); },
     setDate(k, v){ if(k === 'from') qpFrom = v; else qpTo = v; },
     filterSt(k){ qpStFilter = k; qpRerender(); },
     mapSt(k, c){ if(c) qpMap[k] = c; else delete qpMap[k]; qpSaveMap(); qpRerender(); },
