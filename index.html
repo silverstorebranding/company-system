@@ -217,6 +217,13 @@ input.plainIn{padding:6px 10px;border:1px solid var(--line);border-radius:6px;wi
 #sq-root .sq-badge.delivered{background:var(--sq-green-soft);color:var(--sq-green)}
 #sq-root .sq-badge.cancelled{background:var(--sq-red-soft);color:var(--sq-red)}
 #sq-root .sq-badge.undelivered{background:#efe7f4;color:#6b3f86}
+/* 🏢 عمولة المكتب */
+#sq-root .of-form{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px 14px;align-items:end;max-width:none}
+#sq-root .of-form .sq-field{margin:0}
+#sq-root .of-bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:18px 0 12px}
+#sq-root .of-bar select{padding:8px 10px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;background:var(--panel);color:var(--ink)}
+#sq-root .of-sec{font-size:17px;font-weight:700;margin:22px 0 10px}
+#sq-root .of-sql{direction:ltr;text-align:left;white-space:pre-wrap;font-size:12px;background:var(--slate-l);padding:10px;border-radius:8px;max-height:260px;overflow:auto}
 #sq-root .sq-syncck.und{accent-color:#6b3f86}
 #sq-root select.sq-status{padding:6px 8px;font-size:13px;border-radius:6px;border:1.5px solid var(--line);background:var(--panel);color:var(--ink);font-weight:600;cursor:pointer;font-family:inherit}
 #sq-root .sq-actions{display:flex;gap:6px}
@@ -1599,6 +1606,7 @@ const Squad = (function(){
     agentFilter: 'all',
     agentQ: '',
     sync: { from:'', loading:false, msg:'', err:'', done:'', result:null, sel:new Set(), selU:new Set(), applying:false },
+    office: { list:null, loading:false, err:'', month:'', saving:false, people:null, form:{} }, // 🏢 عمولة المكتب
   };
   const canViewAll = () => !!(window.AuthGate && window.AuthGate.isFull && window.AuthGate.isFull());
   // عدد الأوردرات من كل مصدر: [['إرسال صفحة',7],['واتساب',3]]
@@ -1909,6 +1917,7 @@ const Squad = (function(){
       { key:'dashboard', label:'لوحتي' },
       { key:'new-order', label:'أوردر جديد' },
       { key:'leaderboard', label:'ترتيب الـSquad' },
+      { key:'office', label:'🏢 عمولة المكتب' },
     ];
     if(isAdminUser()) tabs.push({ key:'qp-sync', label:'🔄 مطابقة مع QP' });
     return `
@@ -2424,6 +2433,199 @@ const Squad = (function(){
       </div>`;
   }
 
+  /* =====================================================================
+     🏢 عمولة المكتب — منفصلة تمامًا عن عمولة الأوردرات
+     - الموظف بيسجّل العميل اللي جابه للمكتب (اسمه + رقمه + المبلغ لو يعرفه)
+     - الأدمن بيأكد: ✅ اشترى (بالمبلغ النهائي) أو ❌ مااشتراش
+     - العمولة = 10% من المبلغ، على اللي اشترى بس
+     - الموظف بيشوف عملاءه بس، والأدمن بيشوف الكل + جدول لكل موظف
+     - البيانات في جدول office_sales في Supabase (كود الـ SQL في ملف office_sales.sql)
+     ===================================================================== */
+  const OFFICE_PCT = 0.10;
+  const officeComm = r => r.status === 'bought' ? Math.round((Number(r.amount) || 0) * OFFICE_PCT * 100) / 100 : 0;
+  const OF_ST = { pending:{ t:'مستني تأكيد', c:'pending' }, bought:{ t:'اشترى ✅', c:'delivered' }, not_bought:{ t:'مااشتراش', c:'cancelled' } };
+  const curMonth = () => localYmd(new Date()).slice(0, 7);
+  function setOffice(p){ state.office = { ...state.office, ...p }; render(); }
+
+  async function loadOffice(){
+    if(!state.office.month) state.office.month = curMonth();
+    setOffice({ loading:true, err:'' });
+    const { data, error } = await sb.from('office_sales').select('*').order('sale_date', { ascending:false }).order('created_at', { ascending:false });
+    if(error){
+      const missing = /office_sales|relation|schema cache|does not exist/i.test(error.message || '');
+      setOffice({ loading:false, list:null, err: missing ? 'missing' : ('مقدرناش نجيب بيانات المكتب: ' + error.message) });
+      return;
+    }
+    let people = state.office.people;
+    if(isAdminUser() && !people){
+      const { data: pr } = await sb.from('profiles').select('id, username, full_name');
+      people = (pr || []).map(p => ({ id:p.id, name:p.full_name || p.username || 'موظف' })).sort((a, b) => a.name.localeCompare(b.name, 'ar'));
+    }
+    setOffice({ loading:false, list:data || [], people });
+  }
+
+  async function officeAdd(){
+    const $ = id => document.getElementById(id);
+    const f = {
+      date: $('of-date').value || localYmd(new Date()),
+      customer: $('of-cust').value.trim(),
+      phone: $('of-phone').value.trim(),
+      item: $('of-item').value.trim(),
+      amount: $('of-amount').value,
+      agent: $('of-agent') ? $('of-agent').value : '',
+    };
+    state.office.form = f;
+    if(!f.customer && !f.phone) return showToast('اكتب اسم العميل أو رقمه.', 'error');
+    const amt = f.amount === '' ? null : numVal(f.amount);
+    if(amt !== null && amt < 0) return showToast('المبلغ لازم يكون رقم موجب.', 'error');
+    const me = state.session.user.id;
+    const admin = isAdminUser();
+    let agentId = me, agentName = state.profile?.full_name || state.profile?.username || 'موظف';
+    if(admin && f.agent){ const p = (state.office.people || []).find(x => x.id === f.agent); if(p){ agentId = p.id; agentName = p.name; } }
+    // الأدمن لو سجّل بمبلغ يبقى اتأكد على طول إنه اشترى
+    const row = { agent_id:agentId, agent_name:agentName, sale_date:f.date, customer:f.customer || null, phone:f.phone || null,
+      item:f.item || null, amount:amt, status: admin && amt ? 'bought' : 'pending', created_by_name: state.profile?.full_name || state.profile?.username || '' };
+    if(row.status === 'bought') row.confirmed_by_name = row.created_by_name;
+    setOffice({ saving:true });
+    const { error } = await sb.from('office_sales').insert(row);
+    if(error){ setOffice({ saving:false }); return showToast('ماتسجلش: ' + error.message, 'error'); }
+    state.office.form = { agent: f.agent };
+    setOffice({ saving:false });
+    showToast(row.status === 'bought' ? 'اتسجل واتأكد إنه اشترى ✅' : 'اتسجل ✅ ومستني تأكيد الأدمن.', 'success');
+    loadOffice();
+  }
+
+  async function officeMark(id, status){
+    if(!isAdminUser()) return;
+    const r = (state.office.list || []).find(x => String(x.id) === String(id)); if(!r) return;
+    const patch = { status, confirmed_by_name: state.profile?.full_name || state.profile?.username || '' };
+    if(status === 'bought'){
+      const v = prompt('العميل اشترى بكام؟ (العمولة 10% منه)', r.amount ? String(r.amount) : '');
+      if(v === null) return;
+      const amt = numVal(v);
+      if(!amt || amt <= 0) return showToast('اكتب المبلغ اللي اشترى بيه.', 'error');
+      patch.amount = amt;
+    }
+    const { data, error } = await sb.from('office_sales').update(patch).eq('id', id).select('id');
+    if(error || !data || !data.length) return showToast('ماتعدلش: ' + (error ? error.message : 'مفيش صلاحية'), 'error');
+    loadOffice();
+  }
+
+  async function officeDel(id){
+    const r = (state.office.list || []).find(x => String(x.id) === String(id)); if(!r) return;
+    if(!confirm(`تمسح العميل "${r.customer || r.phone || ''}"؟`)) return;
+    const { data, error } = await sb.from('office_sales').delete().eq('id', id).select('id');
+    if(error || !data || !data.length) return showToast('ماتمسحش: ' + (error ? error.message : 'مفيش صلاحية'), 'error');
+    loadOffice();
+  }
+
+  function officeSummary(list){
+    const t = { n:list.length, bought:0, value:0, comm:0, pend:0, no:0 };
+    list.forEach(r => { if(r.status === 'bought'){ t.bought++; t.value += Number(r.amount) || 0; t.comm += officeComm(r); } else if(r.status === 'not_bought') t.no++; else t.pend++; });
+    t.comm = Math.round(t.comm * 100) / 100;
+    return t;
+  }
+
+  function OfficeView(){
+    const O = state.office, admin = isAdminUser(), myId = state.session.user.id;
+    const money = n => Math.round(n).toLocaleString('ar-EG') + ' ج';
+    let h = head('🏢 عمولة المكتب', `العميل اللي تجيبه للمكتب ويشتري، بتاخد عليه <b>${OFFICE_PCT * 100}%</b> من المبلغ اللي اشترى بيه. سجّل العميل هنا، والأدمن بيأكد إنه اشترى وبكام.`);
+    if(O.err === 'missing'){
+      return h + `<div class="sq-err">جدول عمولة المكتب لسه مش متعمل في Supabase.${admin ? ' شغّل كود الـ SQL ده مرة واحدة في Supabase → SQL Editor:' : ' كلّم الأدمن.'}</div>
+        ${admin ? `<pre class="of-sql">${esc(OFFICE_SQL)}</pre>` : ''}`;
+    }
+    if(O.err) h += `<div class="sq-err">${esc(O.err)}</div>`;
+    const f = O.form || {};
+    h += `<div class="sq-form" style="max-width:none"><div class="of-form">
+        ${admin ? `<div class="sq-field"><label for="of-agent">الموظف اللي جاب العميل</label><select id="of-agent">
+          <option value="">أنا</option>${(O.people || []).map(p => `<option value="${esc(p.id)}" ${f.agent === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></div>` : ''}
+        <div class="sq-field"><label for="of-date">التاريخ</label><input type="date" id="of-date" value="${esc(f.date || localYmd(new Date()))}"></div>
+        <div class="sq-field"><label for="of-cust">اسم العميل</label><input id="of-cust" value="${esc(f.customer || '')}" autocomplete="off"></div>
+        <div class="sq-field"><label for="of-phone">رقم الموبايل</label><input id="of-phone" inputmode="tel" value="${esc(f.phone || '')}" autocomplete="off"></div>
+        <div class="sq-field"><label for="of-item">اشترى إيه (اختياري)</label><input id="of-item" value="${esc(f.item || '')}" autocomplete="off"></div>
+        <div class="sq-field"><label for="of-amount">المبلغ ${admin ? '' : '(لو تعرفه)'}</label><input id="of-amount" type="number" min="0" step="any" inputmode="decimal" value="${esc(f.amount || '')}"></div>
+        <button class="sq-btn" id="of-add" ${O.saving ? 'disabled' : ''}>${O.saving ? 'بيتسجل...' : '➕ سجّل العميل'}</button>
+      </div>
+      ${admin ? '<p class="sq-hint" style="margin:10px 0 0;font-size:12.5px;color:var(--muted)">لو كتبت المبلغ وإنت أدمن، العميل بيتسجل إنه اشترى على طول.</p>' : ''}
+    </div>`;
+
+    if(O.loading && !O.list) return h + `<div class="sq-loading">بيحمّل...</div>`;
+    const all = O.list || [];
+    const months = [...new Set(all.map(r => String(r.sale_date || '').slice(0, 7)).filter(Boolean).concat([curMonth()]))].sort().reverse();
+    const list = O.month === 'all' ? all : all.filter(r => String(r.sale_date || '').startsWith(O.month));
+    const mine = admin ? list : list.filter(r => r.agent_id === myId);
+    const mLabel = m => m === 'all' ? 'كل الوقت' : new Date(m + '-15').toLocaleDateString('ar-EG', { month:'long', year:'numeric' });
+    h += `<div class="of-bar"><label>الشهر <select id="of-month">${['all', ...months].map(m => `<option value="${m}" ${O.month === m ? 'selected' : ''}>${mLabel(m)}</option>`).join('')}</select></label>
+      <button class="sq-btn ghost" id="of-reload" style="padding:7px 14px;font-size:14px">🔄 تحديث</button></div>`;
+
+    const T = officeSummary(mine);
+    h += `<div class="sq-stats">
+      <div class="sq-stat"><div class="n">${T.n}</div><div class="l">عملاء جم المكتب</div></div>
+      <div class="sq-stat"><div class="n green">${T.bought}</div><div class="l">اشتروا</div></div>
+      <div class="sq-stat"><div class="n">${T.pend}</div><div class="l">مستنيين تأكيد</div></div>
+      <div class="sq-stat"><div class="n">${money(T.value)}</div><div class="l">قيمة اللي اشتروه</div></div>
+      <div class="sq-stat"><div class="n gold">${money(T.comm)}</div><div class="l">💰 عمولة المكتب (${OFFICE_PCT * 100}%)${admin ? ' — الكل' : ''}</div></div>
+    </div>`;
+
+    // جدول لكل موظف (للأدمن)
+    if(admin){
+      const by = {};
+      mine.forEach(r => { (by[r.agent_id] = by[r.agent_id] || { name:r.agent_name || 'موظف', rows:[] }).rows.push(r); });
+      const rows = Object.values(by).map(x => ({ name:x.name, ...officeSummary(x.rows) })).sort((a, b) => b.comm - a.comm || b.n - a.n);
+      h += `<div class="of-sec">عمولة المكتب لكل موظف — ${esc(mLabel(O.month))}</div>
+        <div class="sq-tablecard"><table class="sq-table"><thead><tr><th>الموظف</th><th>عملاء</th><th>اشتروا</th><th>مستنيين</th><th>مااشتروش</th><th>قيمة المشتريات</th><th>العمولة 10%</th></tr></thead><tbody>
+        ${rows.map(r => `<tr><td><b>${esc(r.name)}</b></td><td>${r.n}</td><td>${r.bought}</td><td>${r.pend}</td><td>${r.no}</td><td>${money(r.value)}</td><td><b style="color:var(--brass-d)">${money(r.comm)}</b></td></tr>`).join('')
+          || '<tr><td colspan="7" class="sq-empty">مفيش عملاء في الشهر ده.</td></tr>'}
+        </tbody></table></div>`;
+    }
+
+    // ليستة العملاء
+    h += `<div class="of-sec">${admin ? 'كل العملاء' : 'عملائي'}</div>
+      <div class="sq-tablecard"><table class="sq-table"><thead><tr>${admin ? '<th>الموظف</th>' : ''}<th>التاريخ</th><th>العميل</th><th>الموبايل</th><th>اشترى</th><th>المبلغ</th><th>العمولة</th><th>الحالة</th><th></th></tr></thead><tbody>
+      ${mine.map(r => { const st = OF_ST[r.status] || OF_ST.pending;
+        const canDel = admin || (r.agent_id === myId && r.status === 'pending');
+        return `<tr>${admin ? `<td>${esc(r.agent_name || '—')}</td>` : ''}
+          <td class="mut">${esc(r.sale_date || '')}</td><td>${esc(r.customer || '—')}</td><td class="mut">${esc(r.phone || '—')}</td>
+          <td>${esc(r.item || '—')}</td><td class="amount">${r.amount ? money(Number(r.amount)) : '—'}</td>
+          <td>${r.status === 'bought' ? '<b>' + money(officeComm(r)) + '</b>' : '—'}</td>
+          <td><span class="sq-badge ${st.c}">${st.t}</span>${r.confirmed_by_name && r.status !== 'pending' ? `<div class="mut" style="font-size:11px;margin-top:3px">بواسطة ${esc(r.confirmed_by_name)}</div>` : ''}</td>
+          <td><div class="sq-actions">
+            ${admin ? `<button class="sq-icon" title="اشترى" data-of-mark="${esc(r.id)}" data-st="bought">✅</button>
+                       <button class="sq-icon" title="مااشتراش" data-of-mark="${esc(r.id)}" data-st="not_bought">❌</button>` : ''}
+            ${canDel ? `<button class="sq-icon danger" title="مسح" data-of-del="${esc(r.id)}">🗑️</button>` : ''}
+          </div></td></tr>`; }).join('')
+        || `<tr><td colspan="${admin ? 9 : 8}" class="sq-empty">${O.loading ? 'بيحمّل...' : 'مفيش عملاء مسجلين في الفترة دي.'}</td></tr>`}
+      </tbody></table></div>`;
+    return h;
+  }
+
+  const OFFICE_SQL = `-- 🏢 عمولة المكتب — شغّله مرة واحدة في Supabase → SQL Editor
+create table if not exists public.office_sales (
+  id bigint generated by default as identity primary key,
+  agent_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  agent_name text,
+  sale_date date not null default current_date,
+  customer text, phone text, item text,
+  amount numeric,
+  status text not null default 'pending' check (status in ('pending','bought','not_bought')),
+  created_by_name text, confirmed_by_name text,
+  created_at timestamptz not null default now()
+);
+create or replace function public.office_is_admin() returns boolean
+language sql stable security definer set search_path = public as $$
+  select coalesce((select is_admin from public.profiles where id = auth.uid()), false);
+$$;
+alter table public.office_sales enable row level security;
+drop policy if exists "office: read"   on public.office_sales;
+drop policy if exists "office: insert" on public.office_sales;
+drop policy if exists "office: update" on public.office_sales;
+drop policy if exists "office: delete" on public.office_sales;
+create policy "office: read"   on public.office_sales for select to authenticated using (agent_id = auth.uid() or public.office_is_admin());
+create policy "office: insert" on public.office_sales for insert to authenticated with check ((agent_id = auth.uid() and status = 'pending') or public.office_is_admin());
+create policy "office: update" on public.office_sales for update to authenticated using (public.office_is_admin()) with check (public.office_is_admin());
+create policy "office: delete" on public.office_sales for delete to authenticated using (public.office_is_admin() or (agent_id = auth.uid() and status = 'pending'));
+grant select, insert, update, delete on public.office_sales to authenticated;`;
+
   /* ---------- Render ---------- */
   function render(){
     const root = document.getElementById('sq-root');
@@ -2443,6 +2645,7 @@ const Squad = (function(){
     else if(state.view === 'leaderboard') body = LeaderboardView();
     else if(state.view === 'agent-orders') body = AgentOrdersView();
     else if(state.view === 'qp-sync') body = SyncView();
+    else if(state.view === 'office') body = OfficeView();
     else body = DashboardView();
     root.innerHTML = Bar() + body;
     wireAppEvents();
@@ -2469,9 +2672,22 @@ const Squad = (function(){
         const v = btn.getAttribute('data-sqnav');
         setState({ view:v, error:'', info:'' });
         if(v === 'leaderboard' || v === 'dashboard') loadLeaderboard();
+        if(v === 'office') loadOffice();
       };
     });
     if($('sq-logout')) $('sq-logout').onclick = doLogout;
+
+    // 🏢 عمولة المكتب
+    if($('of-add')) $('of-add').onclick = officeAdd;
+    if($('of-reload')) $('of-reload').onclick = loadOffice;
+    if($('of-month')) $('of-month').onchange = e => setOffice({ month: e.target.value });
+    ['of-date','of-cust','of-phone','of-item','of-amount','of-agent'].forEach(id => { const el = $(id); if(el){
+      const k = { 'of-date':'date', 'of-cust':'customer', 'of-phone':'phone', 'of-item':'item', 'of-amount':'amount', 'of-agent':'agent' }[id];
+      el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', () => { state.office.form = { ...state.office.form, [k]: el.value }; });
+      if(el.tagName === 'INPUT') el.onkeydown = e => { if(e.key === 'Enter'){ e.preventDefault(); officeAdd(); } };
+    } });
+    document.querySelectorAll('#sq-root [data-of-mark]').forEach(b => { b.onclick = () => officeMark(b.getAttribute('data-of-mark'), b.getAttribute('data-st')); });
+    document.querySelectorAll('#sq-root [data-of-del]').forEach(b => { b.onclick = () => officeDel(b.getAttribute('data-of-del')); });
 
     // 🔄 مطابقة مع QP
     if($('sq-sync-from')) $('sq-sync-from').onchange = e => { state.sync.from = e.target.value; };
