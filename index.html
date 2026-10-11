@@ -3249,7 +3249,7 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
   }
   function qpLogout(){
     creds = null; token = null; qpOrders = null; qpErr = ''; qpInfo = '';
-    dOrders = null; dErr = ''; dTried = false; dFetchedAt = null;
+    dOrders = null; dErr = ''; dTried = false; dFetchedAt = null; dSum = null; dSumErr = '';
     try{ localStorage.removeItem(QP_LS); }catch(e){}
     qpRerender();
   }
@@ -3362,7 +3362,114 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
   const todayKey = () => dayKey(new Date());
   const shiftDay = (key, n) => { const d = new Date(key + 'T12:00:00'); d.setDate(d.getDate() + n); return dayKey(d); };
   const monthAgo = () => { const d = new Date(); d.setMonth(d.getMonth() - 1); return dayKey(d); };
-  let dFrom = monthAgo(), dTo = todayKey();
+  let dFrom = monthAgo(), dTo = shiftDay(todayKey(), 1);   // زي QP: من شهر فات لبكرة
+  /* ---------- أرقام لوحة QP الحقيقية (نفس الروابط اللي صفحة Analytics في QP بتستخدمها) ---------- */
+  const QPC_LS = 'qp_customer_id';
+  let qpCustId = (() => { try{ return localStorage.getItem(QPC_LS) || ''; }catch(e){ return ''; } })();
+  let dSum = null, dSumLoading = false, dSumErr = '';
+  const jwtPayload = t => { try{ return JSON.parse(atob(t.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))); }catch(e){ return {}; } };
+  // بيدوّر جوه أي رد (رقم / نص / ليستة / أوبجكت) على أول رقم مناسب
+  function pickNum(x, prefer, depth){
+    depth = depth || 0;
+    if(x == null || depth > 4) return null;
+    if(typeof x === 'number') return x;
+    if(typeof x === 'string'){ const t = x.replace(/[,\s]/g,''); return t !== '' && !isNaN(t) ? Number(t) : null; }
+    if(Array.isArray(x)) return x.length;
+    if(typeof x === 'object'){
+      const ent = Object.entries(x);
+      if(prefer) for(const [k, v] of ent){ if(prefer.test(k)){ const n = pickNum(v, prefer, depth + 1); if(n != null) return n; } }
+      for(const k of ['count','total','value','amount','data','result','results']) if(k in x){ const n = pickNum(x[k], prefer, depth + 1); if(n != null) return n; }
+      for(const [, v] of ent){ if(typeof v === 'number') return v; }
+      for(const [, v] of ent){ const n = pickNum(v, prefer, depth + 1); if(n != null) return n; }
+    }
+    return null;
+  }
+  // بيدوّر على مفتاح باسم معيّن في أي مستوى (زي wallet)
+  function findKey(x, re, depth){
+    depth = depth || 0;
+    if(!x || typeof x !== 'object' || depth > 5) return undefined;
+    for(const [k, v] of Object.entries(x)){ if(re.test(k) && (typeof v !== 'object' || v === null)) return v; }
+    for(const v of Object.values(x)){ const r = findKey(v, re, depth + 1); if(r !== undefined) return r; }
+    return undefined;
+  }
+  // بيحوّل رد زي [{city:'x', count:5}] أو {x:5} لـ [[اسم, رقم]]
+  function pairs(x){
+    if(x && !Array.isArray(x) && typeof x === 'object'){
+      const arr = ['results','data','cities','status','statuses','orders'].map(k => x[k]).find(Array.isArray);
+      if(arr) x = arr;
+      else{
+        const ent = Object.entries(x).filter(([, v]) => pickNum(v) != null && typeof v !== 'object');
+        if(ent.length) return ent.map(([k, v]) => [k, pickNum(v)]);
+      }
+    }
+    if(!Array.isArray(x)) return [];
+    if(x.length && Array.isArray(x[0])) return x.map(r => [String(r[0]), Number(r[1]) || 0]);
+    return x.map(o => {
+      if(!o || typeof o !== 'object') return null;
+      const ent = Object.entries(o);
+      const lk = ent.find(([k, v]) => /city|name|status|label|title|state/i.test(k) && v != null && typeof v !== 'object');
+      const nk = ent.find(([k, v]) => /count|total|num|orders|value|qty/i.test(k) && pickNum(v) != null && typeof v !== 'object');
+      const lab = lk ? lk[1] : (ent.find(([, v]) => typeof v === 'string') || [])[1];
+      const val = nk ? pickNum(nk[1]) : pickNum(o);
+      return lab == null ? null : [String(lab), val || 0];
+    }).filter(Boolean);
+  }
+  const hasAny = x => !(x == null || x === false || x === '' || (Array.isArray(x) && !x.length) || (typeof x === 'object' && !Array.isArray(x) && !Object.keys(x).length));
+
+  async function qpDashSummary(){
+    dSumLoading = true; dSumErr = ''; qpRerender();
+    try{
+      const t = await qpGetToken();
+      if(!qpCustId){
+        const pl = jwtPayload(t);
+        qpCustId = String(pl.customer_id || pl.customer || pl.client_id || '');
+      }
+      // لو لسه مش عارفين رقم العميل نجرّب نجيبه من إعدادات اليوزر
+      let settings = null;
+      try{ settings = await qpApiGet(QP_API + '/settings/get_user_settings'); }catch(e){}
+      if(!qpCustId && settings){ const v = findKey(settings, /^(customer_?id|customer|client_?id)$/i); if(v != null && typeof v !== 'object') qpCustId = String(v); }
+      if(!qpCustId) qpCustId = '203';
+      const id = encodeURIComponent(qpCustId), rng = '&from_date=' + dFrom + '&to_date=' + dTo;
+      const EP = {
+        pickup:    '/addorders/today_pickup?id=' + id,
+        collect:   '/addorders/getCustomerCollectToday',
+        customer:  '/addorders/get_customer_orders/?id=' + id,
+        returns:   '/addorders/get_customer_returns_for_request',
+        yesterday: '/addorders/get_yesterday_orders?id=' + id,
+        revenue:   '/addorders/get_total_collected?id=' + id + rng,
+        cities:    '/addorders/get_top_cities?id=' + id + rng,
+        status:    '/addorders/get_orders_status?id=' + id + rng,
+      };
+      const keys = Object.keys(EP);
+      const res = await Promise.allSettled(keys.map(k => qpApiGet(QP_API + EP[k])));
+      const raw = { settings }; const errs = {};
+      keys.forEach((k, i) => { if(res[i].status === 'fulfilled') raw[k] = res[i].value; else errs[k] = res[i].reason && res[i].reason.message; });
+      if(keys.every(k => errs[k])) throw new Error('QP رفض كل طلبات اللوحة (' + (errs.revenue || '') + ').');
+
+      let wallet = null;
+      for(const src of [raw.customer, settings, raw.revenue]){ const v = findKey(src, /wallet|balance/i); if(v != null && pickNum(v) != null){ wallet = pickNum(v); break; } }
+      const pk = raw.pickup;
+      const pkPhone = typeof pk === 'string' ? pk : findKey(pk, /phone|mobile/i);
+      dSum = {
+        id: qpCustId, at: new Date(), raw, errs,
+        pickup:  'pickup' in raw ? (hasAny(pk) ? ('فيه بيك أب' + (pkPhone && typeof pkPhone !== 'object' ? ' ' + pkPhone : '')) : 'مفيش بيك أب النهارده') : null,
+        collect: 'collect' in raw ? (hasAny(raw.collect) ? 'فيه تحصيل النهارده' : 'مفيش تحصيل النهارده') : null,
+        wallet,
+        yesterday: 'yesterday' in raw ? pickNum(raw.yesterday, /yesterday|count|total/i) : null,
+        returns:   'returns' in raw ? pickNum(raw.returns, /count|total|return/i) : null,
+        revenue:   'revenue' in raw ? pickNum(raw.revenue, /collect|total|revenue|amount|sum/i) : null,
+        cities:    'cities' in raw ? pairs(raw.cities).sort((a, b) => b[1] - a[1]) : null,
+        status:    'status' in raw ? pairs(raw.status).filter(r => r[1] > 0) : null,
+      };
+    }catch(e){
+      dSumErr = /Failed to fetch|NetworkError/i.test(e.message) ? 'مش قادر يوصل لـ QP. اتأكد إن فيه إنترنت.' : e.message;
+    }
+    dSumLoading = false; qpRerender();
+  }
+  // اسم الحالة جاي من QP نص أو رقم → لون واسم موحّد
+  const QPD_NAME2CODE = { pending:'1', 'out for delivery':'2', 'out for deliver':'2', delivered:'3', deliverd:'3', hold:'4', undelivered:'5', rejected:'6' };
+  const statusCode = lab => { const t = String(lab).trim().toLowerCase(); return /^\d+$/.test(t) ? t : (QPD_NAME2CODE[t] || null); };
+
   let dOrders = null, dLoading = false, dErr = '', dInfo = '', dProg = 0, dFetchedAt = null, dTried = false, dAllCities = false;
 
   // حالات QP زي ما هي في الـ API (1..6) بنفس ألوان لوحة QP تقريبًا
@@ -3378,6 +3485,7 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
 
   async function qpDashFetch(onlyToday){
     if(dLoading) return;
+    if(!onlyToday || !dSum) qpDashSummary();
     dLoading = true; dErr = ''; dProg = 0; dTried = true;
     dInfo = onlyToday ? 'بيحدّث أوردرات النهارده...' : 'بيجيب أوردرات الفترة...';
     qpRerender();
@@ -3433,25 +3541,35 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
     </div>`;
     if(dLoading) h += `<div class="card"><p class="qp-userline">${esc(dInfo || 'بيشتغل...')}</p><div class="qp-prog"><i style="width:${dProg}%"></i></div></div>`;
     if(dErr) h += `<div class="mono-note">${esc(dErr)}</div>`;
+    if(dSumErr) h += `<div class="mono-note">أرقام لوحة QP: ${esc(dSumErr)}</div>`;
+    const v = (x, money) => x == null ? '<span style="color:var(--muted)">—</span>' : fmt(x) + (money ? ' ج' : '');
+    const D = dSum || {};
+    const ld = dSumLoading && !dSum ? '<span class="qp-userline">⏳</span>' : null;
+    // 👇 نفس كروت صفحة Analytics في QP
+    h += `<div class="qp-kpis">
+      <div class="qp-kpi qpd-kpi-big"><div class="l">🚚 Pickup</div><div class="n" style="font-size:18px">${ld || esc(D.pickup || '—')}</div></div>
+      <div class="qp-kpi qpd-kpi-big"><div class="l">💵 Collect</div><div class="n" style="font-size:18px">${ld || esc(D.collect || '—')}</div></div>
+      <div class="qp-kpi qpd-kpi-big" style="border-top:4px solid var(--brass)"><div class="l">👛 Wallet — المحفظة</div><div class="n">${ld || v(D.wallet, true)}</div></div>
+    </div>
+    <div class="qp-kpis">
+      <div class="qp-kpi qpd-kpi-big"><div class="l">📅 Yesterday Orders — أوردرات امبارح</div><div class="n">${ld || v(D.yesterday)}</div></div>
+      <div class="qp-kpi qpd-kpi-big" onclick="QP.dashStuck()" style="cursor:pointer;border-top:4px solid var(--warn)"><div class="l">📦 Ready To Return — جاهز للإرجاع</div><div class="n" style="color:var(--warn)">${ld || v(D.returns)}</div></div>
+      <div class="qp-kpi qpd-kpi-big" style="border-top:4px solid var(--ok)"><div class="l">💰 Revenue — المُحصَّل في الفترة</div><div class="n green">${ld || v(D.revenue, true)}</div></div>
+    </div>`;
+
     if(!dOrders){
-      if(!dLoading) h += `<div class="card"><p class="none">دوس "🔄 حدّث الفترة" عشان تجيب أرقام QP.</p></div>`;
-      return h;
+      if(!dLoading && !dSum) h += `<div class="card"><p class="none">دوس "🔄 حدّث الفترة" عشان تجيب أرقام QP.</p></div>`;
+      if(dSum) h += viewDashCharts(null);
+      return h + viewDashRaw();
     }
 
     const S = qpDashStats(dOrders);
     const inRange = todayKey() >= dFrom && todayKey() <= dTo;
-    const yInRange = shiftDay(todayKey(), -1) >= dFrom && shiftDay(todayKey(), -1) <= dTo;
 
-    // الكروت الأساسية
+    // من الأوردرات نفسها
     h += `<div class="qp-kpis">
-      <div class="qp-kpi qpd-kpi-big" style="border-top:4px solid var(--brass)"><div class="l">🛒 أوردرات النهارده (لحد ${now.toLocaleTimeString('ar-EG',{hour:'2-digit',minute:'2-digit'})})</div>
-        <div class="n">${inRange ? fmt(S.today.n) : '—'}</div><div class="sub">${inRange ? 'بقيمة ' + fmt(S.today.v) + ' ج' : 'النهارده مش جوه الفترة المختارة'}</div></div>
-      <div class="qp-kpi qpd-kpi-big"><div class="l">📅 أوردرات امبارح</div>
-        <div class="n">${yInRange ? fmt(S.yest.n) : '—'}</div><div class="sub">${yInRange ? 'بقيمة ' + fmt(S.yest.v) + ' ج' : 'امبارح مش جوه الفترة المختارة'}</div></div>
-      <div class="qp-kpi qpd-kpi-big" onclick="QP.dashStuck()" style="cursor:pointer;border-top:4px solid var(--warn)"><div class="l">📦 Ready To Return — راجع لينا</div>
-        <div class="n" style="color:var(--warn)">${fmt(S.stuck)}</div><div class="sub">Undelivered ومن غير تاريخ إرجاع · دوس تعرضهم</div></div>
-      <div class="qp-kpi qpd-kpi-big" style="border-top:4px solid var(--ok)"><div class="l">💰 Revenue — قيمة المُسلَّم</div>
-        <div class="n green">${fmt(S.salesDel)} ج</div><div class="sub">${fmt(S.del)} أوردر اتسلم</div></div>
+      <div class="qp-kpi" style="border-top:4px solid var(--brass)"><div class="n">${inRange ? fmt(S.today.n) : '—'}</div><div class="l">🛒 أوردرات النهارده لحد ${now.toLocaleTimeString('ar-EG',{hour:'2-digit',minute:'2-digit'})}${inRange ? ' · ' + fmt(S.today.v) + ' ج' : ''}</div></div>
+      <div class="qp-kpi"><div class="n green">${fmt(S.salesDel)} ج</div><div class="l">قيمة المُسلَّم (${fmt(S.del)} أوردر)</div></div>
     </div>
     <div class="qp-kpis">
       <div class="qp-kpi"><div class="n">${fmt(S.total)}</div><div class="l">إجمالي أوردرات الفترة</div></div>
@@ -3473,27 +3591,51 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
           <div class="b" style="height:${hp}%;background:#d9d3c2"><span style="height:${dp}%;background:#7b83d6"></span></div></div>`; }).join('')}</div>
       <div class="qpd-days-lbl"><span>${esc(dFrom)}</span><span>${esc(dTo)}</span></div></div>`;
 
-    // المدن + الحالات
-    const cities = Object.entries(S.city).sort((a,b) => b[1] - a[1]);
+    h += viewDashCharts(S);
+    h += `<p class="qp-userline">Pickup و Collect و Wallet و Yesterday Orders و Ready To Return و Revenue و Top Cities و Order Status جايين من QP مباشرة. رسم الأيام وأوردرات النهارده محسوبين من الأوردرات نفسها.</p>`;
+    h += viewDashRaw();
+    return h;
+  }
+
+  function viewDashCharts(S){
+    const D = dSum || {};
+    // المدن: من QP لو متاحة، وإلا من الأوردرات
+    let cities = D.cities && D.cities.length ? D.cities : (S ? Object.entries(S.city).sort((a,b) => b[1] - a[1]) : []);
     const shown = dAllCities ? cities : cities.slice(0, 8);
-    const maxC = cities.length ? cities[0][1] : 1;
-    const stKeys = Object.keys(S.st).sort((a,b) => Number(a) - Number(b));
+    const maxC = cities.length ? Math.max(...cities.map(c => c[1])) || 1 : 1;
+    // الحالات: من QP لو متاحة، وإلا من الأوردرات
+    let st = [];
+    if(D.status && D.status.length) st = D.status.map(([lab, n]) => { const c = statusCode(lab); return { k: c || lab, n, info: c ? qpdSt(c) : { n: lab, c:'#a39e8f' } }; });
+    else if(S) st = Object.keys(S.st).sort((a,b) => Number(a) - Number(b)).map(k => ({ k, n:S.st[k], info:qpdSt(k) }));
+    st.sort((a, b) => (Number(a.k) || 99) - (Number(b.k) || 99));
+    const tot = st.reduce((a, r) => a + r.n, 0) || 1;
     let acc = 0;
-    const grad = stKeys.map(k => { const a = acc / S.total * 360; acc += S.st[k]; return `${qpdSt(k).c} ${a}deg ${acc / S.total * 360}deg`; }).join(',');
-    h += `<div class="qpd-grid">
+    const grad = st.map(r => { const a = acc / tot * 360; acc += r.n; return `${r.info.c} ${a}deg ${acc / tot * 360}deg`; }).join(',');
+    return `<div class="qpd-grid">
       <div class="card"><h3 style="display:flex;justify-content:space-between;align-items:center">Top Cities — أكتر المدن
         ${cities.length > 8 ? `<button class="linkbtn" onclick="QP.dashCities()">${dAllCities ? 'أقل' : 'اعرض الكل (' + cities.length + ')'}</button>` : ''}</h3>
         ${shown.map(([c, n]) => `<div class="qpd-hbar"><span class="nm" title="${esc(c)}">${esc(c)}</span><span class="t"><i style="width:${n / maxC * 100}%;background:#5560c8"></i></span><span class="v">${fmt(n)}</span></div>`).join('') || '<p class="none">مفيش داتا.</p>'}
       </div>
       <div class="card"><h3>Order Status — حالات الأوردرات</h3>
         <div class="qpd-donut-wrap">
-          <div class="qpd-donut" style="background:conic-gradient(${grad || 'var(--line) 0 360deg'})"><div class="mid">${fmt(S.total)}<small>أوردر</small></div></div>
-          <div class="qpd-legend">${stKeys.map(k => `<div class="r"><i style="background:${qpdSt(k).c}"></i>${esc(qpdSt(k).n)}<b>${fmt(S.st[k])}</b><span class="pc">${(S.st[k] / S.total * 100).toFixed(1)}%</span></div>`).join('')}</div>
+          <div class="qpd-donut" style="background:conic-gradient(${grad || 'var(--line) 0 360deg'})"><div class="mid">${fmt(acc)}<small>أوردر</small></div></div>
+          <div class="qpd-legend">${st.map(r => `<div class="r"><i style="background:${r.info.c}"></i>${esc(r.info.n)}<b>${fmt(r.n)}</b><span class="pc">${(r.n / tot * 100).toFixed(1)}%</span></div>`).join('')}</div>
         </div>
       </div>
     </div>`;
-    h += `<p class="qp-userline">الأرقام محسوبة من أوردرات QP في الفترة دي (حسب تاريخ الأوردر). Pickup و Collect و Wallet مش متاحين في الـ API فمش ظاهرين هنا — شوفهم من موقع QP.</p>`;
-    return h;
+  }
+
+  // 🔍 الردود الخام من QP — عشان لو أي رقم طلع غلط نعرف نظبطه
+  function viewDashRaw(){
+    if(!dSum) return '';
+    const names = { pickup:'Pickup', collect:'Collect', customer:'بيانات العميل (Wallet)', returns:'Ready To Return', yesterday:'Yesterday Orders', revenue:'Revenue', cities:'Top Cities', status:'Order Status', settings:'إعدادات اليوزر' };
+    const show = x => { let t; try{ t = JSON.stringify(x, null, 1); }catch(e){ t = String(x); } t = t || 'null'; return t.length > 1800 ? t.slice(0, 1800) + '\n…' : t; };
+    return `<details class="card"><summary style="cursor:pointer;font-weight:700;color:var(--brass-d)">🔍 بيانات QP الخام — لو أي رقم طالع غلط صوّر الجزء ده وابعته</summary>
+      <div class="qp-toolbar" style="margin-top:10px"><label>رقم العميل في QP <input style="width:90px" value="${esc(dSum.id)}" onchange="QP.dashCust(this.value)"></label>
+        <span class="qp-userline">(بيتحفظ على الجهاز ده)</span></div>
+      ${Object.keys(names).map(k => `<div style="margin:8px 0"><b>${names[k]}</b>${dSum.errs[k] ? ` <span style="color:var(--warn)">— خطأ: ${esc(dSum.errs[k])}</span>` : ''}
+        ${k in dSum.raw ? `<pre style="direction:ltr;text-align:left;white-space:pre-wrap;font-size:11.5px;background:var(--slate-l);padding:8px;border-radius:6px;max-height:180px;overflow:auto;margin:4px 0">${esc(show(dSum.raw[k]))}</pre>` : ''}</div>`).join('')}
+    </details>`;
   }
 
   /* ---------- الصفحة ---------- */
@@ -3689,8 +3831,9 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
     dashDate(k, v){ if(!v) return; if(k === 'from') dFrom = v; else dTo = v; if(dFrom > dTo){ const x = dFrom; dFrom = dTo; dTo = x; } qpRerender(); },
     dashMonth(v){ if(!v) return; const [y, m] = v.split('-').map(Number);
       dFrom = v + '-01'; const last = dayKey(new Date(y, m, 0)); dTo = last > todayKey() ? todayKey() : last; qpDashFetch(false); },
-    dashLast30(){ dFrom = monthAgo(); dTo = todayKey(); qpDashFetch(false); },
+    dashLast30(){ dFrom = monthAgo(); dTo = shiftDay(todayKey(), 1); qpDashFetch(false); },
     dashCities(){ dAllCities = !dAllCities; qpRerender(); },
+    dashCust(v){ qpCustId = String(v || '').trim(); try{ if(qpCustId) localStorage.setItem(QPC_LS, qpCustId); else localStorage.removeItem(QPC_LS); }catch(e){} qpDashSummary(); },
     // يفتح تاب الأوردرات على المرتجعات اللي عند QP، بنفس فترة اللوحة
     dashStuck(){ if(!dOrders) return; qpOrders = dOrders; qpFrom = dFrom; qpTo = dTo; qpFetchedAt = dFetchedAt; qpStFilter = 'stuck'; qpTab = 'orders'; qpRerender(); },
     setDate(k, v){ if(k === 'from') qpFrom = v; else qpTo = v; },
