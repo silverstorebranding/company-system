@@ -655,9 +655,14 @@ const PR_COGS_NO=65.2, PR_COGS_YES=94, PR_BRANCH_PCT=0.145, PR_PEND_VAL=75;
 // نسبة التوقع: ofd = للأوردرات "تحت التسليم" و "Pending" (نفس المعاملة)، hold = للـ Hold
 const PR_OFD_RATE=0.35, PR_HOLD_RATE=0.15;
 const PR_RATE_OVERRIDES={
-  "cara silver":{ofd:0.30,hold:0.10},
-  "cara silver un":{ofd:0.25,hold:0.08},
-  "cara wa":{ofd:0.30,hold:0.10},
+  // DREAM (الثلاثة): Pending وتحت التسليم 30% — Hold 10%
+  "dream":{ofd:0.30,hold:0.10},
+  "dream msg site":{ofd:0.30,hold:0.10},
+  "dream wa":{ofd:0.30,hold:0.10},
+  // CARA (الثلاثة): Pending وتحت التسليم 38% — Hold 15%
+  "cara silver":{ofd:0.38,hold:0.15},
+  "cara silver un":{ofd:0.38,hold:0.15},
+  "cara wa":{ofd:0.38,hold:0.15},
   "rs kids":{ofd:0.70,hold:0.30},
   "bloom":{ofd:0.60,hold:0.30}
 };
@@ -1329,7 +1334,7 @@ function viewProfits(){
       </div>
     </div>
     <div class="card"><h3>2) الجدول الأساسي — التكاليف والأرباح بعد التوقع (الفعلي + المتوقع)</h3>
-      <p style="font-size:13px;color:var(--muted)">المبيعات وشحن التسليمات وتكلفة البضاعة هنا = الفعلي + المتوقع من الأوردرات "تحت التسليم" و"Pending" (35%) و"Hold" (15%) لمعظم البراندات — ما عدا CARA SILVER (30% / 10%)، CARA SILVER UN (25% / 8%)، CARA WA (30% / 10%)، RS KIDS (70% / 30%)، وBLOOM (60% / 30%). الأوردرات الـ Pending بتاخد نفس نسبة "تحت التسليم" بالظبط في كل براند. باقي البنود زي ما هي.</p>
+      <p style="font-size:13px;color:var(--muted)">المبيعات وشحن التسليمات وتكلفة البضاعة هنا = الفعلي + المتوقع من الأوردرات "تحت التسليم" و"Pending" (35%) و"Hold" (15%) لباقي البراندات (MSG و FASTPLT) — ما عدا DREAM و DREAM MSG SITE و DREAM WA (30% / 10%)، CARA SILVER و CARA SILVER UN و CARA WA (38% / 15%)، RS KIDS (70% / 30%)، وBLOOM (60% / 30%). الأوردرات الـ Pending بتاخد نفس نسبة "تحت التسليم" بالظبط في كل براند. باقي البنود زي ما هي.</p>
       <p style="font-size:13px;color:var(--muted)">تكلفة البضاعة لـ RS KIDS = 50% من مبيعاته، ولـ BLOOM = 45% من مبيعاته (الفعلي والمتوقع).</p>
       <p style="font-size:13px;color:var(--muted)">اكتب البنود اليدوية (الإعلانات، و"هوالك - نثريات - أخرى") في الخانات الخضراء هنا بس — بتتطبق تلقائيًا على الجدول الفعلي تحت كمان. إعلانات RS KIDS بتتجاب من شيت الإعلانات (العمود P) مع DREAM وCARA وFASTPLT، وإعلانات BLOOM بتتكتب يدوي في عمودها.</p>
       <div class="tablewrap"><table class="pr" id="prFullTable"></table></div>
