@@ -3446,15 +3446,27 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
       keys.forEach((k, i) => { if(res[i].status === 'fulfilled') raw[k] = res[i].value; else errs[k] = res[i].reason && res[i].reason.message; });
       if(keys.every(k => errs[k])) throw new Error('QP رفض كل طلبات اللوحة (' + (errs.revenue || '') + ').');
 
-      let wallet = null;
-      for(const src of [raw.customer, settings, raw.revenue]){ const v = findKey(src, /wallet|balance/i); if(v != null && pickNum(v) != null){ wallet = pickNum(v); break; } }
+      /* 👛 الـ Wallet: get_customer_orders بيرجّع الأوردرات اللي اتسلمت ولسه فلوسها ماتحصّلتش
+         والمحفظة = مجموع (قيمة الأوردر − الشحن) للأوردرات المُسلَّمة فيها — زي QP بالظبط */
+      let wallet = null, walletN = 0;
+      const custList = Array.isArray(raw.customer) ? raw.customer : (raw.customer && Array.isArray(raw.customer.results) ? raw.customer.results : null);
+      if(custList){
+        wallet = 0;
+        custList.forEach(o => {
+          if(String(o.Order_Delivery_Status ?? '').trim() !== '3' || o.Order_Collect_Status === true) return;
+          wallet += num(o.total_amount ?? o.price) - num(o.total_fees); walletN++;
+        });
+        wallet = Math.round(wallet * 100) / 100;
+      } else {
+        for(const src of [raw.customer, settings, raw.revenue]){ const v = findKey(src, /wallet|balance/i); if(v != null && pickNum(v) != null){ wallet = pickNum(v); break; } }
+      }
       const pk = raw.pickup;
       const pkPhone = typeof pk === 'string' ? pk : findKey(pk, /phone|mobile/i);
       dSum = {
         id: qpCustId, at: new Date(), raw, errs,
         pickup:  'pickup' in raw ? (hasAny(pk) ? ('فيه بيك أب' + (pkPhone && typeof pkPhone !== 'object' ? ' ' + pkPhone : '')) : 'مفيش بيك أب النهارده') : null,
         collect: 'collect' in raw ? (hasAny(raw.collect) ? 'فيه تحصيل النهارده' : 'مفيش تحصيل النهارده') : null,
-        wallet,
+        wallet, walletN: custList ? walletN : null,
         yesterday: 'yesterday' in raw ? pickNum(raw.yesterday, /yesterday|count|total/i) : null,
         returns:   'returns' in raw ? pickNum(raw.returns, /count|total|return/i) : null,
         revenue:   'revenue' in raw ? pickNum(raw.revenue, /collect|total|revenue|amount|sum/i) : null,
@@ -3549,7 +3561,7 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
     h += `<div class="qp-kpis">
       <div class="qp-kpi qpd-kpi-big"><div class="l">🚚 Pickup</div><div class="n" style="font-size:18px">${ld || esc(D.pickup || '—')}</div></div>
       <div class="qp-kpi qpd-kpi-big"><div class="l">💵 Collect</div><div class="n" style="font-size:18px">${ld || esc(D.collect || '—')}</div></div>
-      <div class="qp-kpi qpd-kpi-big" style="border-top:4px solid var(--brass)"><div class="l">👛 Wallet — المحفظة</div><div class="n">${ld || v(D.wallet, true)}</div></div>
+      <div class="qp-kpi qpd-kpi-big" style="border-top:4px solid var(--brass)"><div class="l">👛 Wallet — المحفظة</div><div class="n">${ld || v(D.wallet, true)}</div>${D.walletN != null ? `<div class="sub">${fmt(D.walletN)} أوردر اتسلم ولسه ماتحصّلش</div>` : ''}</div>
     </div>
     <div class="qp-kpis">
       <div class="qp-kpi qpd-kpi-big"><div class="l">📅 Yesterday Orders — أوردرات امبارح</div><div class="n">${ld || v(D.yesterday)}</div></div>
