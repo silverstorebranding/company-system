@@ -392,10 +392,10 @@ html:not(.auth-ok) #app{display:none}
     </div>
     <div class="grp"><div class="grp-title">المالية</div>
       <a class="navlink" href="#/profits">💰 الأرباح</a>
+      <a class="navlink" href="#/dept/warehouse">🏬 المخزن</a>
     </div>
     <div class="grp"><div class="grp-title">العمل</div>
-      <a class="navlink" href="#/tasks">✅ مهامي</a>
-      <a class="navlink" href="#/handover">🔁 مركز التسليم</a>
+      <a class="navlink" href="#/inbox">📨 الرسايل والمهام <span class="ib-badge" id="ibBadge"></span></a>
       <a class="navlink" href="#/squad">🏆 Squad</a>
     </div>
     <div class="grp"><div class="grp-title">الأقسام</div>
@@ -410,11 +410,9 @@ html:not(.auth-ok) #app{display:none}
       <a class="navlink" href="#/org">🏢 الهيكل التنظيمي</a>
       <a class="navlink" href="#/staff">👥 الموظفين الحاليون</a>
       <a class="navlink" href="#/flow">🔄 تدفق العمل بالشركة</a>
-      <a class="navlink" href="#/policies">📜 السياسات</a>
     </div>
     <div class="grp"><div class="grp-title">المعرفة</div>
       <a class="navlink" href="#/sop">📚 مكتبة الإجراءات</a>
-      <a class="navlink" href="#/training">🎓 مركز التدريب</a>
       <a class="navlink" href="#/search">🔍 بحث المعرفة</a>
     </div>
   </nav>
@@ -1055,7 +1053,7 @@ function render(){
   const main = document.getElementById('main');
   const hash = location.hash.replace('#/','') || 'home';
   const [route, param] = hash.split('/');
-  document.querySelectorAll('#sidebar a.navlink').forEach(a=>a.classList.toggle('active', a.getAttribute('href')==='#/'+route));
+  document.querySelectorAll('#sidebar a.navlink').forEach(a=>a.classList.toggle('active', a.getAttribute('href')==='#/'+route || a.getAttribute('href')==='#/'+route+'/'+param));
   let html = '';
   if(route==='home') html = viewHome();
   else if(route==='org') html = viewOrg();
@@ -1063,15 +1061,11 @@ function render(){
   else if(route==='employee') html = viewEmployee(param);
   else if(route==='dept') html = viewDept(param);
   else if(route==='flow') html = viewCompanyFlow();
-  else if(route==='tasks') html = viewTasks();
-  else if(route==='handover') html = viewHandover();
   else if(route==='profits') html = viewProfits();
   else if(route==='squad') html = '<div id="sq-root"></div>';
   else if(route==='sop') html = viewSopLibrary();
   else if(route==='sopdetail') html = viewSopDetail(param);
-  else if(route==='training') html = viewTraining();
   else if(route==='search') html = viewSearch();
-  else if(route==='policies') html = viewPolicies();
   else if(route==='onboarding') html = viewOnboarding();
   else if(route==='whatnow') html = viewWhatNow();
   else html = viewHome();
@@ -1282,25 +1276,7 @@ function viewSopDetail(id){
   <div class="card"><h3>تعريف الانتهاء</h3><p>${s.done}</p></div>`;
 }
 
-function viewTasks(){
-  const e=EMP[currentUser];
-  const today = e.daily.map((t,i)=>({t,d:'اليوم',id:'d'+i}));
-  return `<div class="pagehead"><h1>مهامي</h1><p>مهام ${e.name} — ${e.title}</p></div>
-  <div class="card"><h3>اليوم</h3>${today.map(x=>`<label class="chk"><input type="checkbox" data-ls="${x.id}_${currentUser}"> ${x.t}</label>`).join('')}</div>
-  <div class="card"><h3>أسبوعي</h3>${e.weekly.map((t,i)=>`<label class="chk"><input type="checkbox" data-ls="w${i}_${currentUser}"> ${t}</label>`).join('')}</div>
-  <div class="card"><h3>قالب تعريف المهمة</h3><p style="font-size:13.5px;color:var(--muted)">كل مهمة في النظام تجيب على:</p>
-    <ul class="plain"><li><b>ليه؟</b> ليه بنعملها</li><li><b>إيه؟</b> إيه المطلوب</li><li><b>إزاي؟</b> إزاي (SOP)</li><li><b>إمتى؟</b> إمتى</li><li><b>مين؟</b> مين</li><li><b>لمين؟</b> بتتسلم لمين</li><li><b>إمتى خلصت؟</b> إمتى تعتبر خلصت</li></ul>
-  </div>`;
-}
 
-function viewHandover(){
-  const e=EMP[currentUser];
-  return `<div class="pagehead"><h1>مركز التسليم</h1><p>تسليم الشغل عند نهاية الشيفت أو الغياب — بدون مشاركة كلمات السر.</p></div>
-  <div class="card"><h3>تسليم نهاية الشيفت — ${e.name}</h3>
-    ${(DEPTS[e.dept]?.handover||["Pending items"]).map((x,i)=>`<label class="chk"><input type="checkbox" data-ls="h${i}_${currentUser}"> ${x}</label>`).join('')}
-  </div>
-  <div class="card"><h3>لو غادرت الشركة غدًا</h3><p style="font-size:13.5px;color:var(--muted)">ملخص جاهز لأي موظف يستلم مكان ${e.name} فورًا — راجعه في <a href="#/employee/${currentUser}">صفحة الملف الشخصي</a>.</p></div>`;
-}
 
 function viewProfits(){
   const today = new Date().toISOString().slice(0,10);
@@ -1388,13 +1364,6 @@ function viewProfits(){
   </div>`;
 }
 
-function viewTraining(){
-  const modules=["الشركة","القسم","الدور","الأدوات","الإجراءات","التواصل مع العملاء","التصعيد","التسليم"];
-  const done = modules.filter(m=>localStorage.getItem('mod_'+m+'_'+currentUser)==='1').length;
-  return `<div class="pagehead"><h1>مركز التدريب</h1><p>تدريب الموظف الجديد خطوة بخطوة.</p></div>
-  <div class="card"><h3>التقدم</h3><div class="progresswrap"><div class="progressbar" style="width:${done/modules.length*100}%"></div></div><p>${done} / ${modules.length} مكتمل</p></div>
-  <div class="card"><h3>الوحدات التدريبية</h3>${modules.map((m,i)=>`<label class="chk"><input type="checkbox" data-ls="mod_${m}_${currentUser}" onchange="render()"> الوحدة ${i+1} — ${m}</label>`).join('')}</div>`;
-}
 
 function viewOnboarding(){
   const steps=["افهم الشركة","افهم قسمك","اقرأ دورك","اقرأ سير العمل اليومي","اقرأ الإجراءات","تعلّم الأدوات","اقرأ قواعد التواصل","اقرأ قواعد التصعيد","اقرأ معايير الجودة","أكمل التدريب","رافق موظفًا حاليًا","ابدأ العمل"];
@@ -1409,17 +1378,11 @@ function viewWhatNow(){
   return `<div class="pagehead"><h1>أعمل إيه دلوقتي؟</h1><p>بناءً على دورك الحالي: ${e.title}</p></div>
   <div class="card"><h3>1. المهمة الأولى</h3><p>${e.daily[0]||'—'}</p></div>
   <div class="card"><h3>2. المهمة التالية</h3><p>${e.daily[1]||'—'}</p></div>
-  <div class="card"><h3>3. ما الذي ينتظر ردًا</h3><p>راجع <a href="#/handover">مركز التسليم</a> لأي محادثات أو حالات معلّقة.</p></div>
+  <div class="card"><h3>3. ما الذي ينتظر ردًا</h3><p>راجع <a href="#/inbox">📨 الرسايل والمهام</a> لأي رسايل أو مهام مستنياك.</p></div>
   <div class="card"><h3>4. ما يجب تسليمه</h3><ul class="plain">${(d?.handover||[]).map(x=>`<li>${x}</li>`).join('')}</ul></div>
   <div class="card"><h3>5. هل هناك شيء يحتاج تصعيد؟</h3>${(d?.escalation||[]).map(([p,to])=>`<p>${p} → <b>${to}</b></p>`).join('')}</div>`;
 }
 
-function viewPolicies(){
-  const cats=["ساعات العمل","التواصل","خصوصية العميل","الخصوصية الداخلية","استخدام الأجهزة","أمان كلمات المرور","بيانات العملاء","الحضور","الإجازات","التصعيد","الاعتمادات","أصول الشركة","السلوك المهني"];
-  return `<div class="pagehead"><h1>دليل سياسات الشركة</h1><p>السياسات العامة للشركة.</p></div>
-  <div class="card"><div class="grid3">${cats.map(c=>`<div class="orgcard"><b>${c}</b><span>راجع مع مديرك المباشر عند أي استفسار</span></div>`).join('')}</div></div>
-  <div class="mono-note">المصدر الوحيد للحقيقة: كل معلومة تخص مسؤولية، إجراء عمل، تدفق عمل، سياسة، مهمة، دور، تسليم، تصعيد أو اعتماد يجب أن تكون موجودة هنا — وليس في واتساب أو ورقة أو ذاكرة الموظف.</div>`;
-}
 
 function viewSearch(){
   return `<div class="pagehead"><h1>بحث المعرفة</h1><p>ابحث في الموظفين، الأقسام، الإجراءات، والسياسات.</p></div>
@@ -1454,9 +1417,7 @@ const Squad = (function(){
      ===================================================================== */
   const ORDER_PRODUCTS = [
     'طقم محبس',
-        'طقم محبس + حلق',
     'طقم فص',
-    'طقم فص+ حلق',
     'طقم محبس وانسيال',
     'طقم فص وانسيال',
     'طقم محبس ودبلة تنجستين',
@@ -1824,6 +1785,7 @@ const Squad = (function(){
     const label = order.customer_name ? `أوردر "${order.customer_name}"` : 'الأوردر ده';
     if(!window.confirm(`متأكد إنك عايز تمسح ${label}؟ الخطوة دي مش هترجع.`)) return;
     // .select() بيرجّع الصفوف اللي اتمسحت فعلاً — لو رجع فاضي يبقى قاعدة البيانات رفضت المسح من غير ما تطلع إيرور
+    if(!isAdminUser()){ showToast('مسح الأوردرات للأدمن بس.', 'error'); return; }
     const { data, error } = await sb.from('orders').delete().eq('id', order.id).select('id');
     if(error){ showToast('مقدرناش نمسح الأوردر: ' + error.message, 'error'); return; }
     if(!data || !data.length){
@@ -1831,6 +1793,8 @@ const Squad = (function(){
       await loadMyOrders();
       return;
     }
+    // لو الأدمن بيمسح من صفحة أوردرات موظف، نشيله من الليستة على طول
+    if(state.agentOrders) state.agentOrders = state.agentOrders.filter(x => String(x.id) !== String(order.id));
     await loadMyOrders();
     loadLeaderboard();
     showToast('اتمسح الأوردر.', 'success');
@@ -1983,7 +1947,7 @@ const Squad = (function(){
         </td>
         <td data-label="إجراءات"><div class="sq-actions">
           <button class="sq-icon" title="تعديل الأوردر" aria-label="تعديل الأوردر" data-edit-id="${esc(o.id)}">✏️</button>
-          <button class="sq-icon danger" title="مسح الأوردر" aria-label="مسح الأوردر" data-delete-id="${esc(o.id)}">🗑️</button>
+          ${isAdminUser() ? `<button class="sq-icon danger" title="مسح الأوردر" aria-label="مسح الأوردر" data-delete-id="${esc(o.id)}">🗑️</button>` : ''}
         </div></td>
       </tr>`;
     }).join('');
@@ -2382,7 +2346,7 @@ const Squad = (function(){
       </div>
       <div class="sq-tablecard">
         ${list.length ? `<table class="sq-table">
-          <thead><tr><th>العميل</th><th>الموبايل</th><th>العنوان</th><th>الطلب</th><th>المقاس</th><th>المصدر</th><th>القيمة</th><th>العمولة</th><th>الحالة</th><th>التاريخ</th></tr></thead>
+          <thead><tr><th>العميل</th><th>الموبايل</th><th>العنوان</th><th>الطلب</th><th>المقاس</th><th>المصدر</th><th>القيمة</th><th>العمولة</th><th>الحالة</th><th>التاريخ</th>${isAdminUser() ? '<th></th>' : ''}</tr></thead>
           <tbody>${list.map(o => { const st = statusLabel(o.status); return `<tr>
             <td data-label="العميل">${esc(o.customer_name || '—')}</td>
             <td class="mut" data-label="الموبايل">${esc(o.customer_phone || '—')}</td>
@@ -2393,7 +2357,8 @@ const Squad = (function(){
             <td class="amount" data-label="القيمة">${o.amount ? esc(o.amount) + ' ج' : '—'}</td>
             <td class="mut" data-label="العمولة">${commCell(o, s.active)}</td>
             <td data-label="الحالة"><span class="sq-badge ${st.cls}">${st.text}</span></td>
-            <td class="mut" data-label="التاريخ">${fmtDate(o.created_at)}</td></tr>`; }).join('')}</tbody></table>`
+            <td class="mut" data-label="التاريخ">${fmtDate(o.created_at)}</td>
+            ${isAdminUser() ? `<td data-label="مسح"><button class="sq-icon danger" title="مسح الأوردر" aria-label="مسح الأوردر" data-delete-id="${esc(o.id)}">🗑️</button></td>` : ''}</tr>`; }).join('')}</tbody></table>`
         : `<div class="sq-empty">${all.length ? 'مفيش أوردرات بالفلتر ده.' : 'الموظف ده لسه مسجلش أوردرات.'}</div>`}
       </div>`;
     return h;
@@ -2752,7 +2717,7 @@ grant select, insert, update, delete on public.office_sales to authenticated;`;
     document.querySelectorAll('#sq-root .sq-status').forEach(sel => {
       sel.onchange = () => updateOrderStatus(sel.getAttribute('data-order-id'), sel.value);
     });
-    const findOrder = id => (state.myOrders || []).find(o => String(o.id) === String(id));
+    const findOrder = id => (state.myOrders || []).concat(state.agentOrders || []).find(o => String(o.id) === String(id));
     document.querySelectorAll('#sq-root [data-edit-id]').forEach(btn => {
       btn.onclick = () => { const o = findOrder(btn.getAttribute('data-edit-id')); if(o) setState({ editingOrder:o, error:'' }); };
     });
@@ -2800,7 +2765,7 @@ grant select, insert, update, delete on public.office_sales to authenticated;`;
 (function init(){
   const who=document.getElementById('whoami');
   who.innerHTML = Object.entries(EMP).map(([k,e])=>`<option value="${k}" ${k===currentUser?'selected':''}>${e.name} — ${e.title}</option>`).join('');
-  document.getElementById('deptlinks').innerHTML = DEPT_ORDER.map(k=>[k,DEPTS[k]]).map(([k,d])=>`<a class="navlink" href="#/dept/${k}">${d.emoji} ${d.name}</a>`).join('');
+  document.getElementById('deptlinks').innerHTML = DEPT_ORDER.filter(k=>k!=='warehouse').map(k=>[k,DEPTS[k]]).map(([k,d])=>`<a class="navlink" href="#/dept/${k}">${d.emoji} ${d.name}</a>`).join('');
   render();
   Squad.init(); // بيرجّع جلسة الدخول لو موجودة ويشغّل إشعارات الأوردرات الجديدة في كل الصفحات
 })();
@@ -4337,21 +4302,19 @@ async function exportToSheet(btn) {
   /* ---------- الأقسام اللي الأدمن بيتحكم فيها ---------- */
   function deptSections(){
     try{
-      return DEPT_ORDER.filter(k => DEPTS[k]).map(k => ({ key:'dept:' + k, label:(DEPTS[k].emoji || '') + ' ' + DEPTS[k].name }));
+      return DEPT_ORDER.filter(k => DEPTS[k] && k !== 'warehouse').map(k => ({ key:'dept:' + k, label:(DEPTS[k].emoji || '') + ' ' + DEPTS[k].name }));
     }catch(e){ return []; }
   }
   const GROUPS = () => [
     { title:'المالية', items:[
       { key:'accounts', label:'💼 الحسابات',  routes:['accounts'] },
-      { key:'bloom_accounts', label:'🌸 حسابات Bloom', routes:['bloom-accounts'] },
       { key:'profits', label:'💰 الأرباح',    routes:['profits'] },
+      { key:'dept:warehouse', label:'🏬 المخزن', routes:[] },
       { key:'ads',     label:'📢 الإعلانات',  routes:['ads'] },
       { key:'compass', label:'🧭 البوصلة',    routes:['compass'] },
       { key:'qp',      label:'🚚 QP',         routes:['qp'] },
       { key:'direct',  label:'🛒 مبيعات مباشرة', routes:['direct'] } ]},
     { title:'العمل', items:[
-      { key:'tasks',    label:'✅ مهامي',        routes:['tasks'] },
-      { key:'handover', label:'🔁 مركز التسليم', routes:['handover'] },
       { key:'squad',    label:'🏆 Squad',        routes:['squad'] },
       { key:'eod',      label:'📝 EOD',          routes:['eod'] },
       { key:'breakdown', label:'🧩 تحليل مكونات الطلبات', routes:['breakdown'] } ]},
@@ -4363,11 +4326,9 @@ async function exportToSheet(btn) {
     { title:'الشركة', items:[
       { key:'org',      label:'🏢 الهيكل التنظيمي',     routes:['org','employee'] },
       { key:'staff',    label:'👥 الموظفين الحاليون',   routes:['staff','employee'] },
-      { key:'flow',     label:'🔄 تدفق العمل بالشركة', routes:['flow'] },
-      { key:'policies', label:'📜 السياسات',            routes:['policies'] } ]},
+      { key:'flow',     label:'🔄 تدفق العمل بالشركة', routes:['flow'] } ]},
     { title:'المعرفة', items:[
       { key:'sop',      label:'📚 مكتبة الإجراءات', routes:['sop','sopdetail'] },
-      { key:'training', label:'🎓 مركز التدريب',    routes:['training'] },
       { key:'search',   label:'🔍 بحث المعرفة',     routes:['search'] } ]},
   ];
   const allSections = () => GROUPS().flatMap(g => g.items);
@@ -4381,6 +4342,7 @@ async function exportToSheet(btn) {
     if(!me) return false;
     const { r, p } = parse(hash);
     if(me.is_admin) return true;
+    if(r === 'inbox') return true; // 📨 الرسايل والمهام مفتوحة لكل الناس
     if(r === 'admin') return false;
     const al = allowedSet();
     if(r === 'dept') return al.has('dept:' + p);
@@ -6798,7 +6760,7 @@ table.pr td.ac-pos{color:#276749;font-weight:700}
 <script>
 /* 🧩 نفس نظام الحسابات بيتعمل منه أكتر من قسم، كل قسم بجدول منفصل في Supabase:
    - 💼 الحسابات       → جدول accounts_entries        → #/accounts
-   - 🌸 حسابات Bloom   → جدول accounts_entries_bloom  → #/bloom-accounts  */
+   (لو حبيت تعمل قسم حسابات تاني منفصل: makeAccounts({...}) تاني بجدول تاني)  */
 function makeAccounts(CFG){
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const fmt = n => Number(n || 0).toLocaleString('ar-EG', { maximumFractionDigits: 2 });
@@ -7284,11 +7246,392 @@ makeAccounts({ route:'accounts', table:'accounts_entries', icon:'💼', title:'�
   desc:'سجّل الإيرادات والمصروفات بتاريخها، والسيستم بيحسب صافي كل يوم (إيرادات − مصروفات) وإجمالي أي فترة.',
   anchor:'#sidebar a.navlink[href="#/profits"]', before:true });
 
-// 🌸 حسابات Bloom — منفصلة تمامًا (جدول تاني في Supabase)، نفس النظام بالظبط
-makeAccounts({ route:'bloom-accounts', table:'accounts_entries_bloom', icon:'🌸', title:'حسابات Bloom',
-  desc:'حسابات براند Bloom لوحدها — منفصلة تمامًا عن حسابات الشركة. سجّل الإيرادات والمصروفات بتاريخها، والسيستم بيحسب صافي كل يوم وإجمالي أي فترة.',
-  anchor:'#sidebar a.navlink[href="#/accounts"]', before:false });
 
+</script>
+
+<style>
+/* 📨 الرسايل والمهام */
+.ib-badge{display:none;min-width:20px;height:20px;padding:0 6px;border-radius:10px;background:#c0392b;color:#fff;font-size:12px;font-weight:700;line-height:20px;text-align:center;margin-inline-start:6px}
+.ib-badge.on{display:inline-block}
+.ib-wrap{max-width:1000px}
+.ib-compose{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;align-items:end}
+.ib-compose .full{grid-column:1/-1}
+.ib-compose label{display:block;font-size:13px;font-weight:600;color:var(--muted);margin-bottom:5px}
+.ib-compose input,.ib-compose select,.ib-compose textarea{width:100%;padding:10px 12px;border:1.5px solid var(--line);border-radius:8px;font-size:15px;color:var(--ink);background:var(--panel);font-family:inherit;box-sizing:border-box}
+.ib-compose textarea{min-height:80px;resize:vertical}
+.ib-kind{display:flex;gap:8px}
+.ib-kind button{flex:1;padding:10px;border:1.5px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink);font-family:inherit;font-size:14.5px;font-weight:600;cursor:pointer}
+.ib-kind button.on{border-color:var(--brass);background:var(--slate-l)}
+.ib-btn{padding:10px 18px;border:none;border-radius:8px;background:var(--brass);color:#fff;font-family:inherit;font-size:15px;font-weight:700;cursor:pointer}
+.ib-btn:hover{background:var(--brass-d)}
+.ib-btn:disabled{opacity:.5;cursor:not-allowed}
+.ib-btn.ghost{background:transparent;color:var(--ink);border:1.5px solid var(--line)}
+.ib-btn.ok{background:var(--ok)}
+.ib-btn.sm{padding:6px 12px;font-size:13.5px}
+.ib-tabs{display:flex;gap:6px;flex-wrap:wrap;margin:18px 0 12px}
+.ib-tabs button{padding:8px 14px;border:1px solid var(--line);border-radius:9px;background:var(--panel);color:var(--ink);font-family:inherit;font-size:14px;font-weight:600;cursor:pointer}
+.ib-tabs button.on{background:var(--brass-d);border-color:var(--brass-d);color:#fff}
+.ib-tabs b{display:inline-block;min-width:18px;padding:0 5px;border-radius:9px;background:#c0392b;color:#fff;font-size:11.5px;margin-inline-start:4px}
+.ib-item{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:10px;border-inline-start:4px solid var(--line)}
+.ib-item.new{border-inline-start-color:#c0392b;background:linear-gradient(90deg,transparent,rgba(192,57,43,.04))}
+.ib-item.task{border-inline-start-color:var(--brass)}
+.ib-item.done{border-inline-start-color:var(--ok);opacity:.85}
+.ib-item .top{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:13px;color:var(--muted);margin-bottom:6px}
+.ib-item .top b{color:var(--ink);font-size:14px}
+.ib-item .ttl{font-weight:700;font-size:15.5px;margin-bottom:4px}
+.ib-item .body{white-space:pre-wrap;font-size:14.5px;line-height:1.7}
+.ib-item .acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center}
+.ib-tag{display:inline-block;padding:2px 9px;border-radius:12px;font-size:12px;font-weight:700}
+.ib-tag.t{background:#fbf1dc;color:#8a5a12}.ib-tag.m{background:#e6eef8;color:#2c5282}
+.ib-tag.d{background:#e3f3e8;color:#23784a}.ib-tag.o{background:#fdecea;color:#a3271a}.ib-tag.late{background:#c0392b;color:#fff}
+.ib-note{font-size:13px;color:var(--muted);margin-top:6px}
+.ib-empty{color:var(--muted);text-align:center;padding:26px 0}
+.ib-perm{display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:#fff8e6;border:1px solid #f0d9a8;border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:14px;color:#6b4e12}
+.ib-pop{position:fixed;left:18px;bottom:90px;z-index:9999;display:flex;flex-direction:column;gap:10px;max-width:min(360px,calc(100vw - 36px))}
+.ib-pop .p{background:var(--panel);color:var(--ink);border:1px solid var(--line);border-inline-start:5px solid var(--brass);border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.18);padding:12px 14px;cursor:pointer;animation:ibIn .25s ease}
+.ib-pop .p .h{font-weight:700;margin-bottom:3px}
+.ib-pop .p .s{font-size:13.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@keyframes ibIn{from{transform:translateY(12px);opacity:0}to{transform:none;opacity:1}}
+.ib-sql{direction:ltr;text-align:left;white-space:pre-wrap;font-size:12px;background:var(--slate-l);padding:10px;border-radius:8px;max-height:280px;overflow:auto}
+</style>
+<script>
+/* =====================================================================
+   📨 الرسايل والمهام — جوه السيستم كله
+   - أي حد يقدر يبعت لأي حد (أو للكل) رسالة 💬 أو مهمة ✅
+   - المهمة لازم اللي استلمها يعلّم عليها "خلّصتها"، والمرسل بيجيله إشعار إنها اتعملت
+   - الإشعارات: صوت + نافذة صغيرة جوه السيستم + إشعار المتصفح (لو اتفعّل) + عدّاد أحمر في القايمة
+   - البيانات في جدول inbox في Supabase (كود الـ SQL في ملف inbox.sql)
+   ===================================================================== */
+(function(){
+  const sb = () => window.__sbClient || (window.AuthGate && window.AuthGate.sb);
+  const me = () => (window.AuthGate && window.AuthGate.me && window.AuthGate.me()) || null;
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const isInbox = () => (location.hash.replace('#/', '').split('/')[0] || '') === 'inbox';
+  const myName = () => { const m = me() || {}; return m.full_name || m.username || 'موظف'; };
+  const todayYmd = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); };
+  const when = t => { const d = new Date(t); if(isNaN(d)) return ''; const same = d.toDateString() === new Date().toDateString();
+    return same ? 'النهارده ' + d.toLocaleTimeString('ar-EG', { hour:'2-digit', minute:'2-digit' }) : d.toLocaleString('ar-EG', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }); };
+
+  const S = { items:null, people:null, err:'', missing:false, tab:'in', sending:false,
+              form:{ kind:'task', to:'', title:'', body:'', due:'' } };
+  let known = null;          // ids اللي شفناها قبل كده (عشان مانعملش إشعار مرتين)
+  let knownDone = new Set(); // مهام بعتها وعرفنا إنها خلصت
+  let started = false, channel = null;
+
+  /* ---------- 🔊 الصوت ---------- */
+  let actx = null;
+  const unlockAudio = () => { try{ actx = actx || new (window.AudioContext || window.webkitAudioContext)(); if(actx.state === 'suspended') actx.resume(); }catch(e){} };
+  ['click','keydown','touchstart'].forEach(ev => document.addEventListener(ev, unlockAudio, { passive:true }));
+  function ding(task){
+    try{
+      unlockAudio(); if(!actx) return;
+      const notes = task ? [660, 880, 1046] : [880, 1175];
+      notes.forEach((f, i) => {
+        const o = actx.createOscillator(), g = actx.createGain(), t0 = actx.currentTime + i * 0.16;
+        o.type = 'sine'; o.frequency.value = f;
+        g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(0.35, t0 + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.32);
+        o.connect(g); g.connect(actx.destination); o.start(t0); o.stop(t0 + 0.35);
+      });
+    }catch(e){}
+  }
+
+  /* ---------- 🔔 الإشعار ---------- */
+  function popup(title, sub, task){
+    let box = document.getElementById('ibPop');
+    if(!box){ box = document.createElement('div'); box.id = 'ibPop'; box.className = 'ib-pop'; document.body.appendChild(box); }
+    const p = document.createElement('div'); p.className = 'p';
+    p.innerHTML = `<div class="h">${esc(title)}</div><div class="s">${esc(sub || '')}</div>`;
+    p.onclick = () => { p.remove(); location.hash = '#/inbox'; };
+    box.appendChild(p);
+    setTimeout(() => p.remove(), 12000);
+    ding(task);
+    try{
+      if('Notification' in window && Notification.permission === 'granted' && (document.hidden || !document.hasFocus())){
+        const n = new Notification(title, { body: sub || '', tag: 'inbox-' + Date.now() });
+        n.onclick = () => { window.focus(); location.hash = '#/inbox'; n.close(); };
+      }
+    }catch(e){}
+  }
+
+  /* ---------- البيانات ---------- */
+  async function load(silent){
+    const m = me(); if(!m || !sb()) return;
+    const { data, error } = await sb().from('inbox').select('*').or(`to_id.eq.${m.id},from_id.eq.${m.id}`).order('created_at', { ascending:false }).limit(500);
+    if(error){
+      S.missing = /inbox|relation|schema cache|does not exist/i.test(error.message || '');
+      S.err = S.missing ? '' : error.message;
+      if(isInbox()) draw();
+      return;
+    }
+    S.missing = false; S.err = '';
+    const list = data || [];
+    // إشعارات للحاجات الجديدة (مش أول تحميل)
+    if(known){
+      list.forEach(x => {
+        if(x.to_id === m.id && !known.has(x.id)){
+          popup((x.kind === 'task' ? '✅ مهمة جديدة من ' : '💬 رسالة من ') + (x.from_name || 'حد'), x.title || x.body, x.kind === 'task');
+        }
+        if(x.from_id === m.id && x.kind === 'task' && x.status === 'done' && !x.sender_seen && !knownDone.has(x.id)){
+          popup('🎉 ' + (x.to_name || 'حد') + ' خلّص المهمة', x.title || x.body, true);
+        }
+      });
+    }
+    known = new Set(list.map(x => x.id));
+    list.forEach(x => { if(x.from_id === m.id && x.status === 'done') knownDone.add(x.id); });
+    S.items = list;
+    badge();
+    if(isInbox()){ draw(); markSeen(); }
+  }
+
+  async function loadPeople(){
+    if(S.people) return;
+    const { data } = await sb().from('profiles').select('id, username, full_name');
+    const myId = (me() || {}).id;
+    S.people = (data || []).filter(p => p.id !== myId).map(p => ({ id:p.id, name:p.full_name || p.username || 'موظف' })).sort((a, b) => a.name.localeCompare(b.name, 'ar'));
+    if(isInbox()) draw();
+  }
+
+  function counts(){
+    const m = me() || {}, L = S.items || [];
+    return {
+      unread: L.filter(x => x.to_id === m.id && x.kind === 'message' && !x.read_at).length,
+      openTasks: L.filter(x => x.to_id === m.id && x.kind === 'task' && x.status !== 'done').length,
+      doneUnseen: L.filter(x => x.from_id === m.id && x.kind === 'task' && x.status === 'done' && !x.sender_seen).length,
+    };
+  }
+  function badge(){
+    const c = counts(), n = c.unread + c.openTasks + c.doneUnseen;
+    const b = document.getElementById('ibBadge');
+    if(b){ b.textContent = n > 99 ? '99+' : n; b.classList.toggle('on', n > 0); }
+    document.title = (n ? '(' + n + ') ' : '') + document.title.replace(/^\(\d+\+?\) /, '');
+  }
+
+  // لما الصفحة تتفتح: الرسايل اللي وصلتلي تبقى مقروءة، والمهام اللي خلصت (اللي بعتها) تبقى متشافة
+  let seenBusy = false;
+  async function markSeen(){
+    if(seenBusy || document.hidden) return;
+    const m = me(), L = S.items || [];
+    const unread = L.filter(x => x.to_id === m.id && x.kind === 'message' && !x.read_at && S.tab === 'in').map(x => x.id);
+    const done = L.filter(x => x.from_id === m.id && x.kind === 'task' && x.status === 'done' && !x.sender_seen && S.tab === 'sent').map(x => x.id);
+    if(!unread.length && !done.length) return;
+    seenBusy = true;
+    const now = new Date().toISOString();
+    if(unread.length) await sb().from('inbox').update({ read_at: now }).in('id', unread);
+    if(done.length) await sb().from('inbox').update({ sender_seen: true }).in('id', done);
+    L.forEach(x => { if(unread.includes(x.id)) x.read_at = now; if(done.includes(x.id)) x.sender_seen = true; });
+    seenBusy = false; badge();
+  }
+
+  async function send(){
+    const f = S.form, m = me();
+    f.body = (document.getElementById('ibBody') || {}).value || f.body;
+    f.title = (document.getElementById('ibTitle') || {}).value || '';
+    f.due = (document.getElementById('ibDue') || {}).value || '';
+    f.to = (document.getElementById('ibTo') || {}).value || '';
+    if(!f.to) return flash('اختار هتبعت لمين.');
+    if(f.kind === 'task' && !f.title.trim() && !f.body.trim()) return flash('اكتب المهمة.');
+    if(f.kind === 'message' && !f.body.trim()) return flash('اكتب الرسالة.');
+    const targets = f.to === '*' ? (S.people || []) : (S.people || []).filter(p => p.id === f.to);
+    if(!targets.length) return flash('الشخص ده مش موجود.');
+    const rows = targets.map(p => ({ kind:f.kind, from_id:m.id, from_name:myName(), to_id:p.id, to_name:p.name,
+      title: f.title.trim() || null, body: f.body.trim() || null, due_date: f.kind === 'task' && f.due ? f.due : null }));
+    S.sending = true; draw();
+    const { error } = await sb().from('inbox').insert(rows);
+    S.sending = false;
+    if(error){ draw(); return flash('ماتبعتش: ' + error.message); }
+    S.form = { kind:f.kind, to:f.to, title:'', body:'', due:'' };
+    S.tab = 'sent';
+    flash(f.kind === 'task' ? `✅ المهمة اتبعتت ${targets.length > 1 ? 'لـ ' + targets.length + ' أشخاص' : 'لـ ' + targets[0].name}.` : '💬 الرسالة اتبعتت.', true);
+    await load(true);
+  }
+
+  async function done(id){
+    const x = (S.items || []).find(i => String(i.id) === String(id)); if(!x) return;
+    const note = prompt('تمام 👍 تحب تكتب ملاحظة للي بعتلك المهمة؟ (اختياري)', '');
+    if(note === null) return;
+    const { error } = await sb().from('inbox').update({ status:'done', done_at:new Date().toISOString(), done_note: note.trim() || null, read_at: x.read_at || new Date().toISOString() }).eq('id', id);
+    if(error) return flash('ماتعلّمتش: ' + error.message);
+    flash('✅ اتعلّمت إنها خلصت — ' + (x.from_name || '') + ' هيجيله إشعار.', true);
+    load(true);
+  }
+  async function reopen(id){
+    const { error } = await sb().from('inbox').update({ status:'open', done_at:null, done_note:null, sender_seen:false }).eq('id', id);
+    if(error) return flash(error.message);
+    load(true);
+  }
+  async function del(id){
+    if(!confirm('تمسحها؟')) return;
+    const { error } = await sb().from('inbox').delete().eq('id', id);
+    if(error) return flash('ماتمسحتش: ' + error.message);
+    load(true);
+  }
+  function reply(id){
+    const x = (S.items || []).find(i => String(i.id) === String(id)); if(!x) return;
+    S.form = { kind:'message', to:x.from_id, title:'', body:'', due:'' };
+    draw(); window.scrollTo({ top:0, behavior:'smooth' });
+    setTimeout(() => { const b = document.getElementById('ibBody'); if(b) b.focus(); }, 300);
+  }
+
+  let flashMsg = '', flashOk = false, flashT = null;
+  function flash(t, ok){ flashMsg = t; flashOk = !!ok; draw(); clearTimeout(flashT); flashT = setTimeout(() => { flashMsg = ''; if(isInbox()) draw(); }, 5000); }
+
+  /* ---------- الصفحة ---------- */
+  function card(x){
+    const m = me(), incoming = x.to_id === m.id, isTask = x.kind === 'task', isDone = x.status === 'done';
+    const late = isTask && !isDone && x.due_date && x.due_date < todayYmd();
+    const cls = ['ib-item', isTask ? 'task' : '', isDone ? 'done' : '', incoming && ((!isTask && !x.read_at) || (isTask && !isDone)) ? 'new' : ''].join(' ');
+    let h = `<div class="${cls}"><div class="top">
+      <span class="ib-tag ${isTask ? 't' : 'm'}">${isTask ? '✅ مهمة' : '💬 رسالة'}</span>
+      ${incoming ? `من <b>${esc(x.from_name || '—')}</b>` : `لـ <b>${esc(x.to_name || '—')}</b>`}
+      <span>· ${when(x.created_at)}</span>
+      ${isTask ? (isDone ? '<span class="ib-tag d">خلصت ✔</span>' : '<span class="ib-tag o">لسه</span>') : ''}
+      ${x.due_date ? `<span class="ib-tag ${late ? 'late' : 't'}">${late ? '⚠️ متأخرة — ' : '📅 '}آخر ميعاد ${esc(x.due_date)}</span>` : ''}
+      ${!incoming && !isTask ? `<span>${x.read_at ? '· 👁 اتقرت' : '· لسه ماتقرتش'}</span>` : ''}
+    </div>
+    ${x.title ? `<div class="ttl">${esc(x.title)}</div>` : ''}
+    ${x.body ? `<div class="body">${esc(x.body)}</div>` : ''}
+    ${isDone ? `<div class="ib-note">✔ خلصت ${when(x.done_at)}${x.done_note ? ' — ملاحظة: ' + esc(x.done_note) : ''}</div>` : ''}
+    <div class="acts">
+      ${incoming && isTask && !isDone ? `<button class="ib-btn ok sm" data-ib-done="${x.id}">✔️ خلّصتها</button>` : ''}
+      ${incoming && isTask && isDone ? `<button class="ib-btn ghost sm" data-ib-reopen="${x.id}">↩️ لسه مخلصتش</button>` : ''}
+      ${incoming ? `<button class="ib-btn ghost sm" data-ib-reply="${x.id}">↩ رد</button>` : ''}
+      ${!incoming || (me() || {}).is_admin ? `<button class="ib-btn ghost sm" data-ib-del="${x.id}">🗑️</button>` : ''}
+    </div></div>`;
+    return h;
+  }
+
+  function view(){
+    const m = me();
+    let h = `<div class="pagehead"><h1>📨 الرسايل والمهام</h1><p>ابعت رسالة أو مهمة لأي حد في الشركة. المهمة لازم اللي استلمها يعلّم عليها إنها خلصت، وساعتها بيجيلك إشعار.</p></div><div class="ib-wrap">`;
+    if(S.missing){
+      return h + `<div class="mono-note">جدول الرسايل لسه مش متعمل في Supabase.${m && m.is_admin ? ' شغّل الكود ده مرة واحدة في Supabase → SQL Editor:' : ' كلّم الأدمن.'}</div>
+        ${m && m.is_admin ? `<pre class="ib-sql">${esc(INBOX_SQL)}</pre>` : ''}</div>`;
+    }
+    if('Notification' in window && Notification.permission === 'default'){
+      h += `<div class="ib-perm">🔔 فعّل إشعارات المتصفح عشان يجيلك تنبيه حتى لو إنت في تاب تاني. <button class="ib-btn sm" id="ibPerm">فعّل الإشعارات</button></div>`;
+    }
+    if(flashMsg) h += `<div class="mono-note" style="${flashOk ? 'background:#e3f3e8;border-color:#a9d8b8;color:#23784a' : ''}">${esc(flashMsg)}</div>`;
+    if(S.err) h += `<div class="mono-note">${esc(S.err)}</div>`;
+    const f = S.form;
+    h += `<div class="card"><h3>✉️ ابعت جديد</h3><div class="ib-compose">
+      <div><label>النوع</label><div class="ib-kind">
+        <button type="button" data-ib-kind="task" class="${f.kind === 'task' ? 'on' : ''}">✅ مهمة</button>
+        <button type="button" data-ib-kind="message" class="${f.kind === 'message' ? 'on' : ''}">💬 رسالة</button></div></div>
+      <div><label for="ibTo">لمين</label><select id="ibTo"><option value="">— اختار —</option>
+        <option value="*" ${f.to === '*' ? 'selected' : ''}>📢 للكل</option>
+        ${(S.people || []).map(p => `<option value="${esc(p.id)}" ${f.to === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></div>
+      ${f.kind === 'task' ? `<div><label for="ibDue">آخر ميعاد (اختياري)</label><input type="date" id="ibDue" value="${esc(f.due)}"></div>
+        <div class="full"><label for="ibTitle">المهمة</label><input id="ibTitle" placeholder="مثلاً: كلّمي العملاء اللي في الهولد" value="${esc(f.title)}"></div>` : ''}
+      <div class="full"><label for="ibBody">${f.kind === 'task' ? 'تفاصيل (اختياري)' : 'الرسالة'}</label><textarea id="ibBody">${esc(f.body)}</textarea></div>
+      <div><button class="ib-btn" id="ibSend" ${S.sending ? 'disabled' : ''}>${S.sending ? 'بيتبعت...' : (f.kind === 'task' ? '📤 ابعت المهمة' : '📤 ابعت الرسالة')}</button></div>
+    </div></div>`;
+
+    if(!S.items) return h + `<div class="ib-empty">بيحمّل...</div></div>`;
+    const L = S.items, c = counts();
+    const inList = L.filter(x => x.to_id === m.id);
+    const myTasks = inList.filter(x => x.kind === 'task' && x.status !== 'done');
+    const sent = L.filter(x => x.from_id === m.id);
+    const tab = (k, l, n) => `<button class="${S.tab === k ? 'on' : ''}" data-ib-tab="${k}">${l}${n ? `<b>${n}</b>` : ''}</button>`;
+    h += `<div class="ib-tabs">${tab('in', '📥 الوارد', c.unread)}${tab('tasks', '✅ مهامي اللي لسه', c.openTasks)}${tab('sent', '📤 اللي بعته', c.doneUnseen)}</div>`;
+    const list = S.tab === 'tasks' ? myTasks : S.tab === 'sent' ? sent : inList;
+    if(S.tab === 'sent'){
+      const tasks = sent.filter(x => x.kind === 'task');
+      if(tasks.length) h += `<p class="ib-note" style="margin:0 0 10px">المهام اللي بعتها: <b>${tasks.filter(x => x.status === 'done').length}</b> خلصت من <b>${tasks.length}</b>.</p>`;
+    }
+    h += list.map(card).join('') || `<div class="ib-empty">${S.tab === 'tasks' ? 'مفيش مهام مستنياك 👌' : S.tab === 'sent' ? 'لسه مابعتش حاجة.' : 'مفيش رسايل.'}</div>`;
+    return h + '</div>';
+  }
+
+  function draw(){
+    if(!isInbox()) return;
+    const main = document.getElementById('main'); if(!main) return;
+    // نحافظ على اللي مكتوب قبل إعادة الرسم
+    const keep = id => { const el = document.getElementById(id); return el ? el.value : null; };
+    const b = keep('ibBody'), t = keep('ibTitle'), d = keep('ibDue'), to = keep('ibTo');
+    if(b !== null) S.form.body = b; if(t !== null) S.form.title = t; if(d !== null) S.form.due = d; if(to !== null) S.form.to = to;
+    main.innerHTML = view();
+    wire();
+  }
+  function wire(){
+    const $ = id => document.getElementById(id);
+    if($('ibSend')) $('ibSend').onclick = send;
+    if($('ibPerm')) $('ibPerm').onclick = async () => { try{ await Notification.requestPermission(); }catch(e){} unlockAudio(); draw(); };
+    document.querySelectorAll('[data-ib-kind]').forEach(b => b.onclick = () => { draw(); S.form.kind = b.getAttribute('data-ib-kind'); draw(); });
+    document.querySelectorAll('[data-ib-tab]').forEach(b => b.onclick = () => { S.tab = b.getAttribute('data-ib-tab'); draw(); markSeen(); });
+    document.querySelectorAll('[data-ib-done]').forEach(b => b.onclick = () => done(b.getAttribute('data-ib-done')));
+    document.querySelectorAll('[data-ib-reopen]').forEach(b => b.onclick = () => reopen(b.getAttribute('data-ib-reopen')));
+    document.querySelectorAll('[data-ib-del]').forEach(b => b.onclick = () => del(b.getAttribute('data-ib-del')));
+    document.querySelectorAll('[data-ib-reply]').forEach(b => b.onclick = () => reply(b.getAttribute('data-ib-reply')));
+  }
+
+  /* ---------- التشغيل ---------- */
+  function mount(){ if(!isInbox()) return; draw(); loadPeople(); load(true); }
+  const _render = render;
+  render = function(){ _render.apply(this, arguments); if(isInbox()) mount(); };
+  window.addEventListener('hashchange', () => { if(isInbox()) setTimeout(mount, 0); });
+
+  function start(){
+    if(started) return; started = true;
+    load(true);
+    // ⚡ Realtime: أول ما توصل حاجة جديدة أو مهمة تخلص
+    try{
+      const m = me();
+      channel = sb().channel('inbox-' + m.id)
+        .on('postgres_changes', { event:'INSERT', schema:'public', table:'inbox', filter:'to_id=eq.' + m.id }, () => load(true))
+        .on('postgres_changes', { event:'UPDATE', schema:'public', table:'inbox', filter:'from_id=eq.' + m.id }, () => load(true))
+        .subscribe();
+    }catch(e){}
+    // احتياطي لو الـ Realtime مش شغال: كل 45 ثانية
+    setInterval(() => load(true), 45000);
+    document.addEventListener('visibilitychange', () => { if(!document.hidden) load(true); });
+    if(isInbox()) mount();
+  }
+  // نستنى لحد ما الدخول يخلص
+  const wait = setInterval(() => { if(me() && sb()){ clearInterval(wait); start(); } }, 800);
+
+  const INBOX_SQL = `-- 📨 الرسايل والمهام — شغّله مرة واحدة في Supabase → SQL Editor
+create table if not exists public.inbox (
+  id bigint generated by default as identity primary key,
+  kind text not null default 'message' check (kind in ('message','task')),
+  from_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  from_name text,
+  to_id uuid not null references auth.users(id) on delete cascade,
+  to_name text,
+  title text, body text, due_date date,
+  status text not null default 'open' check (status in ('open','done')),
+  done_at timestamptz, done_note text,
+  read_at timestamptz,
+  sender_seen boolean not null default false,
+  created_at timestamptz not null default now()
+);
+create index if not exists inbox_to_idx   on public.inbox(to_id, created_at desc);
+create index if not exists inbox_from_idx on public.inbox(from_id, created_at desc);
+
+create or replace function public.inbox_is_admin() returns boolean
+language sql stable security definer set search_path = public as $$
+  select coalesce((select is_admin from public.profiles where id = auth.uid()), false);
+$$;
+
+alter table public.inbox enable row level security;
+drop policy if exists "inbox: read"   on public.inbox;
+drop policy if exists "inbox: send"   on public.inbox;
+drop policy if exists "inbox: update" on public.inbox;
+drop policy if exists "inbox: delete" on public.inbox;
+-- كل واحد بيشوف اللي اتبعتله واللي بعته بس
+create policy "inbox: read"   on public.inbox for select to authenticated using (to_id = auth.uid() or from_id = auth.uid());
+create policy "inbox: send"   on public.inbox for insert to authenticated with check (from_id = auth.uid());
+-- المستلم بيعلّم مقروءة/خلصت، والمرسل بيعلّم إنه شاف إنها خلصت
+create policy "inbox: update" on public.inbox for update to authenticated using (to_id = auth.uid() or from_id = auth.uid()) with check (to_id = auth.uid() or from_id = auth.uid());
+-- المسح للمرسل أو الأدمن
+create policy "inbox: delete" on public.inbox for delete to authenticated using (from_id = auth.uid() or public.inbox_is_admin());
+grant select, insert, update, delete on public.inbox to authenticated;
+
+-- ⚡ الإشعارات اللحظية
+do $$ begin
+  alter publication supabase_realtime add table public.inbox;
+exception when duplicate_object then null; end $$;`;
+  window.Inbox = { reload: () => load(true), sql: INBOX_SQL };
+})();
 </script>
 
 </body>
