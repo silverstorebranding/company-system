@@ -1431,10 +1431,7 @@ const Squad = (function(){
     
     'اسورة اية كرسي'
     ,'انسيال فضي',
-    'انسيال دهبي',
-    'سلسلة لازوردى'
-    ,
-    'خاتم لازوردى'
+    'انسيال دهبي'
   ];
 
   // مصادر الأوردر اللي بتظهر في القايمة — زوّد أو شيل من هنا
@@ -3842,6 +3839,113 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
     </details>`;
   }
 
+  /* =====================================================================
+     ↩️ تحليل المرتجعات
+     - تختار فترة، يقولك كام أوردر رجع فيها (حسب تاريخ الإرجاع أو تاريخ الأوردر)
+     - ويحلل محتوى المرتجعات: كام سلسلة / محبس / حلق / انسيال ... بنفس قواعد "تحليل مكونات الطلبات"
+     ===================================================================== */
+  const RET_LOOKBACK = 45; // لما نحسب بتاريخ الإرجاع بنجيب أوردرات قبل الفترة بـ 45 يوم (الأوردر بياخد وقت لحد ما يرجع)
+  let rFrom = todayKey().slice(0, 8) + '01', rTo = todayKey(), rBasis = 'ret';
+  let rOrders = null, rLoading = false, rErr = '', rInfo = '', rProg = 0, rShowOrders = false, rShowUnk = false, rFetchedKey = '';
+  const retDate = o => { const v = String(o.returned_Client_date ?? '').trim(); return (!v || v === 'NaT' || v === 'null') ? '' : dayKey(v); };
+
+  async function qpRetFetch(){
+    if(rLoading) return;
+    if(rFrom > rTo){ const x = rFrom; rFrom = rTo; rTo = x; }
+    rLoading = true; rErr = ''; rProg = 0; rInfo = 'بيجيب الأوردرات...'; qpRerender();
+    try{
+      const from = rBasis === 'ret' ? shiftDay(rFrom, -RET_LOOKBACK) : rFrom;
+      rOrders = await qpFetchRange(from, rTo, (n, pct) => { rProg = pct; rInfo = 'بيجيب... ' + n + ' أوردر'; qpRerender(); });
+      qpDetectNames(rOrders);
+      rFetchedKey = rBasis + '|' + rFrom + '|' + rTo;
+      rLoading = false; rInfo = '';
+    }catch(e){
+      rLoading = false;
+      rErr = /Failed to fetch|NetworkError/i.test(e.message) ? 'مش قادر يوصل لموقع الشحن. اتأكد إن فيه إنترنت.' : e.message;
+    }
+    qpRerender();
+  }
+
+  function retStats(){
+    const inRange = d => d && d >= rFrom && d <= rTo;
+    const returned = (rOrders || []).filter(o => rBasis === 'ret' ? inRange(retDate(o)) : (inRange(dayKey(o.order_date)) && retDate(o)));
+    const stuck = (rOrders || []).filter(o => inRange(dayKey(o.order_date)) && isStuckReturn(o));
+    const totalInRange = (rOrders || []).filter(o => inRange(dayKey(o.order_date))).length;
+    const A = window.OrderBreakdown ? window.OrderBreakdown.analyzeCells(returned.map(o => String(o.shipment_contents || ''))) : null;
+    const brands = {};
+    returned.forEach(o => { let b = null; try{ b = prGetBrand(o.notes); }catch(e){} b = b ? b.toUpperCase() : 'من غير براند'; brands[b] = (brands[b] || 0) + 1; });
+    const value = returned.reduce((a, o) => a + num(o.price), 0), fees = returned.reduce((a, o) => a + num(o.total_fees), 0);
+    return { returned, stuck, totalInRange, A, brands, value, fees };
+  }
+
+  function viewReturns(){
+    let h = `<div class="qp-toolbar">
+      <label>من <input type="date" value="${esc(rFrom)}" onchange="QP.retSet('from',this.value)"></label>
+      <label>إلى <input type="date" value="${esc(rTo)}" onchange="QP.retSet('to',this.value)"></label>
+      <label>حسب <select onchange="QP.retSet('basis',this.value)">
+        <option value="ret" ${rBasis === 'ret' ? 'selected' : ''}>تاريخ الإرجاع (رجع إمتى)</option>
+        <option value="order" ${rBasis === 'order' ? 'selected' : ''}>تاريخ الأوردر (اتعمل إمتى)</option></select></label>
+      <button class="linkbtn" onclick="QP.retPreset('month')">الشهر ده</button>
+      <button class="linkbtn" onclick="QP.retPreset('last')">الشهر اللي فات</button>
+      <button class="linkbtn" onclick="QP.retPreset('7')">آخر 7 أيام</button>
+      <button class="mockbtn" onclick="QP.retFetch()" ${rLoading ? 'disabled' : ''}>${rLoading ? '⏳ بيجيب...' : '🔍 حلّل المرتجعات'}</button>
+    </div>`;
+    if(rLoading) h += `<div class="card"><p class="qp-userline">${esc(rInfo)}</p><div class="qp-prog"><i style="width:${rProg}%"></i></div></div>`;
+    if(rErr) h += `<div class="mono-note">${esc(rErr)}</div>`;
+    if(!rOrders){
+      if(!rLoading) h += `<div class="card"><p class="none">اختار الفترة ودوس "🔍 حلّل المرتجعات".<br>
+        ${rBasis === 'ret' ? `حسب تاريخ الإرجاع: بيعدّ الأوردرات اللي <b>رجعت لينا</b> في الفترة دي (حتى لو الأوردر نفسه معمول قبلها بـ ${RET_LOOKBACK} يوم).` : 'حسب تاريخ الأوردر: بيعدّ الأوردرات اللي اتعملت في الفترة دي ورجعت بعد كده.'}</p></div>`;
+      return h;
+    }
+    if(rFetchedKey !== rBasis + '|' + rFrom + '|' + rTo) h += `<div class="mono-note">غيّرت الفترة أو الطريقة — دوس "🔍 حلّل المرتجعات" تاني عشان الأرقام تتحدّث.</div>`;
+
+    const R = retStats(), A = R.A;
+    const comp = re => A ? Object.entries(A.comps).filter(([n, v]) => v.cat !== 'p' && re.test(n)).reduce((a, [, v]) => a + v.qty, 0) : 0;
+    h += `<div class="qp-kpis">
+      <div class="qp-kpi qpd-kpi-big" style="border-top:4px solid var(--warn)"><div class="l">↩️ أوردرات رجعت</div><div class="n" style="color:var(--warn)">${fmt(R.returned.length)}</div>
+        <div class="sub">${rBasis === 'ret' ? 'رجعت لينا من ' + esc(rFrom) + ' لـ ' + esc(rTo) : 'من ' + fmt(R.totalInRange) + ' أوردر اتعملوا في الفترة (' + (R.totalInRange ? (R.returned.length / R.totalInRange * 100).toFixed(1) : 0) + '%)'}</div></div>
+      <div class="qp-kpi qpd-kpi-big"><div class="l">💸 قيمة المرتجعات</div><div class="n">${fmt(R.value)} ج</div><div class="sub">شحنها ${fmt(R.fees)} ج</div></div>
+      <div class="qp-kpi qpd-kpi-big" onclick="QP.retStuck()" style="cursor:pointer"><div class="l">📦 لسه عند QP (مارجعتش لسه)</div><div class="n">${fmt(R.stuck.length)}</div><div class="sub">مستلمش ومن غير تاريخ إرجاع — أوردرات الفترة · دوس تعرضهم</div></div>
+    </div>`;
+    h += `<div class="qp-kpis">
+      <div class="qp-kpi"><div class="n">${fmt(comp(/سلسل/))}</div><div class="l">⛓️ سلاسل</div></div>
+      <div class="qp-kpi"><div class="n">${fmt(comp(/محبس|خاتم|دبل/))}</div><div class="l">💍 محابس وخواتم ودبل</div></div>
+      <div class="qp-kpi"><div class="n">${fmt(comp(/حلق/))}</div><div class="l">✨ حلقان</div></div>
+      <div class="qp-kpi"><div class="n">${fmt(comp(/انسيال/))}</div><div class="l">📿 انسيالات</div></div>
+      ${A && Object.values(A.comps).some(v => v.cat === 'k') ? `<div class="qp-kpi"><div class="n">${fmt(Object.values(A.comps).filter(v => v.cat === 'k').reduce((a, v) => a + v.qty, 0))}</div><div class="l">👕 ملابس أطفال</div></div>` : ''}
+    </div>`;
+
+    if(!A) return h + `<div class="mono-note">قسم "تحليل مكونات الطلبات" مش متحمّل، فمش قادر يحلل المحتوى.</div>`;
+    const compRows = Object.entries(A.comps).sort((a, b) => (a[1].cat > b[1].cat ? 1 : a[1].cat < b[1].cat ? -1 : b[1].qty - a[1].qty));
+    const ordersWith = name => A.orders.filter(o => o.comps[name]).length;
+    h += `<div class="qpd-grid">
+      <div class="card"><h3>🧩 القطع اللي رجعت</h3><div class="tablewrap"><table class="pr" style="min-width:0"><thead><tr><th>القطعة</th><th>العدد</th><th>في كام أوردر</th></tr></thead><tbody>
+        ${compRows.filter(([, v]) => v.cat !== 'p').map(([n, v]) => `<tr><td class="lbl">${esc(n)}</td><td><b>${fmt(v.qty)}</b></td><td>${fmt(ordersWith(n))}</td></tr>`).join('') || '<tr><td colspan="3">مفيش.</td></tr>'}
+        ${compRows.some(([, v]) => v.cat === 'p') ? `<tr class="bd-cat"><td colspan="3">🎁 علب وتغليف</td></tr>` + compRows.filter(([, v]) => v.cat === 'p').map(([n, v]) => `<tr><td class="lbl">${esc(n)}</td><td>${fmt(v.qty)}</td><td>${fmt(ordersWith(n))}</td></tr>`).join('') : ''}
+      </tbody></table></div></div>
+      <div class="card"><h3>📦 المنتجات وبراندات المرتجعات</h3><div class="tablewrap"><table class="pr" style="min-width:0"><thead><tr><th>المنتج</th><th>العدد</th></tr></thead><tbody>
+        ${Object.entries(A.products).sort((a, b) => b[1].qty - a[1].qty).map(([n, v]) => `<tr><td class="lbl">${esc(n)}</td><td><b>${fmt(v.qty)}</b></td></tr>`).join('') || '<tr><td colspan="2">مفيش.</td></tr>'}
+      </tbody></table>
+      <table class="pr" style="min-width:0;margin-top:12px"><thead><tr><th>البراند</th><th>رجع</th></tr></thead><tbody>
+        ${Object.entries(R.brands).sort((a, b) => b[1] - a[1]).map(([b, n]) => `<tr><td class="lbl">${esc(b)}</td><td><b>${fmt(n)}</b></td></tr>`).join('')}
+      </tbody></table></div></div>
+    </div>`;
+
+    const unk = Object.entries(A.unknown).sort((a, b) => b[1] - a[1]);
+    if(unk.length) h += `<div class="card"><h3 style="display:flex;justify-content:space-between;align-items:center">⚠️ محتوى مااتعرفش عليه (${fmt(A.unkLines)} سطر)
+        <button class="linkbtn" onclick="QP.retToggle('unk')">${rShowUnk ? 'اخفي' : 'اعرض'}</button></h3>
+      <p class="qp-userline">السطور دي مادخلتش في عدّ القطع. لو فيها منتج جديد، يتضاف في قواعد "تحليل مكونات الطلبات".</p>
+      ${rShowUnk ? `<div class="tablewrap"><table class="pr" style="min-width:0"><thead><tr><th>المحتوى</th><th>مرات</th></tr></thead><tbody>${unk.map(([l, n]) => `<tr><td class="lbl">${esc(l)}</td><td>${fmt(n)}</td></tr>`).join('')}</tbody></table></div>` : ''}</div>`;
+
+    h += `<div class="card"><h3 style="display:flex;justify-content:space-between;align-items:center">📋 الأوردرات اللي رجعت (${fmt(R.returned.length)})
+        <button class="linkbtn" onclick="QP.retToggle('orders')">${rShowOrders ? 'اخفي' : 'اعرض'}</button></h3>
+      ${rShowOrders ? `<div class="tablewrap"><table class="pr"><thead><tr><th>الكود</th><th>تاريخ الأوردر</th><th>تاريخ الإرجاع</th><th>العميل</th><th>المحتوى</th><th>القيمة</th><th>الملاحظة</th></tr></thead><tbody>
+        ${R.returned.slice().sort((a, b) => retDate(b).localeCompare(retDate(a))).map(o => `<tr><td>${esc(o.serial)}</td><td>${esc(dayKey(o.order_date))}</td><td>${esc(retDate(o))}</td>
+          <td>${esc(o.full_name || '')}</td><td class="lbl" style="white-space:normal;min-width:260px">${esc(o.shipment_contents || '')}</td><td>${fmt(num(o.price))}</td><td>${esc(String(o.notes || '').split('\n')[0])}</td></tr>`).join('')}
+      </tbody></table></div>` : ''}</div>`;
+    return h;
+  }
+
   /* ---------- الصفحة ---------- */
   function viewQP(){
     let h = `<div class="pagehead"><h1>🚚 QP</h1><p>الأوردرات جاية مباشرة من موقع شركة الشحن QP Express.</p></div>`;
@@ -3860,8 +3964,10 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
     h += `<div class="qp-tabs">
       <button class="${qpTab === 'dash' ? 'on' : ''}" onclick="QP.tab('dash')">📊 لوحة QP</button>
       <button class="${qpTab === 'orders' ? 'on' : ''}" onclick="QP.tab('orders')">📋 الأوردرات والتفاصيل</button>
+      <button class="${qpTab === 'returns' ? 'on' : ''}" onclick="QP.tab('returns')">↩️ تحليل المرتجعات</button>
     </div>`;
     if(qpTab === 'dash') return h + viewDash();
+    if(qpTab === 'returns') return h + viewReturns();
 
     h += `<div class="qp-toolbar">
       <span class="qp-userline">داخل باسم <b>${esc(creds.u)}</b></span>
@@ -4037,6 +4143,18 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
       dFrom = v + '-01'; const last = dayKey(new Date(y, m, 0)); dTo = last > todayKey() ? todayKey() : last; qpDashFetch(false); },
     dashLast30(){ dFrom = monthAgo(); dTo = shiftDay(todayKey(), 1); qpDashFetch(false); },
     dashCities(){ dAllCities = !dAllCities; qpRerender(); },
+    retFetch(){ qpRetFetch(); },
+    retSet(k, v){ if(k === 'basis') rBasis = v; else if(v){ if(k === 'from') rFrom = v; else rTo = v; } qpRerender(); },
+    retPreset(p){
+      const t = todayKey();
+      if(p === 'month'){ rFrom = t.slice(0, 8) + '01'; rTo = t; }
+      else if(p === '7'){ rFrom = shiftDay(t, -6); rTo = t; }
+      else { const d = new Date(); d.setDate(1); d.setDate(0); rTo = dayKey(d); rFrom = rTo.slice(0, 8) + '01'; }
+      qpRetFetch();
+    },
+    retToggle(w){ if(w === 'unk') rShowUnk = !rShowUnk; else rShowOrders = !rShowOrders; qpRerender(); },
+    // يفتح تاب الأوردرات على اللي لسه عند QP من أوردرات الفترة
+    retStuck(){ if(!rOrders) return; qpOrders = rOrders.filter(o => { const d = dayKey(o.order_date); return d >= rFrom && d <= rTo; }); qpFrom = rFrom; qpTo = rTo; qpStFilter = 'stuck'; qpTab = 'orders'; qpRerender(); },
     dashCust(v){ qpCustId = String(v || '').trim(); try{ if(qpCustId) localStorage.setItem(QPC_LS, qpCustId); else localStorage.removeItem(QPC_LS); }catch(e){} qpDashSummary(); },
     // يفتح تاب الأوردرات على المرتجعات اللي عند QP، بنفس فترة اللوحة
     dashStuck(){ if(!dOrders) return; qpOrders = dOrders; qpFrom = dFrom; qpTo = dTo; qpFetchedAt = dFetchedAt; qpStFilter = 'stuck'; qpTab = 'orders'; qpRerender(); },
@@ -6553,8 +6671,10 @@ table.pr tr.bd-cat td{background:var(--slate-l);font-weight:700}
     return 1;
   }
 
-  function analyze(text){
-    const cells = parseCells(text);
+  function analyze(text){ return analyzeCells(parseCells(text)); }
+  // 🔁 بيتستخدم كمان في QP → تحليل المرتجعات (بيدّي ليستة نصوص الأوردرات)
+  window.OrderBreakdown = { analyzeCells: cells => analyzeCells(cells), CATS };
+  function analyzeCells(cells){
     const comps = {}, products = {}, unknown = {}, orders = [];
     let lines = 0, unkLines = 0, sets = 0;
     const addComp = (o, name, cat, q) => {
