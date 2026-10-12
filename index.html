@@ -4815,6 +4815,15 @@ async function exportToSheet(btn) {
 .inv-tab{border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:8px 14px;border-radius:9px;cursor:pointer;font-family:inherit;font-size:14px}
 .inv-tab.on{background:var(--brass);border-color:var(--brass);color:#fff;font-weight:700}
 .inv-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:16px}
+/* 🚚 إخراج البيكب + أمر الطباعة */
+.pk-card{border:2px solid var(--brass);background:linear-gradient(180deg,rgba(176,141,87,.07),transparent)}
+.pk-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.pk-t{width:100%;border-collapse:collapse;font-size:14px;margin:10px 0}
+.pk-t th{background:var(--slate-l);font-size:12.5px;color:var(--muted);padding:6px 8px;text-align:right}
+.pk-t td{padding:6px 8px;border-bottom:1px dashed var(--line)}
+.pk-t td.q{font-weight:800;text-align:center}
+.pk-send{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-top:10px;align-items:end}
+.pk-send label{display:block;font-size:12.5px;color:var(--muted);margin-bottom:4px}
 .inv-kpi{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
 .inv-kpi .n{font-size:24px;font-weight:700}
 .inv-kpi .l{font-size:12.5px;color:var(--muted);margin-top:2px}
@@ -5383,9 +5392,107 @@ th{background:#3d5553;color:#fff} td.r{text-align:right;font-weight:600} tr:nth-
     return `المتاح دلوقتي: <b>${fmtN(it.qty)}</b> ${esc(it.unit || '')}` + (buy && lc != null && lq ? ` · تكلفة السطر: <b>${fmtN(lc * lq)} ج</b>` : '');
   }
 
+  /* =====================================================================
+     🚚 إخراج البيكب → ✅ تم الانتهاء → 🖨️ أمر طباعة يروح لحد (زي نوران)
+     - بيجمع الإخراج اللي إنت عملته النهارده من آخر "تم الانتهاء"
+     - أمر الطباعة بيوصل للشخص في 📨 الرسايل والمهام بإشعار وصوت، وهو يدوس 🖨️ اطبع
+     ===================================================================== */
+  const PK_DEFAULT_TO = /nouran|نوران/i; // اللي بيتختار تلقائي يستلم أمر الطباعة
+  const pk = { open:false, to:'', note:'', people:null, sending:false };
+  const pkKey = () => 'inv_pk_start_' + (me().id || '');
+  const dayStart = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
+  function pkStart(){
+    let v = null; try{ v = localStorage.getItem(pkKey()); }catch(e){}
+    const d = v ? new Date(v) : null;
+    return (!d || isNaN(d) || d < dayStart()) ? dayStart() : d;
+  }
+  function pkMoves(){
+    const st = pkStart(), mine = myName();
+    return (S.moves || []).filter(m => m.kind === 'out' && new Date(m.created_at) >= st && (!mine || m.created_by_name === mine));
+  }
+  function pkRows(){
+    const g = {};
+    pkMoves().forEach(m => {
+      const it = itemById(m.item_id) || {};
+      const r = g[m.item_id] = g[m.item_id] || { name: (m.inv_items && m.inv_items.name) || it.name || '—', sku: it.sku || '', unit: (m.inv_items && m.inv_items.unit) || it.unit || '', qty: 0 };
+      r.qty += Math.abs(Number(m.qty) || 0);
+    });
+    return Object.values(g).sort((a, b) => a.name.localeCompare(b.name, 'ar'));
+  }
+  async function pkPeople(){
+    if(pk.people) return;
+    const { data } = await sb().from('profiles').select('id, username, full_name');
+    pk.people = (data || []).map(p => ({ id:p.id, name:p.full_name || p.username || 'موظف' })).sort((a, b) => a.name.localeCompare(b.name, 'ar'));
+    if(!pk.to){ const n = pk.people.find(p => PK_DEFAULT_TO.test(p.name)); if(n) pk.to = n.id; }
+    draw();
+  }
+  function pkPayload(){
+    const rows = pkRows(), to = (pk.people || []).find(p => p.id === pk.to);
+    return { type:'pickup', date: ymd(new Date()), at: new Date().toISOString(), by: myName(), to: to ? to.name : '',
+      note: pk.note.trim(), rows, total: rows.reduce((a, r) => a + r.qty, 0), from: pkStart().toISOString() };
+  }
+  function printPickup(P){
+    const n = v => Number(v || 0).toLocaleString('ar-EG', { maximumFractionDigits: 2 });
+    const dt = new Date(P.at || Date.now());
+    printDoc('إذن إخراج البيكب', `
+      <div class="hd"><div><h1>🚚 إذن إخراج البيكب</h1><div class="sub">${dt.toLocaleDateString('ar-EG', { weekday:'long', day:'numeric', month:'long', year:'numeric' })} — الساعة ${dt.toLocaleTimeString('ar-EG', { hour:'2-digit', minute:'2-digit' })}</div></div>
+        <div class="meta">خرّجه: <b>${esc(P.by || '—')}</b>${P.to ? '<br>اتبعت لـ: <b>' + esc(P.to) + '</b>' : ''}<br>اتطبع: <b>${new Date().toLocaleString('ar-EG', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' })}</b></div></div>
+      <div class="k"><div>عدد الأصناف<b>${n(P.rows.length)}</b></div><div>إجمالي القطع<b>${n(P.total)}</b></div></div>
+      <table><tr><th style="width:40px">م</th><th>الصنف</th><th>الكود</th><th>الكمية</th><th>الوحدة</th><th style="width:70px">✓ مراجعة</th></tr>
+      ${P.rows.map((r, k) => `<tr><td>${n(k + 1)}</td><td class="r">${esc(r.name)}</td><td>${esc(r.sku || '—')}</td><td style="font-size:16px;font-weight:700">${n(r.qty)}</td><td>${esc(r.unit || '')}</td><td></td></tr>`).join('')}
+      <tr class="tot"><td colspan="3">الإجمالي</td><td>${n(P.total)}</td><td colspan="2"></td></tr></table>
+      ${P.note ? `<p style="margin-top:14px;font-size:14px"><b>ملاحظة:</b> ${esc(P.note)}</p>` : ''}
+      <div style="display:flex;gap:30px;margin-top:50px;font-size:14px">
+        <div style="flex:1;border-top:1px solid #333;padding-top:6px;text-align:center">توقيع المسؤولة عن البيكب</div>
+        <div style="flex:1;border-top:1px solid #333;padding-top:6px;text-align:center">توقيع المراجعة / الاستلام</div></div>`);
+  }
+  window.InvPrint = { pickup: printPickup }; // بيستخدمه 📨 الرسايل والمهام لما حد يدوس "🖨️ اطبع"
+
+  async function pkSend(){
+    const P = pkPayload();
+    if(!P.rows.length) return flash('مفيش إخراج متسجّل باسمك من آخر "تم الانتهاء".', true);
+    const to = (pk.people || []).find(p => p.id === pk.to);
+    if(!to) return flash('اختار هتبعت أمر الطباعة لمين.', true);
+    const lines = P.rows.map(r => `• ${r.name}: ${r.qty} ${r.unit || ''}`.trim()).join('\n');
+    pk.sending = true; draw();
+    const { error } = await sb().from('inbox').insert({
+      kind:'task', from_id: me().id, from_name: myName(), to_id: to.id, to_name: to.name,
+      title: `🖨️ اطبع إذن إخراج البيكب — ${new Date().toLocaleDateString('ar-EG', { day:'numeric', month:'long' })}`,
+      body: `${P.rows.length} صنف — ${P.total} قطعة${P.note ? '\nملاحظة: ' + P.note : ''}\n${lines}\n#PRINT#${JSON.stringify(P)}`,
+      due_date: P.date });
+    pk.sending = false;
+    if(error) return flash(/inbox|relation|schema cache/i.test(error.message) ? '❌ جدول الرسايل مش متعمل في Supabase — شغّل ملف inbox_and_orders.sql الأول.' : '❌ ماتبعتش: ' + error.message, true);
+    try{ localStorage.setItem(pkKey(), new Date().toISOString()); }catch(e){}
+    pk.open = false; pk.note = '';
+    if(window.Inbox && window.Inbox.reload) window.Inbox.reload();
+    flash(`✅ تم الانتهاء من إخراج البيكب، وأمر الطباعة اتبعت لـ ${to.name} 🖨️ — هيجيلك إشعار لما يتطبع.`);
+  }
+  function pkHtml(){
+    const rows = pkRows(), total = rows.reduce((a, r) => a + r.qty, 0), st = pkStart();
+    let h = `<div class="card pk-card"><div class="pk-row"><h3 style="margin:0;flex:1">🚚 إخراج البيكب بتاعك النهارده</h3>
+      <span class="none" style="font-size:12.5px">من الساعة ${st.toLocaleTimeString('ar-EG', { hour:'2-digit', minute:'2-digit' })}</span></div>`;
+    if(!rows.length) return h + `<p class="none" style="margin:8px 0 0">لسه مفيش إخراج متسجّل باسمك من آخر "تم الانتهاء". سجّل الإخراج من تحت، ولما تخلص البيكب كله دوس "✅ تم الانتهاء".</p></div>`;
+    h += `<table class="pk-t"><thead><tr><th>الصنف</th><th style="text-align:center">الكمية</th></tr></thead><tbody>
+      ${rows.map(r => `<tr><td>${esc(r.name)}${r.sku ? ` <span class="none" style="font-size:12px">${esc(r.sku)}</span>` : ''}</td><td class="q">${fmtN(r.qty)} ${esc(r.unit || '')}</td></tr>`).join('')}
+      <tr><td><b>الإجمالي (${fmtN(rows.length)} صنف)</b></td><td class="q">${fmtN(total)}</td></tr></tbody></table>`;
+    if(!pk.open) return h + `<div class="pk-row"><button class="inv-btn pri" data-act="pk-finish">✅ تم الانتهاء من إخراج البيكب</button>
+      <button class="inv-btn" data-act="pk-here">🖨️ اطبع هنا</button></div></div>`;
+    h += `<div class="pk-send">
+        <div><label for="pkTo">🖨️ ابعت أمر الطباعة لـ</label><select class="inv-in" id="pkTo"><option value="">${pk.people ? '— اختار —' : 'بيحمّل...'}</option>
+          ${(pk.people || []).map(p => `<option value="${esc(p.id)}" ${pk.to === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></div>
+        <div><label for="pkNote">ملاحظة (اختياري)</label><input class="inv-in" id="pkNote" value="${esc(pk.note)}" placeholder="مثلاً: بيكب الصبح"></div>
+      </div>
+      <div class="pk-row" style="margin-top:12px">
+        <button class="inv-btn pri" data-act="pk-send" ${pk.sending ? 'disabled' : ''}>${pk.sending ? '⏳ بيتبعت...' : '🖨️ ابعت أمر الطباعة'}</button>
+        <button class="inv-btn" data-act="pk-here">🖨️ اطبع هنا</button>
+        <button class="inv-btn" data-act="pk-cancel">إلغاء</button>
+      </div></div>`;
+    return h;
+  }
+
   function vMove(kind){
     const isOut = kind === 'out';
-    return `<div class="card inv-form">
+    return (isOut ? pkHtml() : '') + `<div class="card inv-form">
       <h3 style="margin-top:0">${isOut ? '➖ إخراج أصناف من المخزن' : '➕ إدخال أصناف للمخزن'}</h3>
       <p class="none" style="margin:0 0 12px">${isOut ? 'مثلاً: تجهيز أوردرات، تالف، تحويل.' : 'اختار نوع الإدخال — "المشتريات" بس هي اللي بتتحسب في تقرير المشتريات.'} تقدر تضيف كذا صنف في نفس المرة.</p>
       ${isOut ? '' : `<div class="inv-tabs" style="margin-bottom:12px">${Object.entries(SRC).map(([k, l]) => `<button class="inv-tab ${S.src === k ? 'on' : ''}" data-src="${k}">${l}</button>`).join('')}</div>`}
@@ -5655,6 +5762,13 @@ th{background:#3d5553;color:#fff} td.r{text-align:right;font-weight:600} tr:nth-
     const bx = root.querySelector('[data-act=buy-xlsx]'); if(bx) bx.onclick = exportBuy;
     const bp = root.querySelector('[data-act=buy-print]'); if(bp) bp.onclick = printBuy;
     const sm = root.querySelector('[data-act=save-move]'); if(sm) sm.onclick = () => saveMove(sm.dataset.kind);
+    // 🚚 إخراج البيكب
+    const pf = root.querySelector('[data-act=pk-finish]'); if(pf) pf.onclick = () => { pk.open = true; draw(); pkPeople(); };
+    const pc = root.querySelector('[data-act=pk-cancel]'); if(pc) pc.onclick = () => { pk.open = false; draw(); };
+    const ps = root.querySelector('[data-act=pk-send]'); if(ps) ps.onclick = pkSend;
+    root.querySelectorAll('[data-act=pk-here]').forEach(b => b.onclick = () => printPickup(pkPayload()));
+    const pt = root.querySelector('#pkTo'); if(pt) pt.onchange = () => { pk.to = pt.value; };
+    const pn = root.querySelector('#pkNote'); if(pn) pn.oninput = () => { pk.note = pn.value; };
 
     root.querySelectorAll('[data-count]').forEach(el => el.oninput = () => {
       S.count[el.dataset.count] = el.value;
@@ -7522,7 +7636,7 @@ makeAccounts({ route:'accounts', table:'accounts_entries', icon:'💼', title:'�
     if(known){
       list.forEach(x => {
         if(x.to_id === m.id && !known.has(x.id)){
-          popup((x.kind === 'task' ? '✅ مهمة جديدة من ' : '💬 رسالة من ') + (x.from_name || 'حد'), x.title || x.body, x.kind === 'task');
+          popup((x.kind === 'task' ? '✅ مهمة جديدة من ' : '💬 رسالة من ') + (x.from_name || 'حد'), x.title || bodyText(x), x.kind === 'task');
         }
         if(x.from_id === m.id && x.kind === 'task' && x.status === 'done' && !x.sender_seen && !knownDone.has(x.id)){
           popup('🎉 ' + (x.to_name || 'حد') + ' خلّص المهمة', x.title || x.body, true);
@@ -7635,6 +7749,26 @@ makeAccounts({ route:'accounts', table:'accounts_entries', icon:'💼', title:'�
   let flashMsg = '', flashOk = false, flashT = null;
   function flash(t, ok){ flashMsg = t; flashOk = !!ok; draw(); clearTimeout(flashT); flashT = setTimeout(() => { flashMsg = ''; if(isInbox()) draw(); }, 5000); }
 
+  /* ---------- 🖨️ أوامر الطباعة (جاية من المخزن) ---------- */
+  const PRINT_MARK = '#PRINT#';
+  const bodyText = x => String(x.body || '').split(PRINT_MARK)[0].trim();
+  function printOf(x){
+    const b = String(x.body || ''), i = b.indexOf(PRINT_MARK);
+    if(i < 0) return null;
+    try{ return JSON.parse(b.slice(i + PRINT_MARK.length)); }catch(e){ return null; }
+  }
+  async function doPrint(id){
+    const x = (S.items || []).find(i => String(i.id) === String(id)); if(!x) return;
+    const P = printOf(x);
+    if(!P || !window.InvPrint) return flash('مش قادر يجهّز الورقة.');
+    window.InvPrint.pickup(P);
+    // اللي استلم الأمر: بيتعلّم إنه اتطبع، والمرسل بيجيله إشعار
+    if(x.to_id === (me() || {}).id && x.status !== 'done'){
+      await sb().from('inbox').update({ status:'done', done_at:new Date().toISOString(), done_note:'اتطبع 🖨️', read_at: x.read_at || new Date().toISOString() }).eq('id', id);
+      load(true);
+    }
+  }
+
   /* ---------- الصفحة ---------- */
   function card(x){
     const m = me(), incoming = x.to_id === m.id, isTask = x.kind === 'task', isDone = x.status === 'done';
@@ -7649,9 +7783,10 @@ makeAccounts({ route:'accounts', table:'accounts_entries', icon:'💼', title:'�
       ${!incoming && !isTask ? `<span>${x.read_at ? '· 👁 اتقرت' : '· لسه ماتقرتش'}</span>` : ''}
     </div>
     ${x.title ? `<div class="ttl">${esc(x.title)}</div>` : ''}
-    ${x.body ? `<div class="body">${esc(x.body)}</div>` : ''}
+    ${x.body ? `<div class="body">${esc(bodyText(x))}</div>` : ''}
     ${isDone ? `<div class="ib-note">✔ خلصت ${when(x.done_at)}${x.done_note ? ' — ملاحظة: ' + esc(x.done_note) : ''}</div>` : ''}
     <div class="acts">
+      ${printOf(x) ? `<button class="ib-btn sm" data-ib-print="${x.id}">🖨️ اطبع</button>` : ''}
       ${incoming && isTask && !isDone ? `<button class="ib-btn ok sm" data-ib-done="${x.id}">✔️ خلّصتها</button>` : ''}
       ${incoming && isTask && isDone ? `<button class="ib-btn ghost sm" data-ib-reopen="${x.id}">↩️ لسه مخلصتش</button>` : ''}
       ${incoming ? `<button class="ib-btn ghost sm" data-ib-reply="${x.id}">↩ رد</button>` : ''}
@@ -7719,6 +7854,7 @@ makeAccounts({ route:'accounts', table:'accounts_entries', icon:'💼', title:'�
     document.querySelectorAll('[data-ib-kind]').forEach(b => b.onclick = () => { draw(); S.form.kind = b.getAttribute('data-ib-kind'); draw(); });
     document.querySelectorAll('[data-ib-tab]').forEach(b => b.onclick = () => { S.tab = b.getAttribute('data-ib-tab'); draw(); markSeen(); });
     document.querySelectorAll('[data-ib-done]').forEach(b => b.onclick = () => done(b.getAttribute('data-ib-done')));
+    document.querySelectorAll('[data-ib-print]').forEach(b => b.onclick = () => doPrint(b.getAttribute('data-ib-print')));
     document.querySelectorAll('[data-ib-reopen]').forEach(b => b.onclick = () => reopen(b.getAttribute('data-ib-reopen')));
     document.querySelectorAll('[data-ib-del]').forEach(b => b.onclick = () => del(b.getAttribute('data-ib-del')));
     document.querySelectorAll('[data-ib-reply]').forEach(b => b.onclick = () => reply(b.getAttribute('data-ib-reply')));
