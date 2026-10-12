@@ -192,7 +192,7 @@ input.plainIn{padding:6px 10px;border:1px solid var(--line);border-radius:6px;wi
 #sq-root .sq-hype .t{font-size:15.5px;font-weight:700;margin-bottom:2px}
 #sq-root .sq-hype .s{font-size:13px;opacity:.85}
 
-#sq-root .sq-stats{display:grid;grid-template-columns:repeat(6,1fr);border:1px solid var(--line);border-radius:10px;background:var(--panel);overflow:hidden;margin-bottom:22px}
+#sq-root .sq-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));border:1px solid var(--line);border-radius:10px;background:var(--panel);overflow:hidden;margin-bottom:22px}
 #sq-root .sq-stat{padding:18px 20px;border-inline-start:1px solid var(--line)}
 #sq-root .sq-stat:first-child{border-inline-start:none}
 #sq-root .sq-stat .n{font-size:26px;font-weight:700;line-height:1}
@@ -217,6 +217,28 @@ input.plainIn{padding:6px 10px;border:1px solid var(--line);border-radius:6px;wi
 #sq-root .sq-badge.delivered{background:var(--sq-green-soft);color:var(--sq-green)}
 #sq-root .sq-badge.cancelled{background:var(--sq-red-soft);color:var(--sq-red)}
 #sq-root .sq-badge.undelivered{background:#efe7f4;color:#6b3f86}
+/* 🧾 أوردرات النهارده */
+.sq-today-btn{position:fixed;bottom:80px;left:18px;z-index:9990;display:flex;align-items:center;gap:6px;padding:8px 14px;border:none;border-radius:22px;background:#2f7d55;color:#fff;font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,.18)}
+.sq-today-btn b{font-size:18px}
+.sq-today-btn span{font-size:12px;opacity:.9}
+.sq-today-btn.bump{animation:sqBump .6s ease}
+@keyframes sqBump{0%{transform:scale(1)}30%{transform:scale(1.25)}60%{transform:scale(.95)}100%{transform:scale(1)}}
+.sq-today-panel{position:fixed;bottom:128px;left:18px;z-index:9991;width:min(320px,calc(100vw - 28px));max-height:70vh;overflow:auto;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:14px;box-shadow:0 14px 34px rgba(0,0,0,.2);padding:14px 16px}
+.sq-today-panel .hd{display:flex;justify-content:space-between;align-items:center;font-size:16px;margin-bottom:2px}
+.sq-today-panel .hd button{border:none;background:none;font-size:16px;cursor:pointer;color:var(--muted)}
+.sq-today-panel .sub{font-size:12.5px;color:var(--muted);margin-bottom:8px}
+.sq-today-panel .r{display:flex;justify-content:space-between;padding:7px 2px;border-bottom:1px dashed var(--line);font-size:14px}
+.sq-today-panel .r.me{background:rgba(47,125,85,.08);border-radius:6px;padding-inline:6px}
+.sq-today-panel .r.sm{font-size:12.5px;color:var(--muted)}
+.sq-today-panel .r b{font-size:16px;color:#2f7d55}
+.sq-today-panel .perm{margin-top:10px;width:100%;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--slate-l);font-family:inherit;cursor:pointer}
+.sq-opop{position:fixed;top:64px;left:14px;z-index:9992;display:flex;flex-direction:column;gap:8px;max-width:min(340px,calc(100vw - 28px))}
+.sq-opop .p{background:#2f7d55;color:#fff;border-radius:12px;padding:11px 14px;box-shadow:0 10px 26px rgba(0,0,0,.22);cursor:pointer;animation:sqIn .25s ease}
+.sq-opop .p .h{font-weight:700;font-size:15px}
+.sq-opop .p .s{font-size:13px;opacity:.92;margin-top:2px}
+@keyframes sqIn{from{transform:translateX(-14px);opacity:0}to{transform:none;opacity:1}}
+#sq-root .sq-today-tag{display:inline-block;font-size:12px;font-weight:700;padding:2px 8px;border-radius:10px;background:var(--slate-l);color:var(--muted);vertical-align:middle}
+#sq-root .sq-today-tag.on{background:#e3f3e8;color:#2f7d55}
 /* 🏢 عمولة المكتب */
 #sq-root .of-form{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px 14px;align-items:end;max-width:none}
 #sq-root .of-form .sq-field{margin:0}
@@ -1827,17 +1849,125 @@ const Squad = (function(){
       .on('postgres_changes', { event:'INSERT', schema:'public', table:'orders' }, (payload) => {
         const o = payload.new;
         const isMine = o.agent_id === state.session?.user?.id;
-        const agentName = isMine ? 'إنت' : (profileNameMap[o.agent_id] || 'زميلك');
-        const who = isMine ? 'سجّلت أوردر جديد' : `${agentName} سجّل أوردر جديد`;
-        const customer = o.customer_name ? ` — ${o.customer_name}` : '';
-        showToast(`🧾 ${who}${customer}`, isMine ? 'success' : null);
+        todayAdd(o);                       // 🧾 العدّاد + الإشعار بالصوت
         if(isMine) loadMyOrders();
-        loadLeaderboard();
+        if(state.view === 'leaderboard' || state.view === 'dashboard') loadLeaderboard();
       })
+      .on('postgres_changes', { event:'DELETE', schema:'public', table:'orders' }, () => { loadToday(); })
       .subscribe();
+    loadToday();
+    startTodayTimers();
   }
   function unsubscribeOrderFeed(){
     if(orderFeedChannel){ sb.removeChannel(orderFeedChannel); orderFeedChannel = null; }
+    stopTodayTimers(); todayOrders = null; todayDay = ''; drawTodayIcon();
+  }
+
+  /* =====================================================================
+     🧾 أوردرات النهارده — عدّاد لكل موظف + للفريق كله (بيتصفّر لوحده كل يوم)
+     - أيقونة لوحدها فوق على الشمال (مش في الرسايل) فيها إجمالي أوردرات النهارده
+     - أي حد يضيف أوردر: إشعار بصوت لكل الناس "فلانة خدت أوردر بـ ... ج"
+     ===================================================================== */
+  let todayOrders = null, todayDay = '', todayTimer = null, todayOpen = false;
+  const todayStartIso = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.toISOString(); };
+  const isTodayTs = t => { const d = new Date(t); return !isNaN(d) && localYmd(d) === localYmd(new Date()); };
+  async function loadToday(){
+    if(!state.session) return;
+    const { data, error } = await sb.from('orders').select('id, agent_id, amount, customer_name, page_name, created_at').gte('created_at', todayStartIso()).order('created_at', { ascending:false });
+    if(error) return;
+    if(!Object.keys(profileNameMap).length){
+      const { data: pr } = await sb.from('profiles').select('id, username, full_name');
+      (pr || []).forEach(p => profileNameMap[p.id] = p.full_name || p.username || 'موظف');
+    }
+    todayOrders = (data || []).filter(o => isTodayTs(o.created_at));
+    todayDay = localYmd(new Date());
+    drawTodayIcon(); refreshTodayInViews();
+  }
+  const todayCount = id => (todayOrders || []).filter(o => o.agent_id === id).length;
+  function todayAdd(o){
+    if(!isTodayTs(o.created_at || new Date())) return;
+    todayOrders = todayOrders || [];
+    if(!todayOrders.some(x => String(x.id) === String(o.id))) todayOrders.unshift(o);
+    const isMine = o.agent_id === state.session?.user?.id;
+    const name = isMine ? 'إنت' : (profileNameMap[o.agent_id] || 'زميلك');
+    const n = todayCount(o.agent_id), amt = Number(o.amount) || 0;
+    drawTodayIcon(true); refreshTodayInViews();
+    orderPop(isMine ? '🎉 سجّلت أوردر جديد' : `🧾 ${name} خدت أوردر`,
+      `${amt ? 'بـ ' + amt.toLocaleString('ar-EG') + ' ج' : ''}${o.page_name ? ' · ' + o.page_name : ''} — كده ${isMine ? 'إنت' : 'هي'} ${n.toLocaleString('ar-EG')} النهارده · الفريق ${todayOrders.length.toLocaleString('ar-EG')}`,
+      !isMine);
+  }
+  function startTodayTimers(){
+    stopTodayTimers();
+    // كل دقيقة: لو اليوم اتغيّر العدّاد يرجع صفر، وكل 3 دقايق تحديث احتياطي
+    let tick = 0;
+    todayTimer = setInterval(() => {
+      tick++;
+      if(todayDay && todayDay !== localYmd(new Date())){ todayOrders = []; todayDay = localYmd(new Date()); drawTodayIcon(); refreshTodayInViews(); }
+      if(tick % 3 === 0) loadToday();
+    }, 60000);
+  }
+  function stopTodayTimers(){ if(todayTimer){ clearInterval(todayTimer); todayTimer = null; } }
+  // لو صفحة Squad مفتوحة نحدّث أرقام "النهارده" اللي فيها
+  function refreshTodayInViews(){ if(location.hash.startsWith('#/squad') && (state.view === 'leaderboard' || state.view === 'dashboard')) render(); }
+
+  // 🔊 صوت الأوردر (مختلف عن صوت الرسايل)
+  let oCtx = null;
+  ['click','keydown','touchstart'].forEach(ev => document.addEventListener(ev, () => { try{ oCtx = oCtx || new (window.AudioContext || window.webkitAudioContext)(); if(oCtx.state === 'suspended') oCtx.resume(); }catch(e){} }, { passive:true }));
+  function orderSound(){
+    try{
+      if(!oCtx) return; if(oCtx.state === 'suspended') oCtx.resume();
+      [523, 659, 784, 1046].forEach((f, i) => {
+        const o = oCtx.createOscillator(), g = oCtx.createGain(), t0 = oCtx.currentTime + i * 0.09;
+        o.type = 'triangle'; o.frequency.value = f;
+        g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(0.3, t0 + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.28);
+        o.connect(g); g.connect(oCtx.destination); o.start(t0); o.stop(t0 + 0.3);
+      });
+    }catch(e){}
+  }
+  function orderPop(title, sub, sound){
+    let box = document.getElementById('sqOrderPop');
+    if(!box){ box = document.createElement('div'); box.id = 'sqOrderPop'; box.className = 'sq-opop'; document.body.appendChild(box); }
+    const p = document.createElement('div'); p.className = 'p';
+    p.innerHTML = `<div class="h">${esc(title)}</div><div class="s">${esc(sub)}</div>`;
+    p.onclick = () => { p.remove(); toggleTodayPanel(true); };
+    box.appendChild(p);
+    setTimeout(() => p.remove(), 9000);
+    if(sound) orderSound();
+    try{
+      if(sound && 'Notification' in window && Notification.permission === 'granted' && (document.hidden || !document.hasFocus())){
+        const n = new Notification(title, { body: sub, tag:'order-' + Date.now() });
+        n.onclick = () => { window.focus(); n.close(); };
+      }
+    }catch(e){}
+  }
+
+  // الأيقونة اللي لوحدها + لوحة النهارده
+  function drawTodayIcon(bump){
+    let b = document.getElementById('sqTodayBtn');
+    if(!state.session || todayOrders === null){ if(b) b.remove(); const pnl = document.getElementById('sqTodayPanel'); if(pnl) pnl.remove(); return; }
+    if(!b){
+      b = document.createElement('button'); b.id = 'sqTodayBtn'; b.type = 'button'; b.className = 'sq-today-btn';
+      b.title = 'أوردرات النهارده'; b.onclick = () => toggleTodayPanel();
+      document.body.appendChild(b);
+    }
+    b.innerHTML = `🧾 <b>${todayOrders.length.toLocaleString('ar-EG')}</b><span>أوردر النهارده</span>`;
+    if(bump){ b.classList.remove('bump'); void b.offsetWidth; b.classList.add('bump'); }
+    if(document.getElementById('sqTodayPanel')) toggleTodayPanel(true);
+  }
+  function toggleTodayPanel(forceOpen){
+    let pnl = document.getElementById('sqTodayPanel');
+    if(pnl && !forceOpen){ pnl.remove(); return; }
+    if(!pnl){ pnl = document.createElement('div'); pnl.id = 'sqTodayPanel'; pnl.className = 'sq-today-panel'; document.body.appendChild(pnl); }
+    const L = todayOrders || [], by = {};
+    L.forEach(o => { const r = by[o.agent_id] = by[o.agent_id] || { n:0, v:0 }; r.n++; r.v += Number(o.amount) || 0; });
+    const rows = Object.entries(by).sort((a, b) => b[1].n - a[1].n);
+    const myId = state.session?.user?.id;
+    pnl.innerHTML = `<div class="hd"><b>🧾 أوردرات النهارده: ${L.length.toLocaleString('ar-EG')}</b><button type="button" onclick="document.getElementById('sqTodayPanel').remove()">✕</button></div>
+      <div class="sub">بقيمة ${L.reduce((a, o) => a + (Number(o.amount) || 0), 0).toLocaleString('ar-EG')} ج — العدّاد بيرجع صفر كل يوم</div>
+      ${rows.map(([id, r], i) => `<div class="r ${id === myId ? 'me' : ''}"><span>${i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '•'} ${esc(profileNameMap[id] || 'موظف')}${id === myId ? ' (إنت)' : ''}</span><b>${r.n.toLocaleString('ar-EG')}</b></div>`).join('') || '<div class="sub" style="padding:10px 0">لسه محدش خد أوردر النهارده.</div>'}
+      ${L.length ? `<div class="sub" style="margin-top:10px;font-weight:700">آخر الأوردرات</div>
+        ${L.slice(0, 8).map(o => `<div class="r sm"><span>${esc(profileNameMap[o.agent_id] || 'موظف')} · ${new Date(o.created_at).toLocaleTimeString('ar-EG', { hour:'2-digit', minute:'2-digit' })}</span><span>${o.amount ? Number(o.amount).toLocaleString('ar-EG') + ' ج' : '—'}</span></div>`).join('')}` : ''}
+      ${'Notification' in window && Notification.permission === 'default' ? `<button type="button" class="perm" onclick="Notification.requestPermission().then(()=>document.getElementById('sqTodayPanel').remove())">🔔 فعّل إشعارات المتصفح</button>` : ''}`;
   }
 
   /* ---------- Views ---------- */
@@ -1956,6 +2086,7 @@ const Squad = (function(){
     return head(`أهلاً، ${esc(state.profile?.full_name || state.profile?.username || '')}`, 'ده ملخص أدائك وكل الأوردرات اللي رفعتها.') + `
       ${HypeBanner()}
       <div class="sq-stats">
+        <div class="sq-stat" style="border-top:4px solid var(--brass)"><div class="n gold">${todayCount(state.session?.user?.id).toLocaleString('ar-EG')}</div><div class="l">🧾 أوردراتك النهارده (الفريق ${(todayOrders || []).length.toLocaleString('ar-EG')})</div></div>
         <div class="sq-stat"><div class="n">${s.total}</div><div class="l">إجمالي الأوردرات (${s.pending} قيد التنفيذ)</div></div>
         <div class="sq-stat"><div class="n green">${s.delivered}</div><div class="l">أوردر اتسلم</div></div>
         <div class="sq-stat"><div class="n green">${money(s.delValue)}</div><div class="l">💰 قيمة الأوردرات اللي اتسلمت</div></div>
@@ -2384,7 +2515,7 @@ const Squad = (function(){
         ${rows.length ? rows.map((r,i) => `
           <div class="sq-board-row">
             <div class="sq-rank ${i===0?'r1':i===1?'r2':i===2?'r3':''}">${i+1}</div>
-            <div class="sq-name"><bdi>${esc(r.name)}</bdi> <small class="sq-rate">· نسبة التسليم ${rateTxt(r.delRate)}</small>
+            <div class="sq-name"><bdi>${esc(r.name)}</bdi> <span class="sq-today-tag ${todayCount(r.id) ? 'on' : ''}" title="أوردرات النهارده">النهارده ${todayCount(r.id).toLocaleString('ar-EG')}</span> <small class="sq-rate">· نسبة التسليم ${rateTxt(r.delRate)}</small>
               ${sourceChips(r.sources)}
               ${canViewAll() ? `<button type="button" class="sq-viewbtn" data-view-agent="${esc(r.id)}" data-agent-name="${esc(r.name)}">👁 عرض الأوردرات</button>` : ''}</div>
             <div class="sq-metric c">${r.total}</div>
@@ -7554,7 +7685,7 @@ makeAccounts({ route:'accounts', table:'accounts_entries', icon:'💼', title:'�
 .ib-note{font-size:13px;color:var(--muted);margin-top:6px}
 .ib-empty{color:var(--muted);text-align:center;padding:26px 0}
 .ib-perm{display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:#fff8e6;border:1px solid #f0d9a8;border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:14px;color:#6b4e12}
-.ib-pop{position:fixed;left:18px;bottom:90px;z-index:9999;display:flex;flex-direction:column;gap:10px;max-width:min(360px,calc(100vw - 36px))}
+.ib-pop{position:fixed;left:18px;bottom:132px;z-index:9999;display:flex;flex-direction:column;gap:10px;max-width:min(360px,calc(100vw - 36px))}
 .ib-pop .p{background:var(--panel);color:var(--ink);border:1px solid var(--line);border-inline-start:5px solid var(--brass);border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.18);padding:12px 14px;cursor:pointer;animation:ibIn .25s ease}
 .ib-pop .p .h{font-weight:700;margin-bottom:3px}
 .ib-pop .p .s{font-size:13.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
