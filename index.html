@@ -6042,9 +6042,17 @@ textarea.eod-in{resize:vertical;min-height:70px}
         { k:'nostock',   l:'مخرجتش لعدم توافر مخزون', type:'n' },
         { k:'postponed', l:'اتأجلت لبكرة لأي سبب تاني', type:'n', extra:true },
       ]},
+      { t:'🚚 الأوردرات اللي خرجت', f:[
+        { k:'out_acc',   l:'خرج إكسسوارات', type:'n' },
+        { k:'out_kids',  l:'خرج ملابس أطفال', type:'n' },
+        { k:'out_socks', l:'خرج شرابات', type:'n' },
+        { k:'out_bloom', l:'خرج Bloom', type:'n' },
+      ]},
       { t:'💰 الفلوس', f:[
         { k:'sales',     l:'إجمالي المبيعات', type:'money' },
         { k:'collected', l:'إجمالي التحصيل', type:'money' },
+        { k:'direct_sales',   l:'إجمالي المبيعات المباشرة', type:'money' },
+        { k:'direct_returns', l:'إجمالي المرتجعات المباشرة', type:'money' },
       ]},
       { t:'↩️ المرتجعات', f:[
         { k:'ret_courier', l:'المرتجعات حسب المندوب', type:'n' },
@@ -6078,6 +6086,8 @@ textarea.eod-in{resize:vertical;min-height:70px}
         { k:'undel_solved',   l:'اتحلّوا (هيستلموا)', type:'n', extra:true },
       ]},
       { t:'💬 المحادثات والشكاوى', f:[
+        { k:'wa_msgs_start', l:'إجمالي رسايل الواتساب أول اليوم', type:'n' },
+        { k:'wa_msgs_left',  l:'رسايل الواتساب الباقية آخر اليوم', type:'n' },
         { k:'chats',      l:'محادثات اتردّ عليها', type:'n', extra:true },
         { k:'pending',    l:'محادثات لسه مستنية رد آخر اليوم', type:'n', extra:true },
         { k:'complaints', l:'عدد الشكاوى', type:'n', extra:true },
@@ -6114,8 +6124,8 @@ textarea.eod-in{resize:vertical;min-height:70px}
     const L = [], W = [];
     if(type === 'pickup'){
       if(has('total')){
-        if((has('acc') || has('kids')) && n('acc') + n('kids') !== n('total'))
-          W.push(`إكسسوارات + ملابس أطفال = ${fmt(n('acc') + n('kids'))} ومش بيساوي إجمالي الأوردرات (${fmt(n('total'))})`);
+        if((has('acc') || has('kids')) && n('acc') + n('kids') > n('total'))
+          W.push(`إكسسوارات + ملابس أطفال = ${fmt(n('acc') + n('kids'))} وده أكتر من إجمالي الأوردرات (${fmt(n('total'))})`);
         if(has('handed')) L.push(['نسبة اللي خرج للمندوب', pct(n('handed'), n('total'))]);
         if(has('nostock')) L.push(['نسبة اللي وقف بسبب المخزون', pct(n('nostock'), n('total')), n('nostock') ? 'bad' : 'good']);
       }
@@ -6124,10 +6134,16 @@ textarea.eod-in{resize:vertical;min-height:70px}
         L.push(['فرق المرتجعات (المندوب − الفعلي)', sgn(df), df ? 'bad' : 'good']);
         if(df) W.push(`فيه فرق ${fmt(Math.abs(df))} مرتجع بين كلام المندوب واللي استلمناه فعلاً — لازم يتراجع معاه`);
       }
-      if(has('sales') || has('collected')){
-        const df = n('collected') - n('sales');
-        L.push(['فرق التحصيل عن المبيعات', sgn(df) + ' ج', df < 0 ? 'bad' : df > 0 ? '' : 'good']);
+      // 🚚 اللي خرج النهارده
+      const outKeys = ['out_acc', 'out_kids', 'out_socks', 'out_bloom'];
+      if(outKeys.some(has)){
+        const out = outKeys.reduce((a, k) => a + n(k), 0);
+        L.push(['إجمالي الأوردرات اللي خرجت (إكسسوارات + أطفال + شرابات + Bloom)', fmt(out)]);
+        if(has('handed') && out !== n('handed')) W.push(`مجموع اللي خرج (${fmt(out)}) مش بيساوي "اتسلّمت للمندوب فعلاً" (${fmt(n('handed'))}) — راجع الأرقام`);
       }
+      // 🛒 المبيعات المباشرة
+      if(has('direct_sales') || has('direct_returns'))
+        L.push(['صافي المبيعات المباشرة (المبيعات − المرتجعات)', sgn(n('direct_sales') - n('direct_returns')) + ' ج', n('direct_sales') - n('direct_returns') < 0 ? 'bad' : '']);
       if(n('nostock') > 0 && !String(d.nostock_items || '').trim()) W.push('اكتب الأصناف اللي كانت ناقصة عشان المخزن يطلبها');
     } else {
       const tot = n('wa') + n('page') + n('retarget') + n('fu_orders');
@@ -6144,6 +6160,15 @@ textarea.eod-in{resize:vertical;min-height:70px}
         if(n(p + '_replied') > n(p + '_followed')) W.push(`اللي ردّوا في ${l} أكتر من اللي اتتابعوا — راجع الأرقام`);
       });
       if(n('pending') > 0) W.push(`فيه ${fmt(n('pending'))} محادثة لسه مستنية رد`);
+      // 💬 رسايل الواتساب
+      if(has('wa_msgs_start')){
+        L.push(['رسايل الواتساب أول اليوم', fmt(n('wa_msgs_start'))]);
+        if(has('wa_msgs_left')){
+          L.push(['رسايل الواتساب الباقية آخر اليوم', fmt(n('wa_msgs_left')), n('wa_msgs_left') ? 'bad' : 'good']);
+          if(n('wa_msgs_start')) L.push(['نسبة الباقي من رسايل أول اليوم', pct(n('wa_msgs_left'), n('wa_msgs_start'))]);
+        }
+      }
+      if(n('wa_msgs_left') > 0) W.push(`فيه ${fmt(n('wa_msgs_left'))} رسالة واتساب لسه باقية آخر اليوم`);
     }
     return { L, W };
   }
