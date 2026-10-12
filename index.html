@@ -292,7 +292,8 @@ input.plainIn{padding:6px 10px;border:1px solid var(--line);border-radius:6px;wi
 #sq-root .sq-pick{display:flex;align-items:center;gap:8px;border:1.5px solid var(--line);border-radius:9px;padding:8px 10px;background:var(--panel)}
 #sq-root .sq-pick.on{border-color:var(--brass);background:var(--slate-l)}
 #sq-root .sq-pick.extra{border-style:dashed}
-#sq-root .sq-types{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+#sq-root .sq-types{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+@media (max-width:520px){#sq-root .sq-types{grid-template-columns:repeat(2,1fr)}}
 #sq-root .sq-type{border:1.5px solid var(--line);background:var(--panel);color:var(--ink);border-radius:10px;padding:12px 10px;font-family:inherit;font-size:15px;font-weight:700;cursor:pointer}
 #sq-root .sq-type.on{background:var(--brass-d);border-color:var(--brass-d);color:#fff}
 #sq-root .sq-hide{display:none}
@@ -2137,14 +2138,14 @@ const Squad = (function(){
     }).filter(Boolean).join(' + ');
   }
 
-  // 👕 البراند في "أوردر جديد": اكسسوارات (المصدر/الطلب/المقاس بالليستة زي ما هي) أو RS / Bloom (ملابس: الخانات دي فاضية والموظف يكتبها)
-  let newOrderType = ''; // '' | 'acc' | 'rs' | 'bloom'
-  const ORDER_BRANDS = { acc:'اكسسوارات', rs:'RS', bloom:'Bloom' };
-  const isClothes = t => t === 'rs' || t === 'bloom';
+  // 👕 البراند في "أوردر جديد": اكسسوارات (المصدر/الطلب/المقاس بالليستة زي ما هي) أو RS / Bloom / Socky (الخانات دي فاضية والموظف يكتبها)
+  let newOrderType = ''; // '' | 'acc' | 'rs' | 'bloom' | 'socky'
+  const ORDER_BRANDS = { acc:'اكسسوارات', rs:'RS', bloom:'Bloom', socky:'Socky' };
+  const isClothes = t => t === 'rs' || t === 'bloom' || t === 'socky';
   function typePicker(prefix){
     const b = (k, l) => `<button type="button" class="sq-type ${newOrderType === k ? 'on' : ''}" data-otype="${k}">${l}</button>`;
     return `<div class="sq-field"><label>البراند <span class="sq-hint">حدد الأول الأوردر ده تبع أنهي براند</span></label>
-      <div class="sq-types" id="${prefix}-types">${b('acc', '💍 اكسسوارات')}${b('rs', '👕 RS')}${b('bloom', '🌸 Bloom')}</div></div>`;
+      <div class="sq-types" id="${prefix}-types">${b('acc', '💍 اكسسوارات')}${b('rs', '👕 RS')}${b('bloom', '🌸 Bloom')}${b('socky', '🧦 Socky')}</div></div>`;
   }
   function clothesFields(prefix){
     return `
@@ -2840,7 +2841,7 @@ grant select, insert, update, delete on public.office_sales to authenticated;`;
     });
     if($('sq-order-form')) $('sq-order-form').onsubmit = e => {
       e.preventDefault();
-      if(!newOrderType){ showToast('حدد الأول البراند: اكسسوارات ولا RS ولا Bloom.', 'error'); return; }
+      if(!newOrderType){ showToast('حدد الأول البراند: اكسسوارات ولا RS ولا Bloom ولا Socky.', 'error'); return; }
       const p = readFields('sq-new');
       if(newOrderType === 'acc' && !p.order_details){ showToast('اختار الطلب من الليستة الأول.', 'error'); return; }
       createOrder(p);
