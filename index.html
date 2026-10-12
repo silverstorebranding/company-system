@@ -392,6 +392,7 @@ html:not(.auth-ok) #app{display:none}
     </div>
     <div class="grp"><div class="grp-title">المالية</div>
       <a class="navlink" href="#/profits">💰 الأرباح</a>
+      <a class="navlink" href="#/brands">🏷️ Brands</a>
       <a class="navlink" href="#/dept/warehouse">🏬 المخزن</a>
     </div>
     <div class="grp"><div class="grp-title">العمل</div>
@@ -4309,6 +4310,7 @@ async function exportToSheet(btn) {
     { title:'المالية', items:[
       { key:'accounts', label:'💼 الحسابات',  routes:['accounts'] },
       { key:'profits', label:'💰 الأرباح',    routes:['profits'] },
+      { key:'brands', label:'🏷️ Brands', routes:['brands'] },
       { key:'dept:warehouse', label:'🏬 المخزن', routes:[] },
       { key:'ads',     label:'📢 الإعلانات',  routes:['ads'] },
       { key:'compass', label:'🧭 البوصلة',    routes:['compass'] },
@@ -7669,6 +7671,339 @@ exception when duplicate_object then null; end $$;`;
     count: () => { const c = counts(); return c.unread + c.openTasks + c.doneUnseen; } };
   // لو زرار الأقسام اتعمل بعد ما العدد اتحسب
   setInterval(() => { const mb = document.getElementById('myMenuBtn'); if(mb && !mb.querySelector('.ib-badge') && S.items) badge(); }, 2000);
+})();
+</script>
+
+<style>
+/* 🏷️ Brands */
+.br-pick{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-bottom:20px}
+.br-pick a{display:block;text-decoration:none;color:var(--ink);background:var(--panel);border:1.5px solid var(--line);border-radius:14px;padding:18px 20px;transition:.15s;border-top:6px solid var(--bc,var(--brass))}
+.br-pick a:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(0,0,0,.07)}
+.br-pick a.on{border-color:var(--bc,var(--brass));box-shadow:0 0 0 3px color-mix(in srgb,var(--bc,#b08d57) 25%,transparent)}
+.br-pick .e{font-size:34px;line-height:1}
+.br-pick .n{font-size:21px;font-weight:800;margin:8px 0 2px}
+.br-pick .d{font-size:13px;color:var(--muted)}
+.br-head{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+.br-head h2{margin:0;font-size:24px}
+.br-head .sp{flex:1}
+.br-btn{padding:9px 16px;border:1.5px solid var(--line);border-radius:9px;background:var(--panel);color:var(--ink);font-family:inherit;font-size:14px;font-weight:600;cursor:pointer}
+.br-btn.pri{background:var(--brass);border-color:var(--brass);color:#fff}
+.br-btn.sm{padding:4px 10px;font-size:12.5px}
+.br-btn:disabled{opacity:.5;cursor:not-allowed}
+.br-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media (max-width:900px){.br-grid{grid-template-columns:1fr}}
+.br-grid .card{margin:0}
+.br-wide{grid-column:1/-1}
+.br-t{width:100%;border-collapse:collapse;font-size:14px}
+.br-t th{text-align:right;font-size:12.5px;color:var(--muted);font-weight:600;padding:7px 8px;border-bottom:1px solid var(--line);background:var(--slate-l)}
+.br-t td{padding:7px 8px;border-bottom:1px dashed var(--line);vertical-align:middle}
+.br-t tr.tot td{font-weight:800;border-top:2px solid var(--line);border-bottom:none}
+.br-in{width:100%;padding:7px 9px;border:1.5px solid var(--line);border-radius:7px;font-family:inherit;font-size:14px;background:var(--panel);color:var(--ink);box-sizing:border-box}
+.br-in:focus{outline:none;border-color:var(--brass)}
+textarea.br-in{min-height:64px;resize:vertical}
+.br-kv{display:grid;grid-template-columns:1fr auto;gap:6px 14px;font-size:14px;align-items:center}
+.br-kv .k{color:var(--muted)}
+.br-kv .v{font-weight:700;text-align:left}
+.br-good{color:var(--ok)}.br-bad{color:#b3423a}
+.br-hint{font-size:12.5px;color:var(--muted);margin-top:8px;line-height:1.7}
+.br-empty{color:var(--muted);font-size:13.5px;padding:6px 0}
+.br-calc{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.br-calc label{font-size:12.5px;color:var(--muted);display:block;margin-bottom:4px}
+.br-res{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-top:14px}
+.br-res div{background:var(--slate-l);border-radius:10px;padding:12px 14px}
+.br-res b{display:block;font-size:20px;margin-bottom:2px}
+.br-res span{font-size:12.5px;color:var(--muted)}
+.br-sql{direction:ltr;text-align:left;white-space:pre-wrap;font-size:12px;background:var(--slate-l);padding:10px;border-radius:8px;max-height:260px;overflow:auto}
+</style>
+<script>
+/* =====================================================================
+   🏷️ Brands — قسم استرشادي لكل براند (Italy / Kidzzly / Socky)
+   - القطع وتكلفتها، الشحن السليم والبايظ، نسب توقع التسليم، الموظفين والرواتب
+   - حاسبة ربح الأوردر وأقصى تكلفة إعلان (CPO) للتعادل — بنفس طريقة قسم الأرباح
+   - التعديل للأدمن بس، والبيانات في جدول brand_profiles في Supabase
+   ===================================================================== */
+(function(){
+  const sb = () => window.__sbClient || (window.AuthGate && window.AuthGate.sb);
+  const me = () => (window.AuthGate && window.AuthGate.me && window.AuthGate.me()) || {};
+  const isAdmin = () => !!me().is_admin;
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const num = v => { if(v === '' || v == null) return null; const x = parseFloat(String(v).replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/,/g, '')); return isNaN(x) ? null : x; };
+  const fmt = n => n == null ? '—' : Number(n).toLocaleString('ar-EG', { maximumFractionDigits: 1 });
+  const money = n => n == null ? '—' : fmt(Math.round(n * 10) / 10) + ' ج';
+  const route = () => { const [r, p] = (location.hash.replace('#/', '') || 'home').split('/'); return { r, p: p || '' }; };
+  const isBR = () => route().r === 'brands';
+
+  /* ---------- القيم الافتراضية (مأخوذة من قسم الأرباح) ---------- */
+  const BRANDS = [
+    { key:'italy',   name:'Italy',   emoji:'💍', color:'#b08d57', desc:'إكسسوارات فضة إيطالي' },
+    { key:'kidzzly', name:'Kidzzly', emoji:'🧸', color:'#4f8fd8', desc:'ملابس أطفال' },
+    { key:'socky',   name:'Socky',   emoji:'🧦', color:'#3f9b74', desc:'شرابات' },
+  ];
+  const DEFAULTS = {
+    italy: {
+      about: 'إكسسوارات فضة إيطالي (أطقم، سلاسل، محابس، حلقان، انسيالات). بيتباع في شيت الأرباح تحت براندات DREAM و CARA و MSG و FASTPLT.',
+      codes: 'dream · dream wa · dream msg site · cara silver · cara silver un · cara wa · msg · fastplt',
+      cogsPct: '',
+      pieces: [
+        { name:'أوردر من غير انسيال', cost:65.2, price:'' },
+        { name:'أوردر فيه انسيال', cost:94, price:'' },
+      ],
+      ship: { good:'', bad:'', note:'الشحن الفعلي بييجي من شيت QP لكل أوردر (عمود الشحن) وبيختلف حسب المحافظة.' },
+      rates: [ { label:'DREAM (و DREAM WA و MSG SITE)', ofd:30, hold:10 }, { label:'CARA (الثلاثة)', ofd:38, hold:15 }, { label:'MSG و FASTPLT', ofd:35, hold:15 } ],
+      staff: [], calc: { price:'', rate:35, cpo:'' }, targets: { orders:'', rate:'', profit:'' }, notes: '',
+    },
+    kidzzly: {
+      about: 'ملابس أطفال. في شيت الأرباح اسمه RS KIDS (الملاحظة بتبدأ بـ rs kids أو rs).',
+      codes: 'rs kids · rs',
+      cogsPct: 50,
+      pieces: [],
+      ship: { good:'', bad:'', note:'الشحن الفعلي بييجي من شيت QP لكل أوردر.' },
+      rates: [ { label:'RS KIDS', ofd:70, hold:30 } ],
+      staff: [], calc: { price:'', rate:60, cpo:'' }, targets: { orders:'', rate:'', profit:'' }, notes: '',
+    },
+    socky: {
+      about: 'شرابات — براند جديد ولسه مالوش حساب منفصل في قسم الأرباح.',
+      codes: '',
+      cogsPct: '',
+      pieces: [],
+      ship: { good:'', bad:'', note:'' },
+      rates: [ { label:'Socky', ofd:35, hold:15 } ],
+      staff: [], calc: { price:'', rate:35, cpo:'' }, targets: { orders:'', rate:'', profit:'' }, notes: '',
+    },
+  };
+  // التكاليف المشتركة من قسم الأرباح (بتتوزع على كل البراندات بنسبة عدد الأوردرات)
+  const shared = () => {
+    try{ return [
+      ['👤 راتب مساعد مدير المكتب', PR_A_SAL_D * 30, 'شهريًا'],
+      ['👥 راتب مشترك (مدير مكتب)', PR_SHR_SAL_D * 30, 'شهريًا (' + fmt(PR_SHR_SAL_D) + ' ج في اليوم)'],
+      ['🏢 إيجار المكتب', PR_RENT_D * 30, 'شهريًا (' + fmt(PR_RENT_D) + ' ج في اليوم)'],
+    ]; }catch(e){ return []; }
+  };
+
+  const S = { data:{}, loaded:false, missing:false, err:'', edit:false, draft:null, saving:false, calc:{} };
+  const clone = o => JSON.parse(JSON.stringify(o));
+  const dataOf = k => { const d = S.data[k]; return d ? { ...clone(DEFAULTS[k]), ...d } : clone(DEFAULTS[k]); };
+
+  async function load(){
+    if(!sb()) return;
+    const { data, error } = await sb().from('brand_profiles').select('*');
+    if(error){ S.missing = /brand_profiles|relation|schema cache|does not exist/i.test(error.message || ''); S.err = S.missing ? '' : error.message; }
+    else { S.missing = false; S.err = ''; S.data = {}; (data || []).forEach(r => { S.data[r.key] = { ...(r.data || {}), _by: r.updated_by_name, _at: r.updated_at }; }); }
+    S.loaded = true; draw();
+  }
+  async function save(k){
+    if(!isAdmin() || !S.draft) return;
+    const d = clone(S.draft); delete d._by; delete d._at;
+    S.saving = true; draw();
+    const { error } = await sb().from('brand_profiles').upsert({ key:k, data:d, updated_by_name: me().full_name || me().username || '', updated_at: new Date().toISOString() });
+    S.saving = false;
+    if(error){ alert('ماتحفظش: ' + error.message); draw(); return; }
+    S.edit = false; S.draft = null;
+    load();
+  }
+
+  /* ---------- الحسبة ---------- */
+  function totals(d){
+    const salaries = (d.staff || []).reduce((a, s) => a + (num(s.salary) || 0), 0);
+    const pieces = (d.pieces || []).filter(p => num(p.cost) != null);
+    const avgCost = pieces.length ? pieces.reduce((a, p) => a + num(p.cost), 0) / pieces.length : null;
+    return { salaries, avgCost };
+  }
+  // نفس منطق قسم الأرباح: الأوردر المسلّم بيدفع تكلفته + شحن سليم، والراجع بيدفع شحن بايظ
+  function calcOut(d, c){
+    const price = num(c.price), r = (num(c.rate) ?? 0) / 100, cpo = num(c.cpo) ?? 0;
+    const T = totals(d);
+    const cogs = num(c.cogs) ?? (num(d.cogsPct) != null && price != null ? price * num(d.cogsPct) / 100 : T.avgCost);
+    const sg = num(d.ship.good) ?? 0, sbad = num(d.ship.bad) ?? 0;
+    if(price == null || cogs == null) return null;
+    const perDel = price - cogs - sg;                      // ربح الأوردر المسلّم قبل الإعلانات
+    const perIn = r * perDel - (1 - r) * sbad - cpo;       // ربح كل أوردر داخل (بعد التسليم والإعلان)
+    const breakEven = r * perDel - (1 - r) * sbad;         // أقصى CPO قبل الخسارة
+    return { cogs, perDel, perIn, breakEven, perDelAfterAds: r ? perIn / r : null };
+  }
+
+  /* ---------- الرسم ---------- */
+  const inp = (path, v, type, ph) => `<input class="br-in" data-bp="${path}" value="${esc(v ?? '')}" ${type === 'n' ? 'inputmode="decimal"' : ''} placeholder="${esc(ph || '')}">`;
+  const area = (path, v) => `<textarea class="br-in" data-bp="${path}">${esc(v ?? '')}</textarea>`;
+
+  function pickerHtml(cur){
+    return `<div class="br-pick">${BRANDS.map(b => `<a href="#/brands/${b.key}" class="${cur === b.key ? 'on' : ''}" style="--bc:${b.color}">
+      <div class="e">${b.emoji}</div><div class="n">${b.name}</div><div class="d">${b.desc}</div></a>`).join('')}</div>`;
+  }
+
+  function brandHtml(B){
+    const E = S.edit && isAdmin(), d = E ? S.draft : dataOf(B.key), T = totals(d);
+    const c = S.calc[B.key] = S.calc[B.key] || { price: d.calc.price, rate: d.calc.rate, cpo: d.calc.cpo, cogs:'' };
+    let h = `<div class="br-head"><span style="font-size:30px">${B.emoji}</span><h2 style="color:${B.color}">${B.name}</h2><span class="sp"></span>
+      ${isAdmin() ? (E ? `<button class="br-btn" id="brCancel">إلغاء</button><button class="br-btn pri" id="brSave" ${S.saving ? 'disabled' : ''}>${S.saving ? 'بيتحفظ...' : '💾 حفظ'}</button>`
+                        : `<button class="br-btn" id="brEdit">✏️ تعديل</button>`) : ''}</div>`;
+    if(d._by && !E) h += `<p class="br-hint" style="margin-top:-6px">آخر تعديل: ${esc(d._by)}${d._at ? ' — ' + new Date(d._at).toLocaleDateString('ar-EG') : ''}</p>`;
+
+    h += `<div class="br-grid">`;
+    // 🪪 نبذة
+    h += `<div class="card br-wide"><h3>🪪 عن البراند</h3>
+      ${E ? area('about', d.about) : `<p style="margin:0;line-height:1.9">${esc(d.about || '—')}</p>`}
+      <div class="br-hint">🏷️ الكلمة اللي بتتكتب في أول عمود الملاحظة في شيت الأوردرات: ${E ? inp('codes', d.codes) : `<b>${esc(d.codes || 'لسه متحددتش')}</b>`}</div></div>`;
+
+    // 📦 القطع
+    h += `<div class="card"><h3>📦 القطع المتاحة وسعر التكلفة</h3>
+      <table class="br-t"><thead><tr><th>القطعة</th><th>التكلفة</th><th>سعر البيع</th><th>هامش القطعة</th>${E ? '<th></th>' : ''}</tr></thead><tbody>
+      ${(d.pieces || []).map((p, i) => { const m = num(p.price) != null && num(p.cost) != null ? num(p.price) - num(p.cost) : null;
+        return E ? `<tr><td>${inp(`pieces.${i}.name`, p.name)}</td><td>${inp(`pieces.${i}.cost`, p.cost, 'n')}</td><td>${inp(`pieces.${i}.price`, p.price, 'n')}</td><td>${money(m)}</td><td><button class="br-btn sm" data-bdel="pieces.${i}">✕</button></td></tr>`
+                 : `<tr><td>${esc(p.name || '—')}</td><td>${money(num(p.cost))}</td><td>${money(num(p.price))}</td><td class="${m != null ? (m > 0 ? 'br-good' : 'br-bad') : ''}">${money(m)}</td></tr>`; }).join('')
+        || `<tr><td colspan="${E ? 5 : 4}" class="br-empty">لسه مفيش قطع متسجلة.</td></tr>`}
+      </tbody></table>
+      ${E ? `<button class="br-btn sm" data-badd="pieces" style="margin-top:8px">➕ قطعة</button>` : ''}
+      <div class="br-kv" style="margin-top:12px"><span class="k">تكلفة البضاعة كنسبة من سعر البيع (لو البراند بيتحسب بالنسبة)</span><span class="v">${E ? inp('cogsPct', d.cogsPct, 'n', '%') : (num(d.cogsPct) != null ? fmt(num(d.cogsPct)) + '%' : '—')}</span></div>
+      <p class="br-hint">في قسم الأرباح: ${B.key === 'italy' ? 'تكلفة الأوردر المسلّم 65.2 ج، ولو فيه انسيال 94 ج.' : B.key === 'kidzzly' ? 'تكلفة البضاعة = 50% من المبيعات.' : 'لسه مالوش طريقة حساب.'}</p></div>`;
+
+    // 🚚 الشحن
+    h += `<div class="card"><h3>🚚 الشحن</h3><div class="br-kv">
+      <span class="k">✅ الشحن السليم (أوردر اتسلم)</span><span class="v">${E ? inp('ship.good', d.ship.good, 'n', 'ج') : money(num(d.ship.good))}</span>
+      <span class="k">❌ الشحن البايظ (أوردر رجع / اندلفرد)</span><span class="v">${E ? inp('ship.bad', d.ship.bad, 'n', 'ج') : money(num(d.ship.bad))}</span>
+      </div>${E ? `<div style="margin-top:10px">${area('ship.note', d.ship.note)}</div>` : (d.ship.note ? `<p class="br-hint">${esc(d.ship.note)}</p>` : '')}
+      <p class="br-hint">الشحن البايظ = شحن الأوردرات اللي حالتها Undelivered ومالهاش تاريخ إرجاع، وده خسارة صافية على البراند.</p></div>`;
+
+    // 🔮 التوقع
+    h += `<div class="card"><h3>🔮 توقع نسبة التسليم</h3>
+      <table class="br-t"><thead><tr><th>البراند في الشيت</th><th>Pending وتحت التسليم</th><th>Hold</th>${E ? '<th></th>' : ''}</tr></thead><tbody>
+      ${(d.rates || []).map((r, i) => E ? `<tr><td>${inp(`rates.${i}.label`, r.label)}</td><td>${inp(`rates.${i}.ofd`, r.ofd, 'n', '%')}</td><td>${inp(`rates.${i}.hold`, r.hold, 'n', '%')}</td><td><button class="br-btn sm" data-bdel="rates.${i}">✕</button></td></tr>`
+        : `<tr><td>${esc(r.label)}</td><td><b>${num(r.ofd) != null ? fmt(num(r.ofd)) + '%' : '—'}</b></td><td><b>${num(r.hold) != null ? fmt(num(r.hold)) + '%' : '—'}</b></td></tr>`).join('')
+        || `<tr><td colspan="3" class="br-empty">—</td></tr>`}
+      </tbody></table>${E ? `<button class="br-btn sm" data-badd="rates" style="margin-top:8px">➕ سطر</button>` : ''}
+      <p class="br-hint">معناها: من كل 100 أوردر Pending أو تحت التسليم بنتوقع يتسلم منهم النسبة دي، ومن كل 100 Hold بنتوقع النسبة اللي جنبها. دي النسب اللي قسم الأرباح بيحسب بيها "بعد التوقع". تغييرها هنا للاسترشاد بس، ولو عايزها تتغير في الحسبة نفسها قول للأدمن يعدّلها في قسم الأرباح.</p></div>`;
+
+    // 👥 الموظفين
+    h += `<div class="card"><h3>👥 فريق البراند والرواتب</h3>
+      <table class="br-t"><thead><tr><th>الاسم</th><th>الدور</th><th>الراتب الشهري</th>${E ? '<th></th>' : ''}</tr></thead><tbody>
+      ${(d.staff || []).map((s, i) => E ? `<tr><td>${inp(`staff.${i}.name`, s.name)}</td><td>${inp(`staff.${i}.role`, s.role)}</td><td>${inp(`staff.${i}.salary`, s.salary, 'n')}</td><td><button class="br-btn sm" data-bdel="staff.${i}">✕</button></td></tr>`
+        : `<tr><td>${esc(s.name || '—')}</td><td>${esc(s.role || '—')}</td><td>${money(num(s.salary))}</td></tr>`).join('')
+        || `<tr><td colspan="${E ? 4 : 3}" class="br-empty">لسه مفيش موظفين متسجلين.</td></tr>`}
+      ${(d.staff || []).length ? `<tr class="tot"><td>الإجمالي (${(d.staff || []).length} موظف)</td><td></td><td>${money(T.salaries)}</td>${E ? '<td></td>' : ''}</tr>` : ''}
+      </tbody></table>${E ? `<button class="br-btn sm" data-badd="staff" style="margin-top:8px">➕ موظف</button>` : ''}
+      ${T.salaries ? `<p class="br-hint">يعني ${money(T.salaries / 30)} في اليوم على البراند ده لوحده.</p>` : ''}
+      <p class="br-hint"><b>تكاليف مشتركة بتتوزع على كل البراندات بنسبة عدد الأوردرات</b> (من قسم الأرباح):<br>
+        ${shared().map(([l, v, n]) => `${l}: ${money(v)} ${n}`).join('<br>')}</p></div>`;
+
+    // 🎯 الأهداف
+    h += `<div class="card"><h3>🎯 الأهداف</h3><div class="br-kv">
+      <span class="k">أوردرات في اليوم</span><span class="v">${E ? inp('targets.orders', d.targets.orders, 'n') : fmt(num(d.targets.orders))}</span>
+      <span class="k">نسبة تسليم مستهدفة</span><span class="v">${E ? inp('targets.rate', d.targets.rate, 'n', '%') : (num(d.targets.rate) != null ? fmt(num(d.targets.rate)) + '%' : '—')}</span>
+      <span class="k">صافي ربح مستهدف في الشهر</span><span class="v">${E ? inp('targets.profit', d.targets.profit, 'n', 'ج') : money(num(d.targets.profit))}</span>
+      </div></div>`;
+
+    // 🧮 الحاسبة
+    h += `<div class="card br-wide"><h3>🧮 حاسبة ربح الأوردر وأقصى تكلفة إعلان</h3>
+      <div class="br-calc">
+        <div><label>متوسط سعر الأوردر</label><input class="br-in" data-bc="price" inputmode="decimal" value="${esc(c.price ?? '')}" placeholder="ج"></div>
+        <div><label>نسبة التسليم المتوقعة %</label><input class="br-in" data-bc="rate" inputmode="decimal" value="${esc(c.rate ?? '')}"></div>
+        <div><label>تكلفة الإعلان للأوردر (CPO)</label><input class="br-in" data-bc="cpo" inputmode="decimal" value="${esc(c.cpo ?? '')}" placeholder="ج"></div>
+        <div><label>تكلفة البضاعة للأوردر (اختياري)</label><input class="br-in" data-bc="cogs" inputmode="decimal" value="${esc(c.cogs ?? '')}" placeholder="${T.avgCost != null ? 'متوسط القطع ' + fmt(T.avgCost) : (num(d.cogsPct) != null ? fmt(num(d.cogsPct)) + '% من السعر' : 'ج')}"></div>
+      </div>
+      <div id="brCalcOut">${calcHtml(d, c)}</div>
+      <p class="br-hint">الحسبة: الأوردر اللي بيتسلم بيكسب (السعر − تكلفة البضاعة − الشحن السليم)، واللي بيرجع بيخسر الشحن البايظ، وكل أوردر داخل عليه تكلفة إعلانه. ده من غير المرتبات والإيجار.</p></div>`;
+
+    // 📝 ملاحظات
+    h += `<div class="card br-wide"><h3>📝 ملاحظات وإرشادات</h3>${E ? area('notes', d.notes) : `<p style="margin:0;white-space:pre-wrap;line-height:1.9">${esc(d.notes || '—')}</p>`}</div>`;
+    return h + `</div>`;
+  }
+
+  function calcHtml(d, c){
+    const o = calcOut(d, c);
+    if(!o) return `<p class="br-empty" style="margin-top:12px">اكتب متوسط سعر الأوردر${totals(d).avgCost == null && num(d.cogsPct) == null ? ' وتكلفة البضاعة' : ''} عشان تظهر الحسبة.</p>`;
+    const cls = n => n > 0 ? 'br-good' : n < 0 ? 'br-bad' : '';
+    return `<div class="br-res">
+      <div><b>${money(o.cogs)}</b><span>تكلفة البضاعة للأوردر</span></div>
+      <div><b class="${cls(o.perDel)}">${money(o.perDel)}</b><span>ربح الأوردر المسلّم قبل الإعلان</span></div>
+      <div><b class="${cls(o.perIn)}">${money(o.perIn)}</b><span>صافي ربح كل أوردر داخل (بعد التسليم والإعلان)</span></div>
+      <div><b class="${cls(o.breakEven)}">${money(o.breakEven)}</b><span>🎯 أقصى CPO قبل ما تخسر</span></div>
+    </div>`;
+  }
+
+  function view(){
+    const { p } = route();
+    let h = `<div class="pagehead"><h1>🏷️ Brands</h1><p>دليل استرشادي لكل براند: القطع وتكلفتها، الشحن، توقع التسليم، الفريق، وحاسبة الربح.</p></div>`;
+    if(S.missing){
+      h += pickerHtml(p);
+      h += `<div class="mono-note">جدول البراندات لسه مش متعمل في Supabase، فبيظهر الافتراضي بس ومش هينفع يتحفظ تعديل.${isAdmin() ? ' شغّل الكود ده مرة واحدة في Supabase → SQL Editor:' : ''}</div>
+        ${isAdmin() ? `<pre class="br-sql">${esc(BRANDS_SQL)}</pre>` : ''}`;
+    } else {
+      if(S.err) h += `<div class="mono-note">${esc(S.err)}</div>`;
+      h += pickerHtml(p);
+    }
+    const B = BRANDS.find(b => b.key === p);
+    if(!B) return h + `<p class="br-empty">اختار براند من فوق.</p>`;
+    if(!S.loaded) return h + `<p class="br-empty">بيحمّل...</p>`;
+    return h + brandHtml(B);
+  }
+
+  function setPath(o, path, v){
+    const ks = path.split('.'); let x = o;
+    ks.slice(0, -1).forEach(k => { if(x[k] == null) x[k] = {}; x = x[k]; });
+    x[ks[ks.length - 1]] = v;
+  }
+  function draw(){
+    if(!isBR()) return;
+    const main = document.getElementById('main'); if(!main) return;
+    main.innerHTML = view();
+    wire();
+  }
+  function wire(){
+    const { p } = route();
+    const $ = id => document.getElementById(id);
+    if($('brEdit')) $('brEdit').onclick = () => { S.edit = true; S.draft = dataOf(p); draw(); };
+    if($('brCancel')) $('brCancel').onclick = () => { S.edit = false; S.draft = null; draw(); };
+    if($('brSave')) $('brSave').onclick = () => save(p);
+    document.querySelectorAll('#main [data-bp]').forEach(el => el.oninput = () => {
+      if(!S.draft) return; setPath(S.draft, el.getAttribute('data-bp'), el.value);
+      const out = $('brCalcOut'); if(out) out.innerHTML = calcHtml(S.draft, S.calc[p]);
+    });
+    document.querySelectorAll('#main [data-badd]').forEach(b => b.onclick = () => {
+      const k = b.getAttribute('data-badd');
+      S.draft[k] = S.draft[k] || [];
+      S.draft[k].push(k === 'pieces' ? { name:'', cost:'', price:'' } : k === 'rates' ? { label:'', ofd:'', hold:'' } : { name:'', role:'', salary:'' });
+      draw();
+    });
+    document.querySelectorAll('#main [data-bdel]').forEach(b => b.onclick = () => {
+      const [k, i] = b.getAttribute('data-bdel').split('.'); S.draft[k].splice(Number(i), 1); draw();
+    });
+    document.querySelectorAll('#main [data-bc]').forEach(el => el.oninput = () => {
+      const c = S.calc[p]; c[el.getAttribute('data-bc')] = el.value;
+      const out = $('brCalcOut'); if(out) out.innerHTML = calcHtml(S.edit && S.draft ? S.draft : dataOf(p), c);
+    });
+  }
+
+  function mount(){
+    if(!isBR()) return;
+    if(!route().p){ location.replace('#/brands/' + BRANDS[0].key); return; }
+    draw();
+    if(!S.loaded) load();
+  }
+  const _render = render;
+  render = function(){ _render.apply(this, arguments); if(isBR()) mount(); };
+  window.addEventListener('hashchange', () => { if(isBR()){ S.edit = false; S.draft = null; setTimeout(mount, 0); } });
+  const wait = setInterval(() => { if(me().id && sb()){ clearInterval(wait); if(isBR()) mount(); } }, 600);
+
+  const BRANDS_SQL = `-- 🏷️ Brands — شغّله مرة واحدة في Supabase → SQL Editor
+create table if not exists public.brand_profiles (
+  key text primary key,
+  data jsonb not null default '{}'::jsonb,
+  updated_by_name text,
+  updated_at timestamptz not null default now()
+);
+create or replace function public.brands_is_admin() returns boolean
+language sql stable security definer set search_path = public as $$
+  select coalesce((select is_admin from public.profiles where id = auth.uid()), false);
+$$;
+alter table public.brand_profiles enable row level security;
+drop policy if exists "brands: read"  on public.brand_profiles;
+drop policy if exists "brands: write" on public.brand_profiles;
+drop policy if exists "brands: edit"  on public.brand_profiles;
+create policy "brands: read"  on public.brand_profiles for select to authenticated using (true);
+create policy "brands: write" on public.brand_profiles for insert to authenticated with check (public.brands_is_admin());
+create policy "brands: edit"  on public.brand_profiles for update to authenticated using (public.brands_is_admin()) with check (public.brands_is_admin());
+grant select, insert, update on public.brand_profiles to authenticated;`;
+  window.Brands = { sql: BRANDS_SQL };
 })();
 </script>
 
