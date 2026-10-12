@@ -4563,6 +4563,9 @@ async function exportToSheet(btn) {
   function mySections(){
     const groups = GROUPS().map(g => ({ title:g.title, items:g.items.filter(s => canSee(hrefOf(s))).map(s => ({ label:s.label, href:hrefOf(s) })) }))
       .filter(g => g.items.length);
+    // 📨 الرسايل والمهام لكل الناس — أول حاجة في القايمة، وجنبها عدد الجديد
+    const ibN = (window.Inbox && window.Inbox.count) ? window.Inbox.count() : 0;
+    groups.unshift({ title:'التواصل', items:[{ label:'📨 الرسايل والمهام' + (ibN ? ' (' + ibN + ' جديد)' : ''), href:'#/inbox' }] });
     if(me && me.is_admin) groups.push({ title:'الإدارة', items:[{ label:'⚙️ الحسابات والصلاحيات', href:'#/admin' }] });
     return groups;
   }
@@ -7403,6 +7406,13 @@ makeAccounts({ route:'accounts', table:'accounts_entries', icon:'💼', title:'�
     const c = counts(), n = c.unread + c.openTasks + c.doneUnseen;
     const b = document.getElementById('ibBadge');
     if(b){ b.textContent = n > 99 ? '99+' : n; b.classList.toggle('on', n > 0); }
+    // نفس العدد على زرار "📋 الأقسام" (اللي الناس بتستخدمه على الموبايل)
+    const mb = document.getElementById('myMenuBtn');
+    if(mb){
+      let x = mb.querySelector('.ib-badge');
+      if(!x){ x = document.createElement('span'); x.className = 'ib-badge'; mb.appendChild(x); }
+      x.textContent = n > 99 ? '99+' : n; x.classList.toggle('on', n > 0);
+    }
     document.title = (n ? '(' + n + ') ' : '') + document.title.replace(/^\(\d+\+?\) /, '');
   }
 
@@ -7630,7 +7640,10 @@ grant select, insert, update, delete on public.inbox to authenticated;
 do $$ begin
   alter publication supabase_realtime add table public.inbox;
 exception when duplicate_object then null; end $$;`;
-  window.Inbox = { reload: () => load(true), sql: INBOX_SQL };
+  window.Inbox = { reload: () => load(true), sql: INBOX_SQL,
+    count: () => { const c = counts(); return c.unread + c.openTasks + c.doneUnseen; } };
+  // لو زرار الأقسام اتعمل بعد ما العدد اتحسب
+  setInterval(() => { const mb = document.getElementById('myMenuBtn'); if(mb && !mb.querySelector('.ib-badge') && S.items) badge(); }, 2000);
 })();
 </script>
 
