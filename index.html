@@ -9178,6 +9178,13 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
 .up-msg.err{background:#fdecea;color:#a3271a}.up-msg.ok{background:#e3f3e8;color:#23784a}
 .up-hist{font-size:13px}
 .up-hist div{padding:6px 0;border-bottom:1px dashed var(--line)}
+.up-tabs{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+.up-tabs button{padding:11px 20px;border:1.5px solid var(--line);border-top:4px solid var(--bc);border-radius:11px;background:var(--panel);color:var(--ink);font-family:inherit;font-size:15.5px;font-weight:800;cursor:pointer}
+.up-tabs button.on{background:var(--bc);border-color:var(--bc);color:#fff}
+.up-ptr{display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:var(--slate-l);border-radius:10px;padding:10px 14px;margin:10px 0;font-size:14px}
+.up-file{display:inline-flex;align-items:center;gap:8px;padding:10px 16px;border:1.5px dashed var(--line);border-radius:9px;cursor:pointer;font-weight:700;font-size:14px}
+.up-file input{display:none}
+.up-sql{direction:ltr;text-align:left;white-space:pre-wrap;font-size:12px;background:var(--slate-l);padding:10px;border-radius:8px;max-height:300px;overflow:auto}
 </style>
 <script>
 /* =====================================================================
@@ -9246,7 +9253,112 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
   const tzIso = () => { const d = new Date(), o = -d.getTimezoneOffset(), p = n => String(Math.floor(Math.abs(n))).padStart(2, '0');
     return ymd(d) + 'T' + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds()) + (o >= 0 ? '+' : '-') + p(o / 60) + ':' + p(o % 60); };
 
-  const S = { raw:'', rows:null, note:'', msg:'', msgErr:false, conn:'', connErr:'', sending:false, prog:'', hist: (() => { try{ return JSON.parse(localStorage.getItem(HIST_KEY) || '[]'); }catch(e){ return []; } })() };
+  /* =====================================================================
+     🌐 Dream Easy — أوردرات EasyOrders
+     - تلقائي: EasyOrders بيبعت كل أوردر جديد (Webhook) لـ Supabase Edge Function اسمها easyorders-webhook
+       وبيتحفظ في جدول easy_orders — والتاب ده بيجيب اللي بعد آخر أوردر اتاخد
+     - أو يدوي: ترفع ملف الإكسل اللي بتنزّله من EasyOrders
+     - "آخر أوردر اتاخد" بيتحفظ في جدول app_kv (مشترك لكل الأجهزة) وبيتقدّم بس بعد الرفع على QP
+     ===================================================================== */
+  const sbc = () => window.__sbClient || (window.AuthGate && window.AuthGate.sb);
+  const KV = { seq:'easy_last_seq', xid:'easy_last_excel_id' };
+  const E = { ptr:{ seq:0, xid:0, at:null, by:'' }, ptrLoaded:false, missing:false, loading:false, hiddenOld:0, showOld:false, err:'' };
+  async function loadPtr(){
+    const { data, error } = await sbc().from('app_kv').select('*').in('key', [KV.seq, KV.xid]);
+    if(error){ E.missing = /app_kv|relation|schema cache|does not exist/i.test(error.message); }
+    else (data || []).forEach(r => { const v = r.value || {}; if(r.key === KV.seq) E.ptr.seq = Number(v.n) || 0; if(r.key === KV.xid) E.ptr.xid = Number(v.n) || 0; if(r.updated_at && (!E.ptr.at || r.updated_at > E.ptr.at)){ E.ptr.at = r.updated_at; E.ptr.by = r.updated_by_name || ''; } });
+    E.ptrLoaded = true;
+  }
+  async function savePtr(key, n){
+    const by = me().full_name || me().username || '';
+    const { error } = await sbc().from('app_kv').upsert({ key, value:{ n }, updated_at:new Date().toISOString(), updated_by_name:by });
+    if(!error){ if(key === KV.seq) E.ptr.seq = n; else E.ptr.xid = n; E.ptr.at = new Date().toISOString(); E.ptr.by = by; }
+    return !error;
+  }
+  // أوردر EasyOrders (من الـ Webhook) → صف في شيت QP
+  function fromEasy(o, seq){
+    const items = (o.cart_items || []).map(it => {
+      const nm = (it.product && it.product.name) || it.name || '';
+      const props = ((it.variant && it.variant.variation_props) || []).map(p => String(p.variation_prop || '')).filter(v => v && !/^#[0-9a-f]{3,8}$/i.test(v)).join(' / ');
+      const q = Number(it.quantity) || 1;
+      return `${nm}${props ? ' (' + props + ')' : ''}${q > 1 ? ' × ' + q : ''}`.trim();
+    }).filter(Boolean);
+    const gov = String(o.government || '').trim(), addr = String(o.address || '').trim();
+    const r = { name:o.full_name || '', phone:o.phone || '', address: gov && !addr.includes(gov) ? `${addr} - ${gov}` : addr, amount:String(o.total_cost ?? o.cost ?? ''),
+      agent:'', contents: items.join(' + '), source:'', size:'', note:'', city:'', easy:true, seq, ref: String(o.id || '').slice(0, 8), estatus: o.status || '' };
+    r.city = guessCity(gov + ' ' + addr);
+    return check(r);
+  }
+  // ملف الإكسل اللي بيتنزّل من EasyOrders (ID / Status / FullName / Phone / City / Address / Total Cost / Product Name / Variant / Quantity ...)
+  function fromExcelRows(json){
+    const key = (row, ...names) => { const ks = Object.keys(row); for(const n of names){ const k = ks.find(x => x.trim().toLowerCase().replace(/\s+/g, ' ') === n); if(k !== undefined && row[k] !== '' && row[k] != null) return row[k]; } return ''; };
+    const by = new Map();
+    json.forEach(row => {
+      const id = Number(digits(key(row, 'id'))); if(!id) return;
+      const g = by.get(id);
+      const pn = String(key(row, 'product name')).trim(), vr = String(key(row, 'variant')).trim(), q = String(key(row, 'quantity')).trim();
+      const item = `${pn}${vr ? ' - ' + vr : ''}${/^[2-9]$/.test(q) ? ' × ' + q : ''}`.trim();
+      if(g){ if(item) g.items.push(item); return; }
+      const city = String(key(row, 'city')).trim(), addr = String(key(row, 'address')).trim();
+      by.set(id, { id, status:String(key(row, 'status')).trim(), name:String(key(row, 'fullname', 'full name')).trim(), phone:String(key(row, 'phone')),
+        address: city && !addr.includes(city) ? `${addr} - ${city}` : addr, amount:String(key(row, 'total cost', 'total')), items: item ? [item] : [], city });
+    });
+    return [...by.values()].sort((a, b) => a.id - b.id).map(x => {
+      const r = { name:x.name, phone:x.phone, address:x.address, amount:x.amount, agent:'', contents:x.items.join(' + '), source:'', size:'', note:'', city:'',
+        easy:true, xid:x.id, ref:'#' + x.id, estatus:x.status };
+      r.city = guessCity(x.city + ' ' + x.address);
+      return check(r);
+    });
+  }
+  const isCancel = st => /cancel|ملغ|refus|رفض|return/i.test(String(st || ''));
+  function easyFinish(rows){
+    E.hiddenOld = 0;
+    const cancelled = rows.filter(r => isCancel(r.estatus));
+    S.rows = rows.filter(r => !isCancel(r.estatus));
+    S.skipped = new Set(cancelled.map(r => r.seq || r.xid)); // الملغي بيتعدّى عادي
+    dupCheck();
+    S.msg = !rows.length ? 'مفيش أوردرات جديدة من EasyOrders بعد آخر أوردر اتاخد 👌'
+      : `جالك ${S.rows.length} أوردر جديد من EasyOrders${cancelled.length ? ` (واتشال ${cancelled.length} ملغي)` : ''}.`;
+    S.msgErr = false;
+    draw();
+  }
+  async function fetchEasy(){
+    E.loading = true; E.err = ''; draw();
+    try{ await connect(); }catch(e){}
+    if(!E.ptrLoaded) await loadPtr();
+    const { data, error } = await sbc().from('easy_orders').select('*').gt('seq', E.showOld ? 0 : E.ptr.seq).order('seq', { ascending:true }).limit(500);
+    E.loading = false;
+    if(error){ E.missing = /easy_orders|relation|schema cache|does not exist/i.test(error.message); E.err = E.missing ? '' : error.message; draw(); return; }
+    easyFinish((data || []).map(x => fromEasy(x.payload || {}, x.seq)).map((r, i) => { r.estatus = (data[i].status || r.estatus); return r; }));
+  }
+  async function readExcel(file){
+    if(!window.XLSX){ flash('مكتبة Excel مش متحمّلة، اعمل Refresh.', true); return; }
+    E.loading = true; draw();
+    try{ await connect(); }catch(e){}
+    if(!E.ptrLoaded) await loadPtr();
+    const wb = XLSX.read(await file.arrayBuffer(), { type:'array' });
+    const json = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval:'', raw:false });
+    let rows = fromExcelRows(json);
+    const old = rows.filter(r => r.xid <= E.ptr.xid);
+    if(!E.showOld) rows = rows.filter(r => r.xid > E.ptr.xid);
+    E.loading = false;
+    easyFinish(rows);
+    E.hiddenOld = E.showOld ? 0 : old.length;
+    const fi = document.getElementById('upEasyFile'); if(fi) fi.value = '';
+    draw();
+  }
+  // بعد الرفع: "آخر أوردر اتاخد" يتقدّم لحد آخر أوردر قبله كله اترفع أو اتشال
+  async function advancePtr(){
+    const kind = (S.rows || []).some(r => r.seq) ? 'seq' : 'xid';
+    const all = [...(S.rows || []).map(r => ({ n:r[kind], done:!!r.serial })), ...[...(S.skipped || [])].map(n => ({ n, done:true }))]
+      .filter(x => x.n).sort((a, b) => a.n - b.n);
+    let last = 0; for(const x of all){ if(!x.done) break; last = x.n; }
+    const cur = kind === 'seq' ? E.ptr.seq : E.ptr.xid;
+    if(last > cur) await savePtr(KV[kind], last);
+  }
+
+  const S = { src:'squad', store:{ squad:{ raw:'', rows:null, note:'' }, easy:{ raw:'', rows:null, note:'' } }, skipped:new Set(),
+    raw:'', rows:null, note:'', msg:'', msgErr:false, conn:'', connErr:'', sending:false, prog:'', hist: (() => { try{ return JSON.parse(localStorage.getItem(HIST_KEY) || '[]'); }catch(e){ return []; } })() };
 
   /* ---------- التحليل ---------- */
   function parse(text){
@@ -9352,23 +9464,35 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
       }catch(e){ r.upErr = e.message; fail++; }
     }
     S.sending = false; S.prog = '';
+    if(ok && S.src === 'easy'){ try{ await advancePtr(); }catch(e){} }
     if(ok){
-      S.hist.unshift({ at: new Date().toISOString(), n: ok, total: rows.filter(r => r.serial).reduce((a, r) => a + (numOf(r.amount) || 0), 0), notes, by: me().full_name || me().username || '', qp:true });
+      S.hist.unshift({ at: new Date().toISOString(), n: ok, total: rows.filter(r => r.serial).reduce((a, r) => a + (numOf(r.amount) || 0), 0), notes: (S.src === 'easy' ? '🌐 ' : '🏆 ') + notes, by: me().full_name || me().username || '', qp:true });
       S.hist = S.hist.slice(0, 15); try{ localStorage.setItem(HIST_KEY, JSON.stringify(S.hist)); }catch(e){}
     }
     flash(fail ? `⚠️ اترفع ${ok} أوردر، و ${fail} فشلوا — السبب مكتوب جنب كل واحد، صلّحه ودوس ارفع تاني (اللي اترفع مش هيترفع تاني).` : `✅ اترفع ${ok} أوردر على QP — هتلاقيهم في Orders List.`, !!fail);
   }
 
+  function switchSrc(k){
+    if(k === S.src) return;
+    S.store[S.src] = { raw:S.raw, rows:S.rows, note:S.note, skipped:S.skipped };
+    const n = S.store[k] || {}; S.src = k; S.raw = n.raw || ''; S.rows = n.rows || null; S.note = n.note || ''; S.skipped = n.skipped || new Set(); S.msg = '';
+    draw();
+    if(k === 'easy' && !E.ptrLoaded) loadPtr().then(draw);
+  }
+
   /* ---------- الرسم ---------- */
   function view(){
     let h = `<div class="pagehead"><h1>📤 رفع الأوردرات</h1><p>الصق الأوردرات كوبي، راجعها في شيت QP، اكتب المصدر والاسم، ووافق عشان تترفع على QP مباشرة وتظهر في Orders List.</p></div><div class="up-wrap">`;
+    h += `<div class="up-tabs"><button class="${S.src === 'squad' ? 'on' : ''}" style="--bc:#8a6a3a" data-upsrc="squad">🏆 Squad</button>
+      <button class="${S.src === 'easy' ? 'on' : ''}" style="--bc:#2b6cb0" data-upsrc="easy">🌐 Dream Easy</button></div>`;
     if(S.msg) h += `<div class="up-msg ${S.msgErr ? 'err' : 'ok'}">${esc(S.msg)}</div>`;
-    h += `<div class="card"><h3>1️⃣ الصق الأوردرات هنا</h3>
+    if(S.src === 'easy') h += easyStep1();
+    else h += `<div class="card"><h3>1️⃣ الصق الأوردرات هنا</h3>
       <textarea id="upRaw" placeholder="انسخ الصفوف من الشيت والصقها هنا (Ctrl + V)&#10;الترتيب: الاسم | الموبايل | العنوان | السعر | الموظفة | | الطلب | المصدر | المقاس">${esc(S.raw)}</textarea>
       <div class="up-row" style="margin-top:10px"><button class="up-btn pri" id="upParse">🔍 حوّلها لشيت QP</button>
         ${S.rows ? '<button class="up-btn" id="upClear">🧹 ابدأ من جديد</button>' : ''}</div></div>`;
     if(!S.rows) return h + histHtml() + '</div>';
-    if(!S.rows.length) return h + `<div class="up-msg err">مالقيتش أوردرات في اللي اتلصق.</div></div>`;
+    if(!S.rows.length) return h + (S.src === 'easy' ? '' : `<div class="up-msg err">مالقيتش أوردرات في اللي اتلصق.</div>`) + histHtml() + '</div>';
     if(S.conn) h += `<div class="up-msg ok">${esc(S.conn)}</div>`;
     if(S.connErr){ const c = getCreds() || {};
       h += `<div class="up-ask"><h3>🔐 دخول QP للرفع</h3><p style="margin:0 0 8px;font-size:13.5px;color:#555">${esc(S.connErr)}</p>
@@ -9390,9 +9514,9 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
         <div><b style="color:${bad ? '#b3261e' : '#2f7d55'}">${bad ? bad : '✔'}</b><span>${bad ? 'فيهم مشاكل' : 'كله تمام'}</span></div></div>
       <p style="font-size:12.5px;color:var(--muted);margin:0 0 8px">تقدر تعدّل أي خانة بالدوس عليها. المقاس بيتضاف لوحده في آخر shipment contents.</p>
       <div class="up-sheet"><table><thead>
-        <tr><th class="col"></th><th class="col">B</th><th class="col">C</th><th class="col">D</th><th class="col">E</th><th class="col">F</th><th class="col">G</th><th class="col">I</th><th class="col">K</th><th class="col"></th><th class="col"></th></tr>
-        <tr><th>1</th><th>serial</th><th>full name</th><th>phone</th><th>address</th><th>total amount</th><th>notes</th><th>shipment contents</th><th>city</th><th>الحالة</th><th></th></tr></thead><tbody>
-      ${S.rows.map((r, i) => `<tr class="${r.errs.length || r.upErr ? 'bad' : ''}" ${r.serial ? 'style="background:#eef8f1"' : ''}><td class="rn">${i + 2}</td><td style="font-size:12px;padding:4px 6px;color:#2f7d55">${esc(r.serial || '')}</td>
+        <tr><th class="col"></th><th class="col">B</th>${S.src === 'easy' ? '<th class="col"></th>' : ''}<th class="col">C</th><th class="col">D</th><th class="col">E</th><th class="col">F</th><th class="col">G</th><th class="col">I</th><th class="col">K</th><th class="col"></th><th class="col"></th></tr>
+        <tr><th>1</th><th>serial</th>${S.src === 'easy' ? '<th>Easy</th>' : ''}<th>full name</th><th>phone</th><th>address</th><th>total amount</th><th>notes</th><th>shipment contents</th><th>city</th><th>الحالة</th><th></th></tr></thead><tbody>
+      ${S.rows.map((r, i) => `<tr class="${r.errs.length || r.upErr ? 'bad' : ''}" ${r.serial ? 'style="background:#eef8f1"' : ''}><td class="rn">${i + 2}</td><td style="font-size:12px;padding:4px 6px;color:#2f7d55">${esc(r.serial || '')}</td>${S.src === 'easy' ? `<td style="font-size:11.5px;padding:4px 6px;white-space:nowrap;color:#2b6cb0">${esc(r.ref || '')}<br><span style="color:#888">${esc(r.estatus || '')}</span></td>` : ''}
         <td><input data-upf="${i}.name" value="${esc(r.name)}"></td>
         <td><input data-upf="${i}.phone" value="${esc(phoneOf(r.phone))}" style="direction:ltr;text-align:left;min-width:105px"></td>
         <td><input data-upf="${i}.address" value="${esc(r.address)}" style="min-width:260px"></td>
@@ -9419,6 +9543,24 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
       <p style="font-size:12.5px;color:var(--muted);margin:10px 0 0">${left ? 'الأوردرات بتتعمل في QP على طول وهتلاقيها في Orders List. ' : '✅ كل الأوردرات اترفعت. '}${!qpCities ? 'لازم الاتصال بـ QP يشتغل الأول (فوق). ' : ''}اللي يترفع بيتعلّم بالأخضر ومش بيترفع تاني.</p></div>`;
     return h + histHtml() + '</div>';
   }
+  function easyStep1(){
+    const P = E.ptr, admin = !!me().is_admin;
+    let h = `<div class="card"><h3>1️⃣ هات أوردرات EasyOrders الجديدة</h3>
+      <div class="up-ptr">📍 آخر أوردر اتاخد: <b>${P.seq ? 'رقم ' + P.seq + ' (تلقائي)' : '—'}</b> · <b>${P.xid ? '#' + P.xid + ' (من الإكسل)' : '—'}</b>
+        ${P.at ? `<span style="color:var(--muted)">— اتحدّث ${new Date(P.at).toLocaleString('ar-EG', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' })}${P.by ? ' بواسطة ' + esc(P.by) : ''}</span>` : ''}
+        ${admin ? '<button class="up-btn" id="upPtrEdit" style="padding:4px 10px;font-size:12.5px">✏️ غيّر</button>' : ''}</div>
+      <div class="up-row">
+        <button class="up-btn pri" id="upEasyFetch" ${E.loading ? 'disabled' : ''}>${E.loading ? '⏳ بيجيب...' : '🔄 هات الأوردرات الجديدة من EasyOrders'}</button>
+        <label class="up-file">📂 أو ارفع ملف الإكسل من EasyOrders<input type="file" id="upEasyFile" accept=".xlsx,.xls,.csv"></label>
+        <label style="font-size:13px;color:var(--muted)"><input type="checkbox" id="upShowOld" ${E.showOld ? 'checked' : ''}> اعرض كمان اللي اتاخد قبل كده</label>
+        ${S.rows ? '<button class="up-btn" id="upClear">🧹 ابدأ من جديد</button>' : ''}
+      </div>
+      ${E.hiddenOld ? `<p style="font-size:13px;color:var(--muted);margin:8px 0 0">اتشال ${E.hiddenOld} أوردر من الملف لأنهم اتاخدوا قبل كده (رقمهم قبل #${P.xid}).</p>` : ''}
+      ${E.err ? `<div class="up-msg err">${esc(E.err)}</div>` : ''}`;
+    if(E.missing) h += `<div class="up-msg err">جداول EasyOrders لسه مش متعملة في Supabase. ${admin ? 'شغّل ملف easyorders_setup.sql في Supabase → SQL Editor، وبعدين اعمل الـ Edge Function (الخطوات في الملف).' : 'كلّم الأدمن.'}</div>`;
+    return h + `<p style="font-size:12.5px;color:var(--muted);margin:10px 0 0">الأوردرات الملغية بتتشال لوحدها. "آخر أوردر اتاخد" بيتقدّم بس بعد ما تدوس ارفع على QP — فاللي ماترفعش هيفضل يظهر المرة الجاية.</p></div>`;
+  }
+
   function histHtml(){
     if(!S.hist.length) return '';
     return `<div class="card"><h3>🕘 آخر رفع (على الجهاز ده) — 🚀 اترفع على QP · ⬇️ شيت اتنزّل</h3><div class="up-hist">${S.hist.map(x =>
@@ -9453,13 +9595,27 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     };
     if($('upSend')) $('upSend').onclick = sendToQP;
     document.querySelectorAll('[data-upcity]').forEach(el => el.onchange = () => { S.rows[Number(el.dataset.upcity)].city = el.value; dupCheck(); draw(); });
-    if($('upClear')) $('upClear').onclick = () => { S.raw = ''; S.rows = null; S.note = ''; S.msg = ''; draw(); };
+    if($('upClear')) $('upClear').onclick = () => { S.raw = ''; S.rows = null; S.note = ''; S.msg = ''; S.skipped = new Set(); E.hiddenOld = 0; draw(); };
     if($('upNote')){
       $('upNote').oninput = e => { S.note = e.target.value; refreshReady(); };
       $('upNote').onchange = () => draw();
     }
     document.querySelectorAll('[data-upnote]').forEach(b => b.onclick = () => { S.note = b.dataset.upnote; draw(); });
-    document.querySelectorAll('[data-updel]').forEach(b => b.onclick = () => { S.rows.splice(Number(b.dataset.updel), 1); dupCheck(); draw(); });
+    document.querySelectorAll('[data-updel]').forEach(b => b.onclick = () => {
+      const r = S.rows[Number(b.dataset.updel)];
+      if(S.src === 'easy'){ if(!confirm('تشيل الأوردر ده؟ هيتحسب إنه اتاخد ومش هيظهر تاني بعد الرفع.')) return; S.skipped.add(r.seq || r.xid); }
+      S.rows.splice(Number(b.dataset.updel), 1); dupCheck(); draw(); });
+    document.querySelectorAll('[data-upsrc]').forEach(b => b.onclick = () => switchSrc(b.dataset.upsrc));
+    if($('upEasyFetch')) $('upEasyFetch').onclick = fetchEasy;
+    if($('upEasyFile')) $('upEasyFile').onchange = e => { const f = e.target.files[0]; if(f) readExcel(f); };
+    if($('upShowOld')) $('upShowOld').onchange = e => { E.showOld = e.target.checked; };
+    if($('upPtrEdit')) $('upPtrEdit').onclick = async () => {
+      const v = prompt('آخر رقم أوردر اتاخد من ملف الإكسل (اللي بعده هو اللي هيظهر). سيبه فاضي لو مش عايز تغيّره:', E.ptr.xid || '');
+      if(v !== null && v.trim() !== '' && !isNaN(digits(v))) await savePtr(KV.xid, Number(digits(v)));
+      const v2 = prompt('آخر رقم اتاخد من الأوردرات التلقائية (seq). سيبه فاضي لو مش عايز تغيّره:', E.ptr.seq || '');
+      if(v2 !== null && v2.trim() !== '' && !isNaN(digits(v2))) await savePtr(KV.seq, Number(digits(v2)));
+      draw();
+    };
     document.querySelectorAll('[data-upf]').forEach(el => {
       el.oninput = () => {
         const [i, k] = el.dataset.upf.split('.'), r = S.rows[Number(i)];
