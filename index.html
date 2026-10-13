@@ -9326,6 +9326,12 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     E.loading = true; E.err = ''; draw();
     try{ await connect(); }catch(e){}
     if(!E.ptrLoaded) await loadPtr();
+    // 🩹 لو "آخر أوردر اتاخد" أكبر من آخر أوردر وصل أصلاً (اتكتب غلط) → يرجع صفر
+    if(E.ptr.seq){
+      const { data: mx } = await sbc().from('easy_orders').select('seq').order('seq', { ascending:false }).limit(1);
+      const maxSeq = mx && mx[0] ? Number(mx[0].seq) : 0;
+      if(E.ptr.seq > maxSeq) await savePtr(KV.seq, 0);
+    }
     const { data, error } = await sbc().from('easy_orders').select('*').gt('seq', E.showOld ? 0 : E.ptr.seq).order('seq', { ascending:true }).limit(500);
     E.loading = false;
     if(error){ E.missing = /easy_orders|relation|schema cache|does not exist/i.test(error.message); E.err = E.missing ? '' : error.message; draw(); return; }
@@ -9546,9 +9552,9 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
   function easyStep1(){
     const P = E.ptr, admin = !!me().is_admin;
     let h = `<div class="card"><h3>1️⃣ هات أوردرات EasyOrders الجديدة</h3>
-      <div class="up-ptr">📍 آخر أوردر اتاخد: <b>${P.seq ? 'رقم ' + P.seq + ' (تلقائي)' : '—'}</b> · <b>${P.xid ? '#' + P.xid + ' (من الإكسل)' : '—'}</b>
+      <div class="up-ptr">📍 آخر أوردر اتاخد — 🔄 التلقائي: <b>${P.seq ? 'رقم ' + P.seq : 'لسه'}</b> · 📂 الإكسل: <b>${P.xid ? '#' + P.xid : 'لسه'}</b>
         ${P.at ? `<span style="color:var(--muted)">— اتحدّث ${new Date(P.at).toLocaleString('ar-EG', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' })}${P.by ? ' بواسطة ' + esc(P.by) : ''}</span>` : ''}
-        ${admin ? '<button class="up-btn" id="upPtrEdit" style="padding:4px 10px;font-size:12.5px">✏️ غيّر</button>' : ''}</div>
+        ${admin ? '<button class="up-btn" id="upPtrEdit" style="padding:4px 10px;font-size:12.5px">✏️ غيّر رقم الإكسل</button>' : ''}</div>
       <div class="up-row">
         <button class="up-btn pri" id="upEasyFetch" ${E.loading ? 'disabled' : ''}>${E.loading ? '⏳ بيجيب...' : '🔄 هات الأوردرات الجديدة من EasyOrders'}</button>
         <label class="up-file">📂 أو ارفع ملف الإكسل من EasyOrders<input type="file" id="upEasyFile" accept=".xlsx,.xls,.csv"></label>
@@ -9610,10 +9616,9 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     if($('upEasyFile')) $('upEasyFile').onchange = e => { const f = e.target.files[0]; if(f) readExcel(f); };
     if($('upShowOld')) $('upShowOld').onchange = e => { E.showOld = e.target.checked; };
     if($('upPtrEdit')) $('upPtrEdit').onclick = async () => {
-      const v = prompt('آخر رقم أوردر اتاخد من ملف الإكسل (اللي بعده هو اللي هيظهر). سيبه فاضي لو مش عايز تغيّره:', E.ptr.xid || '');
+      // ✏️ بيغيّر رقم ملف الإكسل بس — رقم الأوردرات التلقائية بيتظبط لوحده
+      const v = prompt('آخر رقم أوردر اتاخد من ملف الإكسل (رقم ID في ملف EasyOrders). الأوردرات اللي رقمها بعده هي اللي هتظهر:', E.ptr.xid || '');
       if(v !== null && v.trim() !== '' && !isNaN(digits(v))) await savePtr(KV.xid, Number(digits(v)));
-      const v2 = prompt('آخر رقم اتاخد من الأوردرات التلقائية (seq). سيبه فاضي لو مش عايز تغيّره:', E.ptr.seq || '');
-      if(v2 !== null && v2.trim() !== '' && !isNaN(digits(v2))) await savePtr(KV.seq, Number(digits(v2)));
       draw();
     };
     document.querySelectorAll('[data-upf]').forEach(el => {
