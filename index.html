@@ -1595,6 +1595,7 @@ const Squad = (function(){
     agentQ: '',
     sync: { from:'', loading:false, msg:'', err:'', done:'', result:null, sel:new Set(), selU:new Set(), applying:false },
     office: { list:null, loading:false, err:'', month:'', saving:false, people:null, form:{} }, // 🏢 عمولة المكتب
+    verify: { from:'', loading:false, msg:'', err:'', done:'', result:null, fix:new Map(), applying:false, agent:'' }, // 🛡️ تحقق من التسليمات
   };
   const canViewAll = () => !!(window.AuthGate && window.AuthGate.isFull && window.AuthGate.isFull());
   // عدد الأوردرات من كل مصدر: [['إرسال صفحة',7],['واتساب',3]]
@@ -2018,7 +2019,7 @@ const Squad = (function(){
       { key:'leaderboard', label:'ترتيب الـSquad' },
       { key:'office', label:'🏢 عمولة المكتب' },
     ];
-    if(isAdminUser()) tabs.push({ key:'qp-sync', label:'🔄 مطابقة مع QP' });
+    if(isAdminUser()) tabs.push({ key:'qp-sync', label:'🔄 مطابقة مع QP' }, { key:'verify', label:'🛡️ تحقق من التسليمات' });
     return `
       <div class="sq-bar">
         <div class="sq-tabs">${tabs.map(t => `<button class="sq-tab ${state.view===t.key?'active':''}" data-sqnav="${t.key}">${t.label}</button>`).join('')}</div>
@@ -2437,6 +2438,171 @@ const Squad = (function(){
     return h;
   }
 
+  /* =====================================================================
+     🛡️ تحقق من التسليمات (للأدمن بس)
+     - بيجيب الأوردرات اللي متعلّمة "اتسلم" (يعني عليها عمولة) ويطابقها مع QP برقم الموبايل
+     - ✅ اتسلمت فعلاً في QP  → تمام
+     - 🔴 مستلمتش في QP (Undelivered) → تتصلّح لـ "اندلفرد" وعمولتها تتشال
+     - 🚚 لسه عند الشحن / Hold / Pending → ترجع "قيد التنفيذ" لحد ما تتسلم فعلاً
+     - ❓ مش لاقيها في QP → بتظهر عشان تراجعها (مش متعلّمة للتصليح تلقائي)
+     - مفيش أي تغيير بيحصل غير لما الأدمن يدوس "صلّح"
+     ===================================================================== */
+  function setVerify(p){ state.verify = { ...state.verify, ...p }; render(); }
+  const monthFirst = () => { const d = new Date(); return localYmd(new Date(d.getFullYear(), d.getMonth(), 1)); };
+
+  async function runVerify(){
+    if(!isAdminUser()) return;
+    const api = qpApi();
+    if(!api || !api.hasCreds()){ setVerify({ err:'لازم تسجّل دخول QP الأول من قسم 🚚 QP على الجهاز ده، وبعدين ترجع هنا.', result:null }); return; }
+    const from = state.verify.from || monthFirst();
+    setVerify({ from, loading:true, err:'', done:'', result:null, msg:'بيجيب الأوردرات المتعلّمة "اتسلم"...' });
+    const { data: del, error } = await sb.from('orders').select('*').eq('status', 'delivered')
+      .gte('created_at', new Date(from + 'T00:00:00').toISOString()).order('created_at', { ascending:true }).limit(5000);
+    if(error){ setVerify({ loading:false, err:'مقدرناش نجيب الأوردرات: ' + error.message }); return; }
+    if(!del || !del.length){ setVerify({ loading:false, result:{ empty:true } }); return; }
+    if(!Object.keys(profileNameMap).length){
+      const { data: pr } = await sb.from('profiles').select('id, username, full_name');
+      (pr || []).forEach(p => profileNameMap[p.id] = p.full_name || p.username || 'موظف');
+    }
+    const qpFrom = localYmd(new Date(new Date(from + 'T12:00:00').getTime() - 2 * DAY));
+    let qp;
+    try{
+      setVerify({ msg:`بيجيب أوردرات QP من ${qpFrom} لـ النهارده...` });
+      qp = await api.fetchRange(qpFrom, localYmd(new Date()), n => setVerify({ msg:`بيجيب أوردرات QP... ${n} أوردر` }));
+    }catch(e){
+      setVerify({ loading:false, err: /Failed to fetch|NetworkError/i.test(e.message) ? 'مش قادر يوصل لموقع QP. اتأكد من الإنترنت ومن دخول QP.' : 'خطأ من QP: ' + e.message });
+      return;
+    }
+    const idx = {};
+    qp.forEach(q => [q.phone, q.phone2, q.customer_phone].forEach(ph => {
+      const k = phoneKey(ph); if(!k) return;
+      (idx[k] = idx[k] || []); if(!idx[k].includes(q)) idx[k].push(q);
+    }));
+    const used = new Set();
+    const R = { ok:[], notDel:[], notYet:[], review:[], nomatch:[], qpCount: qp.length, total: del.length, from };
+    del.forEach(o => {
+      const k = phoneKey(o.customer_phone);
+      if(!k){ R.nomatch.push({ o, why:'رقم الموبايل مش مكتوب صح' }); return; }
+      const t0 = new Date(o.created_at).getTime();
+      let c = (idx[k] || []).filter(q => !used.has(q.serial)).filter(q => { const t = new Date(q.order_date).getTime(); return isNaN(t) || (t >= t0 - 1.5 * DAY && t <= t0 + 20 * DAY); });
+      if(!c.length){ R.nomatch.push({ o, why:'الرقم ده مش موجود في QP في الفترة دي' }); return; }
+      const amt = Number(o.amount);
+      if(c.length > 1 && amt > 0){ const m = c.filter(q => Math.abs(numVal(q.price) - amt) < 1); if(m.length) c = m; }
+      c.sort((a, b) => Math.abs(new Date(a.order_date) - t0) - Math.abs(new Date(b.order_date) - t0));
+      const cats = c.map(q => api.category(q));
+      if(cats.includes('delivered')){
+        const q = c[cats.indexOf('delivered')]; used.add(q.serial); R.ok.push({ o, q }); return;
+      }
+      if(new Set(cats).size > 1){ R.review.push({ o, cands:c }); return; }
+      used.add(c[0].serial);
+      (cats[0] === 'undelivered' ? R.notDel : R.notYet).push({ o, q:c[0] });
+    });
+    // التصليح المقترح: اللي مستلمش → اندلفرد، واللي لسه في الطريق → قيد التنفيذ
+    const fix = new Map();
+    R.notDel.forEach(x => fix.set(String(x.o.id), 'undelivered'));
+    R.notYet.forEach(x => fix.set(String(x.o.id), 'pending'));
+    setVerify({ loading:false, msg:'', result:R, fix });
+  }
+
+  async function applyVerify(){
+    const F = state.verify.fix; if(!F.size) return;
+    const groups = { undelivered:[], pending:[] };
+    F.forEach((st, id) => (groups[st] = groups[st] || []).push(id));
+    const parts = [];
+    if(groups.undelivered.length) parts.push(`${groups.undelivered.length} أوردر يتعلّم "اندلفرد"`);
+    if(groups.pending.length) parts.push(`${groups.pending.length} أوردر يرجع "قيد التنفيذ"`);
+    if(!window.confirm('هيتصلّح: ' + parts.join(' و ') + '، وعمولة التسليم بتاعتهم هتتشال. تكمل؟')) return;
+    setVerify({ applying:true, err:'' });
+    let ok = 0;
+    try{
+      for(const [st, ids] of Object.entries(groups)){
+        for(let i = 0; i < ids.length; i += 100){
+          const { data, error } = await sb.from('orders').update({ status: st }).in('id', ids.slice(i, i + 100)).select('id');
+          if(error) throw error;
+          ok += (data || []).length;
+        }
+      }
+    }catch(error){
+      setVerify({ applying:false, err:'حصل خطأ أثناء التصليح: ' + error.message });
+      loadLeaderboard(); return;
+    }
+    ok = Math.min(ok, F.size); const fail = F.size - ok;
+    setVerify({ applying:false, result:null, fix:new Map(),
+      done:`✅ اتصلّح ${ok} أوردر.` + (fail ? ` ⚠️ ${fail} أوردر مااتعدّلش — قاعدة البيانات رافضة إن الأدمن يعدّل أوردرات غيره.` : '') });
+    loadMyOrders(); loadLeaderboard(); loadToday();
+  }
+
+  function VerifyView(){
+    if(!isAdminUser()) return head('غير متاح', 'التحقق من التسليمات للأدمن بس.');
+    const V = state.verify, api = qpApi(), logged = !!(api && api.hasCreds());
+    let h = head('🛡️ تحقق من التسليمات', 'بيراجع كل الأوردرات اللي خدمة العملاء علّموها "اتسلم" (وعليها عمولة) مع QP: هل اتسلمت فعلاً ولا لأ. ومفيش حاجة بتتغير غير لما تدوس "صلّح".') + `
+      <div class="sq-form" style="max-width:none;margin-bottom:18px">
+        ${logged ? '' : '<div class="sq-err">لازم تسجّل دخول QP الأول من قسم <a href="#/qp">🚚 QP</a> على الجهاز ده.</div>'}
+        <div class="sq-agentbar" style="margin:0">
+          <label class="sq-synclbl">الأوردرات من تاريخ <input type="date" id="sq-vf-from" class="sq-agentq" style="flex:none" value="${esc(V.from || monthFirst())}"></label>
+          <button type="button" class="sq-btn" id="sq-vf-run" ${V.loading || V.applying || !logged ? 'disabled' : ''}>${V.loading ? '⏳ بيراجع...' : '🛡️ راجع التسليمات'}</button>
+        </div>
+      </div>`;
+    if(V.err) h += `<div class="sq-err">${esc(V.err)}</div>`;
+    if(V.done) h += `<div class="sq-ok">${esc(V.done)}</div>`;
+    if(V.loading) return h + `<div class="sq-loading">${esc(V.msg || 'بيشتغل...')}</div>`;
+    const R = V.result; if(!R) return h;
+    if(R.empty) return h + `<div class="sq-empty">مفيش أوردرات متعلّمة "اتسلم" من التاريخ ده.</div>`;
+
+    const nm = id => esc(profileNameMap[id] || '—');
+    const qd = q => { const d = new Date(q.order_date); return isNaN(d) ? '—' : d.toLocaleDateString('ar-EG', { day:'numeric', month:'short' }); };
+    const qInfo = q => `<b>${esc(q.serial)}</b> · ${qd(q)} · ${numVal(q.price)} ج · <span class="sq-src">${esc(api.label(q))}</span>`;
+    const money = n => Math.round(n).toLocaleString('ar-EG') + ' ج';
+    const bad = [...R.notDel, ...R.notYet, ...R.review, ...R.nomatch];
+
+    // 👥 ملخص لكل موظف
+    const by = {};
+    const add = (o, k) => { const a = by[o.agent_id] = by[o.agent_id] || { marked:0, ok:0, bad:0, risk:0 }; a.marked++; if(k === 'ok') a.ok++; else { a.bad++; a.risk += deliveredCommission(o); } };
+    R.ok.forEach(x => add(x.o, 'ok')); bad.forEach(x => add(x.o, 'bad'));
+    const agents = Object.entries(by).sort((a, b) => b[1].bad - a[1].bad || b[1].marked - a[1].marked);
+    const show = x => !V.agent || x.o.agent_id === V.agent;
+
+    h += `<div class="sq-stats">
+      <div class="sq-stat"><div class="n">${R.total}</div><div class="l">متعلّمة "اتسلم"</div></div>
+      <div class="sq-stat"><div class="n green">${R.ok.length}</div><div class="l">✅ اتسلمت فعلاً في QP</div></div>
+      <div class="sq-stat"><div class="n" style="color:#b3423a">${R.notDel.length}</div><div class="l">🔴 مستلمتش في QP</div></div>
+      <div class="sq-stat"><div class="n gold">${R.notYet.length}</div><div class="l">🚚 لسه عند الشحن</div></div>
+      <div class="sq-stat"><div class="n">${R.review.length + R.nomatch.length}</div><div class="l">❓ محتاجة مراجعة / مش لاقيها</div></div>
+    </div>
+    <h3 class="sq-synch">👥 لكل موظف</h3>
+    <div class="sq-tablecard"><table class="sq-table"><thead><tr><th>الموظف</th><th>علّم "اتسلم"</th><th>✅ مؤكد</th><th>⚠️ مش مؤكد</th><th>عمولة على المحك</th><th></th></tr></thead><tbody>
+      ${agents.map(([id, a]) => `<tr ${V.agent === id ? 'style="background:var(--slate-l)"' : ''}><td><b>${nm(id)}</b></td><td>${a.marked}</td><td class="green">${a.ok}</td>
+        <td style="color:${a.bad ? '#b3423a' : 'inherit'};font-weight:700">${a.bad}</td><td>${a.bad ? money(a.risk) : '—'}</td>
+        <td><button type="button" class="sq-btn ghost sq-sm" data-vf-agent="${esc(V.agent === id ? '' : id)}">${V.agent === id ? 'الكل' : 'اعرض بتوعه'}</button></td></tr>`).join('')}
+    </tbody></table></div>`;
+
+    h += `<div class="sq-agentbar">
+      <button type="button" class="sq-btn" id="sq-vf-apply" ${V.applying || !V.fix.size ? 'disabled' : ''}>${V.applying ? '⏳ بيصلّح...' : `🛠️ صلّح ${V.fix.size} أوردر`}</button>
+      <span class="sq-hint" style="margin:0">اتقارن ${R.qpCount} أوردر من QP · ${V.agent ? 'معروض أوردرات ' + nm(V.agent) + ' بس' : 'كل الموظفين'}</span>
+    </div>`;
+
+    const row = (x, target, info) => { const id = String(x.o.id), on = V.fix.get(id) === target;
+      return `<tr><td data-label="صلّح">${target ? `<input type="checkbox" class="sq-syncck" data-vf-ck="${esc(id)}" data-to="${target}" ${on ? 'checked' : ''}>` : ''}</td>
+        <td data-label="الموظف">${nm(x.o.agent_id)}</td><td data-label="العميل">${esc(x.o.customer_name || '—')}</td>
+        <td class="mut" data-label="الموبايل">${esc(x.o.customer_phone || '—')}</td><td class="mut" data-label="القيمة">${x.o.amount ? esc(x.o.amount) + ' ج' : '—'}</td>
+        <td class="mut" data-label="تاريخ الأوردر">${fmtDate(x.o.created_at)}</td><td data-label="العمولة">${money(deliveredCommission(x.o))}</td>
+        <td data-label="في QP">${info}</td></tr>`; };
+    const th = `<thead><tr><th>صلّح</th><th>الموظف</th><th>العميل</th><th>الموبايل</th><th>القيمة</th><th>تاريخ الأوردر</th><th>العمولة</th><th>في QP</th></tr></thead>`;
+    const sec = (title, hint, list, target, infoFn, open) => { const L = list.filter(show); if(!L.length) return '';
+      return `<h3 class="sq-synch">${title} — ${L.length}</h3>${hint ? `<p class="sq-hint" style="margin:0 0 8px">${hint}</p>` : ''}
+        <div class="sq-tablecard"><table class="sq-table">${th}<tbody>${L.map(x => row(x, target, infoFn(x))).join('')}</tbody></table></div>`; };
+
+    h += sec('🔴 متعلّمة "اتسلم" بس مستلمتش في QP', 'حالتها في QP Undelivered. لو صلّحتها هتبقى "اندلفرد" وعمولة التسليم تتشال.', R.notDel, 'undelivered', x => qInfo(x.q));
+    h += sec('🚚 متعلّمة "اتسلم" بس لسه عند الشحن', 'لسه Pending أو مع المندوب أو Hold في QP. لو صلّحتها ترجع "قيد التنفيذ" لحد ما تتسلم فعلاً.', R.notYet, 'pending', x => qInfo(x.q));
+    h += sec('⚠️ محتاجة مراجعة', 'العميل ليه أكتر من أوردر في QP بحالات مختلفة ومفيش ولا واحد فيهم اتسلم. علّم لو عايزها ترجع "قيد التنفيذ".', R.review, 'pending', x => x.cands.map(qInfo).join('<br>'));
+    h += sec('❓ مش لاقيها في QP', 'ممكن تكون اتسلمت من المكتب أو الرقم مكتوب غلط. راجعها بنفسك، ولو عايزها ترجع "قيد التنفيذ" علّم عليها.', R.nomatch, 'pending', x => `<span class="mut">${esc(x.why)}</span>`);
+    const okL = R.ok.filter(show);
+    if(okL.length) h += `<details class="sq-syncdet"><summary>✅ اتسلمت فعلاً في QP — ${okL.length}</summary>
+      <div class="sq-tablecard"><table class="sq-table">${th}<tbody>${okL.map(x => row(x, '', qInfo(x.q))).join('')}</tbody></table></div></details>`;
+    if(!bad.length) h += `<div class="sq-ok">👌 كل الأوردرات المتعلّمة "اتسلم" اتسلمت فعلاً في QP.</div>`;
+    return h;
+  }
+
   /* ---------- 👁 أوردرات موظف معيّن (للأدمن ومن عنده كل الصلاحيات) ---------- */
   async function openAgent(id, name){
     if(!canViewAll()) return;
@@ -2746,6 +2912,7 @@ grant select, insert, update, delete on public.office_sales to authenticated;`;
     else if(state.view === 'leaderboard') body = LeaderboardView();
     else if(state.view === 'agent-orders') body = AgentOrdersView();
     else if(state.view === 'qp-sync') body = SyncView();
+    else if(state.view === 'verify') body = VerifyView();
     else if(state.view === 'office') body = OfficeView();
     else body = DashboardView();
     root.innerHTML = Bar() + body;
@@ -2789,6 +2956,19 @@ grant select, insert, update, delete on public.office_sales to authenticated;`;
     } });
     document.querySelectorAll('#sq-root [data-of-mark]').forEach(b => { b.onclick = () => officeMark(b.getAttribute('data-of-mark'), b.getAttribute('data-st')); });
     document.querySelectorAll('#sq-root [data-of-del]').forEach(b => { b.onclick = () => officeDel(b.getAttribute('data-of-del')); });
+
+    // 🛡️ تحقق من التسليمات
+    if($('sq-vf-from')) $('sq-vf-from').onchange = e => { state.verify.from = e.target.value; };
+    if($('sq-vf-run')) $('sq-vf-run').onclick = runVerify;
+    if($('sq-vf-apply')) $('sq-vf-apply').onclick = applyVerify;
+    document.querySelectorAll('#sq-root [data-vf-agent]').forEach(b => { b.onclick = () => setVerify({ agent: b.getAttribute('data-vf-agent') }); });
+    document.querySelectorAll('#sq-root [data-vf-ck]').forEach(cb => {
+      cb.onchange = () => {
+        const id = cb.getAttribute('data-vf-ck');
+        if(cb.checked) state.verify.fix.set(id, cb.getAttribute('data-to')); else state.verify.fix.delete(id);
+        const b = $('sq-vf-apply'); if(b){ b.disabled = !state.verify.fix.size; b.textContent = `🛠️ صلّح ${state.verify.fix.size} أوردر`; }
+      };
+    });
 
     // 🔄 مطابقة مع QP
     if($('sq-sync-from')) $('sq-sync-from').onchange = e => { state.sync.from = e.target.value; };
