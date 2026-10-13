@@ -416,6 +416,7 @@ html:not(.auth-ok) #app{display:none}
     <div class="grp"><div class="grp-title">المالية</div>
       <a class="navlink" href="#/profits">💰 الأرباح</a>
       <a class="navlink" href="#/brands">🏷️ Brands</a>
+      <a class="navlink" href="#/meta-ads">📊 Ads (Meta)</a>
       <a class="navlink" href="#/dept/warehouse">🏬 المخزن</a>
     </div>
     <div class="grp"><div class="grp-title">العمل</div>
@@ -4561,7 +4562,8 @@ async function exportToSheet(btn) {
   }
   const GROUPS = () => [
     { title:'المالية', items:[
-      { key:'accounts', label:'💼 الحسابات',  routes:['accounts'] },
+      { key:'accounts',  label:'💼 الحسابات (Italy + Kidzzly + Socky + المجمّعة)',  routes:['accounts','accounts-kidzzly','accounts-socky','accounts-all'] },
+      { key:'meta_ads', label:'📊 Ads (Meta)', routes:['meta-ads'] },
       { key:'profits', label:'💰 الأرباح',    routes:['profits'] },
       { key:'brands', label:'🏷️ Brands', routes:['brands'] },
       { key:'dept:warehouse', label:'🏬 المخزن', routes:[] },
@@ -5022,7 +5024,7 @@ table.pr tr.out td{background:#fff5f4}
 
   const TABS = [
     ['stock', '📦 المخزون'], ['in', '➕ إدخال'], ['out', '➖ إخراج'],
-    ['count', '📋 جرد'], ['moves', '🕘 الحركات'], ['day', '🗓️ ملخص اليوم'], ['buy', '📊 المشتريات'], ['items', '🏷️ الأصناف']
+    ['count', '📋 جرد'], ['moves', '🕘 الحركات'], ['day', '🗓️ ملخص اليوم'], ['buy', '📊 المشتريات'], ['rep', '🖨️ تقارير الطباعة'], ['items', '🏷️ الأصناف']
   ];
   const KIND = { in: ['إدخال', 'in'], out: ['إخراج', 'out'], adjust: ['تسوية جرد', 'adj'] };
   const SRC = { purchase:'🛒 مشتريات من مورد', return:'↩️ مرتجع من عميل', other:'📥 إدخال تاني' };
@@ -5065,13 +5067,28 @@ table.pr tr.out td{background:#fff5f4}
   }
 
   /* ---------- البيانات ---------- */
+  /* 🏷️ مخزن منفصل لكل براند (مفيش مخزن مجمّع) — العمود brand في inv_items */
+  const INV_BRANDS = [ { key:'italy', name:'Italy', icon:'💍', color:'#b08d57' }, { key:'kidzzly', name:'Kidzzly', icon:'🧸', color:'#4f8fd8' }, { key:'socky', name:'Socky', icon:'🧦', color:'#3f9b74' } ];
+  S.brand = (() => { try{ const v = localStorage.getItem('inv_brand'); return INV_BRANDS.some(b => b.key === v) ? v : 'italy'; }catch(e){ return 'italy'; } })();
+  const curBrand = () => INV_BRANDS.find(b => b.key === S.brand) || INV_BRANDS[0];
+  function setBrand(k){
+    if(k === S.brand) return;
+    S.brand = k; try{ localStorage.setItem('inv_brand', k); }catch(e){}
+    S.items = null; S.moves = null; S.buy = null; S.dayData = null; S.count = {}; S.req = {}; S.lines = [{ item:'', qty:'' }]; S.note = '';
+    S.editing = null; S.draft = null; S.msg = ''; S.rep = null; pk.open = false;
+    load();
+  }
+
   async function load(){
     if(!sb()) return;
     S.loading = true; S.err = ''; draw();
     const [a, b] = await Promise.all([
-      sb().from('inv_stock').select('*').order('name'),
-      sb().from('inv_moves').select('*, inv_items(name, unit)').order('created_at', { ascending:false }).limit(500)
+      sb().from('inv_stock').select('*').eq('brand', S.brand).order('name'),
+      sb().from('inv_moves').select('*, inv_items!inner(name, unit, brand)').eq('inv_items.brand', S.brand).order('created_at', { ascending:false }).limit(500)
     ]);
+    if((a.error && /brand/i.test(a.error.message)) || (b.error && /brand/i.test(b.error.message))){
+      S.loading = false; S.err = 'لازم ملف brands_split.sql يتشغّل في Supabase الأول عشان المخزن يتقسم على البراندات (Italy / Kidzzly / Socky).'; draw(); return;
+    }
     S.loading = false;
     const e = a.error || b.error;
     if(e){
@@ -5097,15 +5114,17 @@ table.pr tr.out td{background:#fff5f4}
   function view(){
     const tabs = me().is_admin ? [...TABS, ['admin', '🧹 تصفير ونسخة احتياطية']] : TABS;
     if(S.tab === 'admin' && !me().is_admin) S.tab = 'stock';
-    let h = `<div class="pagehead"><h1>🏬 المخزن</h1><p>إدخال وإخراج الأصناف، والمخزون الحالي، والجرد — كله متسجل باسم اللي عمله.</p></div>
+    const B = curBrand();
+    let h = `<div class="acb-bar">${INV_BRANDS.map(b => `<button type="button" class="${S.brand === b.key ? 'on' : ''}" style="--bc:${b.color}" data-invbrand="${b.key}">${b.icon} مخزن ${b.name}</button>`).join('')}</div>
+      <div class="pagehead"><h1>🏬 مخزن ${B.name} ${B.icon}</h1><p>إدخال وإخراج الأصناف، والمخزون الحالي، والجرد — كله متسجل باسم اللي عمله. كل براند ليه مخزنه لوحده.</p></div>
       <div class="inv-tabs">${tabs.map(([k, l]) => `<button class="inv-tab ${S.tab === k ? 'on' : ''}" data-tab="${k}">${l}</button>`).join('')}
         <button class="inv-btn" data-act="reload" style="margin-inline-start:auto">🔄 تحديث</button></div>`;
     if(S.msg) h += `<div class="inv-msg ${S.msgErr ? 'err' : ''}">${esc(S.msg)}</div>`;
     if(S.err) return h + `<div class="inv-msg err">${esc(S.err)}</div>`;
     if(S.items === null) return h + `<div class="card"><p class="none">⏳ بيحمّل المخزن...</p></div>`;
-    if(!S.items.length && S.tab !== 'items' && S.tab !== 'admin')
+    if(!S.items.length && S.tab !== 'items' && S.tab !== 'admin' && S.tab !== 'rep')
       return h + `<div class="card"><p class="none" style="margin-bottom:10px">لسه مفيش أصناف. ابدأ بإضافة الأصناف ورصيدها الحالي.</p><button class="inv-btn pri" data-tab="items">🏷️ ضيف أول صنف</button></div>`;
-    return h + ({ stock:vStock, in:() => vMove('in'), out:() => vMove('out'), count:vCount, moves:vMoves, day:vDay, buy:vBuy, items:vItems, admin:vAdmin }[S.tab])();
+    return h + ({ stock:vStock, in:() => vMove('in'), out:() => vMove('out'), count:vCount, moves:vMoves, day:vDay, buy:vBuy, rep:vRep, items:vItems, admin:vAdmin }[S.tab])();
   }
 
   function vStock(){
@@ -5243,7 +5262,8 @@ table.pr tr.out td{background:#fff5f4}
     if(S.buyFrom > S.buyTo){ S.buyErr = 'تاريخ "من" لازم يكون قبل "إلى".'; draw(); return; }
     S.buyLoading = true; S.buyErr = ''; draw();
     const { data, error } = await sb().from('inv_moves')
-      .select('*, inv_items(name, sku, category, unit, cost)')
+      .select('*, inv_items!inner(name, sku, category, unit, cost, brand)')
+      .eq('inv_items.brand', S.brand)
       .eq('kind', 'in')
       .gte('created_at', new Date(S.buyFrom + 'T00:00:00').toISOString())
       .lte('created_at', new Date(S.buyTo + 'T23:59:59').toISOString())
@@ -5374,7 +5394,8 @@ th{background:#3d5553;color:#fff} td.r{text-align:right;font-weight:600} tr:nth-
     const start = new Date(S.day + 'T00:00:00'), endT = new Date(S.day + 'T23:59:59.999').getTime();
     // بنجيب حركات اليوم وكل اللي بعده عشان نرجّع الرصيد لأول وآخر اليوم
     const { data, error } = await sb().from('inv_moves')
-      .select('*, inv_items(name, unit, cost)')
+      .select('*, inv_items!inner(name, unit, cost, brand)')
+      .eq('inv_items.brand', S.brand)
       .gte('created_at', start.toISOString())
       .order('created_at', { ascending:true }).limit(20000);
     S.dayLoading = false;
@@ -5525,6 +5546,101 @@ th{background:#3d5553;color:#fff} td.r{text-align:right;font-weight:600} tr:nth-
   }
 
   /* =====================================================================
+     🖨️ تقارير الطباعة: إدخال اليوم / إخراج اليوم / إدخال الشغل الجديد
+     - اطبع هنا، أو ابعت أمر طباعة لأي حد في السيستم (بيوصله في 📨 الرسايل والمهام ويطبعه)
+     ===================================================================== */
+  const repS = { day: ymd(new Date()), type:'in', to:'', note:'', loading:false, err:'' };
+  const REP_TYPES = {
+    in:  { label:'➕ إدخال اليوم', title:'تقرير إدخال اليوم', f: m => m.kind === 'in' },
+    out: { label:'➖ إخراج اليوم', title:'تقرير إخراج اليوم', f: m => m.kind === 'out' },
+    new: { label:'🛒 إدخال الشغل الجديد', title:'تقرير إدخال الشغل الجديد', f: m => isPurchase(m) },
+  };
+  async function loadRep(){
+    repS.loading = true; repS.err = ''; draw();
+    const st = new Date(repS.day + 'T00:00:00'), en = new Date(repS.day + 'T23:59:59.999');
+    const { data, error } = await sb().from('inv_moves').select('*, inv_items!inner(name, sku, unit, cost, brand)').eq('inv_items.brand', S.brand)
+      .gte('created_at', st.toISOString()).lte('created_at', en.toISOString()).order('created_at', { ascending:true }).limit(5000);
+    repS.loading = false;
+    if(error){ repS.err = 'مقدرناش نجيب حركات اليوم: ' + error.message; S.rep = []; }
+    else S.rep = data || [];
+    draw();
+    if(!pk.people) pkPeople();
+  }
+  function repRows(){
+    const T = REP_TYPES[repS.type], g = {};
+    (S.rep || []).filter(T.f).forEach(m => {
+      const it = m.inv_items || {};
+      const r = g[m.item_id] = g[m.item_id] || { name: it.name || '—', sku: it.sku || '', unit: it.unit || '', qty:0, value:0, ops:0, who:new Set() };
+      const q = Math.abs(Number(m.qty) || 0);
+      r.qty += q; r.ops++; r.value += q * (Number(m.unit_cost ?? it.cost) || 0);
+      if(m.created_by_name) r.who.add(m.created_by_name);
+    });
+    return Object.values(g).map(r => ({ ...r, who: [...r.who].join('، ') })).sort((a, b) => a.name.localeCompare(b.name, 'ar'));
+  }
+  function repPayload(){
+    const T = REP_TYPES[repS.type], rows = repRows(), to = (pk.people || []).find(p => p.id === repS.to);
+    return { type:'report', title: T.title, brand: curBrand().name, day: repS.day, at: new Date().toISOString(), by: myName(), to: to ? to.name : '',
+      note: repS.note.trim(), withValue: repS.type !== 'out', rows: rows.map(r => ({ name:r.name, sku:r.sku, unit:r.unit, qty:r.qty, value:r.value, who:r.who })),
+      total: rows.reduce((a, r) => a + r.qty, 0), totalValue: rows.reduce((a, r) => a + r.value, 0) };
+  }
+  function printReport(P){
+    const n = v => Number(v || 0).toLocaleString('ar-EG', { maximumFractionDigits: 2 });
+    const d = new Date(P.day + 'T12:00:00');
+    printDoc(P.title + ' — ' + (P.brand || ''), `
+      <div class="hd"><div><h1>🖨️ ${esc(P.title)}</h1><div class="sub">مخزن ${esc(P.brand || '')} — ${d.toLocaleDateString('ar-EG', { weekday:'long', day:'numeric', month:'long', year:'numeric' })}</div></div>
+        <div class="meta">جهّزه: <b>${esc(P.by || '—')}</b>${P.to ? '<br>اتبعت لـ: <b>' + esc(P.to) + '</b>' : ''}<br>اتطبع: <b>${new Date().toLocaleString('ar-EG', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' })}</b></div></div>
+      <div class="k"><div>عدد الأصناف<b>${n(P.rows.length)}</b></div><div>إجمالي القطع<b>${n(P.total)}</b></div>${P.withValue ? `<div>القيمة بالتكلفة<b>${n(P.totalValue)} ج</b></div>` : ''}</div>
+      <table><tr><th style="width:40px">م</th><th>الصنف</th><th>الكود</th><th>الكمية</th><th>الوحدة</th>${P.withValue ? '<th>القيمة</th>' : ''}<th>بواسطة</th><th style="width:60px">✓</th></tr>
+      ${P.rows.map((r, k) => `<tr><td>${n(k + 1)}</td><td class="r">${esc(r.name)}</td><td>${esc(r.sku || '—')}</td><td style="font-size:16px;font-weight:700">${n(r.qty)}</td><td>${esc(r.unit || '')}</td>${P.withValue ? `<td>${n(r.value)}</td>` : ''}<td>${esc(r.who || '')}</td><td></td></tr>`).join('') || `<tr><td colspan="8">مفيش حركات في اليوم ده.</td></tr>`}
+      <tr class="tot"><td colspan="3">الإجمالي</td><td>${n(P.total)}</td><td></td>${P.withValue ? `<td>${n(P.totalValue)}</td>` : ''}<td colspan="2"></td></tr></table>
+      ${P.note ? `<p style="margin-top:14px;font-size:14px"><b>ملاحظة:</b> ${esc(P.note)}</p>` : ''}
+      <div style="display:flex;gap:30px;margin-top:50px;font-size:14px">
+        <div style="flex:1;border-top:1px solid #333;padding-top:6px;text-align:center">توقيع أمين المخزن</div>
+        <div style="flex:1;border-top:1px solid #333;padding-top:6px;text-align:center">توقيع المراجعة</div></div>`);
+  }
+  function printAny(P){ return P && P.type === 'report' ? printReport(P) : printPickup(P); }
+  async function repSend(){
+    const P = repPayload();
+    if(!P.rows.length) return flash('مفيش حركات في التقرير ده عشان يتبعت.', true);
+    const to = (pk.people || []).find(p => p.id === repS.to);
+    if(!to) return flash('اختار هتبعت التقرير لمين.', true);
+    const { error } = await sb().from('inbox').insert({
+      kind:'task', from_id: me().id, from_name: myName(), to_id: to.id, to_name: to.name,
+      title: `🖨️ اطبع ${P.title} — مخزن ${P.brand} — ${new Date(P.day + 'T12:00:00').toLocaleDateString('ar-EG', { day:'numeric', month:'long' })}`,
+      body: `${P.rows.length} صنف — ${P.total} قطعة${P.note ? '\nملاحظة: ' + P.note : ''}\n#PRINT#${JSON.stringify(P)}`, due_date: ymd(new Date()) });
+    if(error) return flash(/inbox|relation|schema cache/i.test(error.message) ? '❌ جدول الرسايل مش متعمل في Supabase — شغّل ملف inbox_and_orders.sql الأول.' : '❌ ماتبعتش: ' + error.message, true);
+    repS.note = '';
+    if(window.Inbox && window.Inbox.reload) window.Inbox.reload();
+    flash(`✅ التقرير اتبعت لـ ${to.name} 🖨️ — هيجيلك إشعار لما يتطبع.`);
+  }
+  function vRep(){
+    const T = REP_TYPES[repS.type];
+    let h = `<div class="card"><h3>🖨️ تقارير الطباعة — مخزن ${esc(curBrand().name)}</h3>
+      <div class="pk-row" style="margin-bottom:12px">${Object.entries(REP_TYPES).map(([k, t]) => `<button class="inv-btn ${repS.type === k ? 'pri' : ''}" data-reptype="${k}">${t.label}</button>`).join('')}
+        <label style="margin-inline-start:auto">اليوم <input type="date" class="inv-in" id="repDay" value="${esc(repS.day)}" style="width:auto"></label></div>`;
+    if(repS.err) h += `<div class="inv-msg err">${esc(repS.err)}</div>`;
+    if(repS.loading || S.rep === null) return h + `<p class="none">⏳ بيجيب حركات اليوم...</p></div>`;
+    const rows = repRows(), total = rows.reduce((a, r) => a + r.qty, 0), val = rows.reduce((a, r) => a + r.value, 0), withV = repS.type !== 'out';
+    h += `<div class="inv-kpis"><div class="inv-kpi"><div class="n">${fmtN(rows.length)}</div><div class="l">صنف</div></div>
+        <div class="inv-kpi"><div class="n">${fmtN(total)}</div><div class="l">قطعة</div></div>
+        ${withV ? `<div class="inv-kpi"><div class="n">${fmtN(val)} ج</div><div class="l">القيمة بالتكلفة</div></div>` : ''}</div>
+      <table class="pk-t"><thead><tr><th>الصنف</th><th>الكود</th><th style="text-align:center">الكمية</th>${withV ? '<th>القيمة</th>' : ''}<th>بواسطة</th></tr></thead><tbody>
+        ${rows.map(r => `<tr><td>${esc(r.name)}</td><td class="none">${esc(r.sku || '—')}</td><td class="q">${fmtN(r.qty)} ${esc(r.unit || '')}</td>${withV ? `<td>${fmtN(r.value)}</td>` : ''}<td class="none">${esc(r.who)}</td></tr>`).join('')
+          || `<tr><td colspan="5" class="none">مفيش ${esc(T.label.replace(/^\S+\s/, ''))} في اليوم ده.</td></tr>`}
+      </tbody></table>
+      <div class="pk-send">
+        <div><label for="repTo">🖨️ ابعت التقرير لـ</label><select class="inv-in" id="repTo"><option value="">${pk.people ? '— اختار —' : 'بيحمّل...'}</option>
+          ${(pk.people || []).map(p => `<option value="${esc(p.id)}" ${repS.to === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></div>
+        <div><label for="repNote">ملاحظة (اختياري)</label><input class="inv-in" id="repNote" value="${esc(repS.note)}"></div>
+      </div>
+      <div class="pk-row" style="margin-top:12px">
+        <button class="inv-btn pri" data-act="rep-send">📤 ابعت أمر الطباعة</button>
+        <button class="inv-btn" data-act="rep-print">🖨️ اطبع هنا</button>
+      </div></div>`;
+    return h;
+  }
+
+  /* =====================================================================
      🚚 إخراج البيكب → ✅ تم الانتهاء → 🖨️ أمر طباعة يروح لحد (زي نوران)
      - بيجمع الإخراج اللي إنت عملته النهارده من آخر "تم الانتهاء"
      - أمر الطباعة بيوصل للشخص في 📨 الرسايل والمهام بإشعار وصوت، وهو يدوس 🖨️ اطبع
@@ -5555,19 +5671,19 @@ th{background:#3d5553;color:#fff} td.r{text-align:right;font-weight:600} tr:nth-
     if(pk.people) return;
     const { data } = await sb().from('profiles').select('id, username, full_name');
     pk.people = (data || []).map(p => ({ id:p.id, name:p.full_name || p.username || 'موظف' })).sort((a, b) => a.name.localeCompare(b.name, 'ar'));
-    if(!pk.to){ const n = pk.people.find(p => PK_DEFAULT_TO.test(p.name)); if(n) pk.to = n.id; }
+    { const n = pk.people.find(p => PK_DEFAULT_TO.test(p.name)); if(n){ if(!pk.to) pk.to = n.id; if(!repS.to) repS.to = n.id; } }
     draw();
   }
   function pkPayload(){
     const rows = pkRows(), to = (pk.people || []).find(p => p.id === pk.to);
-    return { type:'pickup', date: ymd(new Date()), at: new Date().toISOString(), by: myName(), to: to ? to.name : '',
+    return { type:'pickup', brand: curBrand().name, date: ymd(new Date()), at: new Date().toISOString(), by: myName(), to: to ? to.name : '',
       note: pk.note.trim(), rows, total: rows.reduce((a, r) => a + r.qty, 0), from: pkStart().toISOString() };
   }
   function printPickup(P){
     const n = v => Number(v || 0).toLocaleString('ar-EG', { maximumFractionDigits: 2 });
     const dt = new Date(P.at || Date.now());
     printDoc('إذن إخراج البيكب', `
-      <div class="hd"><div><h1>🚚 إذن إخراج البيكب</h1><div class="sub">${dt.toLocaleDateString('ar-EG', { weekday:'long', day:'numeric', month:'long', year:'numeric' })} — الساعة ${dt.toLocaleTimeString('ar-EG', { hour:'2-digit', minute:'2-digit' })}</div></div>
+      <div class="hd"><div><h1>🚚 إذن إخراج البيكب${P.brand ? ' — ' + esc(P.brand) : ''}</h1><div class="sub">${dt.toLocaleDateString('ar-EG', { weekday:'long', day:'numeric', month:'long', year:'numeric' })} — الساعة ${dt.toLocaleTimeString('ar-EG', { hour:'2-digit', minute:'2-digit' })}</div></div>
         <div class="meta">خرّجه: <b>${esc(P.by || '—')}</b>${P.to ? '<br>اتبعت لـ: <b>' + esc(P.to) + '</b>' : ''}<br>اتطبع: <b>${new Date().toLocaleString('ar-EG', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' })}</b></div></div>
       <div class="k"><div>عدد الأصناف<b>${n(P.rows.length)}</b></div><div>إجمالي القطع<b>${n(P.total)}</b></div></div>
       <table><tr><th style="width:40px">م</th><th>الصنف</th><th>الكود</th><th>الكمية</th><th>الوحدة</th><th style="width:70px">✓ مراجعة</th></tr>
@@ -5578,7 +5694,7 @@ th{background:#3d5553;color:#fff} td.r{text-align:right;font-weight:600} tr:nth-
         <div style="flex:1;border-top:1px solid #333;padding-top:6px;text-align:center">توقيع المسؤولة عن البيكب</div>
         <div style="flex:1;border-top:1px solid #333;padding-top:6px;text-align:center">توقيع المراجعة / الاستلام</div></div>`);
   }
-  window.InvPrint = { pickup: printPickup }; // بيستخدمه 📨 الرسايل والمهام لما حد يدوس "🖨️ اطبع"
+  window.InvPrint = { pickup: printPickup, print: p => printAny(p) }; // بيستخدمه 📨 الرسايل والمهام لما حد يدوس "🖨️ اطبع"
 
   async function pkSend(){
     const P = pkPayload();
@@ -5782,15 +5898,15 @@ th{background:#3d5553;color:#fff} td.r{text-align:right;font-weight:600} tr:nth-
     if(!me().is_admin) return flash('التصفير للأدمن بس.', true);
     if(S.resetTxt.trim() !== RESET_WORD) return flash(`اكتب "${RESET_WORD}" بالظبط عشان تأكد.`, true);
     const all = S.resetMode === 'all';
-    if(!confirm(all ? 'متأكد؟ هتتمسح كل الأصناف وكل الحركات نهائيًا.' : 'متأكد؟ هتتمسح كل الحركات والأرصدة هترجع صفر.')) return;
+    if(!confirm((all ? 'متأكد؟ هتتمسح كل الأصناف وكل الحركات نهائيًا' : 'متأكد؟ هتتمسح كل الحركات والأرصدة هترجع صفر') + ' — في مخزن ' + curBrand().name + ' بس.')) return;
     S.busy = true; S.msg = '⏳ بينزّل نسخة احتياطية الأول...'; S.msgErr = false; draw();
     try{ await downloadBackup(); }
     catch(e){ S.busy = false; return flash('❌ النسخة الاحتياطية فشلت، فماتمسحش حاجة: ' + e.message, true); }
     S.msg = '⏳ بيصفّر المخزن...'; draw();
-    const { error } = await sb().rpc('inv_reset', { keep_items: !all });
+    const { error } = await sb().rpc('inv_reset_brand', { p_brand: S.brand, keep_items: !all });
     S.busy = false;
     if(error) return flash(/admins only/i.test(error.message) ? '❌ التصفير للأدمن بس.'
-      : /inv_reset|function|schema cache/i.test(error.message) ? '❌ لازم كود الـ SQL بتاع التصفير يتشغّل في Supabase الأول.'
+      : /inv_reset|function|schema cache/i.test(error.message) ? '❌ لازم ملف brands_split.sql يتشغّل في Supabase الأول.'
       : '❌ مقدرناش نصفّر: ' + error.message, true);
     S.resetTxt = ''; S.buy = null; S.dayData = null; S.count = {}; S.req = {}; S.lines = [{ item:'', qty:'' }]; S.note = '';
     S.tab = all ? 'items' : 'stock';
@@ -5836,7 +5952,15 @@ th{background:#3d5553;color:#fff} td.r{text-align:right;font-weight:600} tr:nth-
 
   /* ---------- الأحداث ---------- */
   function wire(root){
-    root.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { S.tab = b.dataset.tab; S.msg = ''; S.editing = null; S.draft = null; draw(); if(S.tab === 'buy' && S.buy === null && !S.buyLoading) loadBuy(); if(S.tab === 'day' && !S.dayData && !S.dayLoading) loadDay(); });
+    root.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { S.tab = b.dataset.tab; S.msg = ''; S.editing = null; S.draft = null; draw(); if(S.tab === 'buy' && S.buy === null && !S.buyLoading) loadBuy(); if(S.tab === 'day' && !S.dayData && !S.dayLoading) loadDay(); if(S.tab === 'rep' && !S.rep && !repS.loading) loadRep(); });
+    root.querySelectorAll('[data-invbrand]').forEach(b => b.onclick = () => setBrand(b.dataset.invbrand));
+    // 🖨️ تقارير الطباعة
+    root.querySelectorAll('[data-reptype]').forEach(b => b.onclick = () => { repS.type = b.dataset.reptype; draw(); });
+    const rd = root.querySelector('#repDay'); if(rd) rd.onchange = () => { repS.day = rd.value; S.rep = null; loadRep(); };
+    const rto = root.querySelector('#repTo'); if(rto) rto.onchange = () => { repS.to = rto.value; };
+    const rn = root.querySelector('#repNote'); if(rn) rn.oninput = () => { repS.note = rn.value; };
+    const rp = root.querySelector('[data-act=rep-print]'); if(rp) rp.onclick = () => printAny(repPayload());
+    const rs = root.querySelector('[data-act=rep-send]'); if(rs) rs.onclick = repSend;
     root.querySelectorAll('[data-act=reload]').forEach(b => b.onclick = () => { S.msg = ''; load(); });
     root.querySelectorAll('[data-quick]').forEach(b => b.onclick = () => {
       S.tab = b.dataset.quick; S.lines = [{ item:b.dataset.id, qty:'' }]; S.note = ''; S.msg = ''; draw();
@@ -6033,7 +6157,7 @@ th{background:#3d5553;color:#fff} td.r{text-align:right;font-weight:600} tr:nth-
       if(error) return flash('❌ ' + (/duplicate|unique/i.test(error.message) ? 'الكود ده مستخدم لصنف تاني.' : error.message), true);
       S.editing = null; S.draft = null; S.msg = '✅ اتعدّل الصنف.'; S.msgErr = false;
     } else {
-      const { data: row, error } = await sb().from('inv_items').insert(data).select().single();
+      const { data: row, error } = await sb().from('inv_items').insert({ ...data, brand: S.brand }).select().single();
       if(error){ S.busy = false; return flash('❌ ' + (/duplicate|unique/i.test(error.message) ? 'الكود ده مستخدم لصنف تاني.' : error.message), true); }
       if(open && open > 0){
         await sb().from('inv_moves').insert({ item_id: row.id, kind:'in', qty: open, note:'رصيد أول المدة', source:'opening', created_by_name: myName() });
@@ -7100,6 +7224,11 @@ table.pr tr.bd-cat td{background:var(--slate-l);font-weight:700}
      ===================================================================== -->
 <style id="ac-style">
 .ac-kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:16px}
+/* 🏷️ شريط البراندات (الحسابات + المخزن) */
+.acb-bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+.acb-bar a,.acb-bar button{padding:9px 16px;border:1.5px solid var(--line);border-top:4px solid var(--bc,var(--line));border-radius:10px;background:var(--panel);color:var(--ink);text-decoration:none;font-family:inherit;font-weight:700;font-size:14.5px;cursor:pointer}
+.acb-bar a.on,.acb-bar button.on{background:var(--bc,var(--brass-d));border-color:var(--bc,var(--brass-d));color:#fff}
+.acb-bar a.all{--bc:#2b5a8a;margin-inline-start:auto}
 @media (max-width:1100px){.ac-kpis{grid-template-columns:repeat(3,1fr)}}
 @media (max-width:620px){.ac-kpis{grid-template-columns:1fr 1fr}}
 .ac-kpi.bal .n{color:#2b5a8a}
@@ -7307,7 +7436,7 @@ function makeAccounts(CFG){
 
   function view(){
     const inc = S.kind === 'income', opn = S.kind === 'opening', trf = S.kind === 'transfer';
-    let h = `<div class="pagehead"><h1>${CFG.icon} ${CFG.title}</h1><p>${CFG.desc}</p></div>`;
+    let h = (window.accBrandBar ? window.accBrandBar(CFG.route) : '') + `<div class="pagehead"><h1>${CFG.icon} ${CFG.title}</h1><p>${CFG.desc}</p></div>`;
     if(S.msg) h += `<div class="ac-msg ${S.msgErr ? 'err' : ''}">${esc(S.msg)}</div>`;
 
     // ملخص النهارده دايمًا ظاهر
@@ -7622,16 +7751,29 @@ function makeAccounts(CFG){
   }
 
   /* ---------- لينك في القائمة (تحت المالية) ---------- */
-  const anchor = document.querySelector(CFG.anchor);
+  const anchor = CFG.anchor && document.querySelector(CFG.anchor);
   if(anchor && !document.querySelector(`#sidebar a.navlink[href="#/${CFG.route}"]`)){
     const a = document.createElement('a');
-    a.className = 'navlink'; a.href = '#/' + CFG.route; a.textContent = CFG.icon + ' ' + CFG.title;
+    a.className = 'navlink'; a.href = '#/' + CFG.route; a.textContent = CFG.linkLabel || (CFG.icon + ' ' + CFG.title);
     if(CFG.before) anchor.before(a); else anchor.after(a);
   }
 
+  /* ---------- 📊 للحسابات المجمّعة: رصيد كل خزنة + إيرادات/مصروفات فترة ---------- */
+  window.AccAPI = window.AccAPI || {};
+  window.AccAPI[CFG.route] = { title: CFG.title, short: CFG.short || CFG.title, icon: CFG.icon, table: CFG.table, METHODS,
+    async summary(from, to){
+      const { data, error } = await sb().from(CFG.table).select('*').order('entry_date', { ascending:false }).order('created_at', { ascending:false }).limit(10000);
+      if(error) return { err: /does not exist|relation|schema cache|Could not find/i.test(error.message) ? 'الجدول ' + CFG.table + ' مش موجود في Supabase' : error.message };
+      S.rows = data || [];
+      const now = nextDay(today()), W = {};
+      wallets().forEach(w => { const v = walletAt(w, now); if(v || METHODS.includes(w)) W[w] = v; });
+      const T = sums(S.rows.filter(r => (!from || r.entry_date >= from) && (!to || r.entry_date <= to)));
+      return { wallets: W, total: Object.values(W).reduce((a, v) => a + v, 0), inc: T.i, exp: T.e, net: T.net, n: S.rows.length };
+    } };
+
   /* ---------- الربط بالراوتر ---------- */
   function mount(){
-    document.querySelectorAll('#sidebar a.navlink').forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#/' + CFG.route));
+    document.querySelectorAll('#sidebar a.navlink').forEach(a => a.classList.toggle('active', a.getAttribute('href') === (CFG.navHref || '#/' + CFG.route)));
     draw(); if(S.rows === null && !S.loading && !S.err) load();
   }
   const _render = render;
@@ -7640,10 +7782,83 @@ function makeAccounts(CFG){
   if(isAC()) setTimeout(mount, 0);
 }
 
-// 💼 حساباتنا
-makeAccounts({ route:'accounts', table:'accounts_entries', icon:'💼', title:'الحسابات',
-  desc:'سجّل الإيرادات والمصروفات بتاريخها، والسيستم بيحسب صافي كل يوم (إيرادات − مصروفات) وإجمالي أي فترة.',
-  anchor:'#sidebar a.navlink[href="#/profits"]', before:true });
+// 💼 الحسابات — حساب منفصل لكل براند + 📊 حسابات مجمّعة
+//   Italy   → accounts_entries          (الحسابات القديمة كلها)
+//   Kidzzly → accounts_entries_kidzzly
+//   Socky   → accounts_entries_socky
+const ACC_BRANDS = [
+  { route:'accounts',         short:'Italy',   icon:'💍', color:'#b08d57' },
+  { route:'accounts-kidzzly', short:'Kidzzly', icon:'🧸', color:'#4f8fd8' },
+  { route:'accounts-socky',   short:'Socky',   icon:'🧦', color:'#3f9b74' },
+];
+window.accBrandBar = cur => `<div class="acb-bar">${ACC_BRANDS.map(b => `<a href="#/${b.route}" class="${cur === b.route ? 'on' : ''}" style="--bc:${b.color}">${b.icon} ${b.short}</a>`).join('')}
+  <a href="#/accounts-all" class="all ${cur === 'accounts-all' ? 'on' : ''}">📊 الحسابات المجمّعة</a></div>`;
+const ACC_DESC = 'سجّل الإيرادات والمصروفات بتاريخها، والسيستم بيحسب صافي كل يوم (إيرادات − مصروفات) وإجمالي أي فترة.';
+makeAccounts({ route:'accounts', table:'accounts_entries', icon:'💍', title:'حسابات Italy', short:'Italy', desc:ACC_DESC,
+  linkLabel:'💼 الحسابات', navHref:'#/accounts', anchor:'#sidebar a.navlink[href="#/profits"]', before:true });
+makeAccounts({ route:'accounts-kidzzly', table:'accounts_entries_kidzzly', icon:'🧸', title:'حسابات Kidzzly', short:'Kidzzly', desc:ACC_DESC, navHref:'#/accounts' });
+makeAccounts({ route:'accounts-socky', table:'accounts_entries_socky', icon:'🧦', title:'حسابات Socky', short:'Socky', desc:ACC_DESC, navHref:'#/accounts' });
+
+/* ---------- 📊 الحسابات المجمّعة: كل الخزن مع بعض ---------- */
+(function(){
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const fmt = n => Number(n || 0).toLocaleString('ar-EG', { maximumFractionDigits: 2 });
+  const ymd = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  const isAll = () => (location.hash.replace('#/', '') || 'home').split('/')[0] === 'accounts-all';
+  const S = { from: ymd(new Date(new Date().getFullYear(), new Date().getMonth(), 1)), to: ymd(new Date()), res:null, loading:false };
+  const wName = m => m === 'تحويل بنكي' ? 'البنك' : m;
+  async function load(){
+    if(!window.AccAPI || !(window.AuthGate && window.AuthGate.sb)) return;
+    S.loading = true; draw();
+    const out = await Promise.all(ACC_BRANDS.map(b => window.AccAPI[b.route].summary(S.from, S.to).catch(e => ({ err: e.message }))));
+    S.res = out; S.loading = false; draw();
+  }
+  function view(){
+    let h = window.accBrandBar('accounts-all') + `<div class="pagehead"><h1>📊 الحسابات المجمّعة</h1><p>كل الخزن بتاعة Italy و Kidzzly و Socky مع بعض: الفلوس اللي في كل خزنة دلوقتي، وإيرادات ومصروفات أي فترة.</p></div>
+      <div class="card" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+        <label>من <input type="date" class="ac-in" id="aaFrom" value="${esc(S.from)}" style="width:auto"></label>
+        <label>إلى <input type="date" class="ac-in" id="aaTo" value="${esc(S.to)}" style="width:auto"></label>
+        <button class="ac-btn" id="aaGo">${S.loading ? '⏳ بيحسب...' : '🔄 احسب'}</button></div>`;
+    if(!S.res) return h + `<div class="card"><p style="color:var(--muted)">${S.loading ? '⏳ بيجيب الحسابات...' : ''}</p></div>`;
+    const R = S.res, ok = R.map((r, i) => ({ b: ACC_BRANDS[i], r })).filter(x => !x.r.err);
+    const errs = R.map((r, i) => r.err ? `${ACC_BRANDS[i].icon} ${ACC_BRANDS[i].short}: ${r.err}` : '').filter(Boolean);
+    if(errs.length) h += `<div class="ac-msg err">${errs.map(esc).join('<br>')}<br>لو جدول Kidzzly أو Socky مش موجود: شغّل ملف brands_split.sql في Supabase.</div>`;
+    const methods = [...new Set(ok.flatMap(x => Object.keys(x.r.wallets)))];
+    const grand = ok.reduce((a, x) => a + x.r.total, 0);
+    const per = m => ok.reduce((a, x) => a + (x.r.wallets[m] || 0), 0);
+    const I = ok.reduce((a, x) => a + x.r.inc, 0), E = ok.reduce((a, x) => a + x.r.exp, 0);
+    h += `<div class="ac-kpis">
+      <div class="ac-kpi bal ${grand < 0 ? 'neg' : ''}"><div class="n">${fmt(grand)} ج</div><div class="l">🏦 إجمالي الفلوس في كل الخزن دلوقتي</div></div>
+      ${methods.map(m => `<div class="ac-kpi"><div class="n">${fmt(per(m))} ج</div><div class="l">${esc(wName(m))} (كل البراندات)</div></div>`).join('')}
+    </div>
+    <div class="card"><h3>🏦 الفلوس في كل خزنة دلوقتي</h3><div class="tablewrap"><table class="pr"><thead><tr><th>البراند</th>${methods.map(m => `<th>${esc(wName(m))}</th>`).join('')}<th>الإجمالي</th></tr></thead><tbody>
+      ${ok.map(x => `<tr><td class="lbl"><a href="#/${x.b.route}">${x.b.icon} ${x.b.short}</a></td>${methods.map(m => `<td>${fmt(x.r.wallets[m] || 0)}</td>`).join('')}<td><b>${fmt(x.r.total)}</b></td></tr>`).join('')}
+      <tr><td class="lbl"><b>الإجمالي</b></td>${methods.map(m => `<td><b>${fmt(per(m))}</b></td>`).join('')}<td><b style="color:#2b5a8a">${fmt(grand)}</b></td></tr>
+    </tbody></table></div></div>
+    <div class="card"><h3>📅 من ${esc(S.from)} لـ ${esc(S.to)}</h3><div class="tablewrap"><table class="pr"><thead><tr><th>البراند</th><th>الإيرادات</th><th>المصروفات</th><th>الصافي</th></tr></thead><tbody>
+      ${ok.map(x => `<tr><td class="lbl">${x.b.icon} ${x.b.short}</td><td style="color:#276749">${fmt(x.r.inc)}</td><td style="color:#b3423a">${fmt(x.r.exp)}</td><td><b style="color:${x.r.net < 0 ? '#b3423a' : 'inherit'}">${fmt(x.r.net)}</b></td></tr>`).join('')}
+      <tr><td class="lbl"><b>الإجمالي</b></td><td><b style="color:#276749">${fmt(I)}</b></td><td><b style="color:#b3423a">${fmt(E)}</b></td><td><b>${fmt(I - E)}</b></td></tr>
+    </tbody></table></div><p style="font-size:12.5px;color:var(--muted);margin:8px 0 0">التحويلات بين الخزن ورصيد أول المدة مش داخلين في الإيرادات والمصروفات.</p></div>`;
+    return h;
+  }
+  function draw(){
+    if(!isAll()) return;
+    const main = document.getElementById('main'); if(!main) return;
+    main.innerHTML = view();
+    const $ = id => document.getElementById(id);
+    $('aaFrom').onchange = e => { S.from = e.target.value; };
+    $('aaTo').onchange = e => { S.to = e.target.value; };
+    $('aaGo').onclick = load;
+  }
+  function mount(){
+    document.querySelectorAll('#sidebar a.navlink').forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#/accounts'));
+    draw(); if(!S.loading) load();
+  }
+  const _render = render;
+  render = function(){ _render.apply(this, arguments); if(isAll()) mount(); };
+  window.addEventListener('hashchange', () => { if(isAll()) mount(); });
+  const w = setInterval(() => { if(window.AuthGate && window.AuthGate.me && window.AuthGate.me()){ clearInterval(w); if(isAll()) mount(); } }, 700);
+})();
 
 
 </script>
@@ -7893,7 +8108,7 @@ makeAccounts({ route:'accounts', table:'accounts_entries', icon:'💼', title:'�
     const x = (S.items || []).find(i => String(i.id) === String(id)); if(!x) return;
     const P = printOf(x);
     if(!P || !window.InvPrint) return flash('مش قادر يجهّز الورقة.');
-    window.InvPrint.pickup(P);
+    (window.InvPrint.print || window.InvPrint.pickup)(P);
     // اللي استلم الأمر: بيتعلّم إنه اتطبع، والمرسل بيجيله إشعار
     if(x.to_id === (me() || {}).id && x.status !== 'done'){
       await sb().from('inbox').update({ status:'done', done_at:new Date().toISOString(), done_note:'اتطبع 🖨️', read_at: x.read_at || new Date().toISOString() }).eq('id', id);
@@ -8395,6 +8610,283 @@ create policy "brands: write" on public.brand_profiles for insert to authenticat
 create policy "brands: edit"  on public.brand_profiles for update to authenticated using (public.brands_is_admin()) with check (public.brands_is_admin());
 grant select, insert, update on public.brand_profiles to authenticated;`;
   window.Brands = { sql: BRANDS_SQL };
+})();
+</script>
+
+<style>
+/* 📊 Ads (Meta) */
+.ma-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+.ma-bar button,.ma-bar select,.ma-bar input{padding:8px 13px;border:1.5px solid var(--line);border-radius:9px;background:var(--panel);color:var(--ink);font-family:inherit;font-size:14px;cursor:pointer}
+.ma-bar button.on{background:#1877f2;border-color:#1877f2;color:#fff}
+.ma-bar .go{background:var(--brass);border-color:var(--brass);color:#fff;font-weight:700}
+.ma-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:12px;margin-bottom:16px}
+.ma-kpi{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px;border-top:4px solid #1877f2}
+.ma-kpi .n{font-size:23px;font-weight:800}
+.ma-kpi .l{font-size:12.5px;color:var(--muted);margin-top:4px}
+.ma-brands{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-bottom:16px}
+.ma-brand{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px;border-top:5px solid var(--bc)}
+.ma-brand h4{margin:0 0 8px;font-size:17px}
+.ma-brand .kv{display:flex;justify-content:space-between;font-size:13.5px;padding:3px 0}
+.ma-brand .kv b{font-size:15px}
+.ma-days{display:flex;align-items:flex-end;gap:4px;height:160px;overflow-x:auto;padding-top:6px}
+.ma-days div{flex:1 0 16px;background:#1877f2;border-radius:4px 4px 0 0;min-height:2px;opacity:.85}
+.ma-days div:hover{opacity:1}
+.ma-dlbl{display:flex;justify-content:space-between;font-size:11.5px;color:var(--muted);margin-top:6px}
+.ma-st{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11.5px;font-weight:700}
+.ma-st.on{background:#e3f3e8;color:#23784a}.ma-st.off{background:var(--slate-l);color:var(--muted)}
+.ma-set{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px 14px}
+.ma-set label{display:block;font-size:12.5px;color:var(--muted);margin-bottom:4px}
+.ma-in{width:100%;padding:8px 10px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;background:var(--panel);color:var(--ink);box-sizing:border-box}
+.ma-acc{display:grid;grid-template-columns:2fr 2fr 1.3fr 1.3fr auto;gap:8px;align-items:center;margin-bottom:8px}
+@media (max-width:760px){.ma-acc{grid-template-columns:1fr 1fr}}
+.ma-sql{direction:ltr;text-align:left;white-space:pre-wrap;font-size:12px;background:var(--slate-l);padding:10px;border-radius:8px;max-height:260px;overflow:auto}
+.ma-good{color:#1f7a45}.ma-bad{color:#b3261e}
+</style>
+<script>
+/* =====================================================================
+   📊 Ads (Meta) — بيقرا إعلانات فيسبوك وإنستجرام من Meta Marketing API مباشرة
+   - النهارده بيتجاب لوحده أول ما تفتح القسم (وأي فترة تانية بزرار)
+   - الصرف، النتايج (رسايل / مشتريات / ليدز)، تكلفة النتيجة، CPM و CTR
+   - كل براند لوحده (Italy / Kidzzly / Socky) حسب الحساب الإعلاني أو اسم الكامبين
+   - التوكن بيتحفظ في Supabase (جدول meta_ads_settings) ومحدش بيشوفه غير الأدمن واللي ليه صلاحية Ads
+   ===================================================================== */
+(function(){
+  const sb = () => window.__sbClient || (window.AuthGate && window.AuthGate.sb);
+  const me = () => (window.AuthGate && window.AuthGate.me && window.AuthGate.me()) || {};
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const fmt = (n, d) => Number(n || 0).toLocaleString('ar-EG', { maximumFractionDigits: d ?? 0 });
+  const ymd = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  const isMA = () => (location.hash.replace('#/', '') || 'home').split('/')[0] === 'meta-ads';
+  const BRANDS = [ { key:'italy', name:'Italy', icon:'💍', color:'#b08d57' }, { key:'kidzzly', name:'Kidzzly', icon:'🧸', color:'#4f8fd8' }, { key:'socky', name:'Socky', icon:'🧦', color:'#3f9b74' } ];
+  const RESULT_TYPES = {
+    messages: { label:'💬 رسايل (واتساب/ماسنجر)', acts:['onsite_conversion.messaging_conversation_started_7d', 'onsite_conversion.total_messaging_connection'] },
+    purchases:{ label:'🛒 مشتريات', acts:['purchase', 'offsite_conversion.fb_pixel_purchase', 'omni_purchase', 'onsite_web_purchase'] },
+    leads:    { label:'📝 ليدز', acts:['lead', 'onsite_conversion.lead_grouped', 'offsite_conversion.fb_pixel_lead'] },
+    clicks:   { label:'🔗 كليكات على اللينك', acts:['link_click'] },
+  };
+  const DEF = { token:'', version:'v25.0', accounts:[], keywords:{ italy:'dream, cara, italy, ايطالي, msg, fast', kidzzly:'rs, kid, kidzzly, اطفال', socky:'sock, socky, شراب' } };
+
+  const S = { set:null, missing:false, err:'', loading:false, prog:'', data:null, preset:'today', from:ymd(new Date()), to:ymd(new Date()), showSet:false, draft:null, saving:false, lvl:'campaign' };
+
+  /* ---------- الإعدادات ---------- */
+  async function loadSettings(){
+    const { data, error } = await sb().from('meta_ads_settings').select('*').eq('id', 1).maybeSingle();
+    if(error){ S.missing = /meta_ads_settings|relation|schema cache|does not exist/i.test(error.message); S.err = S.missing ? '' : error.message; S.set = { ...DEF }; }
+    else { S.missing = false; S.set = { ...DEF, ...((data && data.data) || {}) }; }
+    draw();
+    if(S.set.token && S.set.accounts.length && !S.data) fetchAll();
+  }
+  async function saveSettings(){
+    const d = S.draft;
+    d.accounts = (d.accounts || []).map(a => ({ ...a, id: String(a.id || '').trim().replace(/^act_/, '') })).filter(a => a.id);
+    S.saving = true; draw();
+    const { error } = await sb().from('meta_ads_settings').upsert({ id:1, data:d, updated_by_name: me().full_name || me().username || '', updated_at:new Date().toISOString() });
+    S.saving = false;
+    if(error){ alert('ماتحفظش: ' + error.message); draw(); return; }
+    S.set = JSON.parse(JSON.stringify(d)); S.showSet = false; S.draft = null; S.data = null;
+    fetchAll();
+  }
+
+  /* ---------- Meta API ---------- */
+  async function graph(path, params){
+    const u = new URL('https://graph.facebook.com/' + (S.set.version || 'v25.0') + '/' + path);
+    Object.entries({ ...params, access_token: S.set.token }).forEach(([k, v]) => u.searchParams.set(k, typeof v === 'object' ? JSON.stringify(v) : v));
+    let out = [], url = u.toString(), guard = 0;
+    while(url && guard++ < 20){
+      const r = await fetch(url), j = await r.json().catch(() => ({}));
+      if(!r.ok || j.error){
+        const m = (j.error && j.error.message) || ('HTTP ' + r.status);
+        throw new Error(/expired|session|OAuth|token/i.test(m) ? 'التوكن بتاع ميتا مش شغال أو خلص — حدّثه من ⚙️ الإعدادات. (' + m + ')' : m);
+      }
+      out = out.concat(j.data || []); url = j.paging && j.paging.next;
+    }
+    return out;
+  }
+  const actVal = (arr, names) => { if(!Array.isArray(arr)) return 0; for(const n of names){ const a = arr.find(x => x.action_type === n); if(a) return Number(a.value) || 0; } return 0; };
+  function brandOf(acc, name){
+    if(acc.brand && acc.brand !== 'mixed') return acc.brand;
+    const t = String(name || '').toLowerCase();
+    for(const b of BRANDS){
+      const kws = String(S.set.keywords[b.key] || '').split(',').map(x => x.trim().toLowerCase()).filter(Boolean);
+      if(kws.some(k => t.includes(k))) return b.key;
+    }
+    return 'other';
+  }
+
+  async function fetchAll(){
+    if(!S.set || !S.set.token || !S.set.accounts.length){ draw(); return; }
+    S.loading = true; S.err = ''; S.prog = 'بيكلّم ميتا...'; draw();
+    const tr = { since:S.from, until:S.to };
+    const rows = [], days = {}, accs = [];
+    try{
+      for(const acc of S.set.accounts){
+        S.prog = 'بيجيب ' + (acc.name || acc.id) + '...'; draw();
+        const id = 'act_' + acc.id;
+        const rt = RESULT_TYPES[acc.result || 'messages'] || RESULT_TYPES.messages;
+        const [ins, daily, camps] = await Promise.all([
+          graph(id + '/insights', { level:S.lvl, time_range:tr, limit:500,
+            fields: (S.lvl === 'ad' ? 'ad_id,ad_name,' : '') + 'campaign_id,campaign_name,spend,impressions,reach,clicks,inline_link_clicks,ctr,cpm,actions,account_currency' }),
+          graph(id + '/insights', { level:'account', time_range:tr, time_increment:1, fields:'spend,actions', limit:500 }),
+          graph(id + '/campaigns', { fields:'id,name,effective_status,daily_budget,lifetime_budget', limit:500 }).catch(() => []),
+        ]);
+        const st = {}; camps.forEach(c => st[c.id] = c);
+        let accSpend = 0, accRes = 0, cur = '';
+        ins.forEach(x => {
+          const res = actVal(x.actions, rt.acts), sp = Number(x.spend) || 0;
+          accSpend += sp; accRes += res; cur = x.account_currency || cur;
+          const c = st[x.campaign_id] || {};
+          rows.push({ acc: acc.name || acc.id, name: S.lvl === 'ad' ? x.ad_name : x.campaign_name, campaign: x.campaign_name, brand: brandOf(acc, x.campaign_name),
+            spend: sp, res, resLabel: rt.label, imp: Number(x.impressions) || 0, reach: Number(x.reach) || 0, clicks: Number(x.inline_link_clicks || x.clicks) || 0,
+            ctr: Number(x.ctr) || 0, cpm: Number(x.cpm) || 0, status: c.effective_status || '', budget: c.daily_budget ? Number(c.daily_budget) / 100 : null });
+        });
+        daily.forEach(d => { const k = d.date_start; days[k] = (days[k] || 0) + (Number(d.spend) || 0); });
+        accs.push({ name: acc.name || acc.id, spend: accSpend, res: accRes, cur, label: rt.label });
+      }
+      S.data = { rows, days, accs, at: new Date() };
+    }catch(e){ S.err = /Failed to fetch/i.test(e.message) ? 'مش قادر يوصل لميتا. اتأكد من النت.' : e.message; }
+    S.loading = false; S.prog = ''; draw();
+  }
+
+  /* ---------- الفترات ---------- */
+  function preset(p){
+    const t = new Date(), d = n => { const x = new Date(); x.setDate(x.getDate() + n); return ymd(x); };
+    S.preset = p;
+    if(p === 'today'){ S.from = S.to = ymd(t); }
+    else if(p === 'yesterday'){ S.from = S.to = d(-1); }
+    else if(p === '7'){ S.from = d(-6); S.to = ymd(t); }
+    else if(p === 'month'){ S.from = ymd(new Date(t.getFullYear(), t.getMonth(), 1)); S.to = ymd(t); }
+    else if(p === 'last'){ S.from = ymd(new Date(t.getFullYear(), t.getMonth() - 1, 1)); S.to = ymd(new Date(t.getFullYear(), t.getMonth(), 0)); }
+    S.data = null; fetchAll();
+  }
+
+  /* ---------- الرسم ---------- */
+  function setView(){
+    const d = S.draft;
+    return `<div class="card"><h3>⚙️ ربط حساب ميتا</h3>
+      <div class="ma-set">
+        <div style="grid-column:1/-1"><label>Access Token (System User — صلاحية ads_read)</label><input class="ma-in" id="maTok" type="password" value="${esc(d.token)}" placeholder="EAAG..." autocomplete="off"></div>
+        <div><label>نسخة الـ API</label><input class="ma-in" id="maVer" value="${esc(d.version)}"></div>
+      </div>
+      <h4 style="margin:16px 0 8px">الحسابات الإعلانية</h4>
+      ${(d.accounts || []).map((a, i) => `<div class="ma-acc">
+        <input class="ma-in" data-acc="${i}" data-k="id" value="${esc(a.id)}" placeholder="رقم الحساب (act_...)">
+        <input class="ma-in" data-acc="${i}" data-k="name" value="${esc(a.name || '')}" placeholder="اسم للحساب">
+        <select class="ma-in" data-acc="${i}" data-k="brand">${[['mixed','🔀 حسب اسم الكامبين'], ...BRANDS.map(b => [b.key, b.icon + ' ' + b.name])].map(([k, l]) => `<option value="${k}" ${(a.brand || 'mixed') === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
+        <select class="ma-in" data-acc="${i}" data-k="result">${Object.entries(RESULT_TYPES).map(([k, r]) => `<option value="${k}" ${(a.result || 'messages') === k ? 'selected' : ''}>${r.label}</option>`).join('')}</select>
+        <button class="ac-btn" data-accdel="${i}">✕</button></div>`).join('') || '<p style="color:var(--muted)">لسه مفيش حسابات.</p>'}
+      <button class="ac-btn" id="maAccAdd">➕ حساب إعلاني</button>
+      <h4 style="margin:16px 0 8px">كلمات تعرّف البراند من اسم الكامبين (للحسابات اللي فيها كذا براند)</h4>
+      <div class="ma-set">${BRANDS.map(b => `<div><label>${b.icon} ${b.name}</label><input class="ma-in" data-kw="${b.key}" value="${esc(d.keywords[b.key] || '')}"></div>`).join('')}</div>
+      <div style="display:flex;gap:8px;margin-top:16px"><button class="ac-btn" id="maSave" style="background:var(--brass);color:#fff;border-color:var(--brass)">${S.saving ? 'بيتحفظ...' : '💾 حفظ وجيب الإعلانات'}</button><button class="ac-btn" id="maCancel">إلغاء</button></div>
+      <details style="margin-top:16px"><summary style="cursor:pointer;font-weight:700">📘 إزاي أجيب التوكن ورقم الحساب؟</summary>
+        <ol style="line-height:2;font-size:14px">
+          <li>ادخل <b>business.facebook.com</b> ← <b>Business Settings</b> (إعدادات النشاط التجاري).</li>
+          <li>من <b>Users ← System users</b> اعمل System User جديد (Admin أو Employee).</li>
+          <li>دوس <b>Add assets</b> وضيفله الحسابات الإعلانية (Ad accounts) بصلاحية <b>View performance</b> على الأقل.</li>
+          <li>دوس <b>Generate new token</b>، اختار الـ App بتاعك، وعلّم على صلاحية <b>ads_read</b>، وخلي المدة <b>Never</b>.</li>
+          <li>انسخ التوكن وحطه فوق. رقم الحساب الإعلاني تلاقيه في <b>Ads Manager</b> فوق على الشمال (الرقم بعد act_ أو الرقم اللي جنب اسم الحساب).</li>
+          <li>لو مالكش App: من <b>developers.facebook.com</b> اعمل App نوعه <b>Business</b> واربطه بالـ Business بتاعك.</li>
+        </ol></details>
+    </div>`;
+  }
+
+  function view(){
+    const admin = !!me().is_admin;
+    let h = `<div class="pagehead"><h1>📊 Ads (Meta)</h1><p>إعلانات فيسبوك وإنستجرام جاية مباشرة من ميتا: الصرف والنتايج وتكلفة النتيجة لكل براند وكل كامبين.</p></div>`;
+    if(S.missing) return h + `<div class="mono-note">جدول إعدادات ميتا لسه مش متعمل في Supabase.${admin ? ' شغّل ملف brands_split.sql (أو الكود ده) في Supabase → SQL Editor:' : ' كلّم الأدمن.'}</div>${admin ? `<pre class="ma-sql">${esc(META_SQL)}</pre>` : ''}`;
+    if(!S.set) return h + `<div class="card"><p style="color:var(--muted)">⏳ بيحمّل...</p></div>`;
+    if(S.showSet && admin) return h + setView();
+    if(!S.set.token || !S.set.accounts.length){
+      return h + `<div class="card"><p>لسه حساب ميتا مش متربط.</p>${admin ? '<button class="ac-btn" id="maOpenSet" style="background:var(--brass);color:#fff;border-color:var(--brass)">⚙️ اربط حساب ميتا</button>' : '<p style="color:var(--muted)">الأدمن لازم يربطه الأول.</p>'}</div>`;
+    }
+    const P = [['today','النهارده'], ['yesterday','امبارح'], ['7','آخر 7 أيام'], ['month','الشهر ده'], ['last','الشهر اللي فات']];
+    h += `<div class="ma-bar">${P.map(([k, l]) => `<button class="${S.preset === k ? 'on' : ''}" data-mp="${k}">${l}</button>`).join('')}
+      <input type="date" id="maFrom" value="${esc(S.from)}"> <input type="date" id="maTo" value="${esc(S.to)}">
+      <select id="maLvl"><option value="campaign" ${S.lvl === 'campaign' ? 'selected' : ''}>حسب الكامبين</option><option value="ad" ${S.lvl === 'ad' ? 'selected' : ''}>حسب الإعلان</option></select>
+      <button class="go" id="maGo">${S.loading ? '⏳' : '🔄 هات'}</button>
+      ${admin ? '<button id="maOpenSet">⚙️</button>' : ''}</div>`;
+    if(S.loading) h += `<div class="card"><p style="color:var(--muted)">⏳ ${esc(S.prog)}</p></div>`;
+    if(S.err) h += `<div class="mono-note">${esc(S.err)}</div>`;
+    if(!S.data) return h;
+    const D = S.data, R = D.rows;
+    const tot = R.reduce((a, r) => ({ sp:a.sp + r.spend, res:a.res + r.res, imp:a.imp + r.imp, cl:a.cl + r.clicks, reach:a.reach + r.reach }), { sp:0, res:0, imp:0, cl:0, reach:0 });
+    const cur = (D.accs[0] && D.accs[0].cur) || '';
+    h += `<div class="ma-kpis">
+      <div class="ma-kpi"><div class="n">${fmt(tot.sp, 2)} ${esc(cur)}</div><div class="l">💸 الصرف</div></div>
+      <div class="ma-kpi"><div class="n">${fmt(tot.res)}</div><div class="l">🎯 النتايج</div></div>
+      <div class="ma-kpi"><div class="n">${tot.res ? fmt(tot.sp / tot.res, 2) : '—'}</div><div class="l">تكلفة النتيجة</div></div>
+      <div class="ma-kpi"><div class="n">${fmt(tot.imp)}</div><div class="l">👁 ظهور</div></div>
+      <div class="ma-kpi"><div class="n">${tot.imp ? fmt(tot.sp / tot.imp * 1000, 2) : '—'}</div><div class="l">CPM</div></div>
+      <div class="ma-kpi"><div class="n">${tot.imp ? (tot.cl / tot.imp * 100).toFixed(2) + '%' : '—'}</div><div class="l">CTR (كليك على اللينك)</div></div>
+    </div>`;
+    // per brand
+    const by = {}; R.forEach(r => { const b = by[r.brand] = by[r.brand] || { sp:0, res:0 }; b.sp += r.spend; b.res += r.res; });
+    h += `<div class="ma-brands">${[...BRANDS, { key:'other', name:'مش متعرّف', icon:'❔', color:'#a39e8f' }].filter(b => by[b.key] || b.key !== 'other').map(b => { const x = by[b.key] || { sp:0, res:0 };
+      return `<div class="ma-brand" style="--bc:${b.color}"><h4>${b.icon} ${b.name}</h4>
+        <div class="kv"><span>الصرف</span><b>${fmt(x.sp, 2)}</b></div><div class="kv"><span>النتايج</span><b>${fmt(x.res)}</b></div>
+        <div class="kv"><span>تكلفة النتيجة</span><b>${x.res ? fmt(x.sp / x.res, 2) : '—'}</b></div>
+        <div class="kv"><span>من الصرف</span><b>${tot.sp ? (x.sp / tot.sp * 100).toFixed(0) + '%' : '—'}</b></div></div>`; }).join('')}</div>`;
+    // daily
+    const dk = Object.keys(D.days).sort();
+    if(dk.length > 1){
+      const mx = Math.max(1, ...dk.map(k => D.days[k]));
+      h += `<div class="card"><h3>💸 الصرف كل يوم</h3><div class="ma-days">${dk.map(k => `<div style="height:${D.days[k] / mx * 100}%" title="${k}: ${fmt(D.days[k], 2)}"></div>`).join('')}</div>
+        <div class="ma-dlbl"><span>${esc(dk[0])}</span><span>${esc(dk[dk.length - 1])}</span></div></div>`;
+    }
+    // table
+    const rows = R.slice().sort((a, b) => b.spend - a.spend);
+    h += `<div class="card"><h3>${S.lvl === 'ad' ? 'الإعلانات' : 'الكامبينز'} (${fmt(rows.length)})</h3><div class="tablewrap"><table class="pr"><thead><tr>
+      <th>${S.lvl === 'ad' ? 'الإعلان' : 'الكامبين'}</th><th>البراند</th><th>الحالة</th><th>الصرف</th><th>النتايج</th><th>تكلفة النتيجة</th><th>CTR</th><th>CPM</th><th>الحساب</th></tr></thead><tbody>
+      ${rows.map(r => { const b = BRANDS.find(x => x.key === r.brand);
+        return `<tr><td class="lbl" style="white-space:normal;min-width:200px">${esc(r.name)}${S.lvl === 'ad' ? `<div style="font-size:11.5px;color:var(--muted)">${esc(r.campaign)}</div>` : ''}</td>
+          <td>${b ? b.icon + ' ' + b.name : '❔'}</td><td>${r.status ? `<span class="ma-st ${r.status === 'ACTIVE' ? 'on' : 'off'}">${r.status === 'ACTIVE' ? 'شغّال' : esc(r.status.toLowerCase())}</span>` : '—'}</td>
+          <td><b>${fmt(r.spend, 2)}</b></td><td>${fmt(r.res)}</td><td>${r.res ? fmt(r.spend / r.res, 2) : '—'}</td><td>${r.ctr.toFixed(2)}%</td><td>${fmt(r.cpm, 2)}</td><td style="font-size:12px">${esc(r.acc)}</td></tr>`; }).join('')
+        || '<tr><td colspan="9">مفيش صرف في الفترة دي.</td></tr>'}
+    </tbody></table></div><p style="font-size:12px;color:var(--muted);margin:8px 0 0">آخر تحديث: ${D.at.toLocaleTimeString('ar-EG', { hour:'2-digit', minute:'2-digit' })} · ${D.accs.map(a => esc(a.name) + ': ' + esc(a.label)).join(' · ')}</p></div>`;
+    return h;
+  }
+
+  function draw(){
+    if(!isMA()) return;
+    const main = document.getElementById('main'); if(!main) return;
+    main.innerHTML = view();
+    const $ = id => document.getElementById(id);
+    document.querySelectorAll('[data-mp]').forEach(b => b.onclick = () => preset(b.dataset.mp));
+    if($('maFrom')) $('maFrom').onchange = e => { S.from = e.target.value; S.preset = ''; };
+    if($('maTo')) $('maTo').onchange = e => { S.to = e.target.value; S.preset = ''; };
+    if($('maLvl')) $('maLvl').onchange = e => { S.lvl = e.target.value; };
+    if($('maGo')) $('maGo').onclick = () => { S.data = null; fetchAll(); };
+    if($('maOpenSet')) $('maOpenSet').onclick = () => { S.showSet = true; S.draft = JSON.parse(JSON.stringify(S.set)); draw(); };
+    if($('maCancel')) $('maCancel').onclick = () => { S.showSet = false; S.draft = null; draw(); };
+    if($('maSave')) $('maSave').onclick = saveSettings;
+    if($('maTok')) $('maTok').oninput = e => { S.draft.token = e.target.value.trim(); };
+    if($('maVer')) $('maVer').oninput = e => { S.draft.version = e.target.value.trim(); };
+    if($('maAccAdd')) $('maAccAdd').onclick = () => { S.draft.accounts.push({ id:'', name:'', brand:'mixed', result:'messages' }); draw(); };
+    document.querySelectorAll('[data-accdel]').forEach(b => b.onclick = () => { S.draft.accounts.splice(Number(b.dataset.accdel), 1); draw(); });
+    document.querySelectorAll('[data-acc]').forEach(el => el[el.tagName === 'SELECT' ? 'onchange' : 'oninput'] = () => { S.draft.accounts[Number(el.dataset.acc)][el.dataset.k] = el.value; });
+    document.querySelectorAll('[data-kw]').forEach(el => el.oninput = () => { S.draft.keywords[el.dataset.kw] = el.value; });
+  }
+  function mount(){ draw(); if(!S.set) loadSettings(); }
+  const _render = render;
+  render = function(){ _render.apply(this, arguments); if(isMA()) mount(); };
+  window.addEventListener('hashchange', () => { if(isMA()) setTimeout(mount, 0); });
+  const w = setInterval(() => { if(me().id && sb()){ clearInterval(w); if(isMA()) mount(); } }, 700);
+  // كل 15 دقيقة لو الصفحة مفتوحة على "النهارده" يحدّث لوحده
+  setInterval(() => { if(isMA() && S.preset === 'today' && !S.loading && S.set && S.set.token && !document.hidden){ S.from = S.to = ymd(new Date()); fetchAll(); } }, 15 * 60000);
+
+  const META_SQL = `create table if not exists public.meta_ads_settings (
+  id int primary key default 1 check (id = 1),
+  data jsonb not null default '{}'::jsonb,
+  updated_by_name text, updated_at timestamptz not null default now()
+);
+alter table public.meta_ads_settings enable row level security;
+drop policy if exists "meta: read" on public.meta_ads_settings;
+drop policy if exists "meta: write" on public.meta_ads_settings;
+drop policy if exists "meta: edit" on public.meta_ads_settings;
+create policy "meta: read"  on public.meta_ads_settings for select to authenticated using (public.app_has_section('meta_ads'));
+create policy "meta: write" on public.meta_ads_settings for insert to authenticated with check (public.app_is_admin());
+create policy "meta: edit"  on public.meta_ads_settings for update to authenticated using (public.app_is_admin()) with check (public.app_is_admin());
+grant select, insert, update on public.meta_ads_settings to authenticated;`;
 })();
 </script>
 
