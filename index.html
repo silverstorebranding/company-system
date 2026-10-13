@@ -277,6 +277,10 @@ input.plainIn{padding:6px 10px;border:1px solid var(--line);border-radius:6px;wi
 #sq-root .sq-metric.green{color:var(--ok)}
 #sq-root .sq-metric.dim{color:var(--muted)}
 #sq-root .sq-commnote{display:block;font-size:11px;font-weight:500;color:var(--muted);margin-top:2px}
+#sq-root .sq-commbrk{display:flex;flex-direction:column;gap:1px;margin-top:6px;font-size:11.5px;font-weight:500;color:var(--muted);line-height:1.6;text-align:start}
+#sq-root .sq-commbrk b{color:var(--ink);font-weight:700}
+#sq-root .sq-commbrk i{font-style:normal;font-size:10.5px}
+#sq-root .sq-commbrk.cmp span{white-space:nowrap;font-size:11px}
 
 #sq-root .sq-modal-bg{position:fixed;inset:0;background:rgba(28,35,33,.5);display:flex;align-items:center;justify-content:center;padding:20px;z-index:50}
 #sq-root .sq-modal{width:100%;max-width:520px;max-height:90vh;overflow-y:auto;background:var(--panel);border-radius:10px;padding:26px}
@@ -1543,6 +1547,29 @@ const Squad = (function(){
   const money = n => Number(n || 0).toLocaleString('ar-EG', { maximumFractionDigits: 2 }) + ' ج';
   const rateTxt = r => r === null || r === undefined ? '—' : (Math.round(r * 1000) / 10) + '%';
 
+  /* 🏢 عمولة مبيعات المكتب المتأكدة (5%) بتتضاف على إجمالي عمولة الموظفة
+     والإجمالي بيتقسم تحت: أوردرات عمومًا / أوردرات مسلّمة / مبيعات مباشرة */
+  let officeCommMap = {};
+  async function loadOfficeComm(){
+    const { data, error } = await sb.from('office_sales').select('agent_id, amount, status').eq('status', 'bought');
+    if(error) return;
+    const m = {};
+    (data || []).forEach(r => { m[r.agent_id] = (m[r.agent_id] || 0) + (Number(r.amount) || 0) * OFFICE_PCT; });
+    Object.keys(m).forEach(k => m[k] = Math.round(m[k] * 100) / 100);
+    officeCommMap = m;
+  }
+  function withOffice(s, agentId){
+    const off = officeCommMap[agentId] || 0, r2 = n => Math.round(n * 100) / 100;
+    return { ...s, offComm: off, totalComm: r2(s.totalComm + off), dueComm: r2(s.dueComm + off), commission: r2(s.commission + off) };
+  }
+  // سطور التقسيم تحت الإجمالي
+  function commBreak(s, due, compact){
+    const m = n => Number(n || 0).toLocaleString('ar-EG', { maximumFractionDigits: 2 });
+    const pend = due && !s.active ? `0 <i>(تحت 50%)</i>` : m(s.pendComm);
+    const L = compact ? ['🧾 أوردرات', '✅ مسلّمة', '🏢 مباشرة'] : ['🧾 أوردرات عمومًا', '✅ أوردرات مسلّمة', '🏢 مبيعات مباشرة'];
+    return `<div class="sq-commbrk ${compact ? 'cmp' : ''}"><span>${L[0]}: <b>${pend}</b></span><span>${L[1]}: <b>${m(s.delComm)}</b></span><span>${L[2]}: <b>${m(s.offComm || 0)}</b></span></div>`;
+  }
+
   /* ✅ عميل Supabase واحد مشترك للصفحة كلها (Squad + الدخول + المخزن + EOD + ...)
      قبل كده كان فيه عميلين بيجدّدوا التوكن في نفس الوقت، فواحد فيهم يفضل ماسك
      توكن قديم ويطلع "JWT expired". ولو حصل وانتهى التوكن، الطلب بيجدّده ويعيد نفسه مرة. */
@@ -1712,6 +1739,7 @@ const Squad = (function(){
     const { data, error } = await sb.from('orders').select('*')
       .eq('agent_id', state.session.user.id)
       .order('created_at', { ascending:false });
+    await loadOfficeComm();
     if(!error) setState({ myOrders: data || [] });
   }
 
@@ -1834,12 +1862,14 @@ const Squad = (function(){
     const nameMap = {};
     (profiles||[]).forEach(p => nameMap[p.id] = p.full_name || p.username || 'موظف');
     profileNameMap = nameMap;
+    await loadOfficeComm();
 
     const byAgent = {};
     (data||[]).forEach(o => (byAgent[o.agent_id] = byAgent[o.agent_id] || []).push(o));
     const rows = Object.keys(byAgent).map(id => {
-      const s = commissionSummary(byAgent[id]);
-      return { id, name: nameMap[id] || 'موظف', total: s.total, delivered: s.delivered, delValue: s.delValue, rate: s.rate, delRate: s.delRate, active: s.active, totalComm: s.totalComm, dueComm: s.dueComm, commission: s.commission, sources: sourceCounts(byAgent[id]) };
+      const s = withOffice(commissionSummary(byAgent[id]), id);
+      return { id, name: nameMap[id] || 'موظف', total: s.total, delivered: s.delivered, delValue: s.delValue, rate: s.rate, delRate: s.delRate, active: s.active, totalComm: s.totalComm, dueComm: s.dueComm, commission: s.commission,
+        delComm: s.delComm, pendComm: s.pendComm, offComm: s.offComm, sources: sourceCounts(byAgent[id]) };
     }).sort((a,b) => b.delivered - a.delivered || b.total - a.total);
     setState({ boardLoading:false, board: rows });
   }
@@ -2057,7 +2087,7 @@ const Squad = (function(){
 
   function DashboardView(){
     const orders = state.myOrders || [];
-    const s = commissionSummary(orders);
+    const s = withOffice(commissionSummary(orders), state.session?.user?.id);
 
     const rows = orders.map(o => {
       const st = statusLabel(o.status);
@@ -2094,8 +2124,8 @@ const Squad = (function(){
         <div class="sq-stat"><div class="n green">${s.delivered}</div><div class="l">أوردر اتسلم</div></div>
         <div class="sq-stat"><div class="n green">${money(s.delValue)}</div><div class="l">💰 قيمة الأوردرات اللي اتسلمت</div></div>
         <div class="sq-stat"><div class="n">${rateTxt(s.delRate)}</div><div class="l">نسبة التسليم</div></div>
-        <div class="sq-stat"><div class="n">${s.totalComm} ج</div><div class="l">💰 العمولة الإجمالية</div></div>
-        <div class="sq-stat"><div class="n gold">${s.dueComm} ج</div><div class="l">✅ العمولة المستحقة${s.active ? '' : ' (النسبة لسه تحت 50%)'}</div></div>
+        <div class="sq-stat"><div class="n">${s.totalComm} ج</div><div class="l">💰 العمولة الإجمالية</div>${commBreak(s, false)}</div>
+        <div class="sq-stat"><div class="n gold">${s.dueComm} ج</div><div class="l">✅ العمولة المستحقة${s.active ? '' : ' (النسبة لسه تحت 50%)'}</div>${commBreak(s, true)}</div>
       </div>
       <div class="sq-tablecard">
         ${orders.length ? `<table class="sq-table">
@@ -2669,15 +2699,15 @@ const Squad = (function(){
     let h = head(`أوردرات ${esc(a.name || '')}`, 'كل الأوردرات اللي الموظف ده سجلها.') + `<div class="sq-agentbar">${back}</div>`;
     if(state.error) h += `<div class="sq-err">${esc(state.error)}</div>`;
     if(state.agentOrders === null) return h + `<div class="sq-loading">بنجيب الأوردرات...</div>`;
-    const all = state.agentOrders, s = commissionSummary(all), list = agentFiltered();
+    const all = state.agentOrders, s = withOffice(commissionSummary(all), a.id), list = agentFiltered();
     const chip = (k, l, n) => `<button type="button" class="sq-fchip ${state.agentFilter === k ? 'on' : ''}" data-afilter="${k}">${l} <b>${n}</b></button>`;
     h += `<div class="sq-stats">
         <div class="sq-stat"><div class="n">${s.total}</div><div class="l">إجمالي الأوردرات</div></div>
         <div class="sq-stat"><div class="n green">${s.delivered}</div><div class="l">أوردر اتسلم</div></div>
         <div class="sq-stat"><div class="n green">${money(s.delValue)}</div><div class="l">💰 قيمة الأوردرات اللي اتسلمت</div></div>
         <div class="sq-stat"><div class="n">${rateTxt(s.delRate)}</div><div class="l">نسبة التسليم</div></div>
-        <div class="sq-stat"><div class="n">${s.totalComm} ج</div><div class="l">💰 العمولة الإجمالية</div></div>
-        <div class="sq-stat"><div class="n gold">${s.dueComm} ج</div><div class="l">✅ العمولة المستحقة${s.active ? '' : ' (النسبة لسه تحت 50%)'}</div></div>
+        <div class="sq-stat"><div class="n">${s.totalComm} ج</div><div class="l">💰 العمولة الإجمالية</div>${commBreak(s, false)}</div>
+        <div class="sq-stat"><div class="n gold">${s.dueComm} ج</div><div class="l">✅ العمولة المستحقة${s.active ? '' : ' (النسبة لسه تحت 50%)'}</div>${commBreak(s, true)}</div>
       </div>
       <div class="sq-agentsrc"><span>مصادر الأوردرات:</span>${sourceChips(sourceCounts(all)) || '<span class="sq-src">—</span>'}</div>
       <div class="sq-agentbar">
@@ -2730,8 +2760,8 @@ const Squad = (function(){
             <div class="sq-metric c">${r.total}</div>
             <div class="sq-metric c">${r.delivered}</div>
             <div class="sq-metric green c">${money(r.delValue)}</div>
-            <div class="sq-metric dim c">${r.totalComm} ج</div>
-            <div class="sq-metric gold c">${r.dueComm} ج${r.active ? '' : '<small class="sq-commnote">تحت 50%</small>'}</div>
+            <div class="sq-metric dim c">${r.totalComm} ج${commBreak(r, false, true)}</div>
+            <div class="sq-metric gold c">${r.dueComm} ج${r.active ? '' : '<small class="sq-commnote">تحت 50%</small>'}${commBreak(r, true, true)}</div>
           </div>`).join('') + (() => {
             const T = rows.reduce((a, r) => ({ total:a.total + r.total, delivered:a.delivered + r.delivered, delValue:a.delValue + (r.delValue || 0), totalComm:a.totalComm + r.totalComm, dueComm:a.dueComm + r.dueComm }), { total:0, delivered:0, delValue:0, totalComm:0, dueComm:0 });
             return `<div class="sq-board-row head" style="font-size:13.5px;color:var(--ink)"><div></div><div><b>الإجمالي</b></div>
@@ -2815,7 +2845,7 @@ const Squad = (function(){
     }
     const { data, error } = await sb.from('office_sales').update(patch).eq('id', id).select('id');
     if(error || !data || !data.length) return showToast('ماتعدلش: ' + (error ? error.message : 'مفيش صلاحية'), 'error');
-    loadOffice();
+    loadOffice(); loadOfficeComm();
   }
 
   async function officeDel(id){
