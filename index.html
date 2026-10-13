@@ -1595,7 +1595,7 @@ const Squad = (function(){
     agentQ: '',
     sync: { from:'', loading:false, msg:'', err:'', done:'', result:null, sel:new Set(), selU:new Set(), applying:false },
     office: { list:null, loading:false, err:'', month:'', saving:false, people:null, form:{} }, // 🏢 عمولة المكتب
-    verify: { from:'', loading:false, msg:'', err:'', done:'', result:null, fix:new Map(), applying:false, agent:'' }, // 🛡️ تحقق من التسليمات
+    verify: { from:'', loading:false, msg:'', err:'', done:'', result:null, fix:new Map(), applying:false, agent:'', sent:new Set(), sending:false }, // 🛡️ تحقق من التسليمات
   };
   const canViewAll = () => !!(window.AuthGate && window.AuthGate.isFull && window.AuthGate.isFull());
   // عدد الأوردرات من كل مصدر: [['إرسال صفحة',7],['واتساب',3]]
@@ -2532,6 +2532,42 @@ const Squad = (function(){
     loadMyOrders(); loadLeaderboard(); loadToday();
   }
 
+  /* 📨 مهمة لموظفة خدمة العملاء: "راجعي حالة الاستلام في QP" — بتوصلها في 📨 الرسايل والمهام بإشعار وصوت */
+  function verifyFind(id){
+    const R = state.verify.result; if(!R) return null;
+    for(const [k, L] of [['notDel', R.notDel], ['notYet', R.notYet], ['review', R.review], ['nomatch', R.nomatch]]){
+      const x = L.find(y => String(y.o.id) === String(id)); if(x) return { ...x, kind:k };
+    }
+    return null;
+  }
+  function verifyTaskRow(x){
+    const o = x.o, api = qpApi(), me = (window.AuthGate && window.AuthGate.me && window.AuthGate.me()) || {};
+    const why = { notDel:'متعلّم "اتسلم" عندك، لكن في QP حالته Undelivered (مستلمش).', notYet:'متعلّم "اتسلم" عندك، لكن في QP لسه ماتسلمش (عند الشحن / مع المندوب / Hold).',
+                  review:'متعلّم "اتسلم" عندك، والعميل ليه أكتر من أوردر في QP ومفيش ولا واحد فيهم اتسلم.', nomatch:'متعلّم "اتسلم" عندك، لكن مش لاقيينه في QP برقم الموبايل ده.' }[x.kind];
+    const qps = x.q ? [x.q] : (x.cands || []);
+    const qLine = qps.map(q => `• QP ${q.serial} — ${api ? api.label(q) : ''} — ${numVal(q.price)} ج`).join('\n');
+    return { kind:'task', from_id: me.id, from_name: me.full_name || me.username || 'الأدمن', to_id: o.agent_id, to_name: profileNameMap[o.agent_id] || '',
+      title: `⚠️ راجعي حالة استلام أوردر ${o.customer_name || o.customer_phone || ''} في QP`,
+      body: `الرجاء التأكد من حالة الاستلام في QP للأوردر ده:\n${why}\n\n👤 العميل: ${o.customer_name || '—'}\n📞 الموبايل: ${o.customer_phone || '—'}\n📍 العنوان: ${o.customer_address || '—'}\n🧾 الطلب: ${o.order_details || '—'}${o.size ? '\n📏 المقاس: ' + o.size : ''}\n💰 السعر: ${o.amount ? o.amount + ' ج' : '—'}\n📅 تاريخ الأوردر: ${fmtDate(o.created_at)}${o.page_name ? '\n📣 المصدر: ' + o.page_name : ''}${qLine ? '\n\nفي QP:\n' + qLine : ''}\n\nلو اتسلم فعلاً ابعتيلي ما يثبت ده، ولو مااتسلمش عدّلي حالته.`,
+      due_date: localYmd(new Date(Date.now() + DAY)) };
+  }
+  async function sendVerifyTasks(ids){
+    const rows = ids.map(verifyFind).filter(Boolean).filter(x => x.o.agent_id).map(verifyTaskRow);
+    if(!rows.length) return;
+    if(ids.length > 1 && !window.confirm(`هيتبعت ${rows.length} مهمة لخدمة العملاء (مهمة لكل أوردر). تكمل؟`)) return;
+    setVerify({ sending:true });
+    const { error } = await sb.from('inbox').insert(rows);
+    if(error){
+      setVerify({ sending:false });
+      showToast(/inbox|relation|schema cache/i.test(error.message) ? 'جدول الرسايل مش متعمل في Supabase — شغّل ملف inbox_and_orders.sql الأول.' : 'ماتبعتش: ' + error.message, 'error');
+      return;
+    }
+    const sent = new Set(state.verify.sent); ids.forEach(id => sent.add(String(id)));
+    setVerify({ sending:false, sent });
+    showToast(rows.length === 1 ? `📨 المهمة اتبعتت لـ ${rows[0].to_name || 'الموظفة'} — هيجيلك إشعار لما تخلّصها.` : `📨 اتبعت ${rows.length} مهمة لخدمة العملاء.`, 'success');
+    if(window.Inbox && window.Inbox.reload) window.Inbox.reload();
+  }
+
   function VerifyView(){
     if(!isAdminUser()) return head('غير متاح', 'التحقق من التسليمات للأدمن بس.');
     const V = state.verify, api = qpApi(), logged = !!(api && api.hasCreds());
@@ -2586,10 +2622,15 @@ const Squad = (function(){
         <td data-label="الموظف">${nm(x.o.agent_id)}</td><td data-label="العميل">${esc(x.o.customer_name || '—')}</td>
         <td class="mut" data-label="الموبايل">${esc(x.o.customer_phone || '—')}</td><td class="mut" data-label="القيمة">${x.o.amount ? esc(x.o.amount) + ' ج' : '—'}</td>
         <td class="mut" data-label="تاريخ الأوردر">${fmtDate(x.o.created_at)}</td><td data-label="العمولة">${money(deliveredCommission(x.o))}</td>
-        <td data-label="في QP">${info}</td></tr>`; };
-    const th = `<thead><tr><th>صلّح</th><th>الموظف</th><th>العميل</th><th>الموبايل</th><th>القيمة</th><th>تاريخ الأوردر</th><th>العمولة</th><th>في QP</th></tr></thead>`;
+        <td data-label="في QP">${info}</td>
+        <td data-label="مهمة">${target ? (V.sent.has(id) ? '<span class="sq-badge delivered">✔ اتبعتت</span>'
+          : `<button type="button" class="sq-btn ghost sq-sm" data-vf-task="${esc(id)}" ${V.sending ? 'disabled' : ''} title="ابعتلها مهمة تراجع حالة الاستلام في QP">📨 ابعت مهمة</button>`) : ''}</td></tr>`; };
+    const th = `<thead><tr><th>صلّح</th><th>الموظف</th><th>العميل</th><th>الموبايل</th><th>القيمة</th><th>تاريخ الأوردر</th><th>العمولة</th><th>في QP</th><th>مهمة للموظفة</th></tr></thead>`;
     const sec = (title, hint, list, target, infoFn, open) => { const L = list.filter(show); if(!L.length) return '';
-      return `<h3 class="sq-synch">${title} — ${L.length}</h3>${hint ? `<p class="sq-hint" style="margin:0 0 8px">${hint}</p>` : ''}
+      const unsent = L.filter(x => !V.sent.has(String(x.o.id))).map(x => String(x.o.id));
+      return `<h3 class="sq-synch" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">${title} — ${L.length}
+          ${unsent.length > 1 ? `<button type="button" class="sq-btn ghost sq-sm" data-vf-taskall="${esc(unsent.join(','))}" ${V.sending ? 'disabled' : ''}>📨 ابعت مهمة لكل الأوردرات دي (${unsent.length})</button>` : ''}</h3>
+        ${hint ? `<p class="sq-hint" style="margin:0 0 8px">${hint}</p>` : ''}
         <div class="sq-tablecard"><table class="sq-table">${th}<tbody>${L.map(x => row(x, target, infoFn(x))).join('')}</tbody></table></div>`; };
 
     h += sec('🔴 متعلّمة "اتسلم" بس مستلمتش في QP', 'حالتها في QP Undelivered. لو صلّحتها هتبقى "اندلفرد" وعمولة التسليم تتشال.', R.notDel, 'undelivered', x => qInfo(x.q));
@@ -2961,6 +3002,8 @@ grant select, insert, update, delete on public.office_sales to authenticated;`;
     if($('sq-vf-run')) $('sq-vf-run').onclick = runVerify;
     if($('sq-vf-apply')) $('sq-vf-apply').onclick = applyVerify;
     document.querySelectorAll('#sq-root [data-vf-agent]').forEach(b => { b.onclick = () => setVerify({ agent: b.getAttribute('data-vf-agent') }); });
+    document.querySelectorAll('#sq-root [data-vf-task]').forEach(b => { b.onclick = () => sendVerifyTasks([b.getAttribute('data-vf-task')]); });
+    document.querySelectorAll('#sq-root [data-vf-taskall]').forEach(b => { b.onclick = () => sendVerifyTasks(b.getAttribute('data-vf-taskall').split(',')); });
     document.querySelectorAll('#sq-root [data-vf-ck]').forEach(cb => {
       cb.onchange = () => {
         const id = cb.getAttribute('data-vf-ck');
