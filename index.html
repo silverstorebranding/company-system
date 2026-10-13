@@ -2704,11 +2704,11 @@ const Squad = (function(){
      🏢 عمولة المكتب — منفصلة تمامًا عن عمولة الأوردرات
      - الموظف بيسجّل العميل اللي جابه للمكتب (اسمه + رقمه + المبلغ لو يعرفه)
      - الأدمن بيأكد: ✅ اشترى (بالمبلغ النهائي) أو ❌ مااشتراش
-     - العمولة = 10% من المبلغ، على اللي اشترى بس
+     - العمولة = 5% من المبلغ، على اللي اشترى بس — وبتتحسب بس لما الأدمن يدوس ✅ تأكيد
      - الموظف بيشوف عملاءه بس، والأدمن بيشوف الكل + جدول لكل موظف
      - البيانات في جدول office_sales في Supabase (كود الـ SQL في ملف office_sales.sql)
      ===================================================================== */
-  const OFFICE_PCT = 0.10;
+  const OFFICE_PCT = 0.05; // 5% من المبلغ — بتتحسب بس بعد ما الأدمن يدوس ✅ تأكيد
   const officeComm = r => r.status === 'bought' ? Math.round((Number(r.amount) || 0) * OFFICE_PCT * 100) / 100 : 0;
   const OF_ST = { pending:{ t:'مستني تأكيد', c:'pending' }, bought:{ t:'اشترى ✅', c:'delivered' }, not_bought:{ t:'مااشتراش', c:'cancelled' } };
   const curMonth = () => localYmd(new Date()).slice(0, 7);
@@ -2751,14 +2751,13 @@ const Squad = (function(){
     if(admin && f.agent){ const p = (state.office.people || []).find(x => x.id === f.agent); if(p){ agentId = p.id; agentName = p.name; } }
     // الأدمن لو سجّل بمبلغ يبقى اتأكد على طول إنه اشترى
     const row = { agent_id:agentId, agent_name:agentName, sale_date:f.date, customer:f.customer || null, phone:f.phone || null,
-      item:f.item || null, amount:amt, status: admin && amt ? 'bought' : 'pending', created_by_name: state.profile?.full_name || state.profile?.username || '' };
-    if(row.status === 'bought') row.confirmed_by_name = row.created_by_name;
+      item:f.item || null, amount:amt, status:'pending', created_by_name: state.profile?.full_name || state.profile?.username || '' };
     setOffice({ saving:true });
     const { error } = await sb.from('office_sales').insert(row);
     if(error){ setOffice({ saving:false }); return showToast('ماتسجلش: ' + error.message, 'error'); }
     state.office.form = { agent: f.agent };
     setOffice({ saving:false });
-    showToast(row.status === 'bought' ? 'اتسجل واتأكد إنه اشترى ✅' : 'اتسجل ✅ ومستني تأكيد الأدمن.', 'success');
+    showToast(admin ? 'اتسجل ✅ — دوس ✅ "تأكيد" عشان العمولة تتحسب.' : 'اتسجل ✅ ومستني تأكيد الأدمن.', 'success');
     loadOffice();
   }
 
@@ -2767,7 +2766,7 @@ const Squad = (function(){
     const r = (state.office.list || []).find(x => String(x.id) === String(id)); if(!r) return;
     const patch = { status, confirmed_by_name: state.profile?.full_name || state.profile?.username || '' };
     if(status === 'bought'){
-      const v = prompt('العميل اشترى بكام؟ (العمولة 10% منه)', r.amount ? String(r.amount) : '');
+      const v = prompt(`تأكيد: العميل اشترى بكام؟ (العمولة ${OFFICE_PCT * 100}% منه)`, r.amount ? String(r.amount) : '');
       if(v === null) return;
       const amt = numVal(v);
       if(!amt || amt <= 0) return showToast('اكتب المبلغ اللي اشترى بيه.', 'error');
@@ -2813,7 +2812,7 @@ const Squad = (function(){
         <div class="sq-field"><label for="of-amount">المبلغ ${admin ? '' : '(لو تعرفه)'}</label><input id="of-amount" type="number" min="0" step="any" inputmode="decimal" value="${esc(f.amount || '')}"></div>
         <button class="sq-btn" id="of-add" ${O.saving ? 'disabled' : ''}>${O.saving ? 'بيتسجل...' : '➕ سجّل العميل'}</button>
       </div>
-      ${admin ? '<p class="sq-hint" style="margin:10px 0 0;font-size:12.5px;color:var(--muted)">لو كتبت المبلغ وإنت أدمن، العميل بيتسجل إنه اشترى على طول.</p>' : ''}
+      <p class="sq-hint" style="margin:10px 0 0;font-size:12.5px;color:var(--muted)">العمولة (${OFFICE_PCT * 100}%) مش بتتحسب غير بعد ما الأدمن يدوس ✅ تأكيد إن العميل اشترى وبكام.</p>
     </div>`;
 
     if(O.loading && !O.list) return h + `<div class="sq-loading">بيحمّل...</div>`;
@@ -2840,7 +2839,7 @@ const Squad = (function(){
       mine.forEach(r => { (by[r.agent_id] = by[r.agent_id] || { name:r.agent_name || 'موظف', rows:[] }).rows.push(r); });
       const rows = Object.values(by).map(x => ({ name:x.name, ...officeSummary(x.rows) })).sort((a, b) => b.comm - a.comm || b.n - a.n);
       h += `<div class="of-sec">عمولة المكتب لكل موظف — ${esc(mLabel(O.month))}</div>
-        <div class="sq-tablecard"><table class="sq-table"><thead><tr><th>الموظف</th><th>عملاء</th><th>اشتروا</th><th>مستنيين</th><th>مااشتروش</th><th>قيمة المشتريات</th><th>العمولة 10%</th></tr></thead><tbody>
+        <div class="sq-tablecard"><table class="sq-table"><thead><tr><th>الموظف</th><th>عملاء</th><th>اشتروا</th><th>مستنيين</th><th>مااشتروش</th><th>قيمة المشتريات</th><th>العمولة ${OFFICE_PCT * 100}%</th></tr></thead><tbody>
         ${rows.map(r => `<tr><td><b>${esc(r.name)}</b></td><td>${r.n}</td><td>${r.bought}</td><td>${r.pend}</td><td>${r.no}</td><td>${money(r.value)}</td><td><b style="color:var(--brass-d)">${money(r.comm)}</b></td></tr>`).join('')
           || '<tr><td colspan="7" class="sq-empty">مفيش عملاء في الشهر ده.</td></tr>'}
         </tbody></table></div>`;
@@ -2857,7 +2856,7 @@ const Squad = (function(){
           <td>${r.status === 'bought' ? '<b>' + money(officeComm(r)) + '</b>' : '—'}</td>
           <td><span class="sq-badge ${st.c}">${st.t}</span>${r.confirmed_by_name && r.status !== 'pending' ? `<div class="mut" style="font-size:11px;margin-top:3px">بواسطة ${esc(r.confirmed_by_name)}</div>` : ''}</td>
           <td><div class="sq-actions">
-            ${admin ? `<button class="sq-icon" title="اشترى" data-of-mark="${esc(r.id)}" data-st="bought">✅</button>
+            ${admin ? `<button class="sq-icon" title="تأكيد — اشترى (العمولة تتحسب)" data-of-mark="${esc(r.id)}" data-st="bought">✅</button>
                        <button class="sq-icon" title="مااشتراش" data-of-mark="${esc(r.id)}" data-st="not_bought">❌</button>` : ''}
             ${canDel ? `<button class="sq-icon danger" title="مسح" data-of-del="${esc(r.id)}">🗑️</button>` : ''}
           </div></td></tr>`; }).join('')
