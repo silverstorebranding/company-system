@@ -426,6 +426,7 @@ html:not(.auth-ok) #app{display:none}
     <div class="grp"><div class="grp-title">العمل</div>
       <a class="navlink" href="#/inbox">📨 الرسايل والمهام <span class="ib-badge" id="ibBadge"></span></a>
       <a class="navlink" href="#/squad">🏆 Squad</a>
+      <a class="navlink" href="#/qp-upload">📤 رفع الأوردرات</a>
     </div>
     <div class="grp"><div class="grp-title">الأقسام</div>
       <div id="deptlinks"></div>
@@ -4816,6 +4817,7 @@ async function exportToSheet(btn) {
     { title:'المالية', items:[
       { key:'accounts',  label:'💼 الحسابات (Italy + Kidzzly + Socky + المجمّعة)',  routes:['accounts','accounts-kidzzly','accounts-socky','accounts-all'] },
       { key:'meta_ads', label:'📊 Ads (Meta)', routes:['meta-ads'] },
+      { key:'qp_upload', label:'📤 رفع الأوردرات', routes:['qp-upload'] },
       { key:'profits', label:'💰 الأرباح',    routes:['profits'] },
       { key:'brands', label:'🏷️ Brands', routes:['brands'] },
       { key:'dept:warehouse', label:'🏬 المخزن', routes:[] },
@@ -9139,6 +9141,234 @@ create policy "meta: read"  on public.meta_ads_settings for select to authentica
 create policy "meta: write" on public.meta_ads_settings for insert to authenticated with check (public.app_is_admin());
 create policy "meta: edit"  on public.meta_ads_settings for update to authenticated using (public.app_is_admin()) with check (public.app_is_admin());
 grant select, insert, update on public.meta_ads_settings to authenticated;`;
+})();
+</script>
+
+<style>
+/* 📤 رفع الأوردرات */
+.up-wrap textarea{width:100%;min-height:160px;padding:12px;border:1.5px solid var(--line);border-radius:10px;font-family:inherit;font-size:14px;background:var(--panel);color:var(--ink);box-sizing:border-box;direction:rtl;resize:vertical}
+.up-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.up-btn{padding:10px 18px;border:1.5px solid var(--line);border-radius:9px;background:var(--panel);color:var(--ink);font-family:inherit;font-size:14.5px;font-weight:700;cursor:pointer}
+.up-btn.pri{background:var(--brass);border-color:var(--brass);color:#fff}
+.up-btn.ok{background:#2f7d55;border-color:#2f7d55;color:#fff}
+.up-btn:disabled{opacity:.45;cursor:not-allowed}
+.up-ask{border:2px solid #e0a020;background:#fff8e6;border-radius:12px;padding:16px 18px;margin:16px 0}
+.up-ask.done{border-color:#2f7d55;background:#eef8f1}
+.up-ask h3{margin:0 0 6px;font-size:17px}
+.up-ask input{width:100%;max-width:420px;padding:10px 12px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:15px;background:#fff;color:#222;box-sizing:border-box}
+.up-chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.up-chips button{padding:4px 10px;border:1px solid var(--line);border-radius:14px;background:var(--panel);color:var(--ink);font-family:inherit;font-size:12.5px;cursor:pointer}
+.up-sheet{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:#fff}
+.up-sheet table{border-collapse:collapse;width:100%;min-width:1100px;font-family:Arial,sans-serif;font-size:13px;color:#222}
+.up-sheet th{background:#e8eaed;border:1px solid #c8c8c8;padding:6px 8px;font-weight:700;text-align:center;white-space:nowrap}
+.up-sheet th.col{background:#f3f3f3;color:#666;font-weight:500;font-size:11.5px}
+.up-sheet td{border:1px solid #d6d6d6;padding:0;vertical-align:middle}
+.up-sheet td.rn{background:#f3f3f3;color:#666;text-align:center;font-size:11.5px;padding:4px 6px;width:30px}
+.up-sheet td input{width:100%;border:none;padding:6px 8px;font-family:Arial,sans-serif;font-size:13px;background:transparent;color:#222;box-sizing:border-box;min-width:70px}
+.up-sheet td input:focus{outline:2px solid #1a73e8;background:#fff}
+.up-sheet tr.bad td{background:#fdecea}
+.up-sheet tr.bad td.rn{background:#f5c6c0}
+.up-sheet td.err{font-size:11.5px;color:#b3261e;padding:4px 8px;white-space:nowrap}
+.up-sheet td.x button{border:none;background:none;cursor:pointer;font-size:14px;color:#999}
+.up-kpis{display:flex;gap:12px;flex-wrap:wrap;margin:14px 0}
+.up-kpis div{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 16px}
+.up-kpis b{display:block;font-size:20px}
+.up-kpis span{font-size:12.5px;color:var(--muted)}
+.up-msg{padding:10px 14px;border-radius:9px;margin:10px 0;font-size:14px}
+.up-msg.err{background:#fdecea;color:#a3271a}.up-msg.ok{background:#e3f3e8;color:#23784a}
+.up-hist{font-size:13px}
+.up-hist div{padding:6px 0;border-bottom:1px dashed var(--line)}
+</style>
+<script>
+/* =====================================================================
+   📤 رفع الأوردرات — كوبي/بيست → شيت بتنسيق QP → موافقة → تصدير
+   - الترتيب المتوقع للأعمدة (زي الشيت اللي بتنسخوا منه):
+     الاسم | الموبايل | العنوان | السعر | الموظفة | (فاضي) | الطلب | المصدر | المقاس
+     (لو الترتيب اختلف شوية، بيدوّر على الموبايل والسعر لوحده)
+   - قبل التصدير لازم اللي بيرفع يكتب "المصدر والاسم" اللي يتكتب في عمود notes (G) لكل الأوردرات
+   - الشيت اللي بيطلع: Sheet3 — الأعمدة من B لـ K بنفس عناوين QP
+   ===================================================================== */
+(function(){
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const me = () => (window.AuthGate && window.AuthGate.me && window.AuthGate.me()) || {};
+  const isUP = () => (location.hash.replace('#/', '') || 'home').split('/')[0] === 'qp-upload';
+  const digits = s => String(s ?? '').replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d));
+  const numOf = s => { const t = digits(s).replace(/[,\s]/g, '').replace(/ج|جنيه|egp|le/gi, ''); return t !== '' && !isNaN(t) ? Number(t) : null; };
+  const phoneOf = s => { let t = digits(s).replace(/[^\d]/g, ''); if(t.startsWith('20') && t.length === 12) t = t.slice(2); if(t.startsWith('0')) t = t.slice(1); return t; };
+  const isPhone = s => /^1[0125]\d{8}$/.test(phoneOf(s));
+  const ymd = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  // البراندات اللي قسم الأرباح بيعرفها من عمود notes
+  const NOTE_SUGGEST = ['dream wa', 'dream', 'dream msg site', 'cara wa', 'cara silver', 'cara silver un', 'msg', 'fastplt', 'rs kids', 'bloom', 'socky'];
+  const HIST_KEY = 'qp_upload_hist';
+
+  const S = { raw:'', rows:null, note:'', msg:'', msgErr:false, hist: (() => { try{ return JSON.parse(localStorage.getItem(HIST_KEY) || '[]'); }catch(e){ return []; } })() };
+
+  /* ---------- التحليل ---------- */
+  function parse(text){
+    const lines = String(text || '').replace(/\r/g, '').split('\n').filter(l => l.replace(/\t/g, '').trim());
+    return lines.map(line => {
+      let c = line.split('\t').map(x => x.trim());
+      if(c.length < 3) c = line.split(/\s{3,}| \| |\|/).map(x => x.trim()); // لو اتنسخ من غير Tabs
+      let pi = c.findIndex(isPhone);
+      const r = { name:'', phone:'', address:'', amount:'', agent:'', contents:'', source:'', size:'', note:'', city:'' };
+      if(pi < 0){ r.name = c[0] || ''; r.address = c.slice(1).join(' '); return check(r); }
+      r.name = c.slice(0, pi).filter(Boolean).join(' ');
+      r.phone = phoneOf(c[pi]);
+      r.address = c[pi + 1] || '';
+      // السعر: أول رقم بعد العنوان
+      let ai = pi + 2; while(ai < c.length && numOf(c[ai]) === null) ai++;
+      r.amount = ai < c.length ? String(numOf(c[ai])) : '';
+      const rest = c.slice(ai + 1);
+      // بعد السعر: الموظفة (يوزرنيم إنجليزي) ثم الطلب ثم المصدر ثم المقاس
+      let k = 0;
+      if(rest[k] !== undefined && /^[a-z0-9._-]+$/i.test(rest[k])){ r.agent = rest[k]; k++; }
+      const tail = rest.slice(k).filter(x => x !== '');
+      r.contents = tail[0] || ''; r.source = tail[1] || ''; r.size = tail[2] || '';
+      return check(r);
+    });
+  }
+  function contentsOf(r){ return r.size && !String(r.contents).includes('مقاس') ? `${r.contents} - مقاس ${r.size}` : r.contents; }
+  function check(r){
+    const e = [];
+    if(!String(r.name).trim()) e.push('الاسم فاضي');
+    if(!/^1[0125]\d{8}$/.test(phoneOf(r.phone))) e.push('الموبايل غلط');
+    if(!String(r.address).trim()) e.push('العنوان فاضي');
+    if(!(numOf(r.amount) > 0)) e.push('السعر غلط');
+    r.errs = e;
+    return r;
+  }
+  function dupCheck(){
+    const seen = {};
+    (S.rows || []).forEach(r => { const p = phoneOf(r.phone); if(p) seen[p] = (seen[p] || 0) + 1; });
+    (S.rows || []).forEach(r => { check(r); if(seen[phoneOf(r.phone)] > 1) r.errs.push('الموبايل متكرر'); });
+  }
+  const finalNote = r => (r.note || S.note || '').trim();
+
+  /* ---------- التصدير ---------- */
+  function exportSheet(){
+    const rows = S.rows || [];
+    if(!S.note.trim() && rows.some(r => !r.note.trim())){ flash('⚠️ لازم تكتب المصدر والاسم اللي يتكتب في عمود notes الأول.', true); const i = document.getElementById('upNote'); if(i) i.focus(); return; }
+    if(rows.some(r => r.errs.length)){ flash('⚠️ فيه أوردرات فيها مشاكل (باللون الأحمر). صلّحها أو امسحها الأول.', true); return; }
+    if(!rows.length) return;
+    const total = rows.reduce((a, r) => a + (numOf(r.amount) || 0), 0);
+    const notes = [...new Set(rows.map(finalNote))].join(' / ');
+    if(!confirm(`موافق تصدّر شيت QP؟\n\n• ${rows.length} أوردر\n• إجمالي ${total.toLocaleString('ar-EG')} ج\n• notes: ${notes}`)) return;
+    if(!window.XLSX){ flash('مكتبة Excel مش متحمّلة، اعمل Refresh وجرّب تاني.', true); return; }
+    const H = [null, 'serial', 'full name', 'phone', 'address', 'total amount', 'notes', 'order date', 'shipment contents', 'weight', 'city'];
+    const aoa = [H].concat(rows.map(r => { const a = numOf(r.amount);
+      return [null, null, r.name.trim(), phoneOf(r.phone), r.address.trim(), a, finalNote(r), null, contentsOf(r).trim(), null, r.city.trim() || null]; }));
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    // الموبايل نص (زي شيت QP) عشان مايتحولش لرقم
+    for(let i = 2; i <= aoa.length; i++){ const c = ws['D' + i]; if(c){ c.t = 's'; c.v = String(c.v); c.z = '@'; } }
+    ws['!cols'] = [{ wch:3 }, { wch:8 }, { wch:22 }, { wch:13 }, { wch:45 }, { wch:12 }, { wch:16 }, { wch:12 }, { wch:40 }, { wch:8 }, { wch:12 }];
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Sheet3');
+    const fname = `QP ${ymd(new Date())} - ${notes.replace(/[\\/:*?"<>|]/g, '-')} (${rows.length}).xlsx`;
+    XLSX.writeFile(wb, fname);
+    S.hist.unshift({ at: new Date().toISOString(), n: rows.length, total, notes, by: me().full_name || me().username || '' });
+    S.hist = S.hist.slice(0, 15);
+    try{ localStorage.setItem(HIST_KEY, JSON.stringify(S.hist)); }catch(e){}
+    flash(`✅ اتصدّر ${rows.length} أوردر في ملف "${fname}" — ارفعه على موقع QP.`);
+  }
+
+  let flashT = null;
+  function flash(t, err){ S.msg = t; S.msgErr = !!err; draw(); clearTimeout(flashT); flashT = setTimeout(() => { S.msg = ''; if(isUP()) draw(); }, 9000); }
+
+  /* ---------- الرسم ---------- */
+  function view(){
+    let h = `<div class="pagehead"><h1>📤 رفع الأوردرات</h1><p>الصق الأوردرات كوبي، راجعها في شيت QP، اكتب المصدر والاسم، ووافق عشان يتصدّر الشيت ويترفع على QP.</p></div><div class="up-wrap">`;
+    if(S.msg) h += `<div class="up-msg ${S.msgErr ? 'err' : 'ok'}">${esc(S.msg)}</div>`;
+    h += `<div class="card"><h3>1️⃣ الصق الأوردرات هنا</h3>
+      <textarea id="upRaw" placeholder="انسخ الصفوف من الشيت والصقها هنا (Ctrl + V)&#10;الترتيب: الاسم | الموبايل | العنوان | السعر | الموظفة | | الطلب | المصدر | المقاس">${esc(S.raw)}</textarea>
+      <div class="up-row" style="margin-top:10px"><button class="up-btn pri" id="upParse">🔍 حوّلها لشيت QP</button>
+        ${S.rows ? '<button class="up-btn" id="upClear">🧹 ابدأ من جديد</button>' : ''}</div></div>`;
+    if(!S.rows) return h + histHtml() + '</div>';
+    if(!S.rows.length) return h + `<div class="up-msg err">مالقيتش أوردرات في اللي اتلصق.</div></div>`;
+
+    // 2) سؤال المصدر والاسم — لازم قبل التصدير
+    const done = !!S.note.trim();
+    h += `<div class="up-ask ${done ? 'done' : ''}"><h3>2️⃣ ${done ? '✅' : '⚠️'} إيه المصدر والاسم اللي يتكتب في عمود notes لكل الأوردرات؟</h3>
+      <p style="margin:0 0 10px;font-size:13.5px;color:#555">ده اللي قسم الأرباح بيعرف منه البراند، فلازم يتكتب صح (مثلاً: <b>dream wa</b> أو <b>cara silver</b>). هيتكتب في عمود G لكل الأوردرات اللي تحت.</p>
+      <input id="upNote" list="upNotes" value="${esc(S.note)}" placeholder="اكتب المصدر والاسم..." autocomplete="off">
+      <datalist id="upNotes">${NOTE_SUGGEST.map(n => `<option value="${esc(n)}">`).join('')}</datalist>
+      <div class="up-chips">${NOTE_SUGGEST.map(n => `<button type="button" data-upnote="${esc(n)}">${esc(n)}</button>`).join('')}</div></div>`;
+
+    // 3) الشيت
+    const bad = S.rows.filter(r => r.errs.length).length, total = S.rows.reduce((a, r) => a + (numOf(r.amount) || 0), 0);
+    h += `<div class="card"><h3>3️⃣ الشيت زي ما هيترفع على QP</h3>
+      <div class="up-kpis"><div><b>${S.rows.length}</b><span>أوردر</span></div><div><b>${total.toLocaleString('ar-EG')} ج</b><span>الإجمالي</span></div>
+        <div><b style="color:${bad ? '#b3261e' : '#2f7d55'}">${bad ? bad : '✔'}</b><span>${bad ? 'فيهم مشاكل' : 'كله تمام'}</span></div></div>
+      <p style="font-size:12.5px;color:var(--muted);margin:0 0 8px">تقدر تعدّل أي خانة بالدوس عليها. المقاس بيتضاف لوحده في آخر shipment contents.</p>
+      <div class="up-sheet"><table><thead>
+        <tr><th class="col"></th><th class="col">B</th><th class="col">C</th><th class="col">D</th><th class="col">E</th><th class="col">F</th><th class="col">G</th><th class="col">I</th><th class="col">K</th><th class="col"></th><th class="col"></th></tr>
+        <tr><th>1</th><th>serial</th><th>full name</th><th>phone</th><th>address</th><th>total amount</th><th>notes</th><th>shipment contents</th><th>city</th><th>المشكلة</th><th></th></tr></thead><tbody>
+      ${S.rows.map((r, i) => `<tr class="${r.errs.length ? 'bad' : ''}"><td class="rn">${i + 2}</td><td></td>
+        <td><input data-upf="${i}.name" value="${esc(r.name)}"></td>
+        <td><input data-upf="${i}.phone" value="${esc(phoneOf(r.phone))}" style="direction:ltr;text-align:left;min-width:105px"></td>
+        <td><input data-upf="${i}.address" value="${esc(r.address)}" style="min-width:260px"></td>
+        <td><input data-upf="${i}.amount" value="${esc(r.amount)}" style="min-width:70px"></td>
+        <td><input data-upf="${i}.note" value="${esc(r.note)}" placeholder="${esc(S.note || '— لسه —')}" style="min-width:110px"></td>
+        <td><input data-upf="${i}.contentsFull" value="${esc(contentsOf(r))}" style="min-width:220px"></td>
+        <td><input data-upf="${i}.city" value="${esc(r.city)}" style="min-width:80px"></td>
+        <td class="err">${esc(r.errs.join('، '))}</td>
+        <td class="x"><button data-updel="${i}" title="امسح الأوردر ده">✕</button></td></tr>`).join('')}
+      </tbody></table></div>
+      <p style="font-size:12px;color:var(--muted);margin:8px 0 0">الأعمدة order date (H) و weight (J) بتتساب فاضية زي شيت QP.${S.rows.some(r => r.agent) ? ' الموظفة والمصدر اللي في الكوبي مش بيدخلوا الشيت.' : ''}</p></div>`;
+
+    // 4) الموافقة
+    const ready = S.rows.length && !bad && (done || S.rows.every(r => r.note.trim()));
+    h += `<div class="card"><h3>4️⃣ الموافقة</h3>
+      ${ready ? '' : `<p style="color:#b3261e;margin:0 0 10px;font-size:14px">${!done ? '⚠️ اكتب المصدر والاسم في خطوة 2 الأول. ' : ''}${bad ? '⚠️ صلّح أو امسح الأوردرات اللي باللون الأحمر.' : ''}</p>`}
+      <button class="up-btn ok" id="upExport" ${ready ? '' : 'disabled'}>✅ موافق — صدّر شيت QP (${S.rows.length} أوردر)</button>
+      <p style="font-size:12.5px;color:var(--muted);margin:10px 0 0">بعد التصدير ارفع الملف على موقع QP من رفع الأوردرات بالشيت.</p></div>`;
+    return h + histHtml() + '</div>';
+  }
+  function histHtml(){
+    if(!S.hist.length) return '';
+    return `<div class="card"><h3>🕘 آخر شيتات اتصدّرت (على الجهاز ده)</h3><div class="up-hist">${S.hist.map(x =>
+      `<div>${new Date(x.at).toLocaleString('ar-EG', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' })} — <b>${x.n}</b> أوردر · ${Number(x.total).toLocaleString('ar-EG')} ج · notes: <b>${esc(x.notes)}</b>${x.by ? ' · ' + esc(x.by) : ''}</div>`).join('')}</div></div>`;
+  }
+
+  function draw(){
+    if(!isUP()) return;
+    const main = document.getElementById('main'); if(!main) return;
+    const y = window.scrollY;
+    main.innerHTML = view();
+    window.scrollTo(0, y);
+    wire();
+  }
+  function wire(){
+    const $ = id => document.getElementById(id);
+    if($('upRaw')) $('upRaw').oninput = e => { S.raw = e.target.value; };
+    if($('upParse')) $('upParse').onclick = () => { S.raw = $('upRaw').value; S.rows = parse(S.raw); dupCheck(); S.msg = ''; draw(); if(!S.note && $('upNote')) $('upNote').focus(); };
+    if($('upClear')) $('upClear').onclick = () => { S.raw = ''; S.rows = null; S.note = ''; S.msg = ''; draw(); };
+    if($('upNote')){
+      $('upNote').oninput = e => { S.note = e.target.value; refreshReady(); };
+      $('upNote').onchange = () => draw();
+    }
+    document.querySelectorAll('[data-upnote]').forEach(b => b.onclick = () => { S.note = b.dataset.upnote; draw(); });
+    document.querySelectorAll('[data-updel]').forEach(b => b.onclick = () => { S.rows.splice(Number(b.dataset.updel), 1); dupCheck(); draw(); });
+    document.querySelectorAll('[data-upf]').forEach(el => {
+      el.oninput = () => {
+        const [i, k] = el.dataset.upf.split('.'), r = S.rows[Number(i)];
+        if(k === 'contentsFull'){ r.contents = el.value; r.size = ''; } else r[k] = el.value;
+      };
+      el.onchange = () => { dupCheck(); draw(); };
+    });
+    if($('upExport')) $('upExport').onclick = exportSheet;
+  }
+  // تحديث زرار الموافقة من غير ما نعيد رسم الصفحة وإنت بتكتب
+  function refreshReady(){
+    const b = document.getElementById('upExport'); if(!b) return;
+    const bad = (S.rows || []).some(r => r.errs.length);
+    b.disabled = !(S.rows && S.rows.length && !bad && (S.note.trim() || S.rows.every(r => r.note.trim())));
+    document.querySelectorAll('[data-upf$=".note"]').forEach(i => i.placeholder = S.note || '— لسه —');
+  }
+
+  function mount(){ draw(); }
+  const _render = render;
+  render = function(){ _render.apply(this, arguments); if(isUP()) mount(); };
+  window.addEventListener('hashchange', () => { if(isUP()) setTimeout(mount, 0); });
+  const w = setInterval(() => { if(me().id){ clearInterval(w); if(isUP()) mount(); } }, 700);
 })();
 </script>
 
