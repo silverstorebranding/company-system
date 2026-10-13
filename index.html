@@ -9201,7 +9201,52 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
   const NOTE_SUGGEST = ['dream wa', 'dream', 'dream msg site', 'cara wa', 'cara silver', 'cara silver un', 'msg', 'fastplt', 'rs kids', 'bloom', 'socky'];
   const HIST_KEY = 'qp_upload_hist';
 
-  const S = { raw:'', rows:null, note:'', msg:'', msgErr:false, hist: (() => { try{ return JSON.parse(localStorage.getItem(HIST_KEY) || '[]'); }catch(e){ return []; } })() };
+  /* ---------- 🚀 QP Integration API (نفس اللي في ملف Postman اللي بعتّه) ----------
+     POST integration/token → token ، GET integration/cities ، POST integration/order */
+  const QPI = 'https://api.qpxpress.com/integration/';
+  const INT_LS = 'qp_int_creds';
+  let qpTok = null, qpCities = null;
+  const getCreds = () => { try{ return JSON.parse(localStorage.getItem(INT_LS) || 'null') || JSON.parse(localStorage.getItem('qp_creds') || 'null'); }catch(e){ return null; } };
+  async function qpToken(force){
+    if(qpTok && !force) return qpTok;
+    const c = getCreds(); if(!c || !c.u) throw new Error('NO_CREDS');
+    const r = await fetch(QPI + 'token', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ username:c.u, password:c.p }) });
+    const j = await r.json().catch(() => ({}));
+    if(!r.ok || !(j.token || j.access)) throw new Error('BAD_CREDS');
+    qpTok = j.token || j.access; return qpTok;
+  }
+  async function qpCall(path, opt, retry){
+    const t = await qpToken();
+    const r = await fetch(QPI + path, { ...(opt || {}), headers:{ 'Content-Type':'application/json', Authorization:'Bearer ' + t } });
+    if(r.status === 401 && !retry){ qpTok = null; return qpCall(path, opt, true); }
+    const txt = await r.text(); let j = null; try{ j = JSON.parse(txt); }catch(e){}
+    if(!r.ok){
+      let m = j ? (j.detail || j.message || j.error || Object.entries(j).map(([k, v]) => k + ': ' + (Array.isArray(v) ? v.join('، ') : (typeof v === 'object' ? JSON.stringify(v) : v))).join(' | ')) : txt.slice(0, 200);
+      throw new Error(m || ('HTTP ' + r.status));
+    }
+    return j;
+  }
+  const normAr = s => String(s || '').replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي').replace(/[ًٌٍَُِّْـ]/g, '').toLowerCase().trim();
+  const stripAl = w => w.replace(/^ال/, '');
+  async function loadCities(){
+    if(qpCities) return qpCities;
+    const j = await qpCall('cities');
+    qpCities = (Array.isArray(j) ? j : (j && (j.results || j.data)) || []).map(c => ({ id:c.id, name:String(c.name || c.city || '').trim() })).filter(c => c.name);
+    return qpCities;
+  }
+  // بيطلع المدينة من العنوان (أطول اسم مدينة موجود في العنوان)
+  function guessCity(address){
+    if(!qpCities) return '';
+    const words = normAr(address).split(/[\s,،\-\/]+/).filter(Boolean).map(stripAl);
+    const text = ' ' + words.join(' ') + ' ';
+    let best = '';
+    qpCities.forEach(c => { const n = normAr(c.name).split(/\s+/).map(stripAl).join(' '); if(n && text.includes(' ' + n + ' ') && n.length > normAr(best).length) best = c.name; });
+    return best;
+  }
+  const tzIso = () => { const d = new Date(), o = -d.getTimezoneOffset(), p = n => String(Math.floor(Math.abs(n))).padStart(2, '0');
+    return ymd(d) + 'T' + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds()) + (o >= 0 ? '+' : '-') + p(o / 60) + ':' + p(o % 60); };
+
+  const S = { raw:'', rows:null, note:'', msg:'', msgErr:false, conn:'', connErr:'', sending:false, prog:'', hist: (() => { try{ return JSON.parse(localStorage.getItem(HIST_KEY) || '[]'); }catch(e){ return []; } })() };
 
   /* ---------- التحليل ---------- */
   function parse(text){
@@ -9234,6 +9279,7 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     if(!/^1[0125]\d{8}$/.test(phoneOf(r.phone))) e.push('الموبايل غلط');
     if(!String(r.address).trim()) e.push('العنوان فاضي');
     if(!(numOf(r.amount) > 0)) e.push('السعر غلط');
+    if(qpCities && !String(r.city || '').trim()) e.push('اختار المدينة');
     r.errs = e;
     return r;
   }
@@ -9273,9 +9319,49 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
   let flashT = null;
   function flash(t, err){ S.msg = t; S.msgErr = !!err; draw(); clearTimeout(flashT); flashT = setTimeout(() => { S.msg = ''; if(isUP()) draw(); }, 9000); }
 
+  async function connect(){
+    S.conn = 'بيتصل بـ QP...'; S.connErr = ''; draw();
+    try{ await qpToken(); await loadCities(); S.conn = `✅ متصل بـ QP (${qpCities.length} مدينة)`; }
+    catch(e){
+      S.conn = '';
+      S.connErr = e.message === 'NO_CREDS' ? 'مفيش دخول QP على الجهاز ده. اكتب يوزر وباسورد QP تحت.'
+        : e.message === 'BAD_CREDS' ? 'QP رفض اليوزر والباسورد دول للرفع. اكتب يوزر وباسورد الـ Integration اللي QP اداهولك.'
+        : /Failed to fetch|NetworkError/i.test(e.message) ? 'مش قادر يوصل لـ QP. اتأكد من الإنترنت.' : e.message;
+    }
+    draw();
+  }
+
+  // 🚀 يبعت الأوردرات لـ QP واحد واحد — اللي اترفع مايترفعش تاني
+  async function sendToQP(){
+    const rows = (S.rows || []).filter(r => !r.serial);
+    if(!rows.length) return;
+    if(!S.note.trim() && rows.some(r => !r.note.trim())){ flash('⚠️ لازم تكتب المصدر والاسم اللي يتكتب في عمود notes الأول.', true); return; }
+    if(rows.some(r => r.errs.length)){ flash('⚠️ فيه أوردرات فيها مشاكل (باللون الأحمر). صلّحها أو امسحها الأول.', true); return; }
+    const total = rows.reduce((a, r) => a + (numOf(r.amount) || 0), 0), notes = [...new Set(rows.map(finalNote))].join(' / ');
+    if(!confirm(`هيترفع على QP دلوقتي:\n\n• ${rows.length} أوردر\n• إجمالي ${total.toLocaleString('ar-EG')} ج\n• notes: ${notes}\n\nموافق؟`)) return;
+    S.sending = true; let ok = 0, fail = 0;
+    for(let i = 0; i < rows.length; i++){
+      const r = rows[i];
+      S.prog = `بيرفع ${i + 1} من ${rows.length}...`; draw();
+      try{
+        const res = await qpCall('order', { method:'POST', body: JSON.stringify({
+          full_name: r.name.trim(), phone: '0' + phoneOf(r.phone), address: r.address.trim(), total_amount: numOf(r.amount),
+          notes: finalNote(r), order_date: tzIso(), shipment_contents: contentsOf(r).trim(), weight: '1.00', city: r.city.trim() }) });
+        r.serial = String((res && (res.serial || res.order_serial || (res.data && res.data.serial) || res.id)) || '✔');
+        r.upErr = ''; ok++;
+      }catch(e){ r.upErr = e.message; fail++; }
+    }
+    S.sending = false; S.prog = '';
+    if(ok){
+      S.hist.unshift({ at: new Date().toISOString(), n: ok, total: rows.filter(r => r.serial).reduce((a, r) => a + (numOf(r.amount) || 0), 0), notes, by: me().full_name || me().username || '', qp:true });
+      S.hist = S.hist.slice(0, 15); try{ localStorage.setItem(HIST_KEY, JSON.stringify(S.hist)); }catch(e){}
+    }
+    flash(fail ? `⚠️ اترفع ${ok} أوردر، و ${fail} فشلوا — السبب مكتوب جنب كل واحد، صلّحه ودوس ارفع تاني (اللي اترفع مش هيترفع تاني).` : `✅ اترفع ${ok} أوردر على QP — هتلاقيهم في Orders List.`, !!fail);
+  }
+
   /* ---------- الرسم ---------- */
   function view(){
-    let h = `<div class="pagehead"><h1>📤 رفع الأوردرات</h1><p>الصق الأوردرات كوبي، راجعها في شيت QP، اكتب المصدر والاسم، ووافق عشان يتصدّر الشيت ويترفع على QP.</p></div><div class="up-wrap">`;
+    let h = `<div class="pagehead"><h1>📤 رفع الأوردرات</h1><p>الصق الأوردرات كوبي، راجعها في شيت QP، اكتب المصدر والاسم، ووافق عشان تترفع على QP مباشرة وتظهر في Orders List.</p></div><div class="up-wrap">`;
     if(S.msg) h += `<div class="up-msg ${S.msgErr ? 'err' : 'ok'}">${esc(S.msg)}</div>`;
     h += `<div class="card"><h3>1️⃣ الصق الأوردرات هنا</h3>
       <textarea id="upRaw" placeholder="انسخ الصفوف من الشيت والصقها هنا (Ctrl + V)&#10;الترتيب: الاسم | الموبايل | العنوان | السعر | الموظفة | | الطلب | المصدر | المقاس">${esc(S.raw)}</textarea>
@@ -9283,6 +9369,11 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
         ${S.rows ? '<button class="up-btn" id="upClear">🧹 ابدأ من جديد</button>' : ''}</div></div>`;
     if(!S.rows) return h + histHtml() + '</div>';
     if(!S.rows.length) return h + `<div class="up-msg err">مالقيتش أوردرات في اللي اتلصق.</div></div>`;
+    if(S.conn) h += `<div class="up-msg ok">${esc(S.conn)}</div>`;
+    if(S.connErr){ const c = getCreds() || {};
+      h += `<div class="up-ask"><h3>🔐 دخول QP للرفع</h3><p style="margin:0 0 8px;font-size:13.5px;color:#555">${esc(S.connErr)}</p>
+        <div class="up-row"><input id="upU" placeholder="يوزر QP" value="${esc(c.u || '')}" style="max-width:200px"><input id="upP" type="password" placeholder="الباسورد" style="max-width:200px">
+        <button class="up-btn pri" id="upLogin">دخول</button></div><p style="margin:8px 0 0;font-size:12px;color:#777">بيتحفظ على الجهاز ده بس.</p></div>`; }
 
     // 2) سؤال المصدر والاسم — لازم قبل التصدير
     const done = !!S.note.trim();
@@ -9300,32 +9391,38 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
       <p style="font-size:12.5px;color:var(--muted);margin:0 0 8px">تقدر تعدّل أي خانة بالدوس عليها. المقاس بيتضاف لوحده في آخر shipment contents.</p>
       <div class="up-sheet"><table><thead>
         <tr><th class="col"></th><th class="col">B</th><th class="col">C</th><th class="col">D</th><th class="col">E</th><th class="col">F</th><th class="col">G</th><th class="col">I</th><th class="col">K</th><th class="col"></th><th class="col"></th></tr>
-        <tr><th>1</th><th>serial</th><th>full name</th><th>phone</th><th>address</th><th>total amount</th><th>notes</th><th>shipment contents</th><th>city</th><th>المشكلة</th><th></th></tr></thead><tbody>
-      ${S.rows.map((r, i) => `<tr class="${r.errs.length ? 'bad' : ''}"><td class="rn">${i + 2}</td><td></td>
+        <tr><th>1</th><th>serial</th><th>full name</th><th>phone</th><th>address</th><th>total amount</th><th>notes</th><th>shipment contents</th><th>city</th><th>الحالة</th><th></th></tr></thead><tbody>
+      ${S.rows.map((r, i) => `<tr class="${r.errs.length || r.upErr ? 'bad' : ''}" ${r.serial ? 'style="background:#eef8f1"' : ''}><td class="rn">${i + 2}</td><td style="font-size:12px;padding:4px 6px;color:#2f7d55">${esc(r.serial || '')}</td>
         <td><input data-upf="${i}.name" value="${esc(r.name)}"></td>
         <td><input data-upf="${i}.phone" value="${esc(phoneOf(r.phone))}" style="direction:ltr;text-align:left;min-width:105px"></td>
         <td><input data-upf="${i}.address" value="${esc(r.address)}" style="min-width:260px"></td>
         <td><input data-upf="${i}.amount" value="${esc(r.amount)}" style="min-width:70px"></td>
         <td><input data-upf="${i}.note" value="${esc(r.note)}" placeholder="${esc(S.note || '— لسه —')}" style="min-width:110px"></td>
         <td><input data-upf="${i}.contentsFull" value="${esc(contentsOf(r))}" style="min-width:220px"></td>
-        <td><input data-upf="${i}.city" value="${esc(r.city)}" style="min-width:80px"></td>
-        <td class="err">${esc(r.errs.join('، '))}</td>
+        <td>${qpCities ? `<select data-upcity="${i}" style="border:none;padding:6px;font-family:Arial;font-size:13px;background:transparent;min-width:100px"><option value="">— اختار —</option>${qpCities.map(c => `<option ${c.name === r.city ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select>` : `<input data-upf="${i}.city" value="${esc(r.city)}" style="min-width:80px">`}</td>
+        <td class="err">${r.serial ? `<span style="color:#2f7d55;font-weight:700">✅ اترفع ${esc(r.serial)}</span>` : esc([...r.errs, r.upErr ? '❌ QP: ' + r.upErr : ''].filter(Boolean).join('، '))}</td>
         <td class="x"><button data-updel="${i}" title="امسح الأوردر ده">✕</button></td></tr>`).join('')}
       </tbody></table></div>
-      <p style="font-size:12px;color:var(--muted);margin:8px 0 0">الأعمدة order date (H) و weight (J) بتتساب فاضية زي شيت QP.${S.rows.some(r => r.agent) ? ' الموظفة والمصدر اللي في الكوبي مش بيدخلوا الشيت.' : ''}</p></div>`;
+      <p style="font-size:12px;color:var(--muted);margin:8px 0 0">في الرفع المباشر بيتبعت تاريخ ووقت الرفع كـ order date ووزن 1 كجم، وفي الشيت اللي بيتنزّل بيتسابوا فاضيين زي شيت QP. المدينة بتتختار لوحدها من العنوان لو لقاها — راجعها.${S.rows.some(r => r.agent) ? ' الموظفة والمصدر اللي في الكوبي مش بيدخلوا الشيت.' : ''}</p></div>`;
 
     // 4) الموافقة
+    const left = S.rows.filter(r => !r.serial).length;
     const ready = S.rows.length && !bad && (done || S.rows.every(r => r.note.trim()));
-    h += `<div class="card"><h3>4️⃣ الموافقة</h3>
+    const canSend = ready && left && qpCities && !S.sending;
+    h += `<div class="card"><h3>4️⃣ الموافقة والرفع على QP</h3>
       ${ready ? '' : `<p style="color:#b3261e;margin:0 0 10px;font-size:14px">${!done ? '⚠️ اكتب المصدر والاسم في خطوة 2 الأول. ' : ''}${bad ? '⚠️ صلّح أو امسح الأوردرات اللي باللون الأحمر.' : ''}</p>`}
-      <button class="up-btn ok" id="upExport" ${ready ? '' : 'disabled'}>✅ موافق — صدّر شيت QP (${S.rows.length} أوردر)</button>
-      <p style="font-size:12.5px;color:var(--muted);margin:10px 0 0">بعد التصدير ارفع الملف على موقع QP من رفع الأوردرات بالشيت.</p></div>`;
+      ${S.sending ? `<div class="up-msg ok">⏳ ${esc(S.prog)}</div>` : ''}
+      <div class="up-row">
+        <button class="up-btn ok" id="upSend" ${canSend ? '' : 'disabled'}>🚀 موافق — ارفع على QP (${left} أوردر)</button>
+        <button class="up-btn" id="upExport" ${ready ? '' : 'disabled'}>⬇️ نزّل الشيت بس</button>
+      </div>
+      <p style="font-size:12.5px;color:var(--muted);margin:10px 0 0">${left ? 'الأوردرات بتتعمل في QP على طول وهتلاقيها في Orders List. ' : '✅ كل الأوردرات اترفعت. '}${!qpCities ? 'لازم الاتصال بـ QP يشتغل الأول (فوق). ' : ''}اللي يترفع بيتعلّم بالأخضر ومش بيترفع تاني.</p></div>`;
     return h + histHtml() + '</div>';
   }
   function histHtml(){
     if(!S.hist.length) return '';
-    return `<div class="card"><h3>🕘 آخر شيتات اتصدّرت (على الجهاز ده)</h3><div class="up-hist">${S.hist.map(x =>
-      `<div>${new Date(x.at).toLocaleString('ar-EG', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' })} — <b>${x.n}</b> أوردر · ${Number(x.total).toLocaleString('ar-EG')} ج · notes: <b>${esc(x.notes)}</b>${x.by ? ' · ' + esc(x.by) : ''}</div>`).join('')}</div></div>`;
+    return `<div class="card"><h3>🕘 آخر رفع (على الجهاز ده) — 🚀 اترفع على QP · ⬇️ شيت اتنزّل</h3><div class="up-hist">${S.hist.map(x =>
+      `<div>${x.qp ? '🚀' : '⬇️'} ${new Date(x.at).toLocaleString('ar-EG', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' })} — <b>${x.n}</b> أوردر · ${Number(x.total).toLocaleString('ar-EG')} ج · notes: <b>${esc(x.notes)}</b>${x.by ? ' · ' + esc(x.by) : ''}</div>`).join('')}</div></div>`;
   }
 
   function draw(){
@@ -9339,7 +9436,23 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
   function wire(){
     const $ = id => document.getElementById(id);
     if($('upRaw')) $('upRaw').oninput = e => { S.raw = e.target.value; };
-    if($('upParse')) $('upParse').onclick = () => { S.raw = $('upRaw').value; S.rows = parse(S.raw); dupCheck(); S.msg = ''; draw(); if(!S.note && $('upNote')) $('upNote').focus(); };
+    if($('upParse')) $('upParse').onclick = async () => {
+      S.raw = $('upRaw').value; S.rows = parse(S.raw); S.msg = '';
+      try{ await connect(); }catch(e){}
+      S.rows.forEach(r => { if(!r.city) r.city = guessCity(r.address); });
+      dupCheck(); draw(); if(!S.note && $('upNote')) $('upNote').focus();
+    };
+    if($('upLogin')) $('upLogin').onclick = async () => {
+      const u = $('upU').value.trim(), pw = $('upP').value;
+      if(!u || !pw) return;
+      try{ localStorage.setItem(INT_LS, JSON.stringify({ u, p:pw })); }catch(e){}
+      qpTok = null; qpCities = null;
+      await connect();
+      (S.rows || []).forEach(r => { if(!r.city) r.city = guessCity(r.address); });
+      dupCheck(); draw();
+    };
+    if($('upSend')) $('upSend').onclick = sendToQP;
+    document.querySelectorAll('[data-upcity]').forEach(el => el.onchange = () => { S.rows[Number(el.dataset.upcity)].city = el.value; dupCheck(); draw(); });
     if($('upClear')) $('upClear').onclick = () => { S.raw = ''; S.rows = null; S.note = ''; S.msg = ''; draw(); };
     if($('upNote')){
       $('upNote').oninput = e => { S.note = e.target.value; refreshReady(); };
@@ -9360,7 +9473,9 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
   function refreshReady(){
     const b = document.getElementById('upExport'); if(!b) return;
     const bad = (S.rows || []).some(r => r.errs.length);
-    b.disabled = !(S.rows && S.rows.length && !bad && (S.note.trim() || S.rows.every(r => r.note.trim())));
+    const ok = !!(S.rows && S.rows.length && !bad && (S.note.trim() || S.rows.every(r => r.note.trim())));
+    b.disabled = !ok;
+    const s2 = document.getElementById('upSend'); if(s2) s2.disabled = !(ok && qpCities && !S.sending && S.rows.some(r => !r.serial));
     document.querySelectorAll('[data-upf$=".note"]').forEach(i => i.placeholder = S.note || '— لسه —');
   }
 
