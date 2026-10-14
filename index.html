@@ -1564,18 +1564,26 @@ const Squad = (function(){
 
   /* 🏢 عمولة مبيعات المكتب المتأكدة (5%) بتتضاف على إجمالي عمولة الموظفة
      والإجمالي بيتقسم تحت: أوردرات عمومًا / أوردرات مسلّمة / مبيعات مباشرة */
-  let officeCommMap = {};
+  let officeCommMap = {}, officeValMap = {}; // عمولة المكتب + قيمة مبيعات المكتب المتأكدة لكل موظفة
   async function loadOfficeComm(){
     const { data, error } = await sb.from('office_sales').select('agent_id, amount, status').eq('status', 'bought');
     if(error) return;
-    const m = {};
-    (data || []).forEach(r => { m[r.agent_id] = (m[r.agent_id] || 0) + (Number(r.amount) || 0) * OFFICE_PCT; });
+    const m = {}, v = {};
+    (data || []).forEach(r => { const a = Number(r.amount) || 0; m[r.agent_id] = (m[r.agent_id] || 0) + a * OFFICE_PCT; v[r.agent_id] = (v[r.agent_id] || 0) + a; });
     Object.keys(m).forEach(k => m[k] = Math.round(m[k] * 100) / 100);
-    officeCommMap = m;
+    officeCommMap = m; officeValMap = v;
   }
   function withOffice(s, agentId){
-    const off = officeCommMap[agentId] || 0, r2 = n => Math.round(n * 100) / 100;
-    return { ...s, offComm: off, totalComm: r2(s.totalComm + off), dueComm: r2(s.dueComm + off), commission: r2(s.commission + off) };
+    const off = officeCommMap[agentId] || 0, offVal = officeValMap[agentId] || 0, r2 = n => Math.round(n * 100) / 100;
+    // 💰 قيمة اللي اتسلم = الأوردرات المسلّمة + مبيعات المكتب المتأكدة
+    return { ...s, offComm: off, totalComm: r2(s.totalComm + off), dueComm: r2(s.dueComm + off), commission: r2(s.commission + off),
+      ordersDelValue: s.delValue, offValue: r2(offVal), delValue: r2(s.delValue + offVal) };
+  }
+  // تقسيم قيمة اللي اتسلم: أوردرات مسلّمة + مبيعات مكتب
+  function valBreak(s, compact){
+    if(!s.offValue) return '';
+    const m = n => Number(n || 0).toLocaleString('ar-EG', { maximumFractionDigits: 0 });
+    return `<div class="sq-commbrk ${compact ? 'cmp' : ''}"><span>✅ أوردرات: <b>${m(s.ordersDelValue)}</b></span><span>🏢 مكتب: <b>${m(s.offValue)}</b></span></div>`;
   }
   // سطور التقسيم تحت الإجمالي
   function commBreak(s, due, compact){
@@ -1883,7 +1891,7 @@ const Squad = (function(){
     (data||[]).forEach(o => (byAgent[o.agent_id] = byAgent[o.agent_id] || []).push(o));
     const rows = Object.keys(byAgent).map(id => {
       const s = withOffice(commissionSummary(byAgent[id]), id);
-      return { id, name: nameMap[id] || 'موظف', total: s.total, delivered: s.delivered, delValue: s.delValue, rate: s.rate, delRate: s.delRate, active: s.active, totalComm: s.totalComm, dueComm: s.dueComm, commission: s.commission,
+      return { id, name: nameMap[id] || 'موظف', total: s.total, delivered: s.delivered, delValue: s.delValue, ordersDelValue: s.ordersDelValue, offValue: s.offValue, rate: s.rate, delRate: s.delRate, active: s.active, totalComm: s.totalComm, dueComm: s.dueComm, commission: s.commission,
         delComm: s.delComm, pendComm: s.pendComm, offComm: s.offComm, sources: sourceCounts(byAgent[id]) };
     }).sort((a,b) => b.delivered - a.delivered || b.total - a.total);
     setState({ boardLoading:false, board: rows });
@@ -2144,7 +2152,7 @@ const Squad = (function(){
         <div class="sq-stat" style="border-top:4px solid var(--brass)"><div class="n gold">${todayCount(state.session?.user?.id).toLocaleString('ar-EG')}</div><div class="l">🧾 أوردراتك النهارده (الفريق ${(todayOrders || []).length.toLocaleString('ar-EG')})</div></div>
         <div class="sq-stat"><div class="n">${s.total}</div><div class="l">إجمالي الأوردرات (${s.pending} قيد التنفيذ)</div></div>
         <div class="sq-stat"><div class="n green">${s.delivered}</div><div class="l">أوردر اتسلم</div></div>
-        <div class="sq-stat"><div class="n green">${money(s.delValue)}</div><div class="l">💰 قيمة الأوردرات اللي اتسلمت</div></div>
+        <div class="sq-stat"><div class="n green">${money(s.delValue)}</div><div class="l">💰 قيمة اللي اتسلم (أوردرات + مكتب)</div>${valBreak(s)}</div>
         <div class="sq-stat"><div class="n">${rateTxt(s.delRate)}</div><div class="l">نسبة التسليم</div></div>
         <div class="sq-stat"><div class="n">${s.totalComm} ج</div><div class="l">💰 العمولة الإجمالية</div>${commBreak(s, false)}</div>
         <div class="sq-stat"><div class="n gold">${s.dueComm} ج</div><div class="l">✅ العمولة المستحقة${s.active ? '' : ' (النسبة لسه تحت 50%)'}</div>${commBreak(s, true)}</div>
@@ -2726,7 +2734,7 @@ const Squad = (function(){
     h += `<div class="sq-stats">
         <div class="sq-stat"><div class="n">${s.total}</div><div class="l">إجمالي الأوردرات</div></div>
         <div class="sq-stat"><div class="n green">${s.delivered}</div><div class="l">أوردر اتسلم</div></div>
-        <div class="sq-stat"><div class="n green">${money(s.delValue)}</div><div class="l">💰 قيمة الأوردرات اللي اتسلمت</div></div>
+        <div class="sq-stat"><div class="n green">${money(s.delValue)}</div><div class="l">💰 قيمة اللي اتسلم (أوردرات + مكتب)</div>${valBreak(s)}</div>
         <div class="sq-stat"><div class="n">${rateTxt(s.delRate)}</div><div class="l">نسبة التسليم</div></div>
         <div class="sq-stat"><div class="n">${s.totalComm} ج</div><div class="l">💰 العمولة الإجمالية</div>${commBreak(s, false)}</div>
         <div class="sq-stat"><div class="n gold">${s.dueComm} ج</div><div class="l">✅ العمولة المستحقة${s.active ? '' : ' (النسبة لسه تحت 50%)'}</div>${commBreak(s, true)}</div>
@@ -2781,7 +2789,7 @@ const Squad = (function(){
               ${canViewAll() ? `<button type="button" class="sq-viewbtn" data-view-agent="${esc(r.id)}" data-agent-name="${esc(r.name)}">👁 عرض الأوردرات</button>` : ''}</div>
             <div class="sq-metric c">${r.total}</div>
             <div class="sq-metric c">${r.delivered}</div>
-            <div class="sq-metric green c">${money(r.delValue)}</div>
+            <div class="sq-metric green c">${money(r.delValue)}${valBreak(r, true)}</div>
             <div class="sq-metric dim c">${r.totalComm} ج${commBreak(r, false, true)}</div>
             <div class="sq-metric gold c">${r.dueComm} ج${r.active ? '' : '<small class="sq-under50">تحت 50%</small>'}${commBreak(r, true, true)}</div>
           </div>`).join('') + (() => {
