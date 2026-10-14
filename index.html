@@ -9488,7 +9488,6 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     if(!/^1[0125]\d{8}$/.test(phoneOf(r.phone))) e.push('الموبايل غلط');
     if(!String(r.address).trim()) e.push('العنوان فاضي');
     if(!(numOf(r.amount) > 0)) e.push('السعر غلط');
-    if(qpCities && !String(r.city || '').trim()) e.push('اختار المدينة');
     r.errs = e;
     return r;
   }
@@ -9557,9 +9556,16 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
       const r = rows[i];
       S.prog = `بيرفع ${i + 1} من ${rows.length}...`; draw();
       try{
-        const res = await qpCall('order', { method:'POST', body: JSON.stringify({
-          full_name: r.name.trim(), phone: '0' + phoneOf(r.phone), address: r.address.trim(), total_amount: numOf(r.amount),
-          notes: finalNote(r), order_date: tzIso(), shipment_contents: contentsOf(r).trim(), weight: '1.00', city: r.city.trim() }) });
+        // المدينة: لو مكتوبة بتتبعت، ولو مش مكتوبة بتتبعت فاضية — ولو QP اعترض على الفاضية بنبعت من غيرها خالص
+        const body = { full_name: r.name.trim(), phone: '0' + phoneOf(r.phone), address: r.address.trim(), total_amount: numOf(r.amount),
+          notes: finalNote(r), order_date: tzIso(), shipment_contents: contentsOf(r).trim(), weight: '1.00', city: String(r.city || '').trim() };
+        let res;
+        try{ res = await qpCall('order', { method:'POST', body: JSON.stringify(body) }); }
+        catch(e1){
+          if(body.city || !/city|مدينه|مدينة/i.test(e1.message)) throw e1;
+          const b2 = { ...body }; delete b2.city;
+          res = await qpCall('order', { method:'POST', body: JSON.stringify(b2) });
+        }
         r.serial = String((res && (res.serial || res.order_serial || (res.data && res.data.serial) || res.id)) || '✔');
         r.upErr = ''; ok++;
       }catch(e){ r.upErr = e.message; fail++; }
@@ -9644,7 +9650,7 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
         <td class="err">${r.serial ? `<span style="color:#2f7d55;font-weight:700">✅ اترفع ${esc(r.serial)}</span>` : esc([...r.errs, r.upErr ? '❌ QP: ' + r.upErr : ''].filter(Boolean).join('، '))}</td>
         <td class="x"><button data-updel="${i}" title="امسح الأوردر ده">✕</button></td></tr>`).join('')}
       </tbody></table></div>
-      <p style="font-size:12px;color:var(--muted);margin:8px 0 0">في الرفع المباشر بيتبعت تاريخ ووقت الرفع كـ order date ووزن 1 كجم، وفي الشيت اللي بيتنزّل بيتسابوا فاضيين زي شيت QP. المدينة بتتختار لوحدها من العنوان لو لقاها — راجعها.${S.rows.some(r => r.agent) ? ' الموظفة والمصدر اللي في الكوبي مش بيدخلوا الشيت.' : ''}</p></div>`;
+      <p style="font-size:12px;color:var(--muted);margin:8px 0 0">في الرفع المباشر بيتبعت تاريخ ووقت الرفع كـ order date ووزن 1 كجم، وفي الشيت اللي بيتنزّل بيتسابوا فاضيين زي شيت QP. المدينة اختيارية: بتتختار لوحدها لو مكتوبة في العنوان، ولو مش موجودة الأوردر بيترفع من غيرها.${S.rows.some(r => r.agent) ? ' الموظفة والمصدر اللي في الكوبي مش بيدخلوا الشيت.' : ''}</p></div>`;
 
     // 4) الموافقة
     const left = S.rows.filter(r => !r.serial).length;
