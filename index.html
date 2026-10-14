@@ -3726,7 +3726,8 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
 .qpd-kpi-big .sub{font-size:12.5px;color:var(--muted);margin-top:3px}
 .qpw-wrap .qpw-top{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px}
 .qpw-wrap .qpw-top h3{margin:0}
-.qpw-day{font-size:13.5px;background:var(--slate-l);padding:5px 12px;border-radius:14px}
+.qpw-day{font-size:13.5px;background:var(--slate-l);padding:5px 12px;border-radius:14px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.qpw-day select{padding:4px 8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;background:var(--panel);color:var(--ink)}
 .qpw-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
 .qpw-card{background:var(--panel);border:1px solid var(--line);border-top:5px solid var(--bc);border-radius:12px;padding:14px 16px}
 .qpw-h{display:flex;align-items:center;gap:8px;margin-bottom:8px}
@@ -4133,18 +4134,30 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
   const qpdSt = k => QPD_ST[k] || { n:(qpNames[k] || 'حالة') + ' #' + k, c:'#a39e8f' };
   // 👛 البراند من عمود notes: Italy (دريم/كارا/واتساتهم/MSG/FASTPLT) — Kidzzly (RS) — Socky — Bloom — غيره
   const WALLET_GROUPS = [ ['italy', '💍 Italy (دريم + كارا + واتساتهم)'], ['kidzzly', '🧸 Kidzzly (RS)'], ['socky', '🧦 Socky'], ['bloom', '🌸 Bloom'], ['other', '❔ من غير براند واضح'] ];
-  /* 🚚 آخر بيكب = آخر يوم أوردرات خرجت فيه للشحن (مش كلها لسه Pending)
-     لكل براند: كام أوردر في البيكب ده، وكام اتسلم منهم، والنسبة */
+  /* 🚚 البيكب اللي شغالين فيه = الأوردرات اللي مع المندوب دلوقتي (Out For Delivery)
+     - يوم البيكب بيتاخد من تاريخ تسليم الأوردر للمندوب (Change_ShiperDate)، ولو مش موجود من تاريخ الأوردر
+     - السيستم بيختار اليوم اللي فيه أكتر أوردرات مع المندوب، وتقدر تغيّره من الليستة
+     لكل براند: كام أوردر خرج في البيكب ده، وكام اتسلم منهم، والنسبة */
+  let dPickDay = '';
+  const pickDayOf = o => dayKey(o.Change_ShiperDate || o.change_shiper_date || o.order_date);
+  function pickupDays(){
+    if(!dOrders || !dOrders.length) return [];
+    const D = {};
+    dOrders.forEach(o => { const d = pickDayOf(o); if(!d || stCode(o) === '1') return; const x = D[d] = D[d] || { day:d, tot:0, ofd:0, del:0 }; x.tot++; if(stCode(o) === '2') x.ofd++; if(catOf(o) === 'delivered') x.del++; });
+    return Object.values(D).sort((x, y) => y.day.localeCompare(x.day)).slice(0, 14);
+  }
+  function autoPickDay(days){
+    const withOfd = days.filter(d => d.ofd > 0).sort((x, y) => y.ofd - x.ofd || y.day.localeCompare(x.day));
+    if(withOfd.length) return withOfd[0].day;
+    const t = todayKey(), prev = days.find(d => d.day < t);
+    return prev ? prev.day : (days[0] && days[0].day) || '';
+  }
   function lastPickupStats(){
-    if(!dOrders || !dOrders.length) return null;
-    const out = {};
-    // البيكب اللي اتطلع النهارده لسه بيتسلم بكرة → بنحسب آخر بيكب قبل النهارده (اللي بيتسلم دلوقتي)
-    const t = todayKey();
-    dOrders.forEach(o => { const d = dayKey(o.order_date); if(d && d < t && stCode(o) !== '1') out[d] = true; });
-    const day = Object.keys(out).sort().pop(); if(!day) return null;
+    const days = pickupDays(); if(!days.length) return null;
+    const day = (dPickDay && days.some(d => d.day === dPickDay)) ? dPickDay : autoPickDay(days);
     const by = {};
-    dOrders.forEach(o => { if(dayKey(o.order_date) !== day) return; const g = walletGroup(o.notes); const B = by[g] = by[g] || { tot:0, del:0 }; B.tot++; if(catOf(o) === 'delivered') B.del++; });
-    return { day, by };
+    dOrders.forEach(o => { if(pickDayOf(o) !== day || stCode(o) === '1') return; const g = walletGroup(o.notes); const B = by[g] = by[g] || { tot:0, del:0 }; B.tot++; if(catOf(o) === 'delivered') B.del++; });
+    return { day, by, days, auto: !dPickDay };
   }
   const WALLET_COLORS = { italy:'#b08d57', kidzzly:'#4f8fd8', socky:'#3f9b74', bloom:'#c0628f', other:'#9a9a9a' };
   function walletBrandsHtml(D){
@@ -4160,15 +4173,16 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
         <div class="qpw-amt">${fmt(Math.round(W.v))} <small>ج</small></div>
         <div class="qpw-sub">${fmt(W.n)} أوردر اتسلم ولسه ماتحصّلش</div>
         <div class="qpw-pick">
-          <div class="qpw-pl"><span>🚚 آخر بيكب</span><b>${pct == null ? (LP ? '—' : '⏳') : pct + '%'}</b></div>
+          <div class="qpw-pl"><span>🚚 البيكب ده</span><b>${pct == null ? (LP ? '—' : '⏳') : pct + '%'}</b></div>
           <div class="qpw-bar"><i style="width:${pct || 0}%"></i></div>
           <div class="qpw-ps">${B ? `اتسلم <b>${fmt(B.del)}</b> من <b>${fmt(B.tot)}</b> أوردر خرجوا` : (LP ? 'مفيش أوردرات للبراند ده في آخر بيكب' : 'بيحمّل أوردرات QP...')}</div>
         </div></div>`;
     }).join('');
     return `<div class="card qpw-wrap"><div class="qpw-top"><h3>👛 المحفظة حسب البراند</h3>
-        ${LP ? `<span class="qpw-day">🚚 آخر بيكب: <b>${esc(dayTxt)}</b></span>` : ''}</div>
+        ${LP ? `<label class="qpw-day">🚚 البيكب اللي شغالين فيه:
+        <select onchange="QP.pickDay(this.value)">${LP.days.map(d => `<option value="${d.day}" ${d.day === LP.day ? 'selected' : ''}>${new Date(d.day + 'T12:00:00').toLocaleDateString('ar-EG', { weekday:'short', day:'numeric', month:'short' })} — ${fmt(d.tot)} أوردر${d.ofd ? ' · ' + fmt(d.ofd) + ' مع المندوب' : ''}</option>`).join('')}</select></label>` : ''}</div>
       <div class="qpw-grid">${cards}</div>
-      <p class="qp-userline" style="margin:10px 0 0">آخر بيكب = آخر يوم أوردرات خرجت للشحن قبل النهارده (اللي بيتسلم دلوقتي). النسبة = اللي اتسلم من البيكب ده بس ÷ كل اللي خرج فيه للبراند.</p></div>`;
+      <p class="qp-userline" style="margin:10px 0 0">البيكب بيتحدد من تاريخ تسليم الأوردر للمندوب. السيستم بيختار لوحده اليوم اللي فيه أكتر أوردرات مع المندوب دلوقتي${LP && LP.auto ? '' : ' (إنت مختار يوم بنفسك)'} — ولو مش هو، اختار اليوم الصح من الليستة. النسبة = اللي اتسلم من البيكب ده بس ÷ كل اللي خرج فيه للبراند.</p></div>`;
   }
   function walletGroup(note){
     const n = String(note || '').toLowerCase().trim();
@@ -4641,6 +4655,7 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
       dFrom = v + '-01'; const last = dayKey(new Date(y, m, 0)); dTo = last > todayKey() ? todayKey() : last; qpDashFetch(false); },
     dashLast30(){ dFrom = monthAgo(); dTo = shiftDay(todayKey(), 1); qpDashFetch(false); },
     dashCities(){ dAllCities = !dAllCities; qpRerender(); },
+    pickDay(v){ dPickDay = v; qpRerender(); },
     retFetch(){ qpRetFetch(); },
     retSet(k, v){ if(k === 'basis') rBasis = v; else if(v){ if(k === 'from') rFrom = v; else rTo = v; } qpRerender(); },
     retPreset(p){
