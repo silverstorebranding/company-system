@@ -3724,6 +3724,10 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
 .qpd-range{font-size:18px;font-weight:700;color:var(--ink);direction:ltr;unicode-bidi:isolate}
 .qpd-kpi-big .n{font-size:26px}
 .qpd-kpi-big .sub{font-size:12.5px;color:var(--muted);margin-top:3px}
+.qpd-wb{margin-top:10px;border-top:1px dashed var(--line);padding-top:8px;display:flex;flex-direction:column;gap:4px}
+.qpd-wb div{display:grid;grid-template-columns:1fr auto 70px;gap:8px;align-items:center;font-size:13px}
+.qpd-wb b{font-size:15px;color:var(--ink)}
+.qpd-wb i{font-style:normal;font-size:11.5px;color:var(--muted);text-align:left}
 .qpd-grid{display:grid;grid-template-columns:1.4fr 1fr;gap:14px;margin-bottom:16px}
 @media (max-width:900px){.qpd-grid{grid-template-columns:1fr}}
 .qpd-grid .card{margin:0}
@@ -4054,12 +4058,15 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
       /* 👛 الـ Wallet: get_customer_orders بيرجّع الأوردرات اللي اتسلمت ولسه فلوسها ماتحصّلتش
          والمحفظة = مجموع (قيمة الأوردر − الشحن) للأوردرات المُسلَّمة فيها — زي QP بالظبط */
       let wallet = null, walletN = 0;
+      const walletBy = {}; // 👛 تقسيم المحفظة على البراندات
       const custList = Array.isArray(raw.customer) ? raw.customer : (raw.customer && Array.isArray(raw.customer.results) ? raw.customer.results : null);
       if(custList){
         wallet = 0;
         custList.forEach(o => {
           if(String(o.Order_Delivery_Status ?? '').trim() !== '3' || o.Order_Collect_Status === true) return;
-          wallet += num(o.total_amount ?? o.price) - num(o.total_fees); walletN++;
+          const v = num(o.total_amount ?? o.price) - num(o.total_fees);
+          wallet += v; walletN++;
+          const g = walletGroup(o.notes); const W = walletBy[g] = walletBy[g] || { v:0, n:0 }; W.v += v; W.n++;
         });
         wallet = Math.round(wallet * 100) / 100;
       } else {
@@ -4071,7 +4078,7 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
         id: qpCustId, at: new Date(), raw, errs,
         pickup:  'pickup' in raw ? (hasAny(pk) ? ('فيه بيك أب' + (pkPhone && typeof pkPhone !== 'object' ? ' ' + pkPhone : '')) : 'مفيش بيك أب النهارده') : null,
         collect: 'collect' in raw ? (hasAny(raw.collect) ? 'فيه تحصيل النهارده' : 'مفيش تحصيل النهارده') : null,
-        wallet, walletN: custList ? walletN : null,
+        wallet, walletN: custList ? walletN : null, walletBy: custList ? walletBy : null,
         yesterday: 'yesterday' in raw ? pickNum(raw.yesterday, /yesterday|count|total/i) : null,
         returns:   'returns' in raw ? pickNum(raw.returns, /count|total|return/i) : null,
         revenue:   'revenue' in raw ? pickNum(raw.revenue, /collect|total|revenue|amount|sum/i) : null,
@@ -4099,6 +4106,17 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
     '6': { n:'Rejected — مرفوض',               c:'#c04fb0' },
   };
   const qpdSt = k => QPD_ST[k] || { n:(qpNames[k] || 'حالة') + ' #' + k, c:'#a39e8f' };
+  // 👛 البراند من عمود notes: Italy (دريم/كارا/واتساتهم/MSG/FASTPLT) — Kidzzly (RS) — Socky — Bloom — غيره
+  const WALLET_GROUPS = [ ['italy', '💍 Italy (دريم + كارا + واتساتهم)'], ['kidzzly', '🧸 Kidzzly (RS)'], ['socky', '🧦 Socky'], ['bloom', '🌸 Bloom'], ['other', '❔ من غير براند واضح'] ];
+  function walletGroup(note){
+    const n = String(note || '').toLowerCase().trim();
+    if(/^(sock|سوك|شراب)/.test(n)) return 'socky';
+    let b = null; try{ b = prGetBrand(note); }catch(e){}
+    if(b === 'rs kids') return 'kidzzly';
+    if(b === 'bloom') return 'bloom';
+    if(['dream', 'dream wa', 'dream msg site', 'msg', 'fastplt', 'cara silver', 'cara silver un', 'cara wa'].includes(b)) return 'italy';
+    return 'other';
+  }
 
   async function qpDashFetch(onlyToday){
     if(dLoading) return;
@@ -4166,7 +4184,8 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
     h += `<div class="qp-kpis">
       <div class="qp-kpi qpd-kpi-big"><div class="l">🚚 Pickup</div><div class="n" style="font-size:18px">${ld || esc(D.pickup || '—')}</div></div>
       <div class="qp-kpi qpd-kpi-big"><div class="l">💵 Collect</div><div class="n" style="font-size:18px">${ld || esc(D.collect || '—')}</div></div>
-      <div class="qp-kpi qpd-kpi-big" style="border-top:4px solid var(--brass)"><div class="l">👛 Wallet — المحفظة</div><div class="n">${ld || v(D.wallet, true)}</div>${D.walletN != null ? `<div class="sub">${fmt(D.walletN)} أوردر اتسلم ولسه ماتحصّلش</div>` : ''}</div>
+      <div class="qp-kpi qpd-kpi-big" style="border-top:4px solid var(--brass)"><div class="l">👛 Wallet — المحفظة</div><div class="n">${ld || v(D.wallet, true)}</div>${D.walletN != null ? `<div class="sub">${fmt(D.walletN)} أوردر اتسلم ولسه ماتحصّلش</div>` : ''}
+        ${D.walletBy && Object.keys(D.walletBy).length ? `<div class="qpd-wb">${WALLET_GROUPS.filter(([k]) => D.walletBy[k]).map(([k, l]) => `<div><span>${l}</span><b>${fmt(Math.round(D.walletBy[k].v))} ج</b><i>${fmt(D.walletBy[k].n)} أوردر</i></div>`).join('')}</div>` : ''}</div>
     </div>
     <div class="qp-kpis">
       <div class="qp-kpi qpd-kpi-big"><div class="l">📅 Yesterday Orders — أوردرات امبارح</div><div class="n">${ld || v(D.yesterday)}</div></div>
