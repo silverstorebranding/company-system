@@ -37,6 +37,16 @@ a{color:inherit}
 #sidebar a.navlink:hover{background:rgba(255,255,255,.08)}
 #sidebar a.navlink.active{background:#f3ede0;color:var(--brass-d);opacity:1;font-weight:600}
 #userbox{margin-top:16px;padding:10px;background:rgba(0,0,0,.15);border-radius:8px;font-size:13px}
+/* 📥 الرسايل والمهام فوق + ⭐ الأساسي */
+#sidebar .ib-top{display:flex;align-items:center;gap:10px;margin:12px 0 4px;padding:11px 12px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.22);border-radius:12px;color:inherit;text-decoration:none;transition:.15s}
+#sidebar .ib-top:hover,#sidebar .ib-top.active{background:rgba(255,255,255,.2)}
+#sidebar .ib-top .ic{font-size:24px;line-height:1}
+#sidebar .ib-top .t{display:flex;flex-direction:column;font-weight:700;font-size:14.5px}
+#sidebar .ib-top .t small{font-weight:500;font-size:11.5px;opacity:.75;margin-top:1px}
+#sidebar .ib-top .ib-badge{margin-inline-start:auto}
+#sidebar .ib-top.has{border-color:#e05a4a;background:rgba(224,90,74,.18)}
+#sidebar .grp.fav{background:rgba(255,255,255,.06);border-radius:10px;padding:8px 6px 6px;margin-top:10px}
+#sidebar .grp.fav .grp-title{opacity:.85;font-weight:700}
 #userbox select{width:100%;margin-top:6px;padding:5px;border-radius:5px;border:none}
 
 #main{flex:1;min-width:0;padding:26px 34px;max-width:980px}
@@ -417,16 +427,19 @@ html:not(.auth-ok) #app{display:none}
     <div id="userbox">
       <select id="whoami" onchange="setWho(this.value)" style="display:none"></select>
     </div>
+    <a class="ib-top" id="ibTop" href="#/inbox"><span class="ic">📥</span><span class="t">الرسايل والمهام<small id="ibTopSub">مفيش جديد</small></span><span class="ib-badge" id="ibBadge"></span></a>
+    <div class="grp fav" id="favGrp"><div class="grp-title">⭐ الأساسي</div>
+      <a class="navlink" href="#/squad">🏆 Squad</a>
+      <a class="navlink" href="#/qp-upload">📤 رفع الأوردرات</a>
+      <a class="navlink" href="#/dept/warehouse">🏬 المخزن</a>
+    </div>
     <div class="grp"><div class="grp-title">المالية</div>
       <a class="navlink" href="#/profits">💰 الأرباح</a>
       <a class="navlink" href="#/brands">🏷️ Brands</a>
       <a class="navlink" href="#/meta-ads">📊 Ads (Meta)</a>
-      <a class="navlink" href="#/dept/warehouse">🏬 المخزن</a>
     </div>
     <div class="grp"><div class="grp-title">العمل</div>
-      <a class="navlink" href="#/inbox">📨 الرسايل والمهام <span class="ib-badge" id="ibBadge"></span></a>
-      <a class="navlink" href="#/squad">🏆 Squad</a>
-      <a class="navlink" href="#/qp-upload">📤 رفع الأوردرات</a>
+      <span id="workAnchor"></span>
     </div>
     <div class="grp"><div class="grp-title">الأقسام</div>
       <div id="deptlinks"></div>
@@ -1889,6 +1902,8 @@ const Squad = (function(){
         if(state.view === 'leaderboard' || state.view === 'dashboard') loadLeaderboard();
       })
       .on('postgres_changes', { event:'DELETE', schema:'public', table:'orders' }, () => { loadToday(); })
+      .on('postgres_changes', { event:'INSERT', schema:'public', table:'office_sales' }, (payload) => { const r = payload.new || {}; if(r.status !== 'not_bought') todayAdd(officeToToday(r)); })
+      .on('postgres_changes', { event:'UPDATE', schema:'public', table:'office_sales' }, () => { loadToday(); })
       .subscribe();
     loadToday();
     startTodayTimers();
@@ -1915,10 +1930,15 @@ const Squad = (function(){
       (pr || []).forEach(p => profileNameMap[p.id] = p.full_name || p.username || 'موظف');
     }
     todayOrders = (data || []).filter(o => isTodayTs(o.created_at));
+    // 🏢 عملاء المكتب اللي اتسجلوا النهارده بيتحسبوا أوردرات كمان (ماعدا "مااشتراش")
+    const { data: off } = await sb.from('office_sales').select('id, agent_id, amount, customer, status, created_at').gte('created_at', todayStartIso());
+    (off || []).filter(r => r.status !== 'not_bought' && isTodayTs(r.created_at)).forEach(r => todayOrders.push(officeToToday(r)));
+    todayOrders.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
     todayDay = localYmd(new Date());
     drawTodayIcon(); refreshTodayInViews();
   }
   const todayCount = id => (todayOrders || []).filter(o => o.agent_id === id).length;
+  const officeToToday = r => ({ id:'off-' + r.id, agent_id:r.agent_id, amount:r.amount, customer_name:r.customer, page_name:'🏢 المكتب', created_at:r.created_at, office:true });
   function todayAdd(o){
     if(!isTodayTs(o.created_at || new Date())) return;
     todayOrders = todayOrders || [];
@@ -1927,7 +1947,7 @@ const Squad = (function(){
     const name = isMine ? 'إنت' : (profileNameMap[o.agent_id] || 'زميلك');
     const n = todayCount(o.agent_id), amt = Number(o.amount) || 0;
     drawTodayIcon(true); refreshTodayInViews();
-    orderPop(isMine ? '🎉 سجّلت أوردر جديد' : `🧾 ${name} خدت أوردر`,
+    orderPop(isMine ? (o.office ? '🎉 سجّلت عميل مكتب' : '🎉 سجّلت أوردر جديد') : (o.office ? `🏢 ${name} جابت عميل للمكتب` : `🧾 ${name} خدت أوردر`),
       `${amt ? 'بـ ' + amt.toLocaleString('ar-EG') + ' ج' : ''}${o.page_name ? ' · ' + o.page_name : ''} — كده ${isMine ? 'إنت' : 'هي'} ${n.toLocaleString('ar-EG')} النهارده · الفريق ${todayOrders.length.toLocaleString('ar-EG')}`,
       !isMine);
   }
@@ -2001,7 +2021,7 @@ const Squad = (function(){
       <div class="sub">بقيمة ${L.reduce((a, o) => a + (Number(o.amount) || 0), 0).toLocaleString('ar-EG')} ج — العدّاد بيرجع صفر كل يوم</div>
       ${rows.map(([id, r], i) => `<div class="r ${id === myId ? 'me' : ''}"><span>${i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '•'} ${esc(profileNameMap[id] || 'موظف')}${id === myId ? ' (إنت)' : ''}</span><b>${r.n.toLocaleString('ar-EG')}</b></div>`).join('') || '<div class="sub" style="padding:10px 0">لسه محدش خد أوردر النهارده.</div>'}
       ${L.length ? `<div class="sub" style="margin-top:10px;font-weight:700">آخر الأوردرات</div>
-        ${L.slice(0, 8).map(o => `<div class="r sm"><span>${esc(profileNameMap[o.agent_id] || 'موظف')} · ${new Date(o.created_at).toLocaleTimeString('ar-EG', { hour:'2-digit', minute:'2-digit' })}</span><span>${o.amount ? Number(o.amount).toLocaleString('ar-EG') + ' ج' : '—'}</span></div>`).join('')}` : ''}
+        ${L.slice(0, 8).map(o => `<div class="r sm"><span>${o.office ? '🏢 ' : ''}${esc(profileNameMap[o.agent_id] || 'موظف')} · ${new Date(o.created_at).toLocaleTimeString('ar-EG', { hour:'2-digit', minute:'2-digit' })}</span><span>${o.amount ? Number(o.amount).toLocaleString('ar-EG') + ' ج' : '—'}</span></div>`).join('')}` : ''}
       ${'Notification' in window && Notification.permission === 'default' ? `<button type="button" class="perm" onclick="Notification.requestPermission().then(()=>document.getElementById('sqTodayPanel').remove())">🔔 فعّل إشعارات المتصفح</button>` : ''}`;
   }
 
@@ -2831,6 +2851,7 @@ const Squad = (function(){
     state.office.form = { agent: f.agent };
     setOffice({ saving:false });
     showToast(admin ? 'اتسجل ✅ — دوس ✅ "تأكيد" عشان العمولة تتحسب.' : 'اتسجل ✅ ومستني تأكيد الأدمن.', 'success');
+    loadToday();
     loadOffice();
   }
 
@@ -8272,6 +8293,10 @@ makeAccounts({ route:'accounts-socky', table:'accounts_entries_socky', icon:'�
     const c = counts(), n = c.unread + c.openTasks + c.doneUnseen;
     const b = document.getElementById('ibBadge');
     if(b){ b.textContent = n > 99 ? '99+' : n; b.classList.toggle('on', n > 0); }
+    // 📥 الزرار اللي فوق في القايمة
+    const tp = document.getElementById('ibTop'), sub = document.getElementById('ibTopSub');
+    if(tp) tp.classList.toggle('has', n > 0);
+    if(sub) sub.textContent = n ? [c.unread ? c.unread + ' رسالة' : '', c.openTasks ? c.openTasks + ' مهمة' : '', c.doneUnseen ? c.doneUnseen + ' خلصت' : ''].filter(Boolean).join(' · ') : 'مفيش جديد';
     // نفس العدد على زرار "📋 الأقسام" (اللي الناس بتستخدمه على الموبايل)
     const mb = document.getElementById('myMenuBtn');
     if(mb){
@@ -9778,6 +9803,24 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
   render = function(){ _render.apply(this, arguments); if(isUP()) mount(); };
   window.addEventListener('hashchange', () => { if(isUP()) setTimeout(mount, 0); });
   const w = setInterval(() => { if(me().id){ clearInterval(w); if(isUP()) mount(); } }, 700);
+})();
+</script>
+
+<script>
+/* ⭐ ترتيب القايمة: الأساسي فوق (Squad / رفع الأوردرات / مبيعات مباشرة / الحسابات / المخزن)
+   وأي لينك تاني اتحط جنب Squad (زي EOD وتحليل المكونات) يرجع لمجموعة "العمل" */
+(function(){
+  const FAV = ['#/squad', '#/qp-upload', '#/direct', '#/accounts', '#/dept/warehouse'];
+  function arrangeFav(){
+    const fav = document.getElementById('favGrp'), work = document.getElementById('workAnchor');
+    if(!fav) return;
+    FAV.forEach(h => { const a = document.querySelector(`#sidebar a.navlink[href="${h}"]`); if(a) fav.appendChild(a); });
+    if(work) [...fav.querySelectorAll('a.navlink')].filter(a => !FAV.includes(a.getAttribute('href'))).forEach(a => work.parentNode.appendChild(a));
+  }
+  function inboxActive(){ const t = document.getElementById('ibTop'); if(t) t.classList.toggle('active', (location.hash || '').startsWith('#/inbox')); }
+  arrangeFav(); inboxActive();
+  [300, 1200, 3000].forEach(ms => setTimeout(arrangeFav, ms));
+  window.addEventListener('hashchange', inboxActive);
 })();
 </script>
 
