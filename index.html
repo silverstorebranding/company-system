@@ -3725,7 +3725,11 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
 .qpd-kpi-big .n{font-size:26px}
 .qpd-kpi-big .sub{font-size:12.5px;color:var(--muted);margin-top:3px}
 .qpd-wb{margin-top:10px;border-top:1px dashed var(--line);padding-top:8px;display:flex;flex-direction:column;gap:4px}
-.qpd-wb div{display:grid;grid-template-columns:1fr auto 70px;gap:8px;align-items:center;font-size:13px}
+.qpd-wb div{display:grid;grid-template-columns:1fr auto 64px 118px;gap:8px;align-items:center;font-size:13px}
+.qpd-wb div.hd{font-size:11px;color:var(--muted);font-weight:600}
+.qpd-wb em{font-style:normal;font-weight:700;color:#2b6cb0;text-align:left}
+.qpd-wb em small{font-weight:500;color:var(--muted)}
+.qpd-wb div.ft{display:block;font-size:11px;color:var(--muted);margin-top:4px}
 .qpd-wb b{font-size:15px;color:var(--ink)}
 .qpd-wb i{font-style:normal;font-size:11.5px;color:var(--muted);text-align:left}
 .qpd-grid{display:grid;grid-template-columns:1.4fr 1fr;gap:14px;margin-bottom:16px}
@@ -4058,7 +4062,7 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
       /* 👛 الـ Wallet: get_customer_orders بيرجّع الأوردرات اللي اتسلمت ولسه فلوسها ماتحصّلتش
          والمحفظة = مجموع (قيمة الأوردر − الشحن) للأوردرات المُسلَّمة فيها — زي QP بالظبط */
       let wallet = null, walletN = 0;
-      const walletBy = {}; // 👛 تقسيم المحفظة على البراندات
+      const walletBy = {}; let lastPick = ''; // 👛 تقسيم المحفظة على البراندات
       const custList = Array.isArray(raw.customer) ? raw.customer : (raw.customer && Array.isArray(raw.customer.results) ? raw.customer.results : null);
       if(custList){
         wallet = 0;
@@ -4066,8 +4070,11 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
           if(String(o.Order_Delivery_Status ?? '').trim() !== '3' || o.Order_Collect_Status === true) return;
           const v = num(o.total_amount ?? o.price) - num(o.total_fees);
           wallet += v; walletN++;
-          const g = walletGroup(o.notes); const W = walletBy[g] = walletBy[g] || { v:0, n:0 }; W.v += v; W.n++;
+          const g = walletGroup(o.notes); const W = walletBy[g] = walletBy[g] || { v:0, n:0, days:{} }; W.v += v; W.n++;
+          const d = dayKey(o.order_date); if(d){ W.days[d] = (W.days[d] || 0) + 1; lastPick = !lastPick || d > lastPick ? d : lastPick; }
         });
+        // 🚚 بيكب آخر يوم = أحدث تاريخ أوردر (order_date) موجود في المحفظة
+        Object.values(walletBy).forEach(W => { W.last = lastPick ? (W.days[lastPick] || 0) : 0; });
         wallet = Math.round(wallet * 100) / 100;
       } else {
         for(const src of [raw.customer, settings, raw.revenue]){ const v = findKey(src, /wallet|balance/i); if(v != null && pickNum(v) != null){ wallet = pickNum(v); break; } }
@@ -4078,7 +4085,7 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
         id: qpCustId, at: new Date(), raw, errs,
         pickup:  'pickup' in raw ? (hasAny(pk) ? ('فيه بيك أب' + (pkPhone && typeof pkPhone !== 'object' ? ' ' + pkPhone : '')) : 'مفيش بيك أب النهارده') : null,
         collect: 'collect' in raw ? (hasAny(raw.collect) ? 'فيه تحصيل النهارده' : 'مفيش تحصيل النهارده') : null,
-        wallet, walletN: custList ? walletN : null, walletBy: custList ? walletBy : null,
+        wallet, walletN: custList ? walletN : null, walletBy: custList ? walletBy : null, walletLast: lastPick,
         yesterday: 'yesterday' in raw ? pickNum(raw.yesterday, /yesterday|count|total/i) : null,
         returns:   'returns' in raw ? pickNum(raw.returns, /count|total|return/i) : null,
         revenue:   'revenue' in raw ? pickNum(raw.revenue, /collect|total|revenue|amount|sum/i) : null,
@@ -4108,6 +4115,17 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
   const qpdSt = k => QPD_ST[k] || { n:(qpNames[k] || 'حالة') + ' #' + k, c:'#a39e8f' };
   // 👛 البراند من عمود notes: Italy (دريم/كارا/واتساتهم/MSG/FASTPLT) — Kidzzly (RS) — Socky — Bloom — غيره
   const WALLET_GROUPS = [ ['italy', '💍 Italy (دريم + كارا + واتساتهم)'], ['kidzzly', '🧸 Kidzzly (RS)'], ['socky', '🧦 Socky'], ['bloom', '🌸 Bloom'], ['other', '❔ من غير براند واضح'] ];
+  /* 🚚 آخر بيكب = آخر يوم أوردرات خرجت فيه للشحن (مش كلها لسه Pending)
+     لكل براند: كام أوردر في البيكب ده، وكام اتسلم منهم، والنسبة */
+  function lastPickupStats(){
+    if(!dOrders || !dOrders.length) return null;
+    const out = {};
+    dOrders.forEach(o => { const d = dayKey(o.order_date); if(d && stCode(o) !== '1') out[d] = true; });
+    const day = Object.keys(out).sort().pop(); if(!day) return null;
+    const by = {};
+    dOrders.forEach(o => { if(dayKey(o.order_date) !== day) return; const g = walletGroup(o.notes); const B = by[g] = by[g] || { tot:0, del:0 }; B.tot++; if(catOf(o) === 'delivered') B.del++; });
+    return { day, by };
+  }
   function walletGroup(note){
     const n = String(note || '').toLowerCase().trim();
     if(/^(sock|سوك|شراب)/.test(n)) return 'socky';
@@ -4185,7 +4203,12 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
       <div class="qp-kpi qpd-kpi-big"><div class="l">🚚 Pickup</div><div class="n" style="font-size:18px">${ld || esc(D.pickup || '—')}</div></div>
       <div class="qp-kpi qpd-kpi-big"><div class="l">💵 Collect</div><div class="n" style="font-size:18px">${ld || esc(D.collect || '—')}</div></div>
       <div class="qp-kpi qpd-kpi-big" style="border-top:4px solid var(--brass)"><div class="l">👛 Wallet — المحفظة</div><div class="n">${ld || v(D.wallet, true)}</div>${D.walletN != null ? `<div class="sub">${fmt(D.walletN)} أوردر اتسلم ولسه ماتحصّلش</div>` : ''}
-        ${D.walletBy && Object.keys(D.walletBy).length ? `<div class="qpd-wb">${WALLET_GROUPS.filter(([k]) => D.walletBy[k]).map(([k, l]) => `<div><span>${l}</span><b>${fmt(Math.round(D.walletBy[k].v))} ج</b><i>${fmt(D.walletBy[k].n)} أوردر</i></div>`).join('')}</div>` : ''}</div>
+        ${D.walletBy && Object.keys(D.walletBy).length ? (() => { const LP = lastPickupStats();
+          return `<div class="qpd-wb">
+          <div class="hd"><span>البراند</span><span>المبلغ</span><span>اتسلم</span><span>🚚 آخر بيكب${LP ? ' ' + esc(new Date(LP.day + 'T12:00:00').toLocaleDateString('ar-EG', { weekday:'short', day:'numeric', month:'short' })) : ''}</span></div>
+          ${WALLET_GROUPS.filter(([k]) => D.walletBy[k] || (LP && LP.by[k])).map(([k, l]) => { const W = D.walletBy[k] || { v:0, n:0 }, B = LP && LP.by[k];
+            return `<div><span>${l}</span><b>${fmt(Math.round(W.v))} ج</b><i>${fmt(W.n)} أوردر</i><em>${B ? `${fmt(B.del)} من ${fmt(B.tot)} <small>(${Math.round(B.del / B.tot * 100)}%)</small>` : (LP ? '—' : '<small>⏳</small>')}</em></div>`; }).join('')}
+          ${LP ? `<div class="ft">آخر بيكب = آخر يوم أوردرات خرجت للشحن. الرقم = اتسلم من البيكب ده بس ÷ كل اللي خرج فيه.</div>` : ''}</div>`; })() : ''}</div>
     </div>
     <div class="qp-kpis">
       <div class="qp-kpi qpd-kpi-big"><div class="l">📅 Yesterday Orders — أوردرات امبارح</div><div class="n">${ld || v(D.yesterday)}</div></div>
