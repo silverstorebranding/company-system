@@ -9338,7 +9338,65 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     if(!error){ const p = P(src); p[kind] = n; p.at = new Date().toISOString(); p.by = by; }
     return !error;
   }
-  const skipKey = r => `${r.srcKey}|${r.seq ? 'seq' : 'xid'}|${r.seq || r.xid}`;
+  const skipKey = r => r.srcKey === 'squad' ? `squad|at|${r.sqAt}` : `${r.srcKey}|${r.seq ? 'seq' : 'xid'}|${r.seq || r.xid}`;
+
+  /* =====================================================================
+     🏆 Squad — بيجيب الأوردرات اللي خدمة العملاء سجّلوها في Squad مباشرة (جدول orders)
+     - بيكمل من بعد آخر أوردر اتاخد (squad_last_at في app_kv) — وبيتقدّم بس بعد الرفع على QP
+     - أول مرة: بيبدأ من أول النهارده (وتقدر تغيّر البداية)
+     - الـ notes بتتحدد لكل مصدر (الصفحة) وبتتحفظ، فالمرة الجاية بتتملى لوحدها
+     ===================================================================== */
+  const SQ_KV = 'squad_last_at', PN_KV = 'squad_page_notes';
+  const SQ = { at:null, by:'', updated:null, loaded:false, pageNotes:{}, names:{} };
+  async function loadSquadPtr(){
+    const { data } = await sbc().from('app_kv').select('*').in('key', [SQ_KV, PN_KV]);
+    (data || []).forEach(r => {
+      if(r.key === SQ_KV){ SQ.at = (r.value || {}).at || null; SQ.by = r.updated_by_name || ''; SQ.updated = r.updated_at; }
+      if(r.key === PN_KV) SQ.pageNotes = (r.value || {}).map || {};
+    });
+    SQ.loaded = true;
+  }
+  async function saveSquadPtr(at){
+    const by = me().full_name || me().username || '';
+    const { error } = await sbc().from('app_kv').upsert({ key:SQ_KV, value:{ at }, updated_at:new Date().toISOString(), updated_by_name:by });
+    if(!error){ SQ.at = at; SQ.by = by; SQ.updated = new Date().toISOString(); }
+  }
+  async function savePageNotes(){
+    await sbc().from('app_kv').upsert({ key:PN_KV, value:{ map:SQ.pageNotes }, updated_at:new Date().toISOString(), updated_by_name: me().full_name || me().username || '' });
+  }
+  const dayStartIso = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.toISOString(); };
+  async function squadRows(){
+    if(!SQ.loaded) await loadSquadPtr();
+    if(!Object.keys(SQ.names).length){
+      const { data: pr } = await sbc().from('profiles').select('id, username, full_name');
+      (pr || []).forEach(p => SQ.names[p.id] = p.full_name || p.username || 'موظف');
+    }
+    const from = E.showOld ? dayStartIso() : (SQ.at || dayStartIso());
+    const { data, error } = await sbc().from('orders').select('*').gt('created_at', from).order('created_at', { ascending:true }).limit(1000);
+    if(error) throw error;
+    return (data || []).map(o => {
+      const page = String(o.page_name || '').trim() || 'بدون مصدر';
+      const r = { name:o.customer_name || '', phone:o.customer_phone || '', address:o.customer_address || '', amount:String(o.amount ?? ''),
+        agent: SQ.names[o.agent_id] || '', contents: [o.order_type && o.order_type !== 'اكسسوارات' ? o.order_type + ':' : '', o.order_details || ''].filter(Boolean).join(' '),
+        source:page, size:o.size || '', note:'', city:'', srcKey:'squad', sqId:o.id, sqAt:o.created_at, page,
+        ref: SQ.names[o.agent_id] || '', estatus: o.status === 'pending' ? '' : (o.status || '') };
+      r.city = guessCity(r.address);
+      return check(r);
+    });
+  }
+  async function fetchSquad(){
+    E.loading = true; E.err = ''; draw();
+    try{ await connect(); }catch(e){}
+    try{ const rows = await squadRows(); E.loading = false; easyFinish(rows, 'من Squad'); }
+    catch(e){ E.loading = false; E.err = 'مقدرناش نجيب أوردرات Squad: ' + e.message; draw(); }
+  }
+  async function advanceSquad(){
+    const list = [...(S.rows || []).filter(r => r.srcKey === 'squad').map(r => ({ at:r.sqAt, done:!!r.serial })),
+      ...[...(S.skipped || [])].filter(k => k.startsWith('squad|')).map(k => ({ at:k.split('|')[2], done:true }))]
+      .filter(x => x.at).sort((a, b) => new Date(a.at) - new Date(b.at));
+    let last = null; for(const x of list){ if(!x.done) break; last = x.at; }
+    if(last && (!SQ.at || new Date(last) > new Date(SQ.at))) await saveSquadPtr(last);
+  }
 
   // أوردر EasyOrders (من الـ Webhook) → صف في شيت QP
   function fromEasy(o, seq, src){
@@ -9421,12 +9479,12 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     for(const src of SOURCES){
       try{ rows = rows.concat(await sourceRows(src.key)); }catch(e){ errs.push(src.label + ': ' + e.message); }
     }
-    const sq = (S.store.squad && S.store.squad.rows) || [];
-    sq.filter(r => !r.serial).forEach(r => { r.srcKey = 'squad'; if(!r.note && S.store.squad.note) r.note = S.store.squad.note; rows.push(r); });
+    let sqN = 0;
+    try{ const sq = await squadRows(); sqN = sq.filter(r => !isCancel(r.estatus)).length; rows = sq.concat(rows); }catch(e){ errs.push('Squad: ' + e.message); }
     E.loading = false;
     if(errs.length){ easyErr(new Error(errs.join(' | '))); }
     easyFinish(rows, 'من كل المصادر');
-    if(sq.length) S.msg += ` (منهم ${sq.filter(r => !r.serial).length} من Squad)`;
+    if(sqN) S.msg += ` (منهم ${sqN} من Squad)`;
     draw();
   }
   async function readExcel(file){
@@ -9506,7 +9564,7 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
   }
   // notes: اللي متكتب في الصف نفسه، وإلا notes المصدر (في 📦 الكل)، وإلا اللي اتكتب في خطوة 2
   const srcNote = k => k === 'squad' ? ((S.store.squad || {}).note || '') : ((srcOf(k) || {}).note || '');
-  const finalNote = r => (r.note || (S.src === 'all' ? (S.allNotes[r.srcKey] ?? srcNote(r.srcKey)) : S.note) || '').trim();
+  const finalNote = r => (r.note || (r.srcKey === 'squad' ? (SQ.pageNotes[r.page] || '') : S.src === 'all' ? (S.allNotes[r.srcKey] ?? srcNote(r.srcKey)) : S.note) || '').trim();
   const notesOk = () => (S.rows || []).every(r => finalNote(r));
   const srcLabel = k => k === 'squad' ? '🏆 Squad' : ((srcOf(k) || {}).label || k);
 
@@ -9580,6 +9638,7 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     }
     S.sending = false; S.prog = '';
     if(ok && (isEasy(S.src) || S.src === 'all')){ try{ await advancePtr(); }catch(e){} }
+    if(ok && (S.src === 'squad' || S.src === 'all')){ try{ await advanceSquad(); await savePageNotes(); }catch(e){} }
     // أوردرات Squad اللي اترفعت من 📦 الكل تتعلّم في تاب Squad كمان
     if(ok && S.src === 'all' && S.store.squad && S.store.squad.rows){ const up = new Set((S.rows || []).filter(r => r.srcKey === 'squad' && r.serial)); S.store.squad.rows = S.store.squad.rows.filter(r => !up.has(r) || r.serial); }
     if(ok){
@@ -9597,11 +9656,12 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     if(k === 'settings') E.srcDraft = JSON.parse(JSON.stringify(SOURCES));
     draw();
     if(!E.ptrLoaded) loadPtr().then(draw);
+    if(k === 'squad' && !SQ.loaded) loadSquadPtr().then(draw);
   }
 
   /* ---------- الرسم ---------- */
   function view(){
-    let h = `<div class="pagehead"><h1>📤 رفع الأوردرات</h1><p>الصق الأوردرات كوبي، راجعها في شيت QP، اكتب المصدر والاسم، ووافق عشان تترفع على QP مباشرة وتظهر في Orders List.</p></div><div class="up-wrap">`;
+    let h = `<div class="pagehead"><h1>📤 رفع الأوردرات</h1><p>هات الأوردرات من Squad أو EasyOrders، راجعها في شيت QP، اتأكد من الـ notes، ووافق عشان تترفع على QP مباشرة وتظهر في Orders List.</p></div><div class="up-wrap">`;
     h += `<div class="up-tabs"><button class="${S.src === 'squad' ? 'on' : ''}" style="--bc:#8a6a3a" data-upsrc="squad">🏆 Squad</button>
       ${SOURCES.map(x => `<button class="${S.src === x.key ? 'on' : ''}" style="--bc:${esc(x.color || '#2b6cb0')}" data-upsrc="${esc(x.key)}">🌐 ${esc(x.label)}</button>`).join('')}
       <button class="${S.src === 'all' ? 'on' : ''}" style="--bc:#2f7d55" data-upsrc="all">📦 الكل</button>
@@ -9610,12 +9670,9 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     if(S.msg) h += `<div class="up-msg ${S.msgErr ? 'err' : 'ok'}">${esc(S.msg)}</div>`;
     if(isEasy(S.src)) h += easyStep1();
     else if(S.src === 'all') h += allStep1();
-    else h += `<div class="card"><h3>1️⃣ الصق الأوردرات هنا</h3>
-      <textarea id="upRaw" placeholder="انسخ الصفوف من الشيت والصقها هنا (Ctrl + V)&#10;الترتيب: الاسم | الموبايل | العنوان | السعر | الموظفة | | الطلب | المصدر | المقاس">${esc(S.raw)}</textarea>
-      <div class="up-row" style="margin-top:10px"><button class="up-btn pri" id="upParse">🔍 حوّلها لشيت QP</button>
-        ${S.rows ? '<button class="up-btn" id="upClear">🧹 ابدأ من جديد</button>' : ''}</div></div>`;
+    else h += squadStep1();
     if(!S.rows) return h + histHtml() + '</div>';
-    if(!S.rows.length) return h + (S.src !== 'squad' ? '' : `<div class="up-msg err">مالقيتش أوردرات في اللي اتلصق.</div>`) + histHtml() + '</div>';
+    if(!S.rows.length) return h + histHtml() + '</div>';
     if(S.conn) h += `<div class="up-msg ok">${esc(S.conn)}</div>`;
     if(S.connErr){ const c = getCreds() || {};
       h += `<div class="up-ask"><h3>🔐 دخول QP للرفع</h3><p style="margin:0 0 8px;font-size:13.5px;color:#555">${esc(S.connErr)}</p>
@@ -9624,8 +9681,18 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
 
     // 2) سؤال المصدر والاسم — لازم قبل التصدير
     const done = notesOk();
-    if(S.src === 'all'){
-      const keys = [...new Set(S.rows.map(r => r.srcKey))];
+    if(S.src === 'squad' || S.src === 'all'){
+      const keys = [...new Set(S.rows.map(r => r.srcKey === 'squad' ? 'page:' + r.page : r.srcKey))];
+      const cnt = k => S.rows.filter(r => (r.srcKey === 'squad' ? 'page:' + r.page : r.srcKey) === k).length;
+      const lbl = k => k.startsWith('page:') ? '🏆 ' + k.slice(5) : srcLabel(k);
+      const val = k => k.startsWith('page:') ? (SQ.pageNotes[k.slice(5)] || '') : (S.allNotes[k] ?? srcNote(k));
+      h += `<div class="up-ask ${done ? 'done' : ''}"><h3>2️⃣ ${done ? '✅' : '⚠️'} الـ notes لكل مصدر</h3>
+        <p style="margin:0 0 10px;font-size:13.5px;color:#555">كل أوردر بيتكتب في عمود G بالـ notes بتاعة المصدر بتاعه.${S.rows.some(r => r.srcKey === 'squad') ? ' مصادر Squad (الصفحات) بتتحفظ، فالمرة الجاية بتتملى لوحدها.' : ''}</p>
+        ${keys.map(k => `<div class="up-row" style="margin-bottom:8px"><b style="min-width:160px">${esc(lbl(k))} (${cnt(k)})</b>
+          <input data-allnote="${esc(k)}" list="upNotes" value="${esc(val(k))}" placeholder="اكتب الـ notes..." style="max-width:260px"></div>`).join('')}
+        <datalist id="upNotes">${NOTE_SUGGEST.map(n => `<option value="${esc(n)}">`).join('')}</datalist></div>`;
+    } else if(false){
+      const keys = [];
       h += `<div class="up-ask ${done ? 'done' : ''}"><h3>2️⃣ ${done ? '✅' : '⚠️'} الـ notes لكل مصدر</h3>
         <p style="margin:0 0 10px;font-size:13.5px;color:#555">كل أوردر بيتكتب في عمود G بالـ notes بتاعة المصدر بتاعه. اتأكد منها أو غيّرها.</p>
         ${keys.map(k => `<div class="up-row" style="margin-bottom:8px"><b style="min-width:140px">${esc(srcLabel(k))} (${S.rows.filter(r => r.srcKey === k).length})</b>
@@ -9645,9 +9712,9 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
         <div><b style="color:${bad ? '#b3261e' : '#2f7d55'}">${bad ? bad : '✔'}</b><span>${bad ? 'فيهم مشاكل' : 'كله تمام'}</span></div></div>
       <p style="font-size:12.5px;color:var(--muted);margin:0 0 8px">تقدر تعدّل أي خانة بالدوس عليها. المقاس بيتضاف لوحده في آخر shipment contents.</p>
       <div class="up-sheet"><table><thead>
-        <tr><th class="col"></th><th class="col">B</th>${S.src !== 'squad' ? '<th class="col"></th>' : ''}<th class="col">C</th><th class="col">D</th><th class="col">E</th><th class="col">F</th><th class="col">G</th><th class="col">I</th><th class="col">K</th><th class="col"></th><th class="col"></th></tr>
-        <tr><th>1</th><th>serial</th>${S.src !== 'squad' ? '<th>المصدر</th>' : ''}<th>full name</th><th>phone</th><th>address</th><th>total amount</th><th>notes</th><th>shipment contents</th><th>city</th><th>الحالة</th><th></th></tr></thead><tbody>
-      ${S.rows.map((r, i) => `<tr class="${r.errs.length || r.upErr ? 'bad' : ''}" ${r.serial ? 'style="background:#eef8f1"' : ''}><td class="rn">${i + 2}</td><td style="font-size:12px;padding:4px 6px;color:#2f7d55">${esc(r.serial || '')}</td>${S.src !== 'squad' ? `<td style="font-size:11.5px;padding:4px 6px;white-space:nowrap;color:${esc((srcOf(r.srcKey) || {}).color || '#8a6a3a')}"><b>${esc(srcLabel(r.srcKey))}</b><br>${esc(r.ref || '')} <span style="color:#888">${esc(r.estatus || '')}</span></td>` : ''}
+        <tr><th class="col"></th><th class="col">B</th><th class="col"></th><th class="col">C</th><th class="col">D</th><th class="col">E</th><th class="col">F</th><th class="col">G</th><th class="col">I</th><th class="col">K</th><th class="col"></th><th class="col"></th></tr>
+        <tr><th>1</th><th>serial</th><th>المصدر</th><th>full name</th><th>phone</th><th>address</th><th>total amount</th><th>notes</th><th>shipment contents</th><th>city</th><th>الحالة</th><th></th></tr></thead><tbody>
+      ${S.rows.map((r, i) => `<tr class="${r.errs.length || r.upErr ? 'bad' : ''}" ${r.serial ? 'style="background:#eef8f1"' : ''}><td class="rn">${i + 2}</td><td style="font-size:12px;padding:4px 6px;color:#2f7d55">${esc(r.serial || '')}</td><td style="font-size:11.5px;padding:4px 6px;white-space:nowrap;color:${esc((srcOf(r.srcKey) || {}).color || '#8a6a3a')}"><b>${esc(r.srcKey === 'squad' ? '🏆 ' + r.page : srcLabel(r.srcKey))}</b><br>${esc(r.ref || '')} <span style="color:#888">${esc(r.estatus || '')}</span></td>
         <td><input data-upf="${i}.name" value="${esc(r.name)}"></td>
         <td><input data-upf="${i}.phone" value="${esc(phoneOf(r.phone))}" style="direction:ltr;text-align:left;min-width:105px"></td>
         <td><input data-upf="${i}.address" value="${esc(r.address)}" style="min-width:260px"></td>
@@ -9691,10 +9758,25 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     if(E.missing) h += `<div class="up-msg err">جداول EasyOrders لسه مش متعملة في Supabase. ${admin ? 'شغّل ملف easyorders_setup.sql وبعده easyorders_multi.sql في Supabase → SQL Editor.' : 'كلّم الأدمن.'}</div>`;
     return h + `<p style="font-size:12.5px;color:var(--muted);margin:10px 0 0">الأوردرات الملغية بتتشال لوحدها. "آخر أوردر اتاخد" بيتقدّم بس بعد ما تدوس ارفع على QP — فاللي ماترفعش هيفضل يظهر المرة الجاية.${src.note ? ' الـ notes بتاعة المصدر ده: <b>' + esc(src.note) + '</b>' : ''}</p></div>`;
   }
+  function squadStep1(){
+    const admin = !!me().is_admin;
+    const at = SQ.at ? new Date(SQ.at).toLocaleString('ar-EG', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }) : null;
+    return `<div class="card"><h3>1️⃣ هات أوردرات Squad الجديدة</h3>
+      <p style="margin:0 0 8px;font-size:14px">بيجيب الأوردرات اللي خدمة العملاء سجّلوها في 🏆 Squad على طول — من غير كوبي وبيست.</p>
+      <div class="up-ptr">📍 آخر أوردر اتاخد: <b>${at ? 'أوردر الساعة ' + esc(at) : 'لسه — هيبدأ من أول النهارده'}</b>
+        ${SQ.updated ? `<span style="color:var(--muted)">— بواسطة ${esc(SQ.by || '')}</span>` : ''}
+        ${admin ? '<button class="up-btn" id="upSqPtr" style="padding:4px 10px;font-size:12.5px">✏️ ابدأ من تاريخ</button>' : ''}</div>
+      <div class="up-row">
+        <button class="up-btn pri" id="upSqFetch" ${E.loading ? 'disabled' : ''}>${E.loading ? '⏳ بيجيب...' : '🔄 هات الأوردرات الجديدة من Squad'}</button>
+        <label style="font-size:13px;color:var(--muted)"><input type="checkbox" id="upShowOld" ${E.showOld ? 'checked' : ''}> اعرض كل أوردرات النهارده (حتى اللي اتاخد)</label>
+        ${S.rows ? '<button class="up-btn" id="upClear">🧹 ابدأ من جديد</button>' : ''}
+      </div>
+      ${E.err ? `<div class="up-msg err">${esc(E.err)}</div>` : ''}
+      <p style="font-size:12.5px;color:var(--muted);margin:10px 0 0">الأوردرات الملغية بتتشال لوحدها. "آخر أوردر اتاخد" بيتقدّم بس بعد ما تدوس ارفع على QP.</p></div>`;
+  }
   function allStep1(){
-    const sq = ((S.store.squad || {}).rows || []).filter(r => !r.serial).length;
     return `<div class="card"><h3>1️⃣ 📦 هات أوردرات كل المصادر مرة واحدة</h3>
-      <p style="margin:0 0 10px;font-size:14px">بيجيب الأوردرات الجديدة من: ${SOURCES.map(x => '<b>' + esc(x.label) + '</b>').join('، ')}${sq ? ` + <b>${sq}</b> أوردر من 🏆 Squad (اللي اتلصقوا هناك ولسه ماترفعوش)` : ' (ولو لصقت أوردرات في تاب 🏆 Squad هتتضاف معاهم)'} — كلهم تحت بعض في شيت واحد، وكل أوردر بالـ notes بتاعة مصدره.</p>
+      <p style="margin:0 0 10px;font-size:14px">بيجيب الأوردرات الجديدة من: <b>🏆 Squad</b>، ${SOURCES.map(x => '<b>' + esc(x.label) + '</b>').join('، ')} — كلهم تحت بعض في شيت واحد، وكل أوردر بالـ notes بتاعة مصدره، وكل مصدر بيكمل من بعد آخر أوردر اتاخد منه.</p>
       <div class="up-row"><button class="up-btn pri" id="upAllFetch" ${E.loading ? 'disabled' : ''}>${E.loading ? '⏳ بيجيب...' : '📦 هات كل الأوردرات'}</button>
         ${S.rows ? '<button class="up-btn" id="upClear">🧹 ابدأ من جديد</button>' : ''}</div>
       ${E.err ? `<div class="up-msg err">${esc(E.err)}</div>` : ''}</div>`;
@@ -9763,12 +9845,21 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     document.querySelectorAll('[data-upnote]').forEach(b => b.onclick = () => { S.note = b.dataset.upnote; draw(); });
     document.querySelectorAll('[data-updel]').forEach(b => b.onclick = () => {
       const r = S.rows[Number(b.dataset.updel)];
-      if(isEasy(r.srcKey)){ if(!confirm('تشيل الأوردر ده؟ هيتحسب إنه اتاخد ومش هيظهر تاني بعد الرفع.')) return; S.skipped.add(skipKey(r)); }
+      if(isEasy(r.srcKey) || r.srcKey === 'squad'){ if(!confirm('تشيل الأوردر ده؟ هيتحسب إنه اتاخد ومش هيظهر تاني بعد الرفع.')) return; S.skipped.add(skipKey(r)); }
       S.rows.splice(Number(b.dataset.updel), 1); dupCheck(); draw(); });
     document.querySelectorAll('[data-upsrc]').forEach(b => b.onclick = () => switchSrc(b.dataset.upsrc));
     if($('upEasyFetch')) $('upEasyFetch').onclick = fetchEasy;
     if($('upAllFetch')) $('upAllFetch').onclick = fetchAllSources;
-    document.querySelectorAll('[data-allnote]').forEach(el => { el.oninput = () => { S.allNotes[el.dataset.allnote] = el.value; refreshReady(); }; el.onchange = () => draw(); });
+    document.querySelectorAll('[data-allnote]').forEach(el => {
+      el.oninput = () => { const k = el.dataset.allnote; if(k.startsWith('page:')) SQ.pageNotes[k.slice(5)] = el.value.trim(); else S.allNotes[k] = el.value; refreshReady(); };
+      el.onchange = () => draw(); });
+    if($('upSqFetch')) $('upSqFetch').onclick = fetchSquad;
+    if($('upSqPtr')) $('upSqPtr').onclick = async () => {
+      const v = prompt('هات أوردرات Squad اللي اتسجلت من تاريخ (اكتبه كده: 2026-10-14) — الأوردرات من أول اليوم ده هتظهر:', ymd(new Date()));
+      if(!v || !/^\d{4}-\d{2}-\d{2}$/.test(v.trim())) return;
+      const d = new Date(v.trim() + 'T00:00:00'); d.setMilliseconds(-1);
+      await saveSquadPtr(d.toISOString()); S.rows = null; draw();
+    };
     // ⚙️ المصادر
     document.querySelectorAll('[data-srcf]').forEach(el => el.oninput = () => { const [i, k] = el.dataset.srcf.split('.'); E.srcDraft[Number(i)][k] = el.value; });
     document.querySelectorAll('[data-srcdel]').forEach(b => b.onclick = () => { const x = E.srcDraft[Number(b.dataset.srcdel)]; if(confirm('تمسح المصدر "' + x.label + '"؟')){ E.srcDraft.splice(Number(b.dataset.srcdel), 1); draw(); } });
@@ -9812,7 +9903,7 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     document.querySelectorAll('[data-upf$=".note"]').forEach(i => i.placeholder = S.note || '— لسه —');
   }
 
-  function mount(){ draw(); if(!E.srcLoaded && sbc()) loadSources().then(() => { if(!E.ptrLoaded) return loadPtr(); }).then(draw); }
+  function mount(){ draw(); if(!E.srcLoaded && sbc()) loadSources().then(() => { if(!E.ptrLoaded) return loadPtr(); }).then(() => { if(!SQ.loaded) return loadSquadPtr(); }).then(draw); }
   const _render = render;
   render = function(){ _render.apply(this, arguments); if(isUP()) mount(); };
   window.addEventListener('hashchange', () => { if(isUP()) setTimeout(mount, 0); });
