@@ -1457,8 +1457,6 @@ const Squad = (function(){
     'طقم ضهر حية وانسيال',
     'سلسلة اية كرسي',
     'طقم اية كرسي',
-    'حلق فص',
-    'سلسلة فص',
     
     'اسورة اية كرسي'
     ,'انسيال فضي',
@@ -9257,29 +9255,60 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     return ymd(d) + 'T' + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds()) + (o >= 0 ? '+' : '-') + p(o / 60) + ':' + p(o % 60); };
 
   /* =====================================================================
-     🌐 Dream Easy — أوردرات EasyOrders
-     - تلقائي: EasyOrders بيبعت كل أوردر جديد (Webhook) لـ Supabase Edge Function اسمها easyorders-webhook
-       وبيتحفظ في جدول easy_orders — والتاب ده بيجيب اللي بعد آخر أوردر اتاخد
-     - أو يدوي: ترفع ملف الإكسل اللي بتنزّله من EasyOrders
-     - "آخر أوردر اتاخد" بيتحفظ في جدول app_kv (مشترك لكل الأجهزة) وبيتقدّم بس بعد الرفع على QP
+     🌐 مصادر EasyOrders (Dream Easy / Care Easy / Kidzzly Easy / Socky Easy / + أي مصدر جديد)
+     - كل مصدر = أكونت EasyOrders لوحده، ليه رابط Webhook لوحده:
+         .../functions/v1/easyorders-webhook?src=<key>
+       والأوردرات بتتحفظ في جدول easy_orders ومعاها اسم المصدر (عمود source)
+     - المصادر نفسها (الاسم / الـ notes / اللون) متسجلة في app_kv (easy_sources) وتتضاف من ⚙️ من غير تعديل HTML
+     - "آخر أوردر اتاخد" لكل مصدر لوحده، وبيتقدّم بس بعد الرفع على QP
      ===================================================================== */
   const sbc = () => window.__sbClient || (window.AuthGate && window.AuthGate.sb);
-  const KV = { seq:'easy_last_seq', xid:'easy_last_excel_id' };
-  const E = { ptr:{ seq:0, xid:0, at:null, by:'' }, ptrLoaded:false, missing:false, loading:false, hiddenOld:0, showOld:false, err:'' };
-  async function loadPtr(){
-    const { data, error } = await sbc().from('app_kv').select('*').in('key', [KV.seq, KV.xid]);
+  const SRC_KV = 'easy_sources';
+  const DEFAULT_SOURCES = [
+    { key:'dream',   label:'Dream Easy',   note:'', color:'#2b6cb0' },
+    { key:'care',    label:'Care Easy',    note:'', color:'#b0457a' },
+    { key:'kidzzly', label:'Kidzzly Easy', note:'', color:'#4f8fd8' },
+    { key:'socky',   label:'Socky Easy',   note:'', color:'#3f9b74' },
+  ];
+  let SOURCES = DEFAULT_SOURCES.map(x => ({ ...x }));
+  const srcOf = k => SOURCES.find(s => s.key === k);
+  const isEasy = k => !!srcOf(k);
+  // Dream بيستخدم المفاتيح القديمة عشان يكمل من نفس المكان
+  const kvKey = (src, kind) => (kind === 'seq' ? 'easy_last_seq' : 'easy_last_excel_id') + (src === 'dream' ? '' : ':' + src);
+  const E = { ptr:{}, ptrLoaded:false, srcLoaded:false, missing:false, loading:false, hiddenOld:0, showOld:false, err:'', srcDraft:null, srcSaving:false };
+  const P = k => (E.ptr[k] = E.ptr[k] || { seq:0, xid:0, at:null, by:'' });
+  async function loadSources(){
+    const { data, error } = await sbc().from('app_kv').select('*').eq('key', SRC_KV).maybeSingle();
     if(error){ E.missing = /app_kv|relation|schema cache|does not exist/i.test(error.message); }
-    else (data || []).forEach(r => { const v = r.value || {}; if(r.key === KV.seq) E.ptr.seq = Number(v.n) || 0; if(r.key === KV.xid) E.ptr.xid = Number(v.n) || 0; if(r.updated_at && (!E.ptr.at || r.updated_at > E.ptr.at)){ E.ptr.at = r.updated_at; E.ptr.by = r.updated_by_name || ''; } });
+    else if(data && data.value && Array.isArray(data.value.list) && data.value.list.length) SOURCES = data.value.list;
+    E.srcLoaded = true;
+  }
+  async function saveSources(list){
+    const { error } = await sbc().from('app_kv').upsert({ key:SRC_KV, value:{ list }, updated_at:new Date().toISOString(), updated_by_name: me().full_name || me().username || '' });
+    if(error) throw error;
+    SOURCES = list;
+  }
+  async function loadPtr(){
+    const { data, error } = await sbc().from('app_kv').select('*').like('key', 'easy_last_%');
+    if(error){ E.missing = /app_kv|relation|schema cache|does not exist/i.test(error.message); E.ptrLoaded = true; return; }
+    (data || []).forEach(r => {
+      const m = /^easy_last_(seq|excel_id)(?::(.+))?$/.exec(r.key); if(!m) return;
+      const p = P(m[2] || 'dream'), n = Number((r.value || {}).n) || 0;
+      if(m[1] === 'seq') p.seq = n; else p.xid = n;
+      if(r.updated_at && (!p.at || r.updated_at > p.at)){ p.at = r.updated_at; p.by = r.updated_by_name || ''; }
+    });
     E.ptrLoaded = true;
   }
-  async function savePtr(key, n){
+  async function savePtr(src, kind, n){
     const by = me().full_name || me().username || '';
-    const { error } = await sbc().from('app_kv').upsert({ key, value:{ n }, updated_at:new Date().toISOString(), updated_by_name:by });
-    if(!error){ if(key === KV.seq) E.ptr.seq = n; else E.ptr.xid = n; E.ptr.at = new Date().toISOString(); E.ptr.by = by; }
+    const { error } = await sbc().from('app_kv').upsert({ key: kvKey(src, kind), value:{ n }, updated_at:new Date().toISOString(), updated_by_name:by });
+    if(!error){ const p = P(src); p[kind] = n; p.at = new Date().toISOString(); p.by = by; }
     return !error;
   }
+  const skipKey = r => `${r.srcKey}|${r.seq ? 'seq' : 'xid'}|${r.seq || r.xid}`;
+
   // أوردر EasyOrders (من الـ Webhook) → صف في شيت QP
-  function fromEasy(o, seq){
+  function fromEasy(o, seq, src){
     const items = (o.cart_items || []).map(it => {
       const nm = (it.product && it.product.name) || it.name || '';
       const props = ((it.variant && it.variant.variation_props) || []).map(p => String(p.variation_prop || '')).filter(v => v && !/^#[0-9a-f]{3,8}$/i.test(v)).join(' / ');
@@ -9288,12 +9317,12 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     }).filter(Boolean);
     const gov = String(o.government || '').trim(), addr = String(o.address || '').trim();
     const r = { name:o.full_name || '', phone:o.phone || '', address: gov && !addr.includes(gov) ? `${addr} - ${gov}` : addr, amount:String(o.total_cost ?? o.cost ?? ''),
-      agent:'', contents: items.join(' + '), source:'', size:'', note:'', city:'', easy:true, seq, ref: String(o.id || '').slice(0, 8), estatus: o.status || '' };
+      agent:'', contents: items.join(' + '), source:'', size:'', note:'', city:'', easy:true, seq, srcKey:src, ref: String(o.id || '').slice(0, 8), estatus: o.status || '' };
     r.city = guessCity(gov + ' ' + addr);
     return check(r);
   }
   // ملف الإكسل اللي بيتنزّل من EasyOrders (ID / Status / FullName / Phone / City / Address / Total Cost / Product Name / Variant / Quantity ...)
-  function fromExcelRows(json){
+  function fromExcelRows(json, src){
     const key = (row, ...names) => { const ks = Object.keys(row); for(const n of names){ const k = ks.find(x => x.trim().toLowerCase().replace(/\s+/g, ' ') === n); if(k !== undefined && row[k] !== '' && row[k] != null) return row[k]; } return ''; };
     const by = new Map();
     json.forEach(row => {
@@ -9308,37 +9337,64 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     });
     return [...by.values()].sort((a, b) => a.id - b.id).map(x => {
       const r = { name:x.name, phone:x.phone, address:x.address, amount:x.amount, agent:'', contents:x.items.join(' + '), source:'', size:'', note:'', city:'',
-        easy:true, xid:x.id, ref:'#' + x.id, estatus:x.status };
+        easy:true, xid:x.id, srcKey:src, ref:'#' + x.id, estatus:x.status };
       r.city = guessCity(x.city + ' ' + x.address);
       return check(r);
     });
   }
   const isCancel = st => /cancel|ملغ|refus|رفض|return/i.test(String(st || ''));
-  function easyFinish(rows){
+
+  // بيجيب الأوردرات الجديدة لمصدر واحد (اللي بعد آخر أوردر اتاخد)
+  async function sourceRows(src){
+    const p = P(src);
+    const filt = q => src === 'dream' ? q.or('source.is.null,source.eq.dream') : q.eq('source', src);
+    if(p.seq){ // 🩹 لو الرقم أكبر من آخر أوردر وصل للمصدر ده → يرجع صفر
+      const { data: mx } = await filt(sbc().from('easy_orders').select('seq')).order('seq', { ascending:false }).limit(1);
+      const maxSeq = mx && mx[0] ? Number(mx[0].seq) : 0;
+      if(p.seq > maxSeq) await savePtr(src, 'seq', 0);
+    }
+    const { data, error } = await filt(sbc().from('easy_orders').select('*')).gt('seq', E.showOld ? 0 : p.seq).order('seq', { ascending:true }).limit(500);
+    if(error) throw error;
+    return (data || []).map(x => { const r = fromEasy(x.payload || {}, x.seq, src); r.estatus = x.status || r.estatus; return r; });
+  }
+  function easyFinish(rows, label){
     E.hiddenOld = 0;
     const cancelled = rows.filter(r => isCancel(r.estatus));
     S.rows = rows.filter(r => !isCancel(r.estatus));
-    S.skipped = new Set(cancelled.map(r => r.seq || r.xid)); // الملغي بيتعدّى عادي
+    S.skipped = new Set(cancelled.map(skipKey)); // الملغي بيتعدّى عادي
     dupCheck();
-    S.msg = !rows.length ? 'مفيش أوردرات جديدة من EasyOrders بعد آخر أوردر اتاخد 👌'
-      : `جالك ${S.rows.length} أوردر جديد من EasyOrders${cancelled.length ? ` (واتشال ${cancelled.length} ملغي)` : ''}.`;
+    S.msg = !rows.length ? `مفيش أوردرات جديدة ${label} بعد آخر أوردر اتاخد 👌`
+      : `جالك ${S.rows.length} أوردر جديد ${label}${cancelled.length ? ` (واتشال ${cancelled.length} ملغي)` : ''}.`;
     S.msgErr = false;
     draw();
+  }
+  function easyErr(e){
+    E.missing = /easy_orders|app_kv|relation|schema cache|does not exist/i.test(e.message || '');
+    E.err = /column .*source|source.*does not exist/i.test(e.message || '') ? 'لازم ملف easyorders_multi.sql يتشغّل في Supabase الأول (بيضيف عمود المصدر).' : (E.missing ? '' : e.message);
   }
   async function fetchEasy(){
     E.loading = true; E.err = ''; draw();
     try{ await connect(); }catch(e){}
     if(!E.ptrLoaded) await loadPtr();
-    // 🩹 لو "آخر أوردر اتاخد" أكبر من آخر أوردر وصل أصلاً (اتكتب غلط) → يرجع صفر
-    if(E.ptr.seq){
-      const { data: mx } = await sbc().from('easy_orders').select('seq').order('seq', { ascending:false }).limit(1);
-      const maxSeq = mx && mx[0] ? Number(mx[0].seq) : 0;
-      if(E.ptr.seq > maxSeq) await savePtr(KV.seq, 0);
+    try{ const rows = await sourceRows(S.src); E.loading = false; easyFinish(rows, 'من ' + (srcOf(S.src) || {}).label); }
+    catch(e){ E.loading = false; easyErr(e); draw(); }
+  }
+  // 📦 الكل: كل مصادر EasyOrders + أوردرات Squad اللي اتلصقت ولسه ماترفعتش
+  async function fetchAllSources(){
+    E.loading = true; E.err = ''; draw();
+    try{ await connect(); }catch(e){}
+    if(!E.ptrLoaded) await loadPtr();
+    let rows = [], errs = [];
+    for(const src of SOURCES){
+      try{ rows = rows.concat(await sourceRows(src.key)); }catch(e){ errs.push(src.label + ': ' + e.message); }
     }
-    const { data, error } = await sbc().from('easy_orders').select('*').gt('seq', E.showOld ? 0 : E.ptr.seq).order('seq', { ascending:true }).limit(500);
+    const sq = (S.store.squad && S.store.squad.rows) || [];
+    sq.filter(r => !r.serial).forEach(r => { r.srcKey = 'squad'; if(!r.note && S.store.squad.note) r.note = S.store.squad.note; rows.push(r); });
     E.loading = false;
-    if(error){ E.missing = /easy_orders|relation|schema cache|does not exist/i.test(error.message); E.err = E.missing ? '' : error.message; draw(); return; }
-    easyFinish((data || []).map(x => fromEasy(x.payload || {}, x.seq)).map((r, i) => { r.estatus = (data[i].status || r.estatus); return r; }));
+    if(errs.length){ easyErr(new Error(errs.join(' | '))); }
+    easyFinish(rows, 'من كل المصادر');
+    if(sq.length) S.msg += ` (منهم ${sq.filter(r => !r.serial).length} من Squad)`;
+    draw();
   }
   async function readExcel(file){
     if(!window.XLSX){ flash('مكتبة Excel مش متحمّلة، اعمل Refresh.', true); return; }
@@ -9347,26 +9403,33 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     if(!E.ptrLoaded) await loadPtr();
     const wb = XLSX.read(await file.arrayBuffer(), { type:'array' });
     const json = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval:'', raw:false });
-    let rows = fromExcelRows(json);
-    const old = rows.filter(r => r.xid <= E.ptr.xid);
-    if(!E.showOld) rows = rows.filter(r => r.xid > E.ptr.xid);
+    const p = P(S.src);
+    let rows = fromExcelRows(json, S.src);
+    const old = rows.filter(r => r.xid <= p.xid);
+    if(!E.showOld) rows = rows.filter(r => r.xid > p.xid);
     E.loading = false;
-    easyFinish(rows);
+    easyFinish(rows, 'من ملف ' + (srcOf(S.src) || {}).label);
     E.hiddenOld = E.showOld ? 0 : old.length;
     const fi = document.getElementById('upEasyFile'); if(fi) fi.value = '';
     draw();
   }
-  // بعد الرفع: "آخر أوردر اتاخد" يتقدّم لحد آخر أوردر قبله كله اترفع أو اتشال
+  // بعد الرفع: "آخر أوردر اتاخد" لكل مصدر يتقدّم لحد آخر أوردر قبله كله اترفع أو اتشال
   async function advancePtr(){
-    const kind = (S.rows || []).some(r => r.seq) ? 'seq' : 'xid';
-    const all = [...(S.rows || []).map(r => ({ n:r[kind], done:!!r.serial })), ...[...(S.skipped || [])].map(n => ({ n, done:true }))]
-      .filter(x => x.n).sort((a, b) => a.n - b.n);
-    let last = 0; for(const x of all){ if(!x.done) break; last = x.n; }
-    const cur = kind === 'seq' ? E.ptr.seq : E.ptr.xid;
-    if(last > cur) await savePtr(KV[kind], last);
+    const groups = {};
+    (S.rows || []).filter(r => isEasy(r.srcKey)).forEach(r => { const k = r.srcKey + '|' + (r.seq ? 'seq' : 'xid'); (groups[k] = groups[k] || []).push({ n: r.seq || r.xid, done: !!r.serial }); });
+    [...(S.skipped || [])].forEach(s => { const [src, kind, n] = s.split('|'); if(!isEasy(src)) return; const k = src + '|' + kind; (groups[k] = groups[k] || []).push({ n:Number(n), done:true }); });
+    for(const [k, list] of Object.entries(groups)){
+      const [src, kind] = k.split('|');
+      list.sort((a, b) => a.n - b.n);
+      let last = 0; for(const x of list){ if(!x.done) break; last = x.n; }
+      if(last > (P(src)[kind] || 0)) await savePtr(src, kind, last);
+    }
   }
+  // ⚙️ إدارة المصادر
+  const slug = t => String(t || '').toLowerCase().replace(/easy/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || ('src' + Date.now().toString(36));
+  const hookUrl = k => ((sbc() && sbc().supabaseUrl) || 'https://vjpunudivnsanxjiwvnu.supabase.co') + '/functions/v1/easyorders-webhook?src=' + encodeURIComponent(k);
 
-  const S = { src:'squad', store:{ squad:{ raw:'', rows:null, note:'' }, easy:{ raw:'', rows:null, note:'' } }, skipped:new Set(),
+  const S = { src:'squad', store:{ squad:{ raw:'', rows:null, note:'' } }, skipped:new Set(), allNotes:{},
     raw:'', rows:null, note:'', msg:'', msgErr:false, conn:'', connErr:'', sending:false, prog:'', hist: (() => { try{ return JSON.parse(localStorage.getItem(HIST_KEY) || '[]'); }catch(e){ return []; } })() };
 
   /* ---------- التحليل ---------- */
@@ -9409,12 +9472,16 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     (S.rows || []).forEach(r => { const p = phoneOf(r.phone); if(p) seen[p] = (seen[p] || 0) + 1; });
     (S.rows || []).forEach(r => { check(r); if(seen[phoneOf(r.phone)] > 1) r.errs.push('الموبايل متكرر'); });
   }
-  const finalNote = r => (r.note || S.note || '').trim();
+  // notes: اللي متكتب في الصف نفسه، وإلا notes المصدر (في 📦 الكل)، وإلا اللي اتكتب في خطوة 2
+  const srcNote = k => k === 'squad' ? ((S.store.squad || {}).note || '') : ((srcOf(k) || {}).note || '');
+  const finalNote = r => (r.note || (S.src === 'all' ? (S.allNotes[r.srcKey] ?? srcNote(r.srcKey)) : S.note) || '').trim();
+  const notesOk = () => (S.rows || []).every(r => finalNote(r));
+  const srcLabel = k => k === 'squad' ? '🏆 Squad' : ((srcOf(k) || {}).label || k);
 
   /* ---------- التصدير ---------- */
   function exportSheet(){
     const rows = S.rows || [];
-    if(!S.note.trim() && rows.some(r => !r.note.trim())){ flash('⚠️ لازم تكتب المصدر والاسم اللي يتكتب في عمود notes الأول.', true); const i = document.getElementById('upNote'); if(i) i.focus(); return; }
+    if(!rows.every(r => finalNote(r))){ flash('⚠️ لازم تكتب المصدر والاسم اللي يتكتب في عمود notes الأول.', true); const i = document.getElementById('upNote'); if(i) i.focus(); return; }
     if(rows.some(r => r.errs.length)){ flash('⚠️ فيه أوردرات فيها مشاكل (باللون الأحمر). صلّحها أو امسحها الأول.', true); return; }
     if(!rows.length) return;
     const total = rows.reduce((a, r) => a + (numOf(r.amount) || 0), 0);
@@ -9456,7 +9523,7 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
   async function sendToQP(){
     const rows = (S.rows || []).filter(r => !r.serial);
     if(!rows.length) return;
-    if(!S.note.trim() && rows.some(r => !r.note.trim())){ flash('⚠️ لازم تكتب المصدر والاسم اللي يتكتب في عمود notes الأول.', true); return; }
+    if(!rows.every(r => finalNote(r))){ flash('⚠️ لازم تكتب المصدر والاسم اللي يتكتب في عمود notes الأول.', true); return; }
     if(rows.some(r => r.errs.length)){ flash('⚠️ فيه أوردرات فيها مشاكل (باللون الأحمر). صلّحها أو امسحها الأول.', true); return; }
     const total = rows.reduce((a, r) => a + (numOf(r.amount) || 0), 0), notes = [...new Set(rows.map(finalNote))].join(' / ');
     if(!confirm(`هيترفع على QP دلوقتي:\n\n• ${rows.length} أوردر\n• إجمالي ${total.toLocaleString('ar-EG')} ج\n• notes: ${notes}\n\nموافق؟`)) return;
@@ -9473,9 +9540,11 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
       }catch(e){ r.upErr = e.message; fail++; }
     }
     S.sending = false; S.prog = '';
-    if(ok && S.src === 'easy'){ try{ await advancePtr(); }catch(e){} }
+    if(ok && (isEasy(S.src) || S.src === 'all')){ try{ await advancePtr(); }catch(e){} }
+    // أوردرات Squad اللي اترفعت من 📦 الكل تتعلّم في تاب Squad كمان
+    if(ok && S.src === 'all' && S.store.squad && S.store.squad.rows){ const up = new Set((S.rows || []).filter(r => r.srcKey === 'squad' && r.serial)); S.store.squad.rows = S.store.squad.rows.filter(r => !up.has(r) || r.serial); }
     if(ok){
-      S.hist.unshift({ at: new Date().toISOString(), n: ok, total: rows.filter(r => r.serial).reduce((a, r) => a + (numOf(r.amount) || 0), 0), notes: (S.src === 'easy' ? '🌐 ' : '🏆 ') + notes, by: me().full_name || me().username || '', qp:true });
+      S.hist.unshift({ at: new Date().toISOString(), n: ok, total: rows.filter(r => r.serial).reduce((a, r) => a + (numOf(r.amount) || 0), 0), notes: (S.src === 'all' ? '📦 ' : S.src === 'squad' ? '🏆 ' : '🌐 ' + srcLabel(S.src) + ' — ') + notes, by: me().full_name || me().username || '', qp:true });
       S.hist = S.hist.slice(0, 15); try{ localStorage.setItem(HIST_KEY, JSON.stringify(S.hist)); }catch(e){}
     }
     flash(fail ? `⚠️ اترفع ${ok} أوردر، و ${fail} فشلوا — السبب مكتوب جنب كل واحد، صلّحه ودوس ارفع تاني (اللي اترفع مش هيترفع تاني).` : `✅ اترفع ${ok} أوردر على QP — هتلاقيهم في Orders List.`, !!fail);
@@ -9484,24 +9553,30 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
   function switchSrc(k){
     if(k === S.src) return;
     S.store[S.src] = { raw:S.raw, rows:S.rows, note:S.note, skipped:S.skipped };
-    const n = S.store[k] || {}; S.src = k; S.raw = n.raw || ''; S.rows = n.rows || null; S.note = n.note || ''; S.skipped = n.skipped || new Set(); S.msg = '';
+    const n = S.store[k] || {}; S.src = k; S.raw = n.raw || ''; S.rows = n.rows || null; S.skipped = n.skipped || new Set(); S.msg = ''; E.err = ''; E.hiddenOld = 0;
+    S.note = n.note || (isEasy(k) ? srcNote(k) : '');
+    if(k === 'settings') E.srcDraft = JSON.parse(JSON.stringify(SOURCES));
     draw();
-    if(k === 'easy' && !E.ptrLoaded) loadPtr().then(draw);
+    if(!E.ptrLoaded) loadPtr().then(draw);
   }
 
   /* ---------- الرسم ---------- */
   function view(){
     let h = `<div class="pagehead"><h1>📤 رفع الأوردرات</h1><p>الصق الأوردرات كوبي، راجعها في شيت QP، اكتب المصدر والاسم، ووافق عشان تترفع على QP مباشرة وتظهر في Orders List.</p></div><div class="up-wrap">`;
     h += `<div class="up-tabs"><button class="${S.src === 'squad' ? 'on' : ''}" style="--bc:#8a6a3a" data-upsrc="squad">🏆 Squad</button>
-      <button class="${S.src === 'easy' ? 'on' : ''}" style="--bc:#2b6cb0" data-upsrc="easy">🌐 Dream Easy</button></div>`;
+      ${SOURCES.map(x => `<button class="${S.src === x.key ? 'on' : ''}" style="--bc:${esc(x.color || '#2b6cb0')}" data-upsrc="${esc(x.key)}">🌐 ${esc(x.label)}</button>`).join('')}
+      <button class="${S.src === 'all' ? 'on' : ''}" style="--bc:#2f7d55" data-upsrc="all">📦 الكل</button>
+      ${me().is_admin ? `<button class="${S.src === 'settings' ? 'on' : ''}" style="--bc:#555" data-upsrc="settings" title="إدارة المصادر">⚙️</button>` : ''}</div>`;
+    if(S.src === 'settings') return h + settingsHtml() + '</div>';
     if(S.msg) h += `<div class="up-msg ${S.msgErr ? 'err' : 'ok'}">${esc(S.msg)}</div>`;
-    if(S.src === 'easy') h += easyStep1();
+    if(isEasy(S.src)) h += easyStep1();
+    else if(S.src === 'all') h += allStep1();
     else h += `<div class="card"><h3>1️⃣ الصق الأوردرات هنا</h3>
       <textarea id="upRaw" placeholder="انسخ الصفوف من الشيت والصقها هنا (Ctrl + V)&#10;الترتيب: الاسم | الموبايل | العنوان | السعر | الموظفة | | الطلب | المصدر | المقاس">${esc(S.raw)}</textarea>
       <div class="up-row" style="margin-top:10px"><button class="up-btn pri" id="upParse">🔍 حوّلها لشيت QP</button>
         ${S.rows ? '<button class="up-btn" id="upClear">🧹 ابدأ من جديد</button>' : ''}</div></div>`;
     if(!S.rows) return h + histHtml() + '</div>';
-    if(!S.rows.length) return h + (S.src === 'easy' ? '' : `<div class="up-msg err">مالقيتش أوردرات في اللي اتلصق.</div>`) + histHtml() + '</div>';
+    if(!S.rows.length) return h + (S.src !== 'squad' ? '' : `<div class="up-msg err">مالقيتش أوردرات في اللي اتلصق.</div>`) + histHtml() + '</div>';
     if(S.conn) h += `<div class="up-msg ok">${esc(S.conn)}</div>`;
     if(S.connErr){ const c = getCreds() || {};
       h += `<div class="up-ask"><h3>🔐 دخول QP للرفع</h3><p style="margin:0 0 8px;font-size:13.5px;color:#555">${esc(S.connErr)}</p>
@@ -9509,7 +9584,15 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
         <button class="up-btn pri" id="upLogin">دخول</button></div><p style="margin:8px 0 0;font-size:12px;color:#777">بيتحفظ على الجهاز ده بس.</p></div>`; }
 
     // 2) سؤال المصدر والاسم — لازم قبل التصدير
-    const done = !!S.note.trim();
+    const done = notesOk();
+    if(S.src === 'all'){
+      const keys = [...new Set(S.rows.map(r => r.srcKey))];
+      h += `<div class="up-ask ${done ? 'done' : ''}"><h3>2️⃣ ${done ? '✅' : '⚠️'} الـ notes لكل مصدر</h3>
+        <p style="margin:0 0 10px;font-size:13.5px;color:#555">كل أوردر بيتكتب في عمود G بالـ notes بتاعة المصدر بتاعه. اتأكد منها أو غيّرها.</p>
+        ${keys.map(k => `<div class="up-row" style="margin-bottom:8px"><b style="min-width:140px">${esc(srcLabel(k))} (${S.rows.filter(r => r.srcKey === k).length})</b>
+          <input data-allnote="${esc(k)}" list="upNotes" value="${esc(S.allNotes[k] ?? srcNote(k))}" placeholder="اكتب الـ notes..." style="max-width:260px"></div>`).join('')}
+        <datalist id="upNotes">${NOTE_SUGGEST.map(n => `<option value="${esc(n)}">`).join('')}</datalist></div>`;
+    } else
     h += `<div class="up-ask ${done ? 'done' : ''}"><h3>2️⃣ ${done ? '✅' : '⚠️'} إيه المصدر والاسم اللي يتكتب في عمود notes لكل الأوردرات؟</h3>
       <p style="margin:0 0 10px;font-size:13.5px;color:#555">ده اللي قسم الأرباح بيعرف منه البراند، فلازم يتكتب صح (مثلاً: <b>dream wa</b> أو <b>cara silver</b>). هيتكتب في عمود G لكل الأوردرات اللي تحت.</p>
       <input id="upNote" list="upNotes" value="${esc(S.note)}" placeholder="اكتب المصدر والاسم..." autocomplete="off">
@@ -9523,14 +9606,14 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
         <div><b style="color:${bad ? '#b3261e' : '#2f7d55'}">${bad ? bad : '✔'}</b><span>${bad ? 'فيهم مشاكل' : 'كله تمام'}</span></div></div>
       <p style="font-size:12.5px;color:var(--muted);margin:0 0 8px">تقدر تعدّل أي خانة بالدوس عليها. المقاس بيتضاف لوحده في آخر shipment contents.</p>
       <div class="up-sheet"><table><thead>
-        <tr><th class="col"></th><th class="col">B</th>${S.src === 'easy' ? '<th class="col"></th>' : ''}<th class="col">C</th><th class="col">D</th><th class="col">E</th><th class="col">F</th><th class="col">G</th><th class="col">I</th><th class="col">K</th><th class="col"></th><th class="col"></th></tr>
-        <tr><th>1</th><th>serial</th>${S.src === 'easy' ? '<th>Easy</th>' : ''}<th>full name</th><th>phone</th><th>address</th><th>total amount</th><th>notes</th><th>shipment contents</th><th>city</th><th>الحالة</th><th></th></tr></thead><tbody>
-      ${S.rows.map((r, i) => `<tr class="${r.errs.length || r.upErr ? 'bad' : ''}" ${r.serial ? 'style="background:#eef8f1"' : ''}><td class="rn">${i + 2}</td><td style="font-size:12px;padding:4px 6px;color:#2f7d55">${esc(r.serial || '')}</td>${S.src === 'easy' ? `<td style="font-size:11.5px;padding:4px 6px;white-space:nowrap;color:#2b6cb0">${esc(r.ref || '')}<br><span style="color:#888">${esc(r.estatus || '')}</span></td>` : ''}
+        <tr><th class="col"></th><th class="col">B</th>${S.src !== 'squad' ? '<th class="col"></th>' : ''}<th class="col">C</th><th class="col">D</th><th class="col">E</th><th class="col">F</th><th class="col">G</th><th class="col">I</th><th class="col">K</th><th class="col"></th><th class="col"></th></tr>
+        <tr><th>1</th><th>serial</th>${S.src !== 'squad' ? '<th>المصدر</th>' : ''}<th>full name</th><th>phone</th><th>address</th><th>total amount</th><th>notes</th><th>shipment contents</th><th>city</th><th>الحالة</th><th></th></tr></thead><tbody>
+      ${S.rows.map((r, i) => `<tr class="${r.errs.length || r.upErr ? 'bad' : ''}" ${r.serial ? 'style="background:#eef8f1"' : ''}><td class="rn">${i + 2}</td><td style="font-size:12px;padding:4px 6px;color:#2f7d55">${esc(r.serial || '')}</td>${S.src !== 'squad' ? `<td style="font-size:11.5px;padding:4px 6px;white-space:nowrap;color:${esc((srcOf(r.srcKey) || {}).color || '#8a6a3a')}"><b>${esc(srcLabel(r.srcKey))}</b><br>${esc(r.ref || '')} <span style="color:#888">${esc(r.estatus || '')}</span></td>` : ''}
         <td><input data-upf="${i}.name" value="${esc(r.name)}"></td>
         <td><input data-upf="${i}.phone" value="${esc(phoneOf(r.phone))}" style="direction:ltr;text-align:left;min-width:105px"></td>
         <td><input data-upf="${i}.address" value="${esc(r.address)}" style="min-width:260px"></td>
         <td><input data-upf="${i}.amount" value="${esc(r.amount)}" style="min-width:70px"></td>
-        <td><input data-upf="${i}.note" value="${esc(r.note)}" placeholder="${esc(S.note || '— لسه —')}" style="min-width:110px"></td>
+        <td><input data-upf="${i}.note" value="${esc(r.note)}" placeholder="${esc((S.src === 'all' ? (S.allNotes[r.srcKey] ?? srcNote(r.srcKey)) : S.note) || '— لسه —')}" style="min-width:110px"></td>
         <td><input data-upf="${i}.contentsFull" value="${esc(contentsOf(r))}" style="min-width:220px"></td>
         <td>${qpCities ? `<select data-upcity="${i}" style="border:none;padding:6px;font-family:Arial;font-size:13px;background:transparent;min-width:100px"><option value="">— اختار —</option>${qpCities.map(c => `<option ${c.name === r.city ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select>` : `<input data-upf="${i}.city" value="${esc(r.city)}" style="min-width:80px">`}</td>
         <td class="err">${r.serial ? `<span style="color:#2f7d55;font-weight:700">✅ اترفع ${esc(r.serial)}</span>` : esc([...r.errs, r.upErr ? '❌ QP: ' + r.upErr : ''].filter(Boolean).join('، '))}</td>
@@ -9540,7 +9623,7 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
 
     // 4) الموافقة
     const left = S.rows.filter(r => !r.serial).length;
-    const ready = S.rows.length && !bad && (done || S.rows.every(r => r.note.trim()));
+    const ready = S.rows.length && !bad && done;
     const canSend = ready && left && qpCities && !S.sending;
     h += `<div class="card"><h3>4️⃣ الموافقة والرفع على QP</h3>
       ${ready ? '' : `<p style="color:#b3261e;margin:0 0 10px;font-size:14px">${!done ? '⚠️ اكتب المصدر والاسم في خطوة 2 الأول. ' : ''}${bad ? '⚠️ صلّح أو امسح الأوردرات اللي باللون الأحمر.' : ''}</p>`}
@@ -9553,21 +9636,50 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     return h + histHtml() + '</div>';
   }
   function easyStep1(){
-    const P = E.ptr, admin = !!me().is_admin;
-    let h = `<div class="card"><h3>1️⃣ هات أوردرات EasyOrders الجديدة</h3>
-      <div class="up-ptr">📍 آخر أوردر اتاخد — 🔄 التلقائي: <b>${P.seq ? 'رقم ' + P.seq : 'لسه'}</b> · 📂 الإكسل: <b>${P.xid ? '#' + P.xid : 'لسه'}</b>
-        ${P.at ? `<span style="color:var(--muted)">— اتحدّث ${new Date(P.at).toLocaleString('ar-EG', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' })}${P.by ? ' بواسطة ' + esc(P.by) : ''}</span>` : ''}
+    const src = srcOf(S.src) || {}, p = P(S.src), admin = !!me().is_admin;
+    let h = `<div class="card"><h3>1️⃣ هات أوردرات ${esc(src.label)} الجديدة</h3>
+      <div class="up-ptr">📍 آخر أوردر اتاخد — 🔄 التلقائي: <b>${p.seq ? 'رقم ' + p.seq : 'لسه'}</b> · 📂 الإكسل: <b>${p.xid ? '#' + p.xid : 'لسه'}</b>
+        ${p.at ? `<span style="color:var(--muted)">— اتحدّث ${new Date(p.at).toLocaleString('ar-EG', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' })}${p.by ? ' بواسطة ' + esc(p.by) : ''}</span>` : ''}
         ${admin ? '<button class="up-btn" id="upPtrEdit" style="padding:4px 10px;font-size:12.5px">✏️ غيّر رقم الإكسل</button>' : ''}</div>
       <div class="up-row">
-        <button class="up-btn pri" id="upEasyFetch" ${E.loading ? 'disabled' : ''}>${E.loading ? '⏳ بيجيب...' : '🔄 هات الأوردرات الجديدة من EasyOrders'}</button>
+        <button class="up-btn pri" id="upEasyFetch" ${E.loading ? 'disabled' : ''}>${E.loading ? '⏳ بيجيب...' : '🔄 هات الأوردرات الجديدة من ' + esc(src.label)}</button>
         <label class="up-file">📂 أو ارفع ملف الإكسل من EasyOrders<input type="file" id="upEasyFile" accept=".xlsx,.xls,.csv"></label>
         <label style="font-size:13px;color:var(--muted)"><input type="checkbox" id="upShowOld" ${E.showOld ? 'checked' : ''}> اعرض كمان اللي اتاخد قبل كده</label>
         ${S.rows ? '<button class="up-btn" id="upClear">🧹 ابدأ من جديد</button>' : ''}
       </div>
-      ${E.hiddenOld ? `<p style="font-size:13px;color:var(--muted);margin:8px 0 0">اتشال ${E.hiddenOld} أوردر من الملف لأنهم اتاخدوا قبل كده (رقمهم قبل #${P.xid}).</p>` : ''}
+      ${E.hiddenOld ? `<p style="font-size:13px;color:var(--muted);margin:8px 0 0">اتشال ${E.hiddenOld} أوردر من الملف لأنهم اتاخدوا قبل كده (رقمهم لحد #${p.xid}).</p>` : ''}
       ${E.err ? `<div class="up-msg err">${esc(E.err)}</div>` : ''}`;
-    if(E.missing) h += `<div class="up-msg err">جداول EasyOrders لسه مش متعملة في Supabase. ${admin ? 'شغّل ملف easyorders_setup.sql في Supabase → SQL Editor، وبعدين اعمل الـ Edge Function (الخطوات في الملف).' : 'كلّم الأدمن.'}</div>`;
-    return h + `<p style="font-size:12.5px;color:var(--muted);margin:10px 0 0">الأوردرات الملغية بتتشال لوحدها. "آخر أوردر اتاخد" بيتقدّم بس بعد ما تدوس ارفع على QP — فاللي ماترفعش هيفضل يظهر المرة الجاية.</p></div>`;
+    if(E.missing) h += `<div class="up-msg err">جداول EasyOrders لسه مش متعملة في Supabase. ${admin ? 'شغّل ملف easyorders_setup.sql وبعده easyorders_multi.sql في Supabase → SQL Editor.' : 'كلّم الأدمن.'}</div>`;
+    return h + `<p style="font-size:12.5px;color:var(--muted);margin:10px 0 0">الأوردرات الملغية بتتشال لوحدها. "آخر أوردر اتاخد" بيتقدّم بس بعد ما تدوس ارفع على QP — فاللي ماترفعش هيفضل يظهر المرة الجاية.${src.note ? ' الـ notes بتاعة المصدر ده: <b>' + esc(src.note) + '</b>' : ''}</p></div>`;
+  }
+  function allStep1(){
+    const sq = ((S.store.squad || {}).rows || []).filter(r => !r.serial).length;
+    return `<div class="card"><h3>1️⃣ 📦 هات أوردرات كل المصادر مرة واحدة</h3>
+      <p style="margin:0 0 10px;font-size:14px">بيجيب الأوردرات الجديدة من: ${SOURCES.map(x => '<b>' + esc(x.label) + '</b>').join('، ')}${sq ? ` + <b>${sq}</b> أوردر من 🏆 Squad (اللي اتلصقوا هناك ولسه ماترفعوش)` : ' (ولو لصقت أوردرات في تاب 🏆 Squad هتتضاف معاهم)'} — كلهم تحت بعض في شيت واحد، وكل أوردر بالـ notes بتاعة مصدره.</p>
+      <div class="up-row"><button class="up-btn pri" id="upAllFetch" ${E.loading ? 'disabled' : ''}>${E.loading ? '⏳ بيجيب...' : '📦 هات كل الأوردرات'}</button>
+        ${S.rows ? '<button class="up-btn" id="upClear">🧹 ابدأ من جديد</button>' : ''}</div>
+      ${E.err ? `<div class="up-msg err">${esc(E.err)}</div>` : ''}</div>`;
+  }
+  function settingsHtml(){
+    const D = E.srcDraft || [];
+    return `<div class="card"><h3>⚙️ مصادر EasyOrders</h3>
+      <p style="margin:0 0 12px;font-size:13.5px;color:var(--muted)">كل مصدر = أكونت EasyOrders. ضيف أكونت جديد هنا من غير ما تعدّل السيستم، وخد رابط الـ Webhook بتاعه وحطه في EasyOrders (Public API ← Webhooks).</p>
+      ${D.map((x, i) => `<div class="card" style="margin:0 0 10px;border-inline-start:5px solid ${esc(x.color || '#2b6cb0')}">
+        <div class="up-row">
+          <label style="font-size:12.5px">الاسم<br><input data-srcf="${i}.label" value="${esc(x.label)}" style="width:170px;padding:8px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit"></label>
+          <label style="font-size:12.5px">الـ notes (المصدر اللي يتكتب في عمود G)<br><input data-srcf="${i}.note" list="upNotes" value="${esc(x.note || '')}" style="width:200px;padding:8px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit"></label>
+          <label style="font-size:12.5px">اللون<br><input type="color" data-srcf="${i}.color" value="${esc(x.color || '#2b6cb0')}" style="width:50px;height:36px;border:none;background:none"></label>
+          <span style="font-size:12px;color:var(--muted)">الكود: <b>${esc(x.key)}</b></span>
+          <button class="up-btn" data-srcdel="${i}" style="padding:6px 12px">🗑️</button>
+        </div>
+        <div style="margin-top:8px;font-size:12.5px">🔗 رابط الـ Webhook:<br>
+          <code style="direction:ltr;display:inline-block;background:var(--slate-l);padding:4px 8px;border-radius:6px;user-select:all;word-break:break-all">${esc(hookUrl(x.key))}</code>
+          <button class="up-btn" data-srccopy="${esc(hookUrl(x.key))}" style="padding:3px 10px;font-size:12px">📋 انسخ</button></div>
+      </div>`).join('')}
+      <datalist id="upNotes">${NOTE_SUGGEST.map(n => `<option value="${esc(n)}">`).join('')}</datalist>
+      <div class="up-row"><button class="up-btn" id="upSrcAdd">➕ مصدر جديد</button>
+        <button class="up-btn ok" id="upSrcSave" ${E.srcSaving ? 'disabled' : ''}>${E.srcSaving ? '⏳ بيتحفظ...' : '💾 حفظ المصادر'}</button></div>
+      <p style="font-size:12px;color:var(--muted);margin:10px 0 0">لو مسحت مصدر، أوردراته اللي وصلت قبل كده بتفضل في Supabase بس مش هتظهر هنا. الكود بيتعمل لوحده من الاسم ومينفعش يتغير بعد ما تحفظ (عشان رابط الـ Webhook).</p></div>`;
   }
 
   function histHtml(){
@@ -9612,16 +9724,34 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     document.querySelectorAll('[data-upnote]').forEach(b => b.onclick = () => { S.note = b.dataset.upnote; draw(); });
     document.querySelectorAll('[data-updel]').forEach(b => b.onclick = () => {
       const r = S.rows[Number(b.dataset.updel)];
-      if(S.src === 'easy'){ if(!confirm('تشيل الأوردر ده؟ هيتحسب إنه اتاخد ومش هيظهر تاني بعد الرفع.')) return; S.skipped.add(r.seq || r.xid); }
+      if(isEasy(r.srcKey)){ if(!confirm('تشيل الأوردر ده؟ هيتحسب إنه اتاخد ومش هيظهر تاني بعد الرفع.')) return; S.skipped.add(skipKey(r)); }
       S.rows.splice(Number(b.dataset.updel), 1); dupCheck(); draw(); });
     document.querySelectorAll('[data-upsrc]').forEach(b => b.onclick = () => switchSrc(b.dataset.upsrc));
     if($('upEasyFetch')) $('upEasyFetch').onclick = fetchEasy;
+    if($('upAllFetch')) $('upAllFetch').onclick = fetchAllSources;
+    document.querySelectorAll('[data-allnote]').forEach(el => { el.oninput = () => { S.allNotes[el.dataset.allnote] = el.value; refreshReady(); }; el.onchange = () => draw(); });
+    // ⚙️ المصادر
+    document.querySelectorAll('[data-srcf]').forEach(el => el.oninput = () => { const [i, k] = el.dataset.srcf.split('.'); E.srcDraft[Number(i)][k] = el.value; });
+    document.querySelectorAll('[data-srcdel]').forEach(b => b.onclick = () => { const x = E.srcDraft[Number(b.dataset.srcdel)]; if(confirm('تمسح المصدر "' + x.label + '"؟')){ E.srcDraft.splice(Number(b.dataset.srcdel), 1); draw(); } });
+    document.querySelectorAll('[data-srccopy]').forEach(b => b.onclick = () => { try{ navigator.clipboard.writeText(b.dataset.srccopy); b.textContent = '✔ اتنسخ'; }catch(e){} });
+    if($('upSrcAdd')) $('upSrcAdd').onclick = () => {
+      const label = prompt('اسم المصدر الجديد (مثلاً: Bloom Easy):'); if(!label || !label.trim()) return;
+      let key = slug(label); while(E.srcDraft.some(x => x.key === key)) key += '2';
+      E.srcDraft.push({ key, label: label.trim(), note:'', color:'#6b46c1' }); draw();
+    };
+    if($('upSrcSave')) $('upSrcSave').onclick = async () => {
+      if(E.srcDraft.some(x => !String(x.label).trim())) return alert('كل مصدر لازم يبقى ليه اسم.');
+      E.srcSaving = true; draw();
+      try{ await saveSources(E.srcDraft.map(x => ({ key:x.key, label:String(x.label).trim(), note:String(x.note || '').trim(), color:x.color || '#2b6cb0' }))); flash('✅ المصادر اتحفظت.'); }
+      catch(e){ flash('ماتحفظش: ' + e.message, true); }
+      E.srcSaving = false; E.srcDraft = JSON.parse(JSON.stringify(SOURCES)); draw();
+    };
     if($('upEasyFile')) $('upEasyFile').onchange = e => { const f = e.target.files[0]; if(f) readExcel(f); };
     if($('upShowOld')) $('upShowOld').onchange = e => { E.showOld = e.target.checked; };
     if($('upPtrEdit')) $('upPtrEdit').onclick = async () => {
       // ✏️ بيغيّر رقم ملف الإكسل بس — رقم الأوردرات التلقائية بيتظبط لوحده
-      const v = prompt('آخر رقم أوردر اتاخد من ملف الإكسل (رقم ID في ملف EasyOrders). الأوردرات اللي رقمها بعده هي اللي هتظهر:', E.ptr.xid || '');
-      if(v !== null && v.trim() !== '' && !isNaN(digits(v))) await savePtr(KV.xid, Number(digits(v)));
+      const v = prompt('آخر رقم أوردر اتاخد من ملف الإكسل بتاع ' + ((srcOf(S.src) || {}).label || '') + ' (رقم ID). الأوردرات اللي رقمها بعده هي اللي هتظهر:', P(S.src).xid || '');
+      if(v !== null && v.trim() !== '' && !isNaN(digits(v))) await savePtr(S.src, 'xid', Number(digits(v)));
       draw();
     };
     document.querySelectorAll('[data-upf]').forEach(el => {
@@ -9637,13 +9767,13 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
   function refreshReady(){
     const b = document.getElementById('upExport'); if(!b) return;
     const bad = (S.rows || []).some(r => r.errs.length);
-    const ok = !!(S.rows && S.rows.length && !bad && (S.note.trim() || S.rows.every(r => r.note.trim())));
+    const ok = !!(S.rows && S.rows.length && !bad && notesOk());
     b.disabled = !ok;
     const s2 = document.getElementById('upSend'); if(s2) s2.disabled = !(ok && qpCities && !S.sending && S.rows.some(r => !r.serial));
     document.querySelectorAll('[data-upf$=".note"]').forEach(i => i.placeholder = S.note || '— لسه —');
   }
 
-  function mount(){ draw(); }
+  function mount(){ draw(); if(!E.srcLoaded && sbc()) loadSources().then(() => { if(!E.ptrLoaded) return loadPtr(); }).then(draw); }
   const _render = render;
   render = function(){ _render.apply(this, arguments); if(isUP()) mount(); };
   window.addEventListener('hashchange', () => { if(isUP()) setTimeout(mount, 0); });
