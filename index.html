@@ -431,6 +431,7 @@ html:not(.auth-ok) #app{display:none}
     <div class="grp fav" id="favGrp"><div class="grp-title">⭐ الأساسي</div>
       <a class="navlink" href="#/squad">🏆 Squad</a>
       <a class="navlink" href="#/qp-upload">📤 رفع الأوردرات</a>
+      <a class="navlink" href="#/qp-delete">🗑️ مسح بوالص</a>
       <a class="navlink" href="#/dept/warehouse">🏬 المخزن</a>
     </div>
     <div class="grp"><div class="grp-title">المالية</div>
@@ -4940,7 +4941,7 @@ async function exportToSheet(btn) {
       { key:'accounts',  label:'💼 الحسابات (Italy + Kidzzly + Socky + المجمّعة)',  routes:['accounts','accounts-kidzzly','accounts-socky','accounts-all'] },
       { key:'meta_ads', label:'📊 Ads (Meta)', routes:['meta-ads'] },
       { key:'qp_upload', label:'📤 رفع الأوردرات', routes:['qp-upload'] },
-      { key:'qp_delete', label:'🗑️ مسح بوالص من QP (جوه رفع الأوردرات)', routes:['qp-upload'] },
+      { key:'qp_delete', label:'🗑️ مسح بوالص من QP', routes:['qp-delete'] },
       { key:'profits', label:'💰 الأرباح',    routes:['profits'] },
       { key:'brands', label:'🏷️ Brands', routes:['brands'] },
       { key:'dept:warehouse', label:'🏬 المخزن', routes:[] },
@@ -5196,7 +5197,7 @@ async function exportToSheet(btn) {
   const hrefOf = s => s.key.startsWith('dept:') ? '#/dept/' + s.key.slice(5) : '#/' + s.routes[0];
   function mySections(){
     const seenHref = new Set();
-    const groups = GROUPS().map(g => ({ title:g.title, items:g.items.filter(s => canSee(hrefOf(s))).map(s => ({ label: s.key === 'qp_delete' ? '📤 رفع الأوردرات' : s.label, href:hrefOf(s) }))
+    const groups = GROUPS().map(g => ({ title:g.title, items:g.items.filter(s => canSee(hrefOf(s))).map(s => ({ label:s.label, href:hrefOf(s) }))
       .filter(x => { if(seenHref.has(x.href)) return false; seenHref.add(x.href); return true; }) }))
       .filter(g => g.items.length);
     // 📨 الرسايل والمهام لكل الناس — أول حاجة في القايمة، وجنبها عدد الجديد
@@ -9340,7 +9341,8 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
 (function(){
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const me = () => (window.AuthGate && window.AuthGate.me && window.AuthGate.me()) || {};
-  const isUP = () => (location.hash.replace('#/', '') || 'home').split('/')[0] === 'qp-upload';
+  const upRoute = () => (location.hash.replace('#/', '') || 'home').split('/')[0];
+  const isUP = () => upRoute() === 'qp-upload' || upRoute() === 'qp-delete';
   const digits = s => String(s ?? '').replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d));
   const numOf = s => { const t = digits(s).replace(/[,\s]/g, '').replace(/ج|جنيه|egp|le/gi, ''); return t !== '' && !isNaN(t) ? Number(t) : null; };
   const phoneOf = s => { let t = digits(s).replace(/[^\d]/g, ''); if(t.startsWith('20') && t.length === 12) t = t.slice(2); if(t.startsWith('0')) t = t.slice(1); return t; };
@@ -10074,6 +10076,11 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
 
   /* ---------- الرسم ---------- */
   function view(){
+    // 🗑️ صفحة مسح البوالص لوحدها (من الأيقونة اللي في القايمة)
+    if(upRoute() === 'qp-delete'){
+      if(S.src !== 'delete'){ S.src = 'delete'; }
+      return `<div class="pagehead"><h1>🗑️ مسح بوالص من QP</h1><p>امسح باركود البوالص اللي أوردراتها ماتجهزتش وامسحها من QP.</p></div><div class="up-wrap">` + delHtml() + '</div>';
+    }
     let h = `<div class="pagehead"><h1>📤 رفع الأوردرات</h1><p>هات الأوردرات من Squad أو EasyOrders، راجعها في شيت QP، اتأكد من الـ notes، ووافق عشان تترفع على QP مباشرة وتظهر في Orders List.</p></div><div class="up-wrap">`;
     h += `<div class="up-tabs"><button class="${S.src === 'squad' ? 'on' : ''}" style="--bc:#8a6a3a" data-upsrc="squad">🏆 Squad</button>
       ${SOURCES.map(x => `<button class="${S.src === x.key ? 'on' : ''}" style="--bc:${esc(x.color || '#2b6cb0')}" data-upsrc="${esc(x.key)}">🌐 ${esc(x.label)}</button>`).join('')}
@@ -10363,7 +10370,10 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
   }
 
   window.addEventListener('hashchange', () => { if(!isUP() && (X.native || X.scanner)) stopScan(); });
-  function mount(){ draw(); if(!E.srcLoaded && sbc()) loadSources().then(() => { if(!E.ptrLoaded) return loadPtr(); }).then(() => { if(!SQ.loaded) return loadSquadPtr(); }).then(draw); }
+  function mount(){
+    // 🗑️ الأيقونة اللي في القايمة بتفتح تاب مسح البوالص على طول
+    if(upRoute() === 'qp-delete' && S.src !== 'delete') switchSrc('delete');
+    draw(); if(!E.srcLoaded && sbc()) loadSources().then(() => { if(!E.ptrLoaded) return loadPtr(); }).then(() => { if(!SQ.loaded) return loadSquadPtr(); }).then(draw); }
   const _render = render;
   render = function(){ _render.apply(this, arguments); if(isUP()) mount(); };
   window.addEventListener('hashchange', () => { if(isUP()) setTimeout(mount, 0); });
@@ -10375,7 +10385,7 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
 /* ⭐ ترتيب القايمة: الأساسي فوق (Squad / رفع الأوردرات / مبيعات مباشرة / الحسابات / المخزن)
    وأي لينك تاني اتحط جنب Squad (زي EOD وتحليل المكونات) يرجع لمجموعة "العمل" */
 (function(){
-  const FAV = ['#/squad', '#/qp-upload', '#/direct', '#/accounts', '#/dept/warehouse'];
+  const FAV = ['#/squad', '#/qp-upload', '#/qp-delete', '#/direct', '#/accounts', '#/dept/warehouse'];
   function arrangeFav(){
     const fav = document.getElementById('favGrp'), work = document.getElementById('workAnchor');
     if(!fav) return;
