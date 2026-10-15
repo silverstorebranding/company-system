@@ -4940,6 +4940,7 @@ async function exportToSheet(btn) {
       { key:'accounts',  label:'💼 الحسابات (Italy + Kidzzly + Socky + المجمّعة)',  routes:['accounts','accounts-kidzzly','accounts-socky','accounts-all'] },
       { key:'meta_ads', label:'📊 Ads (Meta)', routes:['meta-ads'] },
       { key:'qp_upload', label:'📤 رفع الأوردرات', routes:['qp-upload'] },
+      { key:'qp_delete', label:'🗑️ مسح بوالص من QP (جوه رفع الأوردرات)', routes:['qp-upload'] },
       { key:'profits', label:'💰 الأرباح',    routes:['profits'] },
       { key:'brands', label:'🏷️ Brands', routes:['brands'] },
       { key:'dept:warehouse', label:'🏬 المخزن', routes:[] },
@@ -5194,7 +5195,9 @@ async function exportToSheet(btn) {
   /* ---------- 📋 زرار "الأقسام": ليستة بالأقسام المتاحة للمستخدم ---------- */
   const hrefOf = s => s.key.startsWith('dept:') ? '#/dept/' + s.key.slice(5) : '#/' + s.routes[0];
   function mySections(){
-    const groups = GROUPS().map(g => ({ title:g.title, items:g.items.filter(s => canSee(hrefOf(s))).map(s => ({ label:s.label, href:hrefOf(s) })) }))
+    const seenHref = new Set();
+    const groups = GROUPS().map(g => ({ title:g.title, items:g.items.filter(s => canSee(hrefOf(s))).map(s => ({ label: s.key === 'qp_delete' ? '📤 رفع الأوردرات' : s.label, href:hrefOf(s) }))
+      .filter(x => { if(seenHref.has(x.href)) return false; seenHref.add(x.href); return true; }) }))
       .filter(g => g.items.length);
     // 📨 الرسايل والمهام لكل الناس — أول حاجة في القايمة، وجنبها عدد الجديد
     const ibN = (window.Inbox && window.Inbox.count) ? window.Inbox.count() : 0;
@@ -9623,6 +9626,8 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
        + تعليم أوردر Squad إنه ملغي (اختياري)
      ===================================================================== */
   const DEL_LOG_KV = 'qp_deleted_log';
+  // مين يقدر يمسح بوالص: الأدمن، أو اللي واخد صلاحية "🗑️ مسح بوالص من QP"
+  const canDelete = () => { const m = me(); return !!(m.is_admin || (Array.isArray(m.allowed_sections) && m.allowed_sections.includes('qp_delete'))); };
   const DEL_REASONS = ['المنتج مش موجود', 'العميل لغى', 'أوردر متكرر', 'غلط في البيانات', 'سبب تاني'];
   const X = { list:[], scanning:false, scanner:null, busy:false, msg:'', msgErr:false, notify:true, cancelSquad:false, log:null, lastCode:'', lastAt:0, reason:DEL_REASONS[0] };
   const isPendingQ = q => { const st = String(q.Order_Delivery_Status ?? q.status ?? '').trim().toLowerCase(); return st === '1' || st === 'pending'; };
@@ -9805,10 +9810,10 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     XLSX.writeFile(wb, `بوالص اتمسحت من QP ${ymd(new Date())} (${list.length}).xlsx`);
   }
   function delHtml(){
-    if(!me().is_admin) return `<div class="up-msg err">مسح البوالص من QP للأدمن بس.</div>`;
+    if(!canDelete()) return `<div class="up-msg err">مسح البوالص من QP محتاج صلاحية "🗑️ مسح بوالص من QP" — كلّم الأدمن.</div>`;
     const ok = X.list.filter(x => x.q && !x.res && isPendingQ(x.q)).length;
     let h = `<div class="card"><h3>🗑️ مسح بوالص من QP</h3>
-      <p style="margin:0 0 10px;font-size:13.5px;color:var(--muted)">امسح باركود البوالص اللي أوردراتها ماتجهزتش، راجع الليستة، وبعدين امسحهم من QP مرة واحدة. QP بيمسح الأوردرات اللي لسه <b>Pending</b> بس.</p>
+      <p style="margin:0 0 10px;font-size:13.5px;color:var(--muted)">${me().is_admin ? '' : '🔐 معاك صلاحية مسح البوالص. '}امسح باركود البوالص اللي أوردراتها ماتجهزتش، راجع الليستة، وبعدين امسحهم من QP مرة واحدة. QP بيمسح الأوردرات اللي لسه <b>Pending</b> بس.</p>
       <div class="up-row">
         ${X.scanning ? '<button class="up-btn" id="upScanStop">⏹️ وقّف الكاميرا</button>' : '<button class="up-btn pri" id="upScanStart">📷 امسح البوالص بالكاميرا</button>'}
         <label class="up-file">📸 صوّر البوليصة<input type="file" id="upPhoto" accept="image/*" capture="environment"></label>
@@ -10073,7 +10078,7 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     h += `<div class="up-tabs"><button class="${S.src === 'squad' ? 'on' : ''}" style="--bc:#8a6a3a" data-upsrc="squad">🏆 Squad</button>
       ${SOURCES.map(x => `<button class="${S.src === x.key ? 'on' : ''}" style="--bc:${esc(x.color || '#2b6cb0')}" data-upsrc="${esc(x.key)}">🌐 ${esc(x.label)}</button>`).join('')}
       <button class="${S.src === 'all' ? 'on' : ''}" style="--bc:#2f7d55" data-upsrc="all">📦 الكل</button>
-      ${me().is_admin ? `<button class="${S.src === 'delete' ? 'on' : ''}" style="--bc:#b3261e" data-upsrc="delete">🗑️ مسح بوالص</button>` : ''}
+      ${canDelete() ? `<button class="${S.src === 'delete' ? 'on' : ''}" style="--bc:#b3261e" data-upsrc="delete">🗑️ مسح بوالص</button>` : ''}
       ${me().is_admin ? `<button class="${S.src === 'settings' ? 'on' : ''}" style="--bc:#555" data-upsrc="settings" title="إدارة المصادر">⚙️</button>` : ''}</div>`;
     if(S.src === 'settings') return h + settingsHtml() + '</div>';
     if(S.src === 'delete') return h + delHtml() + '</div>';
