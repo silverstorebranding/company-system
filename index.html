@@ -6954,6 +6954,10 @@ textarea.eod-in{resize:vertical;min-height:70px}
         { k:'undel_replied',  l:'ردّوا من العملاء', type:'n' },
         { k:'undel_solved',   l:'اتحلّوا (هيستلموا)', type:'n', extra:true },
       ]},
+      { t:'🏢 مبيعات المكتب', f:[
+        { k:'office_orders',    l:'أوردرات المكتب', type:'n' },
+        { k:'office_delivered', l:'اتسلم منها', type:'n' },
+      ]},
       { t:'💬 المحادثات والشكاوى', f:[
         { k:'wa_msgs_start', l:'إجمالي رسايل الواتساب أول اليوم', type:'n' },
         { k:'wa_msgs_left',  l:'رسايل الواتساب الباقية آخر اليوم', type:'n' },
@@ -7038,6 +7042,11 @@ textarea.eod-in{resize:vertical;min-height:70px}
         }
       }
       if(n('wa_msgs_left') > 0) W.push(`فيه ${fmt(n('wa_msgs_left'))} رسالة واتساب لسه باقية آخر اليوم`);
+      // 🏢 مبيعات المكتب
+      if(has('office_orders')){
+        L.push(['نسبة تسليم أوردرات المكتب', pct(n('office_delivered'), n('office_orders')), n('office_delivered') >= n('office_orders') ? 'good' : '']);
+        if(n('office_delivered') > n('office_orders')) W.push('اللي اتسلم من أوردرات المكتب أكتر من عددها — راجع الأرقام');
+      }
     }
     return { L, W };
   }
