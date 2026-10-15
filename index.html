@@ -9652,46 +9652,87 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     if(kind === 'denied') return isIOS()
       ? 'الكاميرا ممنوعة. افتح: الإعدادات ← Safari ← الكاميرا ← اختار "سماح"، وبعدين اعمل Refresh للصفحة ودوس 📷 تاني.'
       : 'الكاميرا ممنوعة للموقع. دوس على 🔒 اللي جنب اللينك فوق ← Permissions (الأذونات) ← Camera ← Allow، وبعدين اعمل Refresh ودوس 📷 تاني.';
-    if(kind === 'busy') return 'الكاميرا مفتوحة في برنامج أو تاب تاني. اقفله وجرّب تاني.';
+    if(kind === 'busy') return 'الموبايل مش راضي يفتح الكاميرا (غالبًا مفتوحة في تطبيق أو تاب تاني). اقفل أي تطبيق كاميرا أو تاب فاتح الكاميرا، واقفل الصفحة دي وافتحها تاني، وجرّب.';
     if(kind === 'none') return 'مالقيتش كاميرا على الجهاز ده. افتح السيستم من الموبايل.';
     return '';
   }
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  function camErrMsg(e){
+    const n = e && e.name;
+    const kind = n === 'NotAllowedError' || n === 'SecurityError' ? 'denied' : n === 'NotReadableError' || /could not start|in use|busy/i.test((e && e.message) || String(e || '')) ? 'busy' : n === 'NotFoundError' ? 'none' : '';
+    return '📷 الكاميرا مااشتغلتش. ' + (camHelp(kind) || ((e && e.message) || n || String(e || ''))) + ' — ولحد ما تتظبط استخدم 📸 صوّر البوليصة أو اكتب الرقم.';
+  }
+  // بيفتح الكاميرا الخلفية، ولو فشل بيجرّب طرق أبسط (بعض الموبايلات بترفض الطلبات المحددة)
+  async function openStream(){
+    const tries = [ { video:{ facingMode:{ exact:'environment' } } }, { video:{ facingMode:'environment' } }, { video:true } ];
+    let last;
+    for(const t of tries){
+      try{ return await navigator.mediaDevices.getUserMedia(t); }
+      catch(e){ last = e; if(e.name === 'NotAllowedError' || e.name === 'SecurityError') throw e; await sleep(400); }
+    }
+    throw last;
+  }
+  const onCode = text => {
+    const sr = serialFrom(text), now = Date.now();
+    if(sr && sr === X.lastCode && now - X.lastAt < 2500) return; // نفس الكود لسه متقري
+    X.lastCode = sr; X.lastAt = now; addSerial(text);
+  };
   async function startScan(){
     X.msg = ''; X.msgErr = false;
-    try{
-      if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ X.msg = 'المتصفح ده مش بيدعم الكاميرا. ' + (camHelp('') || 'افتح السيستم في Chrome أو Safari.') + ' — أو استخدم 📸 صوّر البوليصة.'; X.msgErr = true; draw(); return; }
-      // 1) نطلب إذن الكاميرا الأول (بيظهر سؤال "السماح" لو لسه ماتسألش)
-      try{ const st = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:{ ideal:'environment' } } }); st.getTracks().forEach(t => t.stop()); }
-      catch(e){
-        const n = e && e.name;
-        const kind = n === 'NotAllowedError' || n === 'SecurityError' ? 'denied' : n === 'NotReadableError' ? 'busy' : n === 'NotFoundError' || n === 'OverconstrainedError' ? 'none' : '';
-        X.msg = '📷 الكاميرا مااشتغلتش. ' + (camHelp(kind) || (e.message || n)) + ' — ولحد ما تتظبط استخدم 📸 صوّر البوليصة أو اكتب الرقم.'; X.msgErr = true; draw(); return;
+    if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ X.msg = 'المتصفح ده مش بيدعم الكاميرا. ' + (camHelp('') || 'افتح السيستم في Chrome أو Safari.') + ' — أو استخدم 📸 صوّر البوليصة.'; X.msgErr = true; draw(); return; }
+    connect().catch(() => {});
+    // ✅ الطريقة الأولى: قارئ الباركود اللي جوه المتصفح نفسه (Chrome على أندرويد) — أسرع وأضمن
+    if('BarcodeDetector' in window){
+      try{
+        const formats = await window.BarcodeDetector.getSupportedFormats().catch(() => []);
+        const det = new window.BarcodeDetector(formats.length ? { formats } : undefined);
+        const stream = await openStream();
+        X.scanning = true; draw();
+        const box = document.getElementById('upScanBox');
+        const v = document.createElement('video');
+        v.setAttribute('playsinline', ''); v.muted = true; v.autoplay = true; v.style.cssText = 'width:100%;display:block';
+        v.srcObject = stream; box.innerHTML = ''; box.appendChild(v);
+        await v.play().catch(() => {});
+        box.scrollIntoView({ behavior:'smooth', block:'center' });
+        X.native = { stream, v, timer:null, busy:false };
+        X.native.timer = setInterval(async () => {
+          if(!X.native || X.native.busy || v.readyState < 2) return;
+          X.native.busy = true;
+          try{ const codes = await det.detect(v); if(codes && codes[0]) onCode(codes[0].rawValue); }catch(e){}
+          if(X.native) X.native.busy = false;
+        }, 250);
+        return;
+      }catch(e){
+        stopNative();
+        if(e && (e.name === 'NotAllowedError' || e.name === 'SecurityError')){ X.scanning = false; X.msg = camErrMsg(e); X.msgErr = true; draw(); return; }
       }
-      connect().catch(() => {});
+    }
+    // ✅ الطريقة التانية: مكتبة html5-qrcode (بتجرّب كل الكاميرات لحد ما واحدة تفتح)
+    try{
       await loadDelScanner();
-      // 2) نفتح الماسح جوه المربع اللي على الشاشة
       X.scanning = true; draw();
       const box = document.getElementById('upScanBox'); if(box){ box.style.display = 'block'; box.scrollIntoView({ behavior:'smooth', block:'center' }); }
       X.scanner = new Html5Qrcode('upScanBox', { verbose:false });
-      const onCode = text => {
-        const sr = serialFrom(text), now = Date.now();
-        if(sr && sr === X.lastCode && now - X.lastAt < 2500) return; // نفس الكود لسه متقري
-        X.lastCode = sr; X.lastAt = now; addSerial(text);
-      };
-      const cfg = { fps:12, aspectRatio:1.333, videoConstraints:{ facingMode:'environment', width:{ ideal:1280 }, height:{ ideal:960 } } }; // من غير إطار تضليل: بيقرا الباركود من الصورة كلها
-      try{ await X.scanner.start({ facingMode:'environment' }, cfg, onCode, () => {}); }
-      catch(e1){ // بعض الأجهزة: نختار أول كاميرا خلفية بالاسم
-        const cams = await Html5Qrcode.getCameras();
-        const back = cams.find(c => /back|rear|environment|خلف/i.test(c.label)) || cams[cams.length - 1];
-        if(!back) throw e1;
-        await X.scanner.start(back.id, cfg, onCode, () => {});
+      let ok = false, lastErr;
+      const cams = await Html5Qrcode.getCameras().catch(() => []);
+      const back = cams.filter(c => /back|rear|environment|خلف/i.test(c.label));
+      for(const opt of [{ facingMode:'environment' }, ...back.map(c => c.id), ...cams.map(c => c.id)]){
+        try{ await X.scanner.start(opt, { fps:10 }, onCode, () => {}); ok = true; break; }
+        catch(e){ lastErr = e; await sleep(500); }
       }
+      if(!ok) throw lastErr || new Error('Could not start video source');
       const v = document.querySelector('#upScanBox video'); if(v){ v.setAttribute('playsinline', ''); v.muted = true; v.style.width = '100%'; }
     }catch(e){
       try{ if(X.scanner) X.scanner.clear(); }catch(_){}
       X.scanner = null; X.scanning = false;
-      X.msg = '📷 الكاميرا مااشتغلتش: ' + (e.message || e) + ' — استخدم 📸 صوّر البوليصة أو اكتب الرقم.'; X.msgErr = true; draw();
+      X.msg = camErrMsg(e); X.msgErr = true; draw();
     }
+  }
+  function stopNative(){
+    if(!X.native) return;
+    clearInterval(X.native.timer);
+    try{ X.native.stream.getTracks().forEach(t => t.stop()); }catch(e){}
+    X.native = null;
   }
   // 📸 بديل: صورة عادية من كاميرا الموبايل والسيستم يقرا الباركود منها
   async function scanPhoto(file){
@@ -9708,7 +9749,7 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     }catch(e){ X.msg = '📸 مقدرتش أقرا باركود من الصورة — قرّب الكاميرا من الباركود وخليه واضح ومنوّر، أو اكتب الرقم.'; X.msgErr = true; beep(false); draw(); }
     const fi = document.getElementById('upPhoto'); if(fi) fi.value = '';
   }
-  async function stopScan(){ try{ if(X.scanner){ await X.scanner.stop(); X.scanner.clear(); } }catch(e){} X.scanner = null; X.scanning = false; draw(); }
+  async function stopScan(){ stopNative(); try{ if(X.scanner){ await X.scanner.stop(); X.scanner.clear(); } }catch(e){} X.scanner = null; X.scanning = false; draw(); }
 
   async function loadDelLog(){
     const { data } = await sbc().from('app_kv').select('*').eq('key', DEL_LOG_KV).maybeSingle();
@@ -10316,6 +10357,7 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     document.querySelectorAll('[data-upf$=".note"]').forEach(i => i.placeholder = S.note || '— لسه —');
   }
 
+  window.addEventListener('hashchange', () => { if(!isUP() && (X.native || X.scanner)) stopScan(); });
   function mount(){ draw(); if(!E.srcLoaded && sbc()) loadSources().then(() => { if(!E.ptrLoaded) return loadPtr(); }).then(() => { if(!SQ.loaded) return loadSquadPtr(); }).then(draw); }
   const _render = render;
   render = function(){ _render.apply(this, arguments); if(isUP()) mount(); };
