@@ -9578,6 +9578,43 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     D.loading = false; draw();
   }
 
+  /* ⬇️ شيت كل الأوردرات اللي اترفعت على QP في يوم (زي Print order) — بأرقام الشحنات */
+  const QD = { day: ymd(new Date()), pendOnly:true, loading:false, msg:'' };
+  async function exportQPDay(){
+    const api = window.QP && window.QP.api;
+    if(!api || !api.hasCreds()){ QD.msg = '⚠️ لازم تكون عامل دخول QP من قسم 🚚 QP على الجهاز ده.'; draw(); return; }
+    if(!window.XLSX){ QD.msg = 'مكتبة Excel مش متحمّلة، اعمل Refresh.'; draw(); return; }
+    QD.loading = true; QD.msg = 'بيجيب أوردرات QP...'; draw();
+    try{
+      let list = await api.fetchRange(QD.day, QD.day, n => { QD.msg = `بيجيب أوردرات QP... ${n} أوردر`; draw(); });
+      list = list.filter(q => ymd(new Date(q.order_date)) === QD.day);
+      if(QD.pendOnly) list = list.filter(q => String(q.Order_Delivery_Status ?? '').trim() === '1');
+      list.sort((a, b) => new Date(a.order_date) - new Date(b.order_date));
+      if(!list.length){ QD.loading = false; QD.msg = `مفيش أوردرات${QD.pendOnly ? ' Pending' : ''} في QP يوم ${QD.day}.`; draw(); return; }
+      const H = [null, 'serial', 'full name', 'phone', 'address', 'total amount', 'notes', 'order date', 'shipment contents', 'weight', 'city', 'status'];
+      const aoa = [H].concat(list.map(q => [null, String(q.serial ?? ''), q.full_name || '', phoneOf(q.phone), q.address || '', numOf(q.total_amount ?? q.price), q.notes || '',
+        q.order_date ? new Date(q.order_date).toLocaleString('en-GB', { hour12:false }) : '', q.shipment_contents || '', numOf(q.weight), q.city || '', String(api.label(q) || '').replace(/\s*#\d+$/, '')]));
+      const ws = XLSX.utils.aoa_to_sheet(aoa);
+      for(let i = 2; i <= aoa.length; i++){ ['B', 'D'].forEach(c => { const x = ws[c + i]; if(x){ x.t = 's'; x.v = String(x.v); x.z = '@'; } }); }
+      ws['!cols'] = [{ wch:3 }, { wch:11 }, { wch:22 }, { wch:13 }, { wch:45 }, { wch:12 }, { wch:16 }, { wch:18 }, { wch:40 }, { wch:8 }, { wch:12 }, { wch:16 }];
+      const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Sheet3');
+      const total = list.reduce((a, q) => a + (numOf(q.total_amount ?? q.price) || 0), 0);
+      XLSX.writeFile(wb, `QP Print order ${QD.day} (${list.length}).xlsx`);
+      QD.msg = `✅ اتنزّل شيت فيه ${list.length} أوردر${QD.pendOnly ? ' Pending' : ''} — إجمالي ${total.toLocaleString('ar-EG')} ج.`;
+    }catch(e){ QD.msg = 'مقدرتش أجيب أوردرات QP: ' + e.message; }
+    QD.loading = false; draw();
+  }
+  function qpDayHtml(){
+    return `<div class="card"><h3>🖨️ شيت أوردرات QP (Print order)</h3>
+      <p style="margin:0 0 10px;font-size:13.5px;color:var(--muted)">بينزّل شيت بكل الأوردرات اللي اترفعت على QP في اليوم ده — من السيستم أو من برّه — بأرقام الشحنات، بنفس أعمدة شيت QP.</p>
+      <div class="up-row">
+        <label style="font-size:13.5px">اليوم <input type="date" id="upQdDay" value="${esc(QD.day)}" style="padding:7px 9px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit"></label>
+        <label style="font-size:13.5px"><input type="checkbox" id="upQdPend" ${QD.pendOnly ? 'checked' : ''}> Pending بس (اللي في Print order)</label>
+        <button class="up-btn pri" id="upQdGo" ${QD.loading ? 'disabled' : ''}>${QD.loading ? '⏳ بيجيب...' : '⬇️ نزّل الشيت'}</button>
+      </div>
+      ${QD.msg ? `<div class="up-msg ${/⚠️|مقدرتش|مفيش/.test(QD.msg) ? 'err' : 'ok'}" style="margin-bottom:0">${esc(QD.msg)}</div>` : ''}</div>`;
+  }
+
   function easyFinish(rows, label){
     E.hiddenOld = 0;
     const cancelled = rows.filter(r => isCancel(r.estatus));
@@ -9943,6 +9980,9 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
   }
 
   function histHtml(){
+    return qpDayHtml() + histOnly();
+  }
+  function histOnly(){
     if(!S.hist.length) return '';
     return `<div class="card"><h3>🕘 آخر رفع (على الجهاز ده) — 🚀 اترفع على QP · ⬇️ شيت اتنزّل</h3><div class="up-hist">${S.hist.map(x =>
       `<div>${x.qp ? '🚀' : '⬇️'} ${new Date(x.at).toLocaleString('ar-EG', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' })} — <b>${x.n}</b> أوردر · ${Number(x.total).toLocaleString('ar-EG')} ج · notes: <b>${esc(x.notes)}</b>${x.by ? ' · ' + esc(x.by) : ''}</div>`).join('')}</div></div>`;
@@ -9975,6 +10015,9 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
       dupCheck(); draw();
     };
     if($('upSend')) $('upSend').onclick = sendToQP;
+    if($('upQdDay')) $('upQdDay').onchange = e => { QD.day = e.target.value || ymd(new Date()); QD.msg = ''; };
+    if($('upQdPend')) $('upQdPend').onchange = e => { QD.pendOnly = e.target.checked; };
+    if($('upQdGo')) $('upQdGo').onclick = exportQPDay;
     if($('upDup')) $('upDup').onclick = dupQP;
     // 🧹 يشيل كل الأوردرات اللي مرفوعة في QP من الشيت مرة واحدة (وتتحسب إنها اتاخدت)
     if($('upDupDel')) $('upDupDel').onclick = () => {
