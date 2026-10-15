@@ -9645,19 +9645,68 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     if(window.Html5Qrcode) return;
     await new Promise((res, rej) => { const sc = document.createElement('script'); sc.src = 'https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js'; sc.onload = res; sc.onerror = () => rej(new Error('مش قادر أحمّل الماسح')); document.head.appendChild(sc); });
   }
+  const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const inApp = () => /FBAN|FBAV|Instagram|WhatsApp|Line\/|; wv\)/i.test(navigator.userAgent);
+  function camHelp(kind){
+    if(inApp()) return 'إنت فاتح السيستم من جوه تطبيق (واتساب/فيسبوك) وده بيمنع الكاميرا. افتح اللينك في Chrome أو Safari نفسه.';
+    if(kind === 'denied') return isIOS()
+      ? 'الكاميرا ممنوعة. افتح: الإعدادات ← Safari ← الكاميرا ← اختار "سماح"، وبعدين اعمل Refresh للصفحة ودوس 📷 تاني.'
+      : 'الكاميرا ممنوعة للموقع. دوس على 🔒 اللي جنب اللينك فوق ← Permissions (الأذونات) ← Camera ← Allow، وبعدين اعمل Refresh ودوس 📷 تاني.';
+    if(kind === 'busy') return 'الكاميرا مفتوحة في برنامج أو تاب تاني. اقفله وجرّب تاني.';
+    if(kind === 'none') return 'مالقيتش كاميرا على الجهاز ده. افتح السيستم من الموبايل.';
+    return '';
+  }
   async function startScan(){
+    X.msg = ''; X.msgErr = false;
     try{
-      await connect();
-      if(!qpCities && S.connErr){ X.msg = S.connErr; X.msgErr = true; draw(); return; }
+      if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ X.msg = 'المتصفح ده مش بيدعم الكاميرا. ' + (camHelp('') || 'افتح السيستم في Chrome أو Safari.') + ' — أو استخدم 📸 صوّر البوليصة.'; X.msgErr = true; draw(); return; }
+      // 1) نطلب إذن الكاميرا الأول (بيظهر سؤال "السماح" لو لسه ماتسألش)
+      try{ const st = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:{ ideal:'environment' } } }); st.getTracks().forEach(t => t.stop()); }
+      catch(e){
+        const n = e && e.name;
+        const kind = n === 'NotAllowedError' || n === 'SecurityError' ? 'denied' : n === 'NotReadableError' ? 'busy' : n === 'NotFoundError' || n === 'OverconstrainedError' ? 'none' : '';
+        X.msg = '📷 الكاميرا مااشتغلتش. ' + (camHelp(kind) || (e.message || n)) + ' — ولحد ما تتظبط استخدم 📸 صوّر البوليصة أو اكتب الرقم.'; X.msgErr = true; draw(); return;
+      }
+      connect().catch(() => {});
       await loadDelScanner();
+      // 2) نفتح الماسح جوه المربع اللي على الشاشة
       X.scanning = true; draw();
-      X.scanner = new Html5Qrcode('upScanBox');
-      await X.scanner.start({ facingMode:'environment' }, { fps:12, qrbox:{ width:280, height:150 } }, text => {
+      const box = document.getElementById('upScanBox'); if(box){ box.style.display = 'block'; box.scrollIntoView({ behavior:'smooth', block:'center' }); }
+      X.scanner = new Html5Qrcode('upScanBox', { verbose:false });
+      const onCode = text => {
         const sr = serialFrom(text), now = Date.now();
         if(sr && sr === X.lastCode && now - X.lastAt < 2500) return; // نفس الكود لسه متقري
         X.lastCode = sr; X.lastAt = now; addSerial(text);
-      }, () => {});
-    }catch(e){ X.scanning = false; X.msg = 'الكاميرا مااشتغلتش: ' + (e.message || e) + ' — اتأكد إنك سمحت للموقع يستخدم الكاميرا، أو اكتب الرقم بإيدك.'; X.msgErr = true; draw(); }
+      };
+      const cfg = { fps:12, aspectRatio:1.333, videoConstraints:{ facingMode:'environment', width:{ ideal:1280 }, height:{ ideal:960 } } }; // من غير إطار تضليل: بيقرا الباركود من الصورة كلها
+      try{ await X.scanner.start({ facingMode:'environment' }, cfg, onCode, () => {}); }
+      catch(e1){ // بعض الأجهزة: نختار أول كاميرا خلفية بالاسم
+        const cams = await Html5Qrcode.getCameras();
+        const back = cams.find(c => /back|rear|environment|خلف/i.test(c.label)) || cams[cams.length - 1];
+        if(!back) throw e1;
+        await X.scanner.start(back.id, cfg, onCode, () => {});
+      }
+      const v = document.querySelector('#upScanBox video'); if(v){ v.setAttribute('playsinline', ''); v.muted = true; v.style.width = '100%'; }
+    }catch(e){
+      try{ if(X.scanner) X.scanner.clear(); }catch(_){}
+      X.scanner = null; X.scanning = false;
+      X.msg = '📷 الكاميرا مااشتغلتش: ' + (e.message || e) + ' — استخدم 📸 صوّر البوليصة أو اكتب الرقم.'; X.msgErr = true; draw();
+    }
+  }
+  // 📸 بديل: صورة عادية من كاميرا الموبايل والسيستم يقرا الباركود منها
+  async function scanPhoto(file){
+    if(!file) return;
+    try{
+      connect().catch(() => {});
+      await loadDelScanner();
+      let holder = document.getElementById('upScanTmp');
+      if(!holder){ holder = document.createElement('div'); holder.id = 'upScanTmp'; holder.style.display = 'none'; document.body.appendChild(holder); }
+      const h = new Html5Qrcode('upScanTmp', { verbose:false });
+      const text = await h.scanFile(file, false);
+      try{ h.clear(); }catch(_){}
+      addSerial(text);
+    }catch(e){ X.msg = '📸 مقدرتش أقرا باركود من الصورة — قرّب الكاميرا من الباركود وخليه واضح ومنوّر، أو اكتب الرقم.'; X.msgErr = true; beep(false); draw(); }
+    const fi = document.getElementById('upPhoto'); if(fi) fi.value = '';
   }
   async function stopScan(){ try{ if(X.scanner){ await X.scanner.stop(); X.scanner.clear(); } }catch(e){} X.scanner = null; X.scanning = false; draw(); }
 
@@ -9721,11 +9770,13 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
       <p style="margin:0 0 10px;font-size:13.5px;color:var(--muted)">امسح باركود البوالص اللي أوردراتها ماتجهزتش، راجع الليستة، وبعدين امسحهم من QP مرة واحدة. QP بيمسح الأوردرات اللي لسه <b>Pending</b> بس.</p>
       <div class="up-row">
         ${X.scanning ? '<button class="up-btn" id="upScanStop">⏹️ وقّف الكاميرا</button>' : '<button class="up-btn pri" id="upScanStart">📷 امسح البوالص بالكاميرا</button>'}
+        <label class="up-file">📸 صوّر البوليصة<input type="file" id="upPhoto" accept="image/*" capture="environment"></label>
         <input id="upSerial" placeholder="أو اكتب رقم الشحنة (أو أكتر من رقم)" style="max-width:260px;padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;direction:ltr">
         <button class="up-btn" id="upSerialAdd">➕ ضيف</button>
         <label style="font-size:13px">السبب الافتراضي <select id="upDelReason" style="padding:7px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit">${DEL_REASONS.map(r => `<option ${X.reason === r ? 'selected' : ''}>${r}</option>`).join('')}</select></label>
       </div>
-      <div id="upScanBox" style="${X.scanning ? 'margin-top:12px;max-width:420px;border-radius:12px;overflow:hidden' : 'display:none'}"></div>
+      <div id="upScanBox" style="${X.scanning ? 'display:block;margin-top:12px;width:100%;max-width:460px;min-height:240px;border-radius:12px;overflow:hidden;background:#000' : 'display:none'}"></div>
+      ${X.scanning ? '<p style="font-size:12.5px;color:var(--muted);margin:6px 0 0">وجّه الكاميرا على الباركود اللي على البوليصة — أول ما يتقري هتسمع بيب وتنزل في الليستة. عدّي البوالص واحدة ورا التانية.</p>' : ''}
       ${X.msg ? `<div class="up-msg ${X.msgErr ? 'err' : 'ok'}">${esc(X.msg)}</div>` : ''}
     </div>`;
     if(X.list.length){
@@ -10142,7 +10193,7 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     if(S.src === 'delete' && X.scanning && document.getElementById('upScanBox')){
       const box = document.getElementById('upScanBox'); box.remove();
       const y0 = window.scrollY; main.innerHTML = view(); window.scrollTo(0, y0);
-      const ph = document.getElementById('upScanBox'); if(ph) ph.replaceWith(box);
+      const ph = document.getElementById('upScanBox'); if(ph){ box.style.cssText = ph.style.cssText; ph.replaceWith(box); }
       wire(); return;
     }
     const y = window.scrollY;
@@ -10172,6 +10223,7 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     // 🗑️ مسح بوالص
     if($('upScanStart')) $('upScanStart').onclick = startScan;
     if($('upScanStop')) $('upScanStop').onclick = stopScan;
+    if($('upPhoto')) $('upPhoto').onchange = e => scanPhoto(e.target.files[0]);
     const addTyped = async () => { const el = $('upSerial'); if(!el) return; const vals = digits(el.value).match(/\d{6,12}/g) || []; el.value = ''; if(!vals.length) return; try{ await connect(); }catch(e){} for(const v of vals) await addSerial(v); };
     if($('upSerialAdd')) $('upSerialAdd').onclick = addTyped;
     if($('upSerial')) $('upSerial').onkeydown = e => { if(e.key === 'Enter'){ e.preventDefault(); addTyped(); } };
