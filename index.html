@@ -9615,6 +9615,150 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
       ${QD.msg ? `<div class="up-msg ${/⚠️|مقدرتش|مفيش/.test(QD.msg) ? 'err' : 'ok'}" style="margin-bottom:0">${esc(QD.msg)}</div>` : ''}</div>`;
   }
 
+  /* =====================================================================
+     🗑️ مسح بوالص من QP (للأدمن)
+     - 📷 تمسح باركود البوليصة بالكاميرا (أو تكتب رقم الشحنة) → السيستم يجيب الأوردر من QP
+     - تراجع الليستة وتختار السبب → 🗑️ يمسحهم من QP (QP بيمسح الـ Pending بس)
+     - بعد المسح: شيت بكل اللي اتمسح + سجل في السيستم + رسالة للموظفة صاحبة الأوردر (اختياري)
+       + تعليم أوردر Squad إنه ملغي (اختياري)
+     ===================================================================== */
+  const DEL_LOG_KV = 'qp_deleted_log';
+  const DEL_REASONS = ['المنتج مش موجود', 'العميل لغى', 'أوردر متكرر', 'غلط في البيانات', 'سبب تاني'];
+  const X = { list:[], scanning:false, scanner:null, busy:false, msg:'', msgErr:false, notify:true, cancelSquad:false, log:null, lastCode:'', lastAt:0, reason:DEL_REASONS[0] };
+  const isPendingQ = q => { const st = String(q.Order_Delivery_Status ?? q.status ?? '').trim().toLowerCase(); return st === '1' || st === 'pending'; };
+  const serialFrom = t => { const m = digits(String(t || '')).match(/\d{6,12}/); return m ? m[0] : ''; };
+  function beep(ok){
+    try{ const c = new (window.AudioContext || window.webkitAudioContext)(), o = c.createOscillator(), g = c.createGain();
+      o.frequency.value = ok ? 1200 : 300; o.type = 'square'; g.gain.value = 0.08; o.connect(g); g.connect(c.destination); o.start(); o.stop(c.currentTime + (ok ? 0.12 : 0.3)); }catch(e){}
+  }
+  async function addSerial(raw){
+    const serial = serialFrom(raw);
+    if(!serial){ X.msg = 'مش قادر أقرا رقم شحنة من: ' + String(raw).slice(0, 40); X.msgErr = true; beep(false); draw(); return; }
+    if(X.list.some(x => x.serial === serial)){ X.msg = `البوليصة ${serial} موجودة في الليستة أصلاً.`; X.msgErr = true; beep(false); draw(); return; }
+    const row = { serial, loading:true, reason: X.reason, q:null, err:'', res:'' };
+    X.list.unshift(row); X.msg = ''; beep(true); draw();
+    try{ row.q = await qpCall('order/' + encodeURIComponent(serial)); if(row.q && row.q.data && !row.q.serial) row.q = row.q.data; }
+    catch(e){ row.err = /not found|404|No .* matches/i.test(e.message) ? 'مش موجودة في QP' : e.message; }
+    row.loading = false; draw();
+  }
+  async function loadDelScanner(){
+    if(window.Html5Qrcode) return;
+    await new Promise((res, rej) => { const sc = document.createElement('script'); sc.src = 'https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js'; sc.onload = res; sc.onerror = () => rej(new Error('مش قادر أحمّل الماسح')); document.head.appendChild(sc); });
+  }
+  async function startScan(){
+    try{
+      await connect();
+      if(!qpCities && S.connErr){ X.msg = S.connErr; X.msgErr = true; draw(); return; }
+      await loadDelScanner();
+      X.scanning = true; draw();
+      X.scanner = new Html5Qrcode('upScanBox');
+      await X.scanner.start({ facingMode:'environment' }, { fps:12, qrbox:{ width:280, height:150 } }, text => {
+        const sr = serialFrom(text), now = Date.now();
+        if(sr && sr === X.lastCode && now - X.lastAt < 2500) return; // نفس الكود لسه متقري
+        X.lastCode = sr; X.lastAt = now; addSerial(text);
+      }, () => {});
+    }catch(e){ X.scanning = false; X.msg = 'الكاميرا مااشتغلتش: ' + (e.message || e) + ' — اتأكد إنك سمحت للموقع يستخدم الكاميرا، أو اكتب الرقم بإيدك.'; X.msgErr = true; draw(); }
+  }
+  async function stopScan(){ try{ if(X.scanner){ await X.scanner.stop(); X.scanner.clear(); } }catch(e){} X.scanner = null; X.scanning = false; draw(); }
+
+  async function loadDelLog(){
+    const { data } = await sbc().from('app_kv').select('*').eq('key', DEL_LOG_KV).maybeSingle();
+    X.log = (data && data.value && data.value.list) || [];
+  }
+  async function deleteFromQP(){
+    const rows = X.list.filter(x => x.q && !x.res && isPendingQ(x.q));
+    if(!rows.length) return;
+    if(!confirm(`هيتمسح من QP نهائيًا ${rows.length} أوردر:\n${rows.slice(0, 12).map(x => '• ' + x.serial + ' — ' + (x.q.full_name || '') + ' (' + x.reason + ')').join('\n')}${rows.length > 12 ? '\n...' : ''}\n\nمينفعش ترجّعهم بعد كده. تكمل؟`)) return;
+    X.busy = true; draw();
+    const done = [];
+    for(const x of rows){
+      try{ await qpCall('order/' + encodeURIComponent(x.serial), { method:'DELETE' }); x.res = 'ok'; done.push(x); }
+      catch(e){ x.res = 'err'; x.err = e.message; }
+      draw();
+    }
+    const by = me().full_name || me().username || '';
+    // 🔗 أوردرات Squad بنفس الموبايل (آخر 20 يوم)
+    let sq = [];
+    if(done.length && (X.notify || X.cancelSquad)){
+      const from = new Date(); from.setDate(from.getDate() - 20);
+      const { data } = await sbc().from('orders').select('id, agent_id, customer_name, customer_phone, status, created_at').gte('created_at', from.toISOString()).limit(5000);
+      sq = data || [];
+      if(!Object.keys(SQ.names).length){ const { data: pr } = await sbc().from('profiles').select('id, username, full_name'); (pr || []).forEach(p => SQ.names[p.id] = p.full_name || p.username || 'موظف'); }
+    }
+    const inbox = [], cancelIds = [];
+    done.forEach(x => {
+      const m = sq.filter(o => phoneOf(o.customer_phone) === phoneOf(x.q.phone)).sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
+      x.agent = m ? (SQ.names[m.agent_id] || '') : '';
+      if(m && X.notify && m.agent_id) inbox.push({ kind:'message', from_id: me().id, from_name: by, to_id: m.agent_id, to_name: SQ.names[m.agent_id] || '',
+        title: `🗑️ اتشال أوردر ${x.q.full_name || ''} من QP`, body: `البوليصة ${x.serial} اتمسحت من QP.\nالسبب: ${x.reason}\n👤 ${x.q.full_name || '—'} — 📞 ${x.q.phone || '—'}\n🧾 ${x.q.shipment_contents || '—'} — 💰 ${x.q.total_amount ?? x.q.price ?? '—'} ج\n\nكلّمي العميل وبلّغيه.` });
+      if(m && X.cancelSquad && m.status !== 'cancelled') cancelIds.push(m.id);
+    });
+    if(inbox.length) await sbc().from('inbox').insert(inbox);
+    if(cancelIds.length) await sbc().from('orders').update({ status:'cancelled' }).in('id', cancelIds);
+    // 📒 السجل
+    if(done.length){
+      if(X.log === null) await loadDelLog();
+      const add = done.map(x => ({ serial:x.serial, name:x.q.full_name || '', phone:x.q.phone || '', amount:x.q.total_amount ?? x.q.price ?? '', notes:x.q.notes || '', contents:x.q.shipment_contents || '', reason:x.reason, agent:x.agent || '', by, at:new Date().toISOString() }));
+      X.log = add.concat(X.log || []).slice(0, 500);
+      await sbc().from('app_kv').upsert({ key:DEL_LOG_KV, value:{ list:X.log }, updated_at:new Date().toISOString(), updated_by_name:by });
+      delSheet(add);
+    }
+    const fail = rows.length - done.length;
+    X.busy = false; X.msgErr = !!fail;
+    X.msg = `🗑️ اتمسح ${done.length} أوردر من QP${fail ? ` — و ${fail} QP رفض مسحهم (السبب جنبهم)` : ''}.${inbox.length ? ` واتبعت ${inbox.length} رسالة للموظفات.` : ''}${cancelIds.length ? ` واتعلّم ${cancelIds.length} أوردر Squad إنه ملغي.` : ''}`;
+    draw();
+  }
+  function delSheet(list){
+    if(!window.XLSX || !list.length) return;
+    const ws = XLSX.utils.json_to_sheet(list.map(x => ({ 'رقم الشحنة':String(x.serial), 'العميل':x.name, 'الموبايل':String(x.phone), 'القيمة':x.amount, 'notes':x.notes, 'المحتوى':x.contents, 'السبب':x.reason, 'الموظفة':x.agent, 'اتمسح بواسطة':x.by, 'التاريخ':new Date(x.at).toLocaleString('ar-EG') })));
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'اتمسح من QP');
+    XLSX.writeFile(wb, `بوالص اتمسحت من QP ${ymd(new Date())} (${list.length}).xlsx`);
+  }
+  function delHtml(){
+    if(!me().is_admin) return `<div class="up-msg err">مسح البوالص من QP للأدمن بس.</div>`;
+    const ok = X.list.filter(x => x.q && !x.res && isPendingQ(x.q)).length;
+    let h = `<div class="card"><h3>🗑️ مسح بوالص من QP</h3>
+      <p style="margin:0 0 10px;font-size:13.5px;color:var(--muted)">امسح باركود البوالص اللي أوردراتها ماتجهزتش، راجع الليستة، وبعدين امسحهم من QP مرة واحدة. QP بيمسح الأوردرات اللي لسه <b>Pending</b> بس.</p>
+      <div class="up-row">
+        ${X.scanning ? '<button class="up-btn" id="upScanStop">⏹️ وقّف الكاميرا</button>' : '<button class="up-btn pri" id="upScanStart">📷 امسح البوالص بالكاميرا</button>'}
+        <input id="upSerial" placeholder="أو اكتب رقم الشحنة (أو أكتر من رقم)" style="max-width:260px;padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;direction:ltr">
+        <button class="up-btn" id="upSerialAdd">➕ ضيف</button>
+        <label style="font-size:13px">السبب الافتراضي <select id="upDelReason" style="padding:7px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit">${DEL_REASONS.map(r => `<option ${X.reason === r ? 'selected' : ''}>${r}</option>`).join('')}</select></label>
+      </div>
+      <div id="upScanBox" style="${X.scanning ? 'margin-top:12px;max-width:420px;border-radius:12px;overflow:hidden' : 'display:none'}"></div>
+      ${X.msg ? `<div class="up-msg ${X.msgErr ? 'err' : 'ok'}">${esc(X.msg)}</div>` : ''}
+    </div>`;
+    if(X.list.length){
+      h += `<div class="card"><h3>📋 البوالص اللي اتمسحت (${X.list.length})</h3>
+        <div class="up-sheet"><table><thead><tr><th>رقم الشحنة</th><th>العميل</th><th>الموبايل</th><th>المحتوى</th><th>السعر</th><th>notes</th><th>الحالة في QP</th><th>السبب</th><th>النتيجة</th><th></th></tr></thead><tbody>
+        ${X.list.map((x, i) => { const q = x.q || {}, pend = x.q && isPendingQ(q);
+          const stTxt = x.loading ? '⏳' : x.err && !x.q ? '❌ ' + x.err : (window.QP && window.QP.api && x.q ? String(window.QP.api.label(q) || '').replace(/\s*#\d+$/, '') : (q.status || ''));
+          return `<tr class="${x.res === 'ok' ? '' : (x.q && !pend) || (x.err && !x.q) || x.res === 'err' ? 'bad' : ''}" ${x.res === 'ok' ? 'style="background:#eef8f1;opacity:.75"' : ''}>
+            <td style="padding:6px 8px;direction:ltr;font-weight:700">${esc(x.serial)}</td><td style="padding:6px 8px">${esc(q.full_name || '')}</td>
+            <td style="padding:6px 8px;direction:ltr">${esc(q.phone || '')}</td><td style="padding:6px 8px;max-width:260px;white-space:normal">${esc(q.shipment_contents || '')}</td>
+            <td style="padding:6px 8px">${esc(String(q.total_amount ?? q.price ?? '').replace(/\.00$/, ''))}</td><td style="padding:6px 8px">${esc(q.notes || '')}</td>
+            <td style="padding:6px 8px;white-space:nowrap">${esc(stTxt)}${x.q && !pend && !x.res ? '<br><small style="color:#b3261e">مش Pending — مش هيتمسح</small>' : ''}</td>
+            <td><select data-delr="${i}" style="border:none;background:transparent;font-family:inherit;padding:6px" ${x.res ? 'disabled' : ''}>${DEL_REASONS.map(r => `<option ${x.reason === r ? 'selected' : ''}>${r}</option>`).join('')}</select></td>
+            <td class="err">${x.res === 'ok' ? '<span style="color:#2f7d55;font-weight:700">✅ اتمسح</span>' : x.res === 'err' ? '❌ ' + esc(x.err) : ''}</td>
+            <td class="x">${x.res === 'ok' ? '' : `<button data-delx="${i}" title="شيلها من الليستة">✕</button>`}</td></tr>`; }).join('')}
+        </tbody></table></div>
+        <div class="up-row" style="margin-top:12px;font-size:13.5px">
+          <label><input type="checkbox" id="upDelNotify" ${X.notify ? 'checked' : ''}> 📨 ابعت رسالة للموظفة صاحبة الأوردر (من Squad بالموبايل)</label>
+          <label><input type="checkbox" id="upDelCancel" ${X.cancelSquad ? 'checked' : ''}> علّم أوردر Squad إنه <b>ملغي</b></label>
+        </div>
+        <div class="up-row" style="margin-top:12px">
+          <button class="up-btn" id="upDelGo" style="background:#b3261e;border-color:#b3261e;color:#fff" ${ok && !X.busy ? '' : 'disabled'}>${X.busy ? '⏳ بيمسح...' : `🗑️ امسحهم من QP (${ok})`}</button>
+          <button class="up-btn" id="upDelClear">🧹 فضّي الليستة</button>
+        </div></div>`;
+    }
+    if(X.log === null){ loadDelLog().then(draw); }
+    else if(X.log.length){
+      h += `<div class="card"><h3 style="display:flex;justify-content:space-between;align-items:center">📒 سجل البوالص اللي اتمسحت <button class="up-btn" id="upDelLogX" style="padding:5px 12px;font-size:12.5px">⬇️ نزّل السجل</button></h3>
+        <div class="up-hist">${X.log.slice(0, 25).map(x => `<div>🗑️ ${new Date(x.at).toLocaleString('ar-EG', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' })} — <b>${esc(x.serial)}</b> · ${esc(x.name)} · ${esc(x.reason)}${x.agent ? ' · ' + esc(x.agent) : ''} · بواسطة ${esc(x.by)}</div>`).join('')}</div></div>`;
+    }
+    return h;
+  }
+
   function easyFinish(rows, label){
     E.hiddenOld = 0;
     const cancelled = rows.filter(r => isCancel(r.estatus));
@@ -9821,6 +9965,7 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
 
   function switchSrc(k){
     if(k === S.src) return;
+    if(S.src === 'delete' && X.scanning) stopScan();
     S.store[S.src] = { raw:S.raw, rows:S.rows, note:S.note, skipped:S.skipped };
     const n = S.store[k] || {}; S.src = k; S.raw = n.raw || ''; S.rows = n.rows || null; S.skipped = n.skipped || new Set(); S.msg = ''; E.err = ''; E.hiddenOld = 0;
     S.note = n.note || (isEasy(k) ? srcNote(k) : '');
@@ -9836,8 +9981,10 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     h += `<div class="up-tabs"><button class="${S.src === 'squad' ? 'on' : ''}" style="--bc:#8a6a3a" data-upsrc="squad">🏆 Squad</button>
       ${SOURCES.map(x => `<button class="${S.src === x.key ? 'on' : ''}" style="--bc:${esc(x.color || '#2b6cb0')}" data-upsrc="${esc(x.key)}">🌐 ${esc(x.label)}</button>`).join('')}
       <button class="${S.src === 'all' ? 'on' : ''}" style="--bc:#2f7d55" data-upsrc="all">📦 الكل</button>
+      ${me().is_admin ? `<button class="${S.src === 'delete' ? 'on' : ''}" style="--bc:#b3261e" data-upsrc="delete">🗑️ مسح بوالص</button>` : ''}
       ${me().is_admin ? `<button class="${S.src === 'settings' ? 'on' : ''}" style="--bc:#555" data-upsrc="settings" title="إدارة المصادر">⚙️</button>` : ''}</div>`;
     if(S.src === 'settings') return h + settingsHtml() + '</div>';
+    if(S.src === 'delete') return h + delHtml() + '</div>';
     if(S.msg) h += `<div class="up-msg ${S.msgErr ? 'err' : 'ok'}">${esc(S.msg)}</div>`;
     if(isEasy(S.src)) h += easyStep1();
     else if(S.src === 'all') h += allStep1();
@@ -9991,6 +10138,13 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
   function draw(){
     if(!isUP()) return;
     const main = document.getElementById('main'); if(!main) return;
+    // 📷 وإحنا بنمسح: نحدّث الليستة بس من غير ما نعيد رسم الكاميرا
+    if(S.src === 'delete' && X.scanning && document.getElementById('upScanBox')){
+      const box = document.getElementById('upScanBox'); box.remove();
+      const y0 = window.scrollY; main.innerHTML = view(); window.scrollTo(0, y0);
+      const ph = document.getElementById('upScanBox'); if(ph) ph.replaceWith(box);
+      wire(); return;
+    }
     const y = window.scrollY;
     main.innerHTML = view();
     window.scrollTo(0, y);
@@ -10015,6 +10169,20 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
       dupCheck(); draw();
     };
     if($('upSend')) $('upSend').onclick = sendToQP;
+    // 🗑️ مسح بوالص
+    if($('upScanStart')) $('upScanStart').onclick = startScan;
+    if($('upScanStop')) $('upScanStop').onclick = stopScan;
+    const addTyped = async () => { const el = $('upSerial'); if(!el) return; const vals = digits(el.value).match(/\d{6,12}/g) || []; el.value = ''; if(!vals.length) return; try{ await connect(); }catch(e){} for(const v of vals) await addSerial(v); };
+    if($('upSerialAdd')) $('upSerialAdd').onclick = addTyped;
+    if($('upSerial')) $('upSerial').onkeydown = e => { if(e.key === 'Enter'){ e.preventDefault(); addTyped(); } };
+    if($('upDelReason')) $('upDelReason').onchange = e => { X.reason = e.target.value; };
+    document.querySelectorAll('[data-delr]').forEach(el => el.onchange = () => { X.list[Number(el.dataset.delr)].reason = el.value; });
+    document.querySelectorAll('[data-delx]').forEach(b => b.onclick = () => { X.list.splice(Number(b.dataset.delx), 1); draw(); });
+    if($('upDelNotify')) $('upDelNotify').onchange = e => { X.notify = e.target.checked; };
+    if($('upDelCancel')) $('upDelCancel').onchange = e => { X.cancelSquad = e.target.checked; };
+    if($('upDelGo')) $('upDelGo').onclick = deleteFromQP;
+    if($('upDelClear')) $('upDelClear').onclick = () => { if(X.list.length && !confirm('تفضّي الليستة؟')) return; X.list = []; X.msg = ''; draw(); };
+    if($('upDelLogX')) $('upDelLogX').onclick = () => delSheet(X.log || []);
     if($('upQdDay')) $('upQdDay').onchange = e => { QD.day = e.target.value || ymd(new Date()); QD.msg = ''; };
     if($('upQdPend')) $('upQdPend').onchange = e => { QD.pendOnly = e.target.checked; };
     if($('upQdGo')) $('upQdGo').onclick = exportQPDay;
