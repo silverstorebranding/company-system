@@ -9837,7 +9837,8 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
         <div><b style="color:${bad ? '#b3261e' : '#2f7d55'}">${bad ? bad : '✔'}</b><span>${bad ? 'فيهم مشاكل' : 'كله تمام'}</span></div>
         ${D.done ? (() => { const n = S.rows.filter(r => !r.serial && r.qpDup && r.qpDup.length).length; return `<div><b style="color:${n ? '#b7791f' : '#2f7d55'}">${n || '✔'}</b><span>${n ? 'مرفوعين في QP قبل كده' : 'مفيش تكرار في QP'}</span></div>`; })() : ''}</div>
       <div class="up-row" style="margin:0 0 8px">${D.msg ? `<span style="font-size:13px;color:${/⚠️|مقدرتش|لازم/.test(D.msg) ? '#b7791f' : 'var(--muted)'}">${esc(D.msg)}</span>` : ''}
-        <button class="up-btn" id="upDup" ${D.loading ? 'disabled' : ''} style="padding:5px 12px;font-size:12.5px">🔎 ${D.done ? 'افحص التكرار تاني' : 'افحص التكرار في QP'}</button></div>
+        <button class="up-btn" id="upDup" ${D.loading ? 'disabled' : ''} style="padding:5px 12px;font-size:12.5px">🔎 ${D.done ? 'افحص التكرار تاني' : 'افحص التكرار في QP'}</button>
+        ${(() => { const n = S.rows.filter(r => !r.serial && r.qpDup && r.qpDup.length).length; return n ? `<button class="up-btn" id="upDupDel" style="padding:5px 12px;font-size:12.5px;background:#b7791f;border-color:#b7791f;color:#fff">🧹 امسح المرفوعين في QP (${n}) وسيب الباقي</button>` : ''; })()}</div>
       <p style="font-size:12.5px;color:var(--muted);margin:0 0 8px">تقدر تعدّل أي خانة بالدوس عليها. المقاس بيتضاف لوحده في آخر shipment contents.</p>
       <div class="up-sheet"><table><thead>
         <tr><th class="col"></th><th class="col">B</th><th class="col"></th><th class="col">C</th><th class="col">D</th><th class="col">E</th><th class="col">F</th><th class="col">G</th><th class="col">I</th><th class="col">K</th><th class="col"></th><th class="col"></th><th class="col"></th></tr>
@@ -9966,6 +9967,16 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     };
     if($('upSend')) $('upSend').onclick = sendToQP;
     if($('upDup')) $('upDup').onclick = dupQP;
+    // 🧹 يشيل كل الأوردرات اللي مرفوعة في QP من الشيت مرة واحدة (وتتحسب إنها اتاخدت)
+    if($('upDupDel')) $('upDupDel').onclick = () => {
+      const dups = S.rows.filter(r => !r.serial && r.qpDup && r.qpDup.length);
+      if(!dups.length) return;
+      if(!confirm(`هيتشال من الشيت ${dups.length} أوردر مرفوعين في QP قبل كده:\n${dups.slice(0, 10).map(r => '• ' + r.name + ' — ' + r.qpDup[0].serial).join('\n')}${dups.length > 10 ? '\n...' : ''}\n\nوهيتحسبوا إنهم اتاخدوا ومش هيظهروا تاني. تكمل؟`)) return;
+      dups.forEach(r => { if(isEasy(r.srcKey) || r.srcKey === 'squad') S.skipped.add(skipKey(r)); });
+      S.rows = S.rows.filter(r => !dups.includes(r));
+      dupCheck(); D.msg = `🧹 اتشال ${dups.length} أوردر مرفوعين قبل كده — الباقي ${S.rows.filter(r => !r.serial).length} جاهز للرفع.`;
+      draw();
+    };
     document.querySelectorAll('[data-upcity]').forEach(el => el.onchange = () => { S.rows[Number(el.dataset.upcity)].city = el.value; dupCheck(); draw(); });
     if($('upClear')) $('upClear').onclick = () => { S.raw = ''; S.rows = null; S.note = ''; S.msg = ''; S.skipped = new Set(); E.hiddenOld = 0; draw(); };
     if($('upNote')){
