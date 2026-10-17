@@ -9485,6 +9485,14 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     DONE = new Set(list);
     await sbc().from('app_kv').upsert({ key:DONE_KV, value:{ list }, updated_at:new Date().toISOString(), updated_by_name: me().full_name || me().username || '' });
   }
+  // 🧹 اللي بيتشال من الشيت بيتسجل إنه اتاخد على طول (مش لازم ترفع حاجة بعدها)
+  async function persistTaken(){
+    try{
+      if(S.src === 'squad' || S.src === 'all') await advanceSquad();
+      if(isEasy(S.src) || S.src === 'all') await advancePtr();
+      await saveDone([...(S.skipped || [])]);
+    }catch(e){}
+  }
   const notDone = rows => E.showOld ? rows : rows.filter(r => !DONE || !DONE.has(skipKey(r)));
 
   /* =====================================================================
@@ -10507,7 +10515,7 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
       const L = S.rows.filter(r => r.dupLoserOf && !r.serial); if(!L.length) return;
       if(!confirm(`هيتشال ${L.length} أوردر (الأرخص من الأرقام المتكررة). تكمل؟`)) return;
       L.forEach(r => { if(isEasy(r.srcKey) || r.srcKey === 'squad') S.skipped.add(skipKey(r)); });
-      S.rows = S.rows.filter(r => !L.includes(r)); dupCheck(); draw();
+      S.rows = S.rows.filter(r => !L.includes(r)); dupCheck(); draw(); persistTaken();
     };
     // 🧹 يشيل كل الأوردرات اللي مرفوعة في QP من الشيت مرة واحدة (وتتحسب إنها اتاخدت)
     if($('upDupDel')) $('upDupDel').onclick = () => {
@@ -10516,8 +10524,8 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
       if(!confirm(`هيتشال من الشيت ${dups.length} أوردر مرفوعين في QP قبل كده:\n${dups.slice(0, 10).map(r => '• ' + r.name + ' — ' + r.qpDup[0].serial).join('\n')}${dups.length > 10 ? '\n...' : ''}\n\nوهيتحسبوا إنهم اتاخدوا ومش هيظهروا تاني. تكمل؟`)) return;
       dups.forEach(r => { if(isEasy(r.srcKey) || r.srcKey === 'squad') S.skipped.add(skipKey(r)); });
       S.rows = S.rows.filter(r => !dups.includes(r));
-      dupCheck(); D.msg = `🧹 اتشال ${dups.length} أوردر مرفوعين قبل كده — الباقي ${S.rows.filter(r => !r.serial).length} جاهز للرفع.`;
-      draw();
+      dupCheck(); D.msg = `🧹 اتشال ${dups.length} أوردر مرفوعين قبل كده — ومش هيرجعوا تاني. الباقي ${S.rows.filter(r => !r.serial).length}.`;
+      draw(); persistTaken();
     };
     document.querySelectorAll('[data-upcity]').forEach(el => el.onchange = () => { S.rows[Number(el.dataset.upcity)].city = el.value; dupCheck(); draw(); });
     if($('upClear')) $('upClear').onclick = () => { S.raw = ''; S.rows = null; S.note = ''; S.msg = ''; S.skipped = new Set(); E.hiddenOld = 0; draw(); };
@@ -10529,7 +10537,7 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     document.querySelectorAll('[data-updel]').forEach(b => b.onclick = () => {
       const r = S.rows[Number(b.dataset.updel)];
       if(isEasy(r.srcKey) || r.srcKey === 'squad'){ if(!confirm('تشيل الأوردر ده؟ هيتحسب إنه اتاخد ومش هيظهر تاني بعد الرفع.')) return; S.skipped.add(skipKey(r)); }
-      S.rows.splice(Number(b.dataset.updel), 1); dupCheck(); draw(); });
+      S.rows.splice(Number(b.dataset.updel), 1); dupCheck(); draw(); if(isEasy(r.srcKey) || r.srcKey === 'squad') persistTaken(); });
     document.querySelectorAll('[data-upsrc]').forEach(b => b.onclick = () => switchSrc(b.dataset.upsrc));
     if($('upEasyFetch')) $('upEasyFetch').onclick = fetchEasy;
     if($('upAllFetch')) $('upAllFetch').onclick = fetchAllSources;
