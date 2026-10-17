@@ -9332,7 +9332,12 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
 .up-msg{padding:10px 14px;border-radius:9px;margin:10px 0;font-size:14px}
 .up-msg.err{background:#fdecea;color:#a3271a}.up-msg.ok{background:#e3f3e8;color:#23784a}
 .up-hist{font-size:13px}
-.up-hist div{padding:6px 0;border-bottom:1px dashed var(--line)}
+.up-hist > div:not(.uh-item){padding:6px 0;border-bottom:1px dashed var(--line)}
+.up-hist .uh-item{border-bottom:1px dashed var(--line)}
+.up-hist .uh-row{padding:7px 4px;border-radius:6px}
+.up-hist .uh-row[data-hist]:hover{background:var(--slate-l)}
+.up-hist .uh-item.open .uh-row{background:var(--slate-l);font-weight:600}
+.up-hist .uh-body{padding:4px 0 12px}
 .up-tabs{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
 .up-tabs button{padding:11px 20px;border:1.5px solid var(--line);border-top:4px solid var(--bc);border-radius:11px;background:var(--panel);color:var(--ink);font-family:inherit;font-size:15.5px;font-weight:800;cursor:pointer}
 .up-tabs button.on{background:var(--bc);border-color:var(--bc);color:#fff}
@@ -10237,8 +10242,10 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     // أوردرات Squad اللي اترفعت من 📦 الكل تتعلّم في تاب Squad كمان
     if(ok && S.src === 'all' && S.store.squad && S.store.squad.rows){ const up = new Set((S.rows || []).filter(r => r.srcKey === 'squad' && r.serial)); S.store.squad.rows = S.store.squad.rows.filter(r => !up.has(r) || r.serial); }
     if(ok){
-      S.hist.unshift({ at: new Date().toISOString(), n: ok, total: rows.filter(r => r.serial).reduce((a, r) => a + (numOf(r.amount) || 0), 0), notes: (S.src === 'all' ? '📦 ' : S.src === 'squad' ? '🏆 ' : '🌐 ' + srcLabel(S.src) + ' — ') + notes, by: me().full_name || me().username || '', qp:true });
-      S.hist = S.hist.slice(0, 15); try{ localStorage.setItem(HIST_KEY, JSON.stringify(S.hist)); }catch(e){}
+      const upRows = rows.filter(r => r.serial);
+      const entry = { id: Date.now().toString(36), at: new Date().toISOString(), n: ok, total: upRows.reduce((a, r) => a + (numOf(r.amount) || 0), 0), notes: (S.src === 'all' ? '📦 ' : S.src === 'squad' ? '🏆 ' : '🌐 ' + srcLabel(S.src) + ' — ') + notes, by: me().full_name || me().username || '', qp:true,
+        orders: upRows.map(r => ({ serial:String(r.serial), name:r.name, phone:phoneOf(r.phone), address:r.address, amount:numOf(r.amount), notes:finalNote(r), contents:contentsOf(r), city:r.city || '', src: r.srcKey === 'squad' ? '🏆 ' + (r.page || '') : srcLabel(r.srcKey) })) };
+      await addHist(entry);
     }
     flash(fail ? `⚠️ اترفع ${ok} أوردر، و ${fail} فشلوا — السبب مكتوب جنب كل واحد، صلّحه ودوس ارفع تاني (اللي اترفع مش هيترفع تاني).` : `✅ اترفع ${ok} أوردر على QP — هتلاقيهم في Orders List.`, !!fail);
   }
@@ -10443,10 +10450,46 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
   function histHtml(){
     return qpDayHtml() + histOnly();
   }
+  /* 🕘 سجل الرفع — مشترك لكل الأجهزة (app_kv: up_history)، وكل رفعة فيها أوردراتها */
+  const HIST_KV = 'up_history';
+  let histShared = null, histOpen = '';
+  async function loadHist(){
+    const { data } = await sbc().from('app_kv').select('*').eq('key', HIST_KV).maybeSingle();
+    histShared = (data && data.value && data.value.list) || [];
+  }
+  async function addHist(entry){
+    S.hist.unshift({ ...entry }); S.hist = S.hist.slice(0, 15);
+    try{ localStorage.setItem(HIST_KEY, JSON.stringify(S.hist)); }catch(e){}
+    try{
+      if(histShared === null) await loadHist();
+      histShared = [entry].concat(histShared || []).slice(0, 40);
+      await sbc().from('app_kv').upsert({ key:HIST_KV, value:{ list:histShared }, updated_at:new Date().toISOString(), updated_by_name: entry.by });
+    }catch(e){}
+  }
+  function histSheet(x){
+    if(!window.XLSX || !x || !x.orders) return;
+    const H = [null, 'serial', 'full name', 'phone', 'address', 'total amount', 'notes', 'order date', 'shipment contents', 'weight', 'city', 'المصدر'];
+    const aoa = [H].concat(x.orders.map(o => [null, o.serial, o.name, o.phone, o.address, o.amount, o.notes, new Date(x.at).toLocaleString('en-GB', { hour12:false }), o.contents, 1, o.city || null, o.src || '']));
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    for(let i = 2; i <= aoa.length; i++){ ['B', 'D'].forEach(c => { const v = ws[c + i]; if(v){ v.t = 's'; v.v = String(v.v); v.z = '@'; } }); }
+    ws['!cols'] = [{ wch:3 }, { wch:11 }, { wch:22 }, { wch:13 }, { wch:45 }, { wch:12 }, { wch:16 }, { wch:18 }, { wch:40 }, { wch:8 }, { wch:12 }, { wch:16 }];
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Sheet3');
+    XLSX.writeFile(wb, `رفعة ${new Date(x.at).toLocaleDateString('en-CA')} ${new Date(x.at).toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' }).replace(':', '-')} (${x.orders.length}).xlsx`);
+  }
   function histOnly(){
-    if(!S.hist.length) return '';
-    return `<div class="card"><h3>🕘 آخر رفع (على الجهاز ده) — 🚀 اترفع على QP · ⬇️ شيت اتنزّل</h3><div class="up-hist">${S.hist.map(x =>
-      `<div>${x.qp ? '🚀' : '⬇️'} ${new Date(x.at).toLocaleString('ar-EG', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' })} — <b>${x.n}</b> أوردر · ${Number(x.total).toLocaleString('ar-EG')} ج · notes: <b>${esc(x.notes)}</b>${x.by ? ' · ' + esc(x.by) : ''}</div>`).join('')}</div></div>`;
+    if(histShared === null){ loadHist().then(draw).catch(() => { histShared = []; }); }
+    // المشترك أولاً، وبعده أي حاجة اتسجلت على الجهاز ده بس (شيتات اتنزّلت / رفعات قديمة)
+    const seen = new Set((histShared || []).map(x => x.id).filter(Boolean));
+    const L = (histShared || []).concat(S.hist.filter(x => !x.id || !seen.has(x.id))).sort((a, b) => new Date(b.at) - new Date(a.at)).slice(0, 40);
+    if(!L.length) return '';
+    return `<div class="card"><h3>🕘 آخر رفع — دوس على أي رفعة تشوف أوردراتها</h3><div class="up-hist">${L.map((x, i) => { const key = x.id || ('l' + i), open = histOpen === key, has = x.orders && x.orders.length;
+      return `<div class="uh-item ${open ? 'open' : ''}"><div class="uh-row" ${has ? `data-hist="${esc(key)}"` : ''} style="${has ? 'cursor:pointer' : ''}">${has ? (open ? '🔽' : '◀️') : ''} ${x.qp ? '🚀' : '⬇️'} ${new Date(x.at).toLocaleString('ar-EG', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' })} — <b>${x.n}</b> أوردر · ${Number(x.total).toLocaleString('ar-EG')} ج · notes: <b>${esc(x.notes)}</b>${x.by ? ' · ' + esc(x.by) : ''}${has ? '' : ' <small style="color:var(--muted)">(من غير تفاصيل)</small>'}</div>
+        ${open ? `<div class="uh-body"><div class="up-row" style="margin:6px 0"><button class="up-btn" data-histx="${esc(key)}" style="padding:5px 12px;font-size:12.5px">⬇️ نزّل شيت الرفعة دي</button></div>
+          <div class="up-sheet"><table><thead><tr><th>#</th><th>رقم الشحنة</th><th>العميل</th><th>الموبايل</th><th>العنوان</th><th>السعر</th><th>notes</th><th>المحتوى</th><th>المصدر</th></tr></thead><tbody>
+          ${x.orders.map((o, j) => `<tr><td class="rn">${j + 1}</td><td style="padding:5px 8px;direction:ltr;font-weight:700">${esc(o.serial)}</td><td style="padding:5px 8px">${esc(o.name)}</td><td style="padding:5px 8px;direction:ltr">${esc(o.phone)}</td>
+            <td style="padding:5px 8px;max-width:240px;white-space:normal">${esc(o.address)}</td><td style="padding:5px 8px">${Number(o.amount || 0).toLocaleString('ar-EG')}</td><td style="padding:5px 8px">${esc(o.notes)}</td>
+            <td style="padding:5px 8px;max-width:240px;white-space:normal">${esc(o.contents)}</td><td style="padding:5px 8px;font-size:12px">${esc(o.src || '')}</td></tr>`).join('')}
+          </tbody></table></div></div>` : ''}</div>`; }).join('')}</div></div>`;
   }
 
   function draw(){
@@ -10508,6 +10551,11 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     if($('upQdDay')) $('upQdDay').onchange = e => { QD.day = e.target.value || ymd(new Date()); QD.msg = ''; };
     if($('upQdPend')) $('upQdPend').onchange = e => { QD.pendOnly = e.target.checked; };
     if($('upQdGo')) $('upQdGo').onclick = exportQPDay;
+    document.querySelectorAll('[data-hist]').forEach(el => el.onclick = () => { histOpen = histOpen === el.dataset.hist ? '' : el.dataset.hist; draw(); });
+    document.querySelectorAll('[data-histx]').forEach(b => b.onclick = () => {
+      const all = (histShared || []).concat(S.hist); const x = all.find((h, i) => (h.id || ('l' + i)) === b.dataset.histx) || all.find(h => h.id === b.dataset.histx);
+      histSheet(x);
+    });
     if($('upDup')) $('upDup').onclick = dupQP;
     document.querySelectorAll('[data-dupok]').forEach(b => b.onclick = () => { S.rows[Number(b.dataset.dupok)].dupOk = true; draw(); });
     if($('upDupResolve')) $('upDupResolve').onclick = () => { const n = resolveDupPhones(); flash(`🔀 الأغلى من كل رقم متكرر طلع فوق في الجاهزين، و ${n} أوردر أرخص فضلوا تحت.`); };
