@@ -9313,6 +9313,12 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
 .up-sec.ok{background:#e3f3e8;color:#23784a}
 .up-sec.bad{background:#fdecea;color:#a3271a}
 .up-empty{color:var(--muted);font-size:13.5px;margin:4px 0 8px}
+.scan-cnt{position:sticky;top:8px;z-index:5;display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px;max-width:460px;padding:10px 14px;border-radius:12px;background:#1f2937;color:#fff;box-shadow:0 6px 16px rgba(0,0,0,.18)}
+.scan-cnt .n{font-size:30px;font-weight:800;line-height:1;min-width:34px;text-align:center}
+.scan-cnt .pill{font-size:12px;padding:2px 9px;border-radius:10px;background:rgba(255,255,255,.15)}
+.scan-cnt .pill.ok{background:#2f7d55}.scan-cnt .pill.bad{background:#b3261e}
+.scan-cnt .last{flex-basis:100%;font-size:12.5px;opacity:.9}
+.scan-cnt .last.err{color:#ffb4ab}
 .up-grp{margin:10px 0 14px;border:1px solid #f1c7c2;border-radius:10px;padding:8px}
 .up-grp-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-weight:700;font-size:14px;margin:0 0 6px;color:#7a2a1f}
 .up-grp-h b{background:#fdecea;border-radius:10px;padding:0 8px}
@@ -9942,6 +9948,7 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
         <label class="up-file">📸 صوّر البوليصة<input type="file" id="upPhoto" accept="image/*" capture="environment"></label>
         <input id="upRestQ" value="${esc(X.q || '')}" placeholder="🔎 دوّر برقم الشحنة أو الاسم أو الموبايل" style="max-width:280px;padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit">
       </div>
+      ${scanCounter()}
       <div id="upScanBox" style="${X.scanning ? 'display:block;margin-top:12px;width:100%;max-width:460px;min-height:240px;border-radius:12px;overflow:hidden;background:#000' : 'display:none'}"></div>
       ${X.msg ? `<div class="up-msg ${X.msgErr ? 'err' : 'ok'}">${esc(X.msg)}</div>` : ''}</div>`;
     h += `<div class="card"><h3 style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">📒 اتمسحت ولسه مارجعتش (${L.length})${back ? ` <span style="font-size:12.5px;color:var(--muted);font-weight:500">+ ${back} رجعوا قبل كده</span>` : ''}
@@ -9957,6 +9964,19 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
           <td style="padding:6px 8px;white-space:nowrap;font-size:12px">${new Date(x.at).toLocaleDateString('ar-EG', { day:'numeric', month:'short' })}</td></tr>`; }).join('')}
       </tbody></table></div>` : '<p class="up-empty">مفيش بوالص متمسحة في السجل' + (q ? ' بالبحث ده' : '') + '.</p>'}</div>`;
     return h;
+  }
+
+  // 🔢 العدّاد اللي فوق الكاميرا: بيتحدّث مع كل بوليصة بتتصوّر
+  function scanCounter(){
+    if(X.mode === 'restore'){
+      if(!X.scanning && !X.pick.size) return '';
+      return `<div class="scan-cnt"><span class="n">${X.pick.size}</span><span>بوليصة اتعلّمت عشان ترجع</span>${X.msg ? `<span class="last ${X.msgErr ? 'err' : ''}">${esc(X.msg)}</span>` : ''}</div>`;
+    }
+    if(!X.scanning && !X.list.length) return '';
+    const ok = X.list.filter(x => x.q).length, bad = X.list.filter(x => !x.loading && !x.q).length, pend = X.list.filter(x => x.q && isPendingQ(x.q)).length, last = X.list[0];
+    return `<div class="scan-cnt"><span class="n">${X.list.length}</span><span>بوليصة اتصوّرت</span>
+      ${X.mode === 'sheet' ? '' : `<span class="pill ok">${pend} هتتمسح</span>`}${bad ? `<span class="pill bad">${bad} مش لاقيها</span>` : ''}
+      ${last ? `<span class="last">آخر واحدة: <b>${esc(last.serial)}</b>${last.q ? ' — ' + esc(last.q.full_name || '') : (last.loading ? ' ⏳' : '')}</span>` : ''}</div>`;
   }
 
   function delHtml(){
@@ -9978,6 +9998,7 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
         <button class="up-btn" id="upSerialAdd">➕ ضيف</button>
         <label style="font-size:13px;${SH ? 'display:none' : ''}">السبب الافتراضي <select id="upDelReason" style="padding:7px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit">${DEL_REASONS.map(r => `<option ${X.reason === r ? 'selected' : ''}>${r}</option>`).join('')}</select></label>
       </div>
+      ${scanCounter()}
       <div id="upScanBox" style="${X.scanning ? 'display:block;margin-top:12px;width:100%;max-width:460px;min-height:240px;border-radius:12px;overflow:hidden;background:#000' : 'display:none'}"></div>
       ${X.scanning ? '<p style="font-size:12.5px;color:var(--muted);margin:6px 0 0">وجّه الكاميرا على الباركود اللي على البوليصة — أول ما يتقري هتسمع بيب وتنزل في الليستة. عدّي البوالص واحدة ورا التانية.</p>' : ''}
       ${X.msg ? `<div class="up-msg ${X.msgErr ? 'err' : 'ok'}">${esc(X.msg)}</div>` : ''}
