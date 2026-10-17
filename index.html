@@ -9313,6 +9313,11 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
 .up-sec.ok{background:#e3f3e8;color:#23784a}
 .up-sec.bad{background:#fdecea;color:#a3271a}
 .up-empty{color:var(--muted);font-size:13.5px;margin:4px 0 8px}
+.up-grp{margin:10px 0 14px;border:1px solid #f1c7c2;border-radius:10px;padding:8px}
+.up-grp-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-weight:700;font-size:14px;margin:0 0 6px;color:#7a2a1f}
+.up-grp-h b{background:#fdecea;border-radius:10px;padding:0 8px}
+.up-grp-h span{font-weight:500;font-size:12px;color:var(--muted)}
+.up-sheet tr.up-gap td{height:6px;padding:0;background:#f1c7c2;border:none}
 .up-done{margin-top:14px}.up-done summary{cursor:pointer;font-weight:700;color:#2f7d55;padding:6px 0}
 .up-sheet tr.dup td.rn{background:#f6d77a}
 .up-sheet td.qpd{font-size:11.5px;padding:4px 8px;white-space:nowrap;color:#8a5a00;min-width:120px}
@@ -9457,6 +9462,31 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
   }
   const skipKey = r => r.srcKey === 'squad' ? `squad|at|${r.sqAt}` : `${r.srcKey}|${r.seq ? 'seq' : 'xid'}|${r.seq || r.xid}`;
 
+  /* ✅ ذاكرة الأوردرات اللي اترفعت أو اتشالت — كل أوردر لوحده
+     عشان لو أوردر فيه مشكلة فضل ماترفعش، اللي بعده واترفع مايرجعش تاني لما تجيب من جديد */
+  const DONE_KV = 'up_done_keys';
+  let DONE = null;
+  async function loadDone(){
+    if(DONE) return DONE;
+    const { data } = await sbc().from('app_kv').select('*').eq('key', DONE_KV).maybeSingle();
+    DONE = new Set(((data && data.value && data.value.list) || []).map(String));
+    return DONE;
+  }
+  // اللي العلامة عدّته خلاص مش محتاجين نفتكره (عشان الليستة ماتكبرش)
+  function stillNeeded(k){
+    const [src, kind, n] = k.split('|');
+    if(src === 'squad') return !SQ.at || new Date(n) > new Date(SQ.at);
+    const p = P(src); return Number(n) > Number(p[kind === 'seq' ? 'seq' : 'xid'] || 0);
+  }
+  async function saveDone(keys){
+    await loadDone();
+    keys.forEach(k => DONE.add(String(k)));
+    const list = [...DONE].filter(stillNeeded).slice(-3000);
+    DONE = new Set(list);
+    await sbc().from('app_kv').upsert({ key:DONE_KV, value:{ list }, updated_at:new Date().toISOString(), updated_by_name: me().full_name || me().username || '' });
+  }
+  const notDone = rows => E.showOld ? rows : rows.filter(r => !DONE || !DONE.has(skipKey(r)));
+
   /* =====================================================================
      🏆 Squad — بيجيب الأوردرات اللي خدمة العملاء سجّلوها في Squad مباشرة (جدول orders)
      - بيكمل من بعد آخر أوردر اتاخد (squad_last_at في app_kv) — وبيتقدّم بس بعد الرفع على QP
@@ -9504,7 +9534,7 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
   async function fetchSquad(){
     E.loading = true; E.err = ''; draw();
     try{ await connect(); }catch(e){}
-    try{ const rows = await squadRows(); E.loading = false; easyFinish(rows, 'من Squad'); }
+    try{ await loadDone(); const rows = notDone(await squadRows()); E.loading = false; easyFinish(rows, 'من Squad'); }
     catch(e){ E.loading = false; E.err = 'مقدرناش نجيب أوردرات Squad: ' + e.message; draw(); }
   }
   async function advanceSquad(){
@@ -9665,6 +9695,13 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
       o.frequency.value = ok ? 1200 : 300; o.type = 'square'; g.gain.value = 0.08; o.connect(g); g.connect(c.destination); o.start(); o.stop(c.currentTime + (ok ? 0.12 : 0.3)); }catch(e){}
   }
   async function addSerial(raw){
+    if(X.mode === 'restore'){
+      const sr = serialFrom(raw); if(X.log === null) await loadDelLog();
+      const hit = sr && (X.log || []).find(x => String(x.serial) === sr && !x.restored);
+      if(hit){ X.pick.add(sr); X.msg = `✅ ${sr} — ${hit.name}`; X.msgErr = false; beep(true); }
+      else { X.msg = sr ? `البوليصة ${sr} مش في سجل اللي اتمسحوا (أو رجعت قبل كده).` : 'مش قادر أقرا رقم شحنة.'; X.msgErr = true; beep(false); }
+      draw(); return;
+    }
     const serial = serialFrom(raw);
     if(!serial){ X.msg = 'مش قادر أقرا رقم شحنة من: ' + String(raw).slice(0, 40); X.msgErr = true; beep(false); draw(); return; }
     if(X.list.some(x => x.serial === serial)){ X.msg = `البوليصة ${serial} موجودة في الليستة أصلاً.`; X.msgErr = true; beep(false); draw(); return; }
@@ -9821,7 +9858,7 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     // 📒 السجل
     if(done.length){
       if(X.log === null) await loadDelLog();
-      const add = done.map(x => ({ serial:x.serial, name:x.q.full_name || '', phone:x.q.phone || '', amount:x.q.total_amount ?? x.q.price ?? '', notes:x.q.notes || '', contents:x.q.shipment_contents || '', reason:x.reason, agent:x.agent || '', by, at:new Date().toISOString() }));
+      const add = done.map(x => ({ serial:x.serial, name:x.q.full_name || '', phone:x.q.phone || '', address:x.q.address || '', city:x.q.city || '', amount:x.q.total_amount ?? x.q.price ?? '', notes:x.q.notes || '', contents:x.q.shipment_contents || '', reason:x.reason, agent:x.agent || '', by, at:new Date().toISOString() }));
       X.log = add.concat(X.log || []).slice(0, 500);
       await sbc().from('app_kv').upsert({ key:DEL_LOG_KV, value:{ list:X.log }, updated_at:new Date().toISOString(), updated_by_name:by });
       delSheet(add);
@@ -9837,14 +9874,89 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'اتمسح من QP');
     XLSX.writeFile(wb, `بوالص اتمسحت من QP ${ymd(new Date())} (${list.length}).xlsx`);
   }
+  /* ♻️ رجّع أوردرات اتمسحت من QP (بضاعتها جت)
+     - البيانات من سجل المسح (مش من QP لأنها اتمسحت هناك)
+     - لو العنوان مش متسجل (مسح قديم) بيدوّر عليه في Squad و EasyOrders بالموبايل
+     - الأوردرات بتروح لشيت الرفع (تاب ♻️ اتمسحت) وبتعدّي على نفس المراجعة، وبعد الرفع بتتعلّم في السجل إنها رجعت */
+  const canUpload = () => { const m = me(); return !!(m.is_admin || (Array.isArray(m.allowed_sections) && m.allowed_sections.includes('qp_upload'))); };
+  X.pick = new Set(); X.q = '';
+  async function restoreToSheet(){
+    const L = (X.log || []).filter(x => X.pick.has(String(x.serial)));
+    if(!L.length) return;
+    X.busy = true; X.msg = 'بيجهّز الأوردرات...'; X.msgErr = false; draw();
+    // عناوين ناقصة → Squad / EasyOrders
+    const need = L.filter(x => !String(x.address || '').trim());
+    if(need.length){
+      const from = new Date(); from.setDate(from.getDate() - 60);
+      const [sq, eo] = await Promise.all([
+        sbc().from('orders').select('customer_phone, customer_address, created_at').gte('created_at', from.toISOString()).limit(5000),
+        sbc().from('easy_orders').select('payload, received_at').gte('received_at', from.toISOString()).limit(5000),
+      ]);
+      const map = {};
+      (sq.data || []).forEach(o => { const k = phoneOf(o.customer_phone); if(k && o.customer_address) map[k] = o.customer_address; });
+      (eo.data || []).forEach(o => { const p = o.payload || {}, k = phoneOf(p.phone); if(k && p.address && !map[k]) map[k] = [p.address, p.government].filter(Boolean).join(' - '); });
+      need.forEach(x => { const a = map[phoneOf(x.phone)]; if(a) x.address = a; });
+    }
+    const rows = L.map(x => { const r = { name:x.name || '', phone:x.phone || '', address:x.address || '', amount:String(x.amount ?? '').replace(/\.00$/, ''),
+      agent:'', contents:x.contents || '', source:'', size:'', note:x.notes || '', city:x.city || '', srcKey:'restore', ref:'كان ' + x.serial, estatus:x.reason || '', restoreOf:String(x.serial) };
+      if(!r.city) r.city = guessCity(r.address); return check(r); });
+    X.busy = false; X.msg = ''; X.pick = new Set();
+    try{ await connect(); }catch(e){}
+    S.store[S.src] = { raw:S.raw, rows:S.rows, note:S.note, skipped:S.skipped };
+    S.src = 'restore'; S.rows = rows; S.skipped = new Set(); S.note = ''; dupCheck();
+    S.msg = `♻️ اتضاف ${rows.length} أوردر من اللي اتمسحوا — راجعهم وارفعهم.${need.length ? ` (دوّرت على عناوين ${need.length} أوردر في Squad و EasyOrders${rows.some(r => !r.address) ? ' — اللي مالقيتلوش عنوان هتلاقيه في المشاكل تحت' : ''})` : ''}`;
+    S.msgErr = false;
+    if(location.hash !== '#/qp-upload') location.hash = '#/qp-upload'; else draw();
+    dupQP();
+  }
+  async function markRestored(rows){
+    const ok = rows.filter(r => r.restoreOf && r.serial); if(!ok.length) return;
+    if(X.log === null) await loadDelLog();
+    const m = new Map(ok.map(r => [r.restoreOf, r.serial]));
+    (X.log || []).forEach(x => { if(m.has(String(x.serial))){ x.restored = String(m.get(String(x.serial))); x.restored_at = new Date().toISOString(); } });
+    await sbc().from('app_kv').upsert({ key:DEL_LOG_KV, value:{ list:X.log }, updated_at:new Date().toISOString(), updated_by_name: me().full_name || me().username || '' });
+  }
+  function restoreHtml(){
+    if(!canUpload()) return `<div class="up-msg err">ترجيع الأوردرات بيعمل أوردرات جديدة في QP، فمحتاج صلاحية "📤 رفع الأوردرات".</div>`;
+    if(X.log === null){ loadDelLog().then(draw); return `<div class="card"><p class="up-empty">⏳ بيحمّل سجل البوالص اللي اتمسحت...</p></div>`; }
+    const q = String(X.q || '').trim().toLowerCase();
+    const L = X.log.filter(x => !x.restored).filter(x => !q || [x.serial, x.name, x.phone, x.notes, x.contents].some(v => String(v || '').toLowerCase().includes(q)));
+    const back = X.log.filter(x => x.restored).length;
+    let h = `<div class="card"><h3>♻️ رجّع أوردرات اتمسحت من QP</h3>
+      <p style="margin:0 0 10px;font-size:13.5px;color:var(--muted)">دي البوالص اللي اتمسحت قبل كده (من السجل). علّم على اللي بضاعتها جت — أو صوّر الباركود بتاعها أو اكتب رقمها — ودوس "ضيفهم لشيت الرفع"، وهترفعهم على QP زي أي أوردر (هياخدوا أرقام شحن جديدة).</p>
+      <div class="up-row">
+        ${X.scanning ? '<button class="up-btn" id="upScanStop">⏹️ وقّف الكاميرا</button>' : '<button class="up-btn pri" id="upScanStart">📷 صوّر باركود البوليصة القديمة</button>'}
+        <label class="up-file">📸 صوّر البوليصة<input type="file" id="upPhoto" accept="image/*" capture="environment"></label>
+        <input id="upRestQ" value="${esc(X.q || '')}" placeholder="🔎 دوّر برقم الشحنة أو الاسم أو الموبايل" style="max-width:280px;padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit">
+      </div>
+      <div id="upScanBox" style="${X.scanning ? 'display:block;margin-top:12px;width:100%;max-width:460px;min-height:240px;border-radius:12px;overflow:hidden;background:#000' : 'display:none'}"></div>
+      ${X.msg ? `<div class="up-msg ${X.msgErr ? 'err' : 'ok'}">${esc(X.msg)}</div>` : ''}</div>`;
+    h += `<div class="card"><h3 style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">📒 اتمسحت ولسه مارجعتش (${L.length})${back ? ` <span style="font-size:12.5px;color:var(--muted);font-weight:500">+ ${back} رجعوا قبل كده</span>` : ''}
+        <span class="up-row" style="margin:0"><button class="up-btn" id="upRestAll" style="padding:5px 12px;font-size:12.5px">☑️ علّم الكل</button>
+        <button class="up-btn ok" id="upRestGo" ${X.pick.size && !X.busy ? '' : 'disabled'}>${X.busy ? '⏳' : `➕ ضيفهم لشيت الرفع (${X.pick.size})`}</button></span></h3>
+      ${L.length ? `<div class="up-sheet"><table><thead><tr><th></th><th>رقم الشحنة القديم</th><th>العميل</th><th>الموبايل</th><th>العنوان</th><th>المحتوى</th><th>السعر</th><th>notes</th><th>السبب</th><th>اتمسح</th></tr></thead><tbody>
+        ${L.map(x => { const on = X.pick.has(String(x.serial));
+          return `<tr ${on ? 'style="background:#eef8f1"' : ''}><td style="padding:6px"><input type="checkbox" data-rpick="${esc(x.serial)}" ${on ? 'checked' : ''}></td>
+          <td style="padding:6px 8px;direction:ltr;font-weight:700">${esc(x.serial)}</td><td style="padding:6px 8px">${esc(x.name)}</td><td style="padding:6px 8px;direction:ltr">${esc(x.phone)}</td>
+          <td style="padding:6px 8px;max-width:220px;white-space:normal">${x.address ? esc(x.address) : '<small style="color:#b7791f">مش متسجل — هدوّر عليه</small>'}</td>
+          <td style="padding:6px 8px;max-width:220px;white-space:normal">${esc(x.contents)}</td><td style="padding:6px 8px">${esc(String(x.amount).replace(/\.00$/, ''))}</td>
+          <td style="padding:6px 8px">${esc(x.notes)}</td><td style="padding:6px 8px">${esc(x.reason)}</td>
+          <td style="padding:6px 8px;white-space:nowrap;font-size:12px">${new Date(x.at).toLocaleDateString('ar-EG', { day:'numeric', month:'short' })}</td></tr>`; }).join('')}
+      </tbody></table></div>` : '<p class="up-empty">مفيش بوالص متمسحة في السجل' + (q ? ' بالبحث ده' : '') + '.</p>'}</div>`;
+    return h;
+  }
+
   function delHtml(){
     if(!canScan()) return `<div class="up-msg err">الصفحة دي محتاجة صلاحية "🗑️ مسح بوالص من QP" أو "📤 رفع الأوردرات" — كلّم الأدمن.</div>`;
-    if(!canDelete()) X.mode = 'sheet';
+    if(!canDelete() && X.mode === 'delete') X.mode = 'sheet';
     const ok = X.list.filter(x => x.q && !x.res && isPendingQ(x.q)).length, SH = X.mode === 'sheet';
     let h = `<div class="up-tabs" style="margin-bottom:10px">
         ${canDelete() ? `<button class="${!SH ? 'on' : ''}" style="--bc:#b3261e" data-xmode="delete">🗑️ امسحها من QP</button>` : ''}
-        <button class="${SH ? 'on' : ''}" style="--bc:#2b6cb0" data-xmode="sheet">📄 اعمل منها شيت</button></div>
-      <div class="card"><h3>${SH ? '📄 بوالص ← شيت' : '🗑️ مسح بوالص من QP'}</h3>
+        <button class="${SH ? 'on' : ''}" style="--bc:#2b6cb0" data-xmode="sheet">📄 اعمل منها شيت</button>
+        <button class="${X.mode === 'restore' ? 'on' : ''}" style="--bc:#2f7d55" data-xmode="restore">♻️ رجّع اللي اتمسح</button></div>`;
+    if(X.mode === 'restore') return h + restoreHtml();
+    h += `
+<div class="card"><h3>${SH ? '📄 بوالص ← شيت' : '🗑️ مسح بوالص من QP'}</h3>
       <p style="margin:0 0 10px;font-size:13.5px;color:var(--muted)">${SH ? 'صوّر باركود البوالص (أو اكتب أرقامها) — السيستم بيجيب بيانات كل بوليصة من QP: العميل، الموبايل، العنوان، المحتوى، السعر، الـ notes والحالة — وتنزّلهم في شيت.' : (me().is_admin ? '' : '🔐 معاك صلاحية مسح البوالص. ') + 'امسح باركود البوالص اللي أوردراتها ماتجهزتش، راجع الليستة، وبعدين امسحهم من QP مرة واحدة. QP بيمسح الأوردرات اللي لسه <b>Pending</b> بس.'}</p>
       <div class="up-row">
         ${X.scanning ? '<button class="up-btn" id="upScanStop">⏹️ وقّف الكاميرا</button>' : '<button class="up-btn pri" id="upScanStart">📷 امسح البوالص بالكاميرا</button>'}
@@ -9913,7 +10025,7 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     E.loading = true; E.err = ''; draw();
     try{ await connect(); }catch(e){}
     if(!E.ptrLoaded) await loadPtr();
-    try{ const rows = await sourceRows(S.src); E.loading = false; easyFinish(rows, 'من ' + (srcOf(S.src) || {}).label); }
+    try{ await loadDone(); const rows = notDone(await sourceRows(S.src)); E.loading = false; easyFinish(rows, 'من ' + (srcOf(S.src) || {}).label); }
     catch(e){ E.loading = false; easyErr(e); draw(); }
   }
   // 📦 الكل: كل مصادر EasyOrders + أوردرات Squad اللي اتلصقت ولسه ماترفعتش
@@ -9922,12 +10034,14 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     try{ await connect(); }catch(e){}
     if(!E.ptrLoaded) await loadPtr();
     let rows = [], errs = [];
+    await loadDone();
     for(const src of SOURCES){
       try{ rows = rows.concat(await sourceRows(src.key)); }catch(e){ errs.push(src.label + ': ' + e.message); }
     }
     let sqN = 0;
     try{ const sq = await squadRows(); sqN = sq.filter(r => !isCancel(r.estatus)).length; rows = sq.concat(rows); }catch(e){ errs.push('Squad: ' + e.message); }
     E.loading = false;
+    rows = notDone(rows);
     if(errs.length){ easyErr(new Error(errs.join(' | '))); }
     easyFinish(rows, 'من كل المصادر');
     if(sqN) S.msg += ` (منهم ${sqN} من Squad)`;
@@ -9941,7 +10055,8 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     const wb = XLSX.read(await file.arrayBuffer(), { type:'array' });
     const json = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval:'', raw:false });
     const p = P(S.src);
-    let rows = fromExcelRows(json, S.src);
+    await loadDone();
+    let rows = notDone(fromExcelRows(json, S.src));
     const old = rows.filter(r => r.xid <= p.xid);
     if(!E.showOld) rows = rows.filter(r => r.xid > p.xid);
     E.loading = false;
@@ -10005,8 +10120,26 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
   }
   function dupCheck(){
     const seen = {};
-    (S.rows || []).forEach(r => { const p = phoneOf(r.phone); if(p) seen[p] = (seen[p] || 0) + 1; });
-    (S.rows || []).forEach(r => { check(r); if(seen[phoneOf(r.phone)] > 1) r.errs.push('الموبايل متكرر'); });
+    // الأوردرات اللي اتشالت لصالح الأغلى (losers) مش بتتعدّ، والفايز بيبقى سليم
+    (S.rows || []).forEach(r => { const p = phoneOf(r.phone); if(p && !r.dupLoserOf) seen[p] = (seen[p] || 0) + 1; });
+    (S.rows || []).forEach(r => {
+      check(r);
+      if(r.dupLoserOf) r.errs.push(`خلاص الأوردر الأكبر (${r.dupLoserOf} ج) طلع فوق — امسح ده`);
+      else if(seen[phoneOf(r.phone)] > 1) r.errs.push('الموبايل متكرر');
+    });
+  }
+  // 🔀 لكل موبايل متكرر: الأغلى يطلع فوق جاهز، والأرخص يفضل تحت ومكتوب جنبه
+  function resolveDupPhones(){
+    const groups = {};
+    (S.rows || []).filter(r => !r.serial && !r.dupLoserOf).forEach(r => { const p = phoneOf(r.phone); if(p) (groups[p] = groups[p] || []).push(r); });
+    let n = 0;
+    Object.values(groups).filter(g => g.length > 1).forEach(g => {
+      g.sort((a, b) => (numOf(b.amount) || 0) - (numOf(a.amount) || 0));
+      const win = g[0]; win.dupWinner = true;
+      g.slice(1).forEach(r => { r.dupLoserOf = (numOf(win.amount) || 0).toLocaleString('ar-EG'); n++; });
+    });
+    dupCheck();
+    return n;
   }
   // notes: اللي متكتب في الصف نفسه، وإلا notes المصدر (في 📦 الكل)، وإلا اللي اتكتب في خطوة 2
   const srcNote = k => k === 'squad' ? ((S.store.squad || {}).note || '') : ((srcOf(k) || {}).note || '');
@@ -10017,7 +10150,7 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
   const problemsOf = r => [...r.errs, ...(finalNote(r) ? [] : ['notes فاضية']), ...(r.upErr ? ['❌ QP: ' + r.upErr] : []), ...(isDupPending(r) ? ['⚠️ مرفوع في QP قبل كده'] : [])];
   const isReady = r => !r.serial && !problemsOf(r).length;
   const readyRows = () => (S.rows || []).filter(isReady);
-  const srcLabel = k => k === 'squad' ? '🏆 Squad' : ((srcOf(k) || {}).label || k);
+  const srcLabel = k => k === 'squad' ? '🏆 Squad' : k === 'restore' ? '♻️ اتمسحت قبل كده' : ((srcOf(k) || {}).label || k);
 
   /* ---------- التصدير ---------- */
   function exportSheet(){
@@ -10089,6 +10222,10 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     S.sending = false; S.prog = '';
     if(ok && (isEasy(S.src) || S.src === 'all')){ try{ await advancePtr(); }catch(e){} }
     if(ok && (S.src === 'squad' || S.src === 'all')){ try{ await advanceSquad(); await savePageNotes(); }catch(e){} }
+    if(ok && (S.src === 'squad' || S.src === 'all' || isEasy(S.src))){
+      try{ await saveDone([...(S.rows || []).filter(r => r.serial && (r.srcKey === 'squad' || isEasy(r.srcKey))).map(skipKey), ...[...(S.skipped || [])]]); }catch(e){}
+    }
+    if(ok && S.src === 'restore'){ try{ await markRestored(S.rows || []); }catch(e){} }
     // أوردرات Squad اللي اترفعت من 📦 الكل تتعلّم في تاب Squad كمان
     if(ok && S.src === 'all' && S.store.squad && S.store.squad.rows){ const up = new Set((S.rows || []).filter(r => r.srcKey === 'squad' && r.serial)); S.store.squad.rows = S.store.squad.rows.filter(r => !up.has(r) || r.serial); }
     if(ok){
@@ -10121,12 +10258,14 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     h += `<div class="up-tabs"><button class="${S.src === 'squad' ? 'on' : ''}" style="--bc:#8a6a3a" data-upsrc="squad">🏆 Squad</button>
       ${SOURCES.map(x => `<button class="${S.src === x.key ? 'on' : ''}" style="--bc:${esc(x.color || '#2b6cb0')}" data-upsrc="${esc(x.key)}">🌐 ${esc(x.label)}</button>`).join('')}
       <button class="${S.src === 'all' ? 'on' : ''}" style="--bc:#2f7d55" data-upsrc="all">📦 الكل</button>
+      ${S.src === 'restore' || (S.store.restore && S.store.restore.rows && S.store.restore.rows.length) ? `<button class="${S.src === 'restore' ? 'on' : ''}" style="--bc:#2f7d55" data-upsrc="restore">♻️ اتمسحت</button>` : ''}
       ${canScan() ? `<button class="${S.src === 'delete' ? 'on' : ''}" style="--bc:#b3261e" data-upsrc="delete">📷 بوالص</button>` : ''}
       ${me().is_admin ? `<button class="${S.src === 'settings' ? 'on' : ''}" style="--bc:#555" data-upsrc="settings" title="إدارة المصادر">⚙️</button>` : ''}</div>`;
     if(S.src === 'settings') return h + settingsHtml() + '</div>';
     if(S.src === 'delete') return h + delHtml() + '</div>';
     if(S.msg) h += `<div class="up-msg ${S.msgErr ? 'err' : 'ok'}">${esc(S.msg)}</div>`;
-    if(isEasy(S.src)) h += easyStep1();
+    if(S.src === 'restore') h += `<div class="card"><h3>♻️ أوردرات اتمسحت ورجعت</h3><p style="margin:0;font-size:13.5px">دي أوردرات كانت اتمسحت من QP وبضاعتها جت. راجعها تحت وارفعها — الـ notes والمحتوى والسعر جايين من البوليصة القديمة. <a href="#" id="upBackScan">↩️ ارجع لـ 📷 البوالص</a></p></div>`;
+    else if(isEasy(S.src)) h += easyStep1();
     else if(S.src === 'all') h += allStep1();
     else h += squadStep1();
     if(!S.rows) return h + histHtml() + '</div>';
@@ -10191,8 +10330,28 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
         const ready = idx.filter(x => isReady(x.r)), probs = idx.filter(x => !x.r.serial && !isReady(x.r)), done = idx.filter(x => x.r.serial);
         let t = `<h4 class="up-sec ok">✅ جاهزة للرفع على QP <b>${ready.length}</b> <span>${ready.reduce((a, x) => a + (numOf(x.r.amount) || 0), 0).toLocaleString('ar-EG')} ج</span></h4>`;
         t += ready.length ? `<div class="up-sheet"><table>${head}<tbody>${ready.map(x => rowHtml(x.r, x.i)).join('')}</tbody></table></div>` : '<p class="up-empty">مفيش أوردرات جاهزة لسه — صلّح اللي تحت وهتطلع هنا لوحدها.</p>';
-        if(probs.length) t += `<h4 class="up-sec bad">⚠️ فيها مشاكل — صلّحها أو امسحها <b>${probs.length}</b> <span>أول ما تتصلّح بتطلع فوق لوحدها</span></h4>
-          <div class="up-sheet">` + `<table>${head}<tbody>${probs.map(x => rowHtml(x.r, x.i)).join('')}</tbody></table></div>`;
+        if(probs.length){
+          // تقسيم المشاكل لمجموعات عشان تتحل بسرعة
+          const isPhoneDup = r => r.errs.includes('الموبايل متكرر') || r.dupLoserOf;
+          const G = [
+            { k:'phone', t:'📞 أرقام متكررة في الشيت', hint:'الأوردرات اللي ليها نفس الموبايل جنب بعض — دوس "🔀 خلّي الأغلى" يطلّع الأغلى فوق', list: probs.filter(x => isPhoneDup(x.r)).sort((a, b) => phoneOf(a.r.phone).localeCompare(phoneOf(b.r.phone)) || (numOf(b.r.amount) || 0) - (numOf(a.r.amount) || 0)) },
+            { k:'qp', t:'🟡 مرفوعة في QP قبل كده', hint:'امسحها، أو دوس "✔ ارفعه برضه" لو العميل طالب أوردر جديد', list: probs.filter(x => !isPhoneDup(x.r) && isDupPending(x.r)) },
+            { k:'notes', t:'📝 الـ notes فاضية', hint:'اكتب الـ notes في خطوة 2 أو في خانة الأوردر', list: probs.filter(x => !isPhoneDup(x.r) && !isDupPending(x.r) && !x.r.errs.length && !x.r.upErr && !finalNote(x.r)) },
+          ];
+          const used = new Set(G.flatMap(g => g.list.map(x => x.i)));
+          G.push({ k:'other', t:'❌ بيانات ناقصة أو غلط / QP رفضها', hint:'صلّح الخانة اللي فيها المشكلة (مكتوبة في عمود الحالة)', list: probs.filter(x => !used.has(x.i)) });
+          const phoneN = G[0].list.filter(x => x.r.errs.includes('الموبايل متكرر')).length;
+          t += `<h4 class="up-sec bad">⚠️ فيها مشاكل — صلّحها أو امسحها <b>${probs.length}</b> <span>أول ما تتصلّح بتطلع فوق لوحدها</span></h4>
+            <div class="up-row" style="margin:0 0 8px">${phoneN ? `<button class="up-btn" id="upDupResolve" style="background:#2b6cb0;border-color:#2b6cb0;color:#fff">🔀 الأرقام المتكررة: خلّي الأغلى يطلع فوق (${phoneN})</button>` : ''}
+              ${probs.some(x => x.r.dupLoserOf) ? `<button class="up-btn" id="upDupLosersDel" style="padding:6px 12px;font-size:13px">🧹 امسح الأرخص المتكرر (${probs.filter(x => x.r.dupLoserOf).length})</button>` : ''}</div>`;
+          G.filter(g => g.list.length).forEach(g => {
+            t += `<div class="up-grp"><div class="up-grp-h">${g.t} <b>${g.list.length}</b><span>${g.hint}</span></div>
+              <div class="up-sheet"><table>${head}<tbody>${g.list.map((x, j) => { let row = rowHtml(x.r, x.i);
+                // فاصل بين كل رقم متكرر والتاني
+                if(g.k === 'phone' && j > 0 && phoneOf(g.list[j - 1].r.phone) !== phoneOf(x.r.phone)) row = '<tr class="up-gap"><td colspan="13"></td></tr>' + row;
+                return row; }).join('')}</tbody></table></div></div>`;
+          });
+        }
         if(done.length) t += `<details class="up-done"><summary>✅ اترفعت على QP — ${done.length}</summary><div class="up-sheet"><table>${head}<tbody>${done.map(x => rowHtml(x.r, x.i)).join('')}</tbody></table></div></details>`;
         return t;
       })()}
@@ -10242,7 +10401,7 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
         ${S.rows ? '<button class="up-btn" id="upClear">🧹 ابدأ من جديد</button>' : ''}
       </div>
       ${E.err ? `<div class="up-msg err">${esc(E.err)}</div>` : ''}
-      <p style="font-size:12.5px;color:var(--muted);margin:10px 0 0">الأوردرات الملغية بتتشال لوحدها. "آخر أوردر اتاخد" بيتقدّم بس بعد ما تدوس ارفع على QP.</p></div>`;
+      <p style="font-size:12.5px;color:var(--muted);margin:10px 0 0">الأوردرات الملغية بتتشال لوحدها. السيستم بيفتكر كل أوردر اترفع أو شلته — فلما تجيب تاني بيجيلك بس اللي لسه ماترفعش (زي اللي كان فيه مشاكل) والجديد.</p></div>`;
   }
   function allStep1(){
     return `<div class="card"><h3>1️⃣ 📦 هات أوردرات كل المصادر مرة واحدة</h3>
@@ -10331,13 +10490,25 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     if($('upDelGo')) $('upDelGo').onclick = deleteFromQP;
     if($('upDelClear')) $('upDelClear').onclick = () => { if(X.list.length && !confirm('تفضّي الليستة؟')) return; X.list = []; X.msg = ''; draw(); };
     if($('upDelLogX')) $('upDelLogX').onclick = () => delSheet(X.log || []);
-    document.querySelectorAll('[data-xmode]').forEach(b => b.onclick = () => { X.mode = b.dataset.xmode; X.msg = ''; draw(); });
+    document.querySelectorAll('[data-xmode]').forEach(b => b.onclick = () => { if(X.scanning) stopScan(); X.mode = b.dataset.xmode; X.msg = ''; draw(); });
+    document.querySelectorAll('[data-rpick]').forEach(cb => cb.onchange = () => { const k = cb.dataset.rpick; if(cb.checked) X.pick.add(k); else X.pick.delete(k); draw(); });
+    if($('upRestAll')) $('upRestAll').onclick = () => { (X.log || []).filter(x => !x.restored).forEach(x => X.pick.add(String(x.serial))); draw(); };
+    if($('upRestGo')) $('upRestGo').onclick = restoreToSheet;
+    if($('upRestQ')) $('upRestQ').oninput = e => { X.q = e.target.value; clearTimeout(X.qt); X.qt = setTimeout(() => { draw(); const el = document.getElementById('upRestQ'); if(el){ el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }, 350); };
+    if($('upBackScan')) $('upBackScan').onclick = e => { e.preventDefault(); X.mode = 'restore'; switchSrc('delete'); };
     if($('upScanSheet')) $('upScanSheet').onclick = scanSheet;
     if($('upQdDay')) $('upQdDay').onchange = e => { QD.day = e.target.value || ymd(new Date()); QD.msg = ''; };
     if($('upQdPend')) $('upQdPend').onchange = e => { QD.pendOnly = e.target.checked; };
     if($('upQdGo')) $('upQdGo').onclick = exportQPDay;
     if($('upDup')) $('upDup').onclick = dupQP;
     document.querySelectorAll('[data-dupok]').forEach(b => b.onclick = () => { S.rows[Number(b.dataset.dupok)].dupOk = true; draw(); });
+    if($('upDupResolve')) $('upDupResolve').onclick = () => { const n = resolveDupPhones(); flash(`🔀 الأغلى من كل رقم متكرر طلع فوق في الجاهزين، و ${n} أوردر أرخص فضلوا تحت.`); };
+    if($('upDupLosersDel')) $('upDupLosersDel').onclick = () => {
+      const L = S.rows.filter(r => r.dupLoserOf && !r.serial); if(!L.length) return;
+      if(!confirm(`هيتشال ${L.length} أوردر (الأرخص من الأرقام المتكررة). تكمل؟`)) return;
+      L.forEach(r => { if(isEasy(r.srcKey) || r.srcKey === 'squad') S.skipped.add(skipKey(r)); });
+      S.rows = S.rows.filter(r => !L.includes(r)); dupCheck(); draw();
+    };
     // 🧹 يشيل كل الأوردرات اللي مرفوعة في QP من الشيت مرة واحدة (وتتحسب إنها اتاخدت)
     if($('upDupDel')) $('upDupDel').onclick = () => {
       const dups = S.rows.filter(r => !r.serial && r.qpDup && r.qpDup.length);
@@ -10400,7 +10571,7 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
       el.oninput = () => {
         const [i, k] = el.dataset.upf.split('.'), r = S.rows[Number(i)];
         if(k === 'contentsFull'){ r.contents = el.value; r.size = ''; } else r[k] = el.value;
-        r.upErr = '';
+        r.upErr = ''; if(k === 'phone'){ r.dupLoserOf = null; r.dupWinner = false; }
       };
       el.onchange = () => { dupCheck(); draw(); };
     });
