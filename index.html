@@ -9664,7 +9664,7 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
 
   /* ⬇️ شيت كل الأوردرات اللي اترفعت على QP في يوم (زي Print order) — بأرقام الشحنات */
   const QD = { day: ymd(new Date()), pendOnly:true, loading:false, msg:'' };
-  async function exportQPDay(){
+  async function exportQPDay(exclude){
     const api = window.QP && window.QP.api;
     if(!api || !api.hasCreds()){ QD.msg = '⚠️ لازم تكون عامل دخول QP من قسم 🚚 QP على الجهاز ده.'; draw(); return; }
     if(!window.XLSX){ QD.msg = 'مكتبة Excel مش متحمّلة، اعمل Refresh.'; draw(); return; }
@@ -9673,8 +9673,12 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
       let list = await api.fetchRange(QD.day, QD.day, n => { QD.msg = `بيجيب أوردرات QP... ${n} أوردر`; draw(); });
       list = list.filter(q => ymd(new Date(q.order_date)) === QD.day);
       if(QD.pendOnly) list = list.filter(q => String(q.Order_Delivery_Status ?? '').trim() === '1');
+      // ⏭️ البوالص اللي اتصوّرت عشان تتأجل لبكرة: بتتشال من الشيت بس (مش من QP)
+      const before = list.length, ex = exclude && exclude.size ? exclude : null;
+      if(ex) list = list.filter(q => !ex.has(String(q.serial)));
+      const removed = before - list.length;
       list.sort((a, b) => new Date(a.order_date) - new Date(b.order_date));
-      if(!list.length){ QD.loading = false; QD.msg = `مفيش أوردرات${QD.pendOnly ? ' Pending' : ''} في QP يوم ${QD.day}.`; draw(); return; }
+      if(!list.length){ QD.loading = false; QD.msg = `مفيش أوردرات${QD.pendOnly ? ' Pending' : ''} في QP يوم ${QD.day}${ex ? ' بعد ما شلنا المتأجلين' : ''}.`; draw(); return; }
       const H = [null, 'serial', 'full name', 'phone', 'address', 'total amount', 'notes', 'order date', 'shipment contents', 'weight', 'city', 'status'];
       const aoa = [H].concat(list.map(q => [null, String(q.serial ?? ''), q.full_name || '', phoneOf(q.phone), q.address || '', numOf(q.total_amount ?? q.price), q.notes || '',
         q.order_date ? new Date(q.order_date).toLocaleString('en-GB', { hour12:false }) : '', q.shipment_contents || '', numOf(q.weight), q.city || '', String(api.label(q) || '').replace(/\s*#\d+$/, '')]));
@@ -9683,8 +9687,9 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
       ws['!cols'] = [{ wch:3 }, { wch:11 }, { wch:22 }, { wch:13 }, { wch:45 }, { wch:12 }, { wch:16 }, { wch:18 }, { wch:40 }, { wch:8 }, { wch:12 }, { wch:16 }];
       const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Sheet3');
       const total = list.reduce((a, q) => a + (numOf(q.total_amount ?? q.price) || 0), 0);
-      XLSX.writeFile(wb, `QP Print order ${QD.day} (${list.length}).xlsx`);
-      QD.msg = `✅ اتنزّل شيت فيه ${list.length} أوردر${QD.pendOnly ? ' Pending' : ''} — إجمالي ${total.toLocaleString('ar-EG')} ج.`;
+      XLSX.writeFile(wb, `QP Print order ${QD.day}${ex ? ' من غير المتأجلين' : ''} (${list.length}).xlsx`);
+      QD.msg = `✅ اتنزّل شيت فيه ${list.length} أوردر${QD.pendOnly ? ' Pending' : ''} — إجمالي ${total.toLocaleString('ar-EG')} ج.` + (ex ? ` (اتشال منه ${removed} من ${ex.size} بوليصة متأجلة${removed < ex.size ? ' — الباقيين مش في أوردرات اليوم ده' : ''})` : '');
+      if(ex){ X.msg = QD.msg; X.msgErr = false; }
     }catch(e){ QD.msg = 'مقدرتش أجيب أوردرات QP: ' + e.message; }
     QD.loading = false; draw();
   }
@@ -9997,8 +10002,8 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     }
     if(!X.scanning && !X.list.length) return '';
     const ok = X.list.filter(x => x.q).length, bad = X.list.filter(x => !x.loading && !x.q).length, pend = X.list.filter(x => x.q && isPendingQ(x.q)).length, last = X.list[0];
-    return `<div class="scan-cnt"><span class="n">${X.list.length}</span><span>بوليصة اتصوّرت</span>
-      ${X.mode === 'sheet' ? '' : `<span class="pill ok">${pend} هتتمسح</span>`}${bad ? `<span class="pill bad">${bad} مش لاقيها</span>` : ''}
+    return `<div class="scan-cnt"><span class="n">${X.list.length}</span><span>${X.mode === 'exclude' ? 'بوليصة هتتأجل لبكرة' : 'بوليصة اتصوّرت'}</span>
+      ${X.mode === 'sheet' || X.mode === 'exclude' ? '' : `<span class="pill ok">${pend} هتتمسح</span>`}${bad ? `<span class="pill bad">${bad} مش لاقيها</span>` : ''}
       ${last ? `<span class="last">آخر واحدة: <b>${esc(last.serial)}</b>${last.q ? ' — ' + esc(last.q.full_name || '') : (last.loading ? ' ⏳' : '')}</span>` : ''}</div>`;
   }
 
@@ -10009,17 +10014,19 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     let h = `<div class="up-tabs" style="margin-bottom:10px">
         ${canDelete() ? `<button class="${!SH ? 'on' : ''}" style="--bc:#b3261e" data-xmode="delete">🗑️ امسحها من QP</button>` : ''}
         <button class="${SH ? 'on' : ''}" style="--bc:#2b6cb0" data-xmode="sheet">📄 اعمل منها شيت</button>
-        <button class="${X.mode === 'restore' ? 'on' : ''}" style="--bc:#2f7d55" data-xmode="restore">♻️ رجّع اللي اتمسح</button></div>`;
+        <button class="${X.mode === 'restore' ? 'on' : ''}" style="--bc:#2f7d55" data-xmode="restore">♻️ رجّع اللي اتمسح</button>
+        <button class="${X.mode === 'exclude' ? 'on' : ''}" style="--bc:#6b46c1" data-xmode="exclude">⏭️ شيت Pending من غيرهم</button></div>`;
     if(X.mode === 'restore') return h + restoreHtml();
+    const EX = X.mode === 'exclude';
     h += `
-<div class="card"><h3>${SH ? '📄 بوالص ← شيت' : '🗑️ مسح بوالص من QP'}</h3>
-      <p style="margin:0 0 10px;font-size:13.5px;color:var(--muted)">${SH ? 'صوّر باركود البوالص (أو اكتب أرقامها) — السيستم بيجيب بيانات كل بوليصة من QP: العميل، الموبايل، العنوان، المحتوى، السعر، الـ notes والحالة — وتنزّلهم في شيت.' : (me().is_admin ? '' : '🔐 معاك صلاحية مسح البوالص. ') + 'امسح باركود البوالص اللي أوردراتها ماتجهزتش، راجع الليستة، وبعدين امسحهم من QP مرة واحدة. QP بيمسح الأوردرات اللي لسه <b>Pending</b> بس.'}</p>
+<div class="card"><h3>${EX ? '⏭️ بوالص مش جاهزة — شيت الـ Pending من غيرها' : SH ? '📄 بوالص ← شيت' : '🗑️ مسح بوالص من QP'}</h3>
+      <p style="margin:0 0 10px;font-size:13.5px;color:var(--muted)">${EX ? 'صوّري بوالص الأوردرات اللي <b>لسه ماتجهزتش</b> (أو اكتبي أرقامها)، وبعدين نزّلي شيت الـ Pending من QP <b>من غيرها</b>. البوالص دي <b>مش بتتمسح من QP</b> — هتفضل Pending وتطلع بكرة عادي.' : SH ? 'صوّر باركود البوالص (أو اكتب أرقامها) — السيستم بيجيب بيانات كل بوليصة من QP: العميل، الموبايل، العنوان، المحتوى، السعر، الـ notes والحالة — وتنزّلهم في شيت.' : (me().is_admin ? '' : '🔐 معاك صلاحية مسح البوالص. ') + 'امسح باركود البوالص اللي أوردراتها ماتجهزتش، راجع الليستة، وبعدين امسحهم من QP مرة واحدة. QP بيمسح الأوردرات اللي لسه <b>Pending</b> بس.'}</p>
       <div class="up-row">
         ${X.scanning ? '<button class="up-btn" id="upScanStop">⏹️ وقّف الكاميرا</button>' : '<button class="up-btn pri" id="upScanStart">📷 امسح البوالص بالكاميرا</button>'}
         <label class="up-file">📸 صوّر البوليصة<input type="file" id="upPhoto" accept="image/*" capture="environment"></label>
         <input id="upSerial" placeholder="أو اكتب رقم الشحنة (أو أكتر من رقم)" style="max-width:260px;padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;direction:ltr">
         <button class="up-btn" id="upSerialAdd">➕ ضيف</button>
-        <label style="font-size:13px;${SH ? 'display:none' : ''}">السبب الافتراضي <select id="upDelReason" style="padding:7px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit">${DEL_REASONS.map(r => `<option ${X.reason === r ? 'selected' : ''}>${r}</option>`).join('')}</select></label>
+        <label style="font-size:13px;${SH || EX ? 'display:none' : ''}">السبب الافتراضي <select id="upDelReason" style="padding:7px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit">${DEL_REASONS.map(r => `<option ${X.reason === r ? 'selected' : ''}>${r}</option>`).join('')}</select></label>
       </div>
       ${scanCounter()}
       <div id="upScanBox" style="${X.scanning ? 'display:block;margin-top:12px;width:100%;max-width:460px;min-height:240px;border-radius:12px;overflow:hidden;background:#000' : 'display:none'}"></div>
@@ -10028,19 +10035,23 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     </div>`;
     if(X.list.length){
       h += `<div class="card"><h3>📋 البوالص (${X.list.length})</h3>
-        <div class="up-sheet"><table><thead><tr><th>رقم الشحنة</th><th>العميل</th><th>الموبايل</th><th>المحتوى</th><th>السعر</th><th>notes</th><th>الحالة في QP</th>${SH ? '' : '<th>السبب</th><th>النتيجة</th>'}<th></th></tr></thead><tbody>
+        <div class="up-sheet"><table><thead><tr><th>رقم الشحنة</th><th>العميل</th><th>الموبايل</th><th>المحتوى</th><th>السعر</th><th>notes</th><th>الحالة في QP</th>${SH || EX ? '' : '<th>السبب</th><th>النتيجة</th>'}<th></th></tr></thead><tbody>
         ${X.list.map((x, i) => { const q = x.q || {}, pend = x.q && isPendingQ(q);
           const stTxt = x.loading ? '⏳' : x.err && !x.q ? '❌ ' + x.err : (window.QP && window.QP.api && x.q ? String(window.QP.api.label(q) || '').replace(/\s*#\d+$/, '') : (q.status || ''));
-          return `<tr class="${x.res === 'ok' ? '' : (x.q && !pend && !SH) || (x.err && !x.q) || x.res === 'err' ? 'bad' : ''}" ${x.res === 'ok' ? 'style="background:#eef8f1;opacity:.75"' : ''}>
+          return `<tr class="${x.res === 'ok' ? '' : (x.q && !pend && !SH && !EX) || (x.err && !x.q) || x.res === 'err' ? 'bad' : ''}" ${x.res === 'ok' ? 'style="background:#eef8f1;opacity:.75"' : ''}>
             <td style="padding:6px 8px;direction:ltr;font-weight:700">${esc(x.serial)}</td><td style="padding:6px 8px">${esc(q.full_name || '')}</td>
             <td style="padding:6px 8px;direction:ltr">${esc(q.phone || '')}</td><td style="padding:6px 8px;max-width:260px;white-space:normal">${esc(q.shipment_contents || '')}</td>
             <td style="padding:6px 8px">${esc(String(q.total_amount ?? q.price ?? '').replace(/\.00$/, ''))}</td><td style="padding:6px 8px">${esc(q.notes || '')}</td>
-            <td style="padding:6px 8px;white-space:nowrap">${esc(stTxt)}${x.q && !pend && !x.res && !SH ? '<br><small style="color:#b3261e">مش Pending — مش هيتمسح</small>' : ''}</td>
-            ${SH ? '' : `<td><select data-delr="${i}" style="border:none;background:transparent;font-family:inherit;padding:6px" ${x.res ? 'disabled' : ''}>${DEL_REASONS.map(r => `<option ${x.reason === r ? 'selected' : ''}>${r}</option>`).join('')}</select></td>
+            <td style="padding:6px 8px;white-space:nowrap">${esc(stTxt)}${x.q && !pend && !x.res && !SH && !EX ? '<br><small style="color:#b3261e">مش Pending — مش هيتمسح</small>' : ''}</td>
+            ${SH || EX ? '' : `<td><select data-delr="${i}" style="border:none;background:transparent;font-family:inherit;padding:6px" ${x.res ? 'disabled' : ''}>${DEL_REASONS.map(r => `<option ${x.reason === r ? 'selected' : ''}>${r}</option>`).join('')}</select></td>
             <td class="err">${x.res === 'ok' ? '<span style="color:#2f7d55;font-weight:700">✅ اتمسح</span>' : x.res === 'err' ? '❌ ' + esc(x.err) : ''}</td>`}
             <td class="x">${x.res === 'ok' ? '' : `<button data-delx="${i}" title="شيلها من الليستة">✕</button>`}</td></tr>`; }).join('')}
         </tbody></table></div>
-        ${SH ? `<div class="up-row" style="margin-top:12px">
+        ${EX ? `<div class="up-row" style="margin-top:12px">
+          <label style="font-size:13.5px">يوم الشيت <input type="date" id="upExDay" value="${esc(QD.day)}" style="padding:7px 9px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit"></label>
+          <label style="font-size:13.5px"><input type="checkbox" id="upExPend" ${QD.pendOnly ? 'checked' : ''}> Pending بس</label>
+          <button class="up-btn ok" id="upExGo" ${X.list.length && !QD.loading ? '' : 'disabled'}>${QD.loading ? '⏳ بيجيب...' : `⬇️ نزّل شيت الـ Pending من غير الـ ${X.list.length} دول`}</button>
+          <button class="up-btn" id="upDelClear">🧹 فضّي الليستة</button></div>` : SH ? `<div class="up-row" style="margin-top:12px">
           <button class="up-btn ok" id="upScanSheet" ${X.list.some(x => x.q) ? '' : 'disabled'}>⬇️ نزّل الشيت (${X.list.filter(x => x.q).length} بوليصة)</button>
           <button class="up-btn" id="upDelClear">🧹 فضّي الليستة</button></div>` : `
         <div class="up-row" style="margin-top:12px;font-size:13.5px">
@@ -10604,6 +10615,9 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     if($('upRestQ')) $('upRestQ').oninput = e => { X.q = e.target.value; clearTimeout(X.qt); X.qt = setTimeout(() => { draw(); const el = document.getElementById('upRestQ'); if(el){ el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }, 350); };
     if($('upBackScan')) $('upBackScan').onclick = e => { e.preventDefault(); X.mode = 'restore'; switchSrc('delete'); };
     if($('upScanSheet')) $('upScanSheet').onclick = scanSheet;
+    if($('upExDay')) $('upExDay').onchange = e => { QD.day = e.target.value || ymd(new Date()); };
+    if($('upExPend')) $('upExPend').onchange = e => { QD.pendOnly = e.target.checked; };
+    if($('upExGo')) $('upExGo').onclick = () => exportQPDay(new Set(X.list.map(x => String(x.serial))));
     if($('upQdDay')) $('upQdDay').onchange = e => { QD.day = e.target.value || ymd(new Date()); QD.msg = ''; };
     if($('upQdPend')) $('upQdPend').onchange = e => { QD.pendOnly = e.target.checked; };
     if($('upQdGo')) $('upQdGo').onclick = exportQPDay;
