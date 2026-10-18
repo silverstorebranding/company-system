@@ -1099,7 +1099,8 @@ function render(){
   const [route, param] = hash.split('/');
   document.querySelectorAll('#sidebar a.navlink').forEach(a=>a.classList.toggle('active', a.getAttribute('href')==='#/'+route || a.getAttribute('href')==='#/'+route+'/'+param));
   let html = '';
-  if(route==='home') html = viewHome();
+  if(route==='home') html = '';
+  else if(route==='guide') html = viewHome();
   else if(route==='org') html = viewOrg();
   else if(route==='staff') html = viewStaff();
   else if(route==='employee') html = viewEmployee(param);
@@ -4652,6 +4653,8 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
     dashLast30(){ dFrom = monthAgo(); dTo = shiftDay(todayKey(), 1); qpDashFetch(false); },
     dashCities(){ dAllCities = !dAllCities; qpRerender(); },
     pickDay(v){ dPickDay = v; qpRerender(); },
+    // 🏠 الصفحة الرئيسية بتاخد أرقام لوحة QP من هنا
+    async getSummary(){ await qpDashSummary(); return dSum ? { ...dSum, err: dSumErr } : { err: dSumErr }; },
     retFetch(){ qpRetFetch(); },
     retSet(k, v){ if(k === 'basis') rBasis = v; else if(v){ if(k === 'from') rFrom = v; else rTo = v; } qpRerender(); },
     retPreset(p){
@@ -5064,7 +5067,7 @@ async function exportToSheet(btn) {
   });
   // أدمن أو حساب واخد كل الأقسام = يقدر يشوف أوردرات أي حد في الـ Squad
   const isFull = () => !!me && (me.is_admin || allSections().every(s => allowedSet().has(s.key)));
-  window.AuthGate = { logout, sb, me: () => me, openMenu: () => openMyMenu(), isFull };
+  window.AuthGate = { logout, sb, me: () => me, openMenu: () => openMyMenu(), isFull, canSee: h => canSee(h) };
 
   function showWaiting(){
     const g = gate(`
@@ -8407,6 +8410,7 @@ makeAccounts({ route:'accounts-socky', table:'accounts_entries_socky', icon:'�
     const b = document.getElementById('ibBadge');
     if(b){ b.textContent = n > 99 ? '99+' : n; b.classList.toggle('on', n > 0); }
     // 📥 الزرار اللي فوق في القايمة
+    if(window.HomeDash) window.HomeDash.inboxChanged(n);
     const tp = document.getElementById('ibTop'), sub = document.getElementById('ibTopSub');
     if(tp) tp.classList.toggle('has', n > 0);
     if(sub) sub.textContent = n ? [c.unread ? c.unread + ' رسالة' : '', c.openTasks ? c.openTasks + ' مهمة' : '', c.doneUnseen ? c.doneUnseen + ' خلصت' : ''].filter(Boolean).join(' · ') : 'مفيش جديد';
@@ -10666,6 +10670,8 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
 
   window.addEventListener('hashchange', () => { if(!isUP() && (X.native || X.scanner)) stopScan(); });
   function mount(){
+    // 🏠 جاي من "هات الكل وارفع" في الصفحة الرئيسية
+    try{ if(sessionStorage.getItem('upAutoAll') && upRoute() === 'qp-upload'){ sessionStorage.removeItem('upAutoAll'); if(S.src !== 'all') switchSrc('all'); setTimeout(() => fetchAllSources(), 50); } }catch(e){}
     // 🗑️ الأيقونة اللي في القايمة بتفتح تاب مسح البوالص على طول
     if(upRoute() === 'qp-delete' && S.src !== 'delete') switchSrc('delete');
     draw(); if(!E.srcLoaded && sbc()) loadSources().then(() => { if(!E.ptrLoaded) return loadPtr(); }).then(() => { if(!SQ.loaded) return loadSquadPtr(); }).then(draw); }
@@ -10691,6 +10697,189 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
   arrangeFav(); inboxActive();
   [300, 1200, 3000].forEach(ms => setTimeout(arrangeFav, ms));
   window.addEventListener('hashchange', inboxActive);
+})();
+</script>
+
+<style>
+/* 🏠 الصفحة الرئيسية — الأرقام المهمة */
+.hm-head{display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:10px;margin-bottom:16px}
+.hm-head h1{margin:0;font-size:26px}
+.hm-head p{margin:4px 0 0;color:var(--muted)}
+.hm-btn{padding:9px 16px;border:1.5px solid var(--line);border-radius:9px;background:var(--panel);color:var(--ink);font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px}
+.hm-btn.pri{background:var(--brass);border-color:var(--brass);color:#fff}
+.hm-btn.ok{background:#2f7d55;border-color:#2f7d55;color:#fff}
+.hm-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:16px}
+.hm-kpi{background:var(--panel);border:1px solid var(--line);border-top:5px solid var(--bc,var(--brass));border-radius:12px;padding:14px 16px;text-decoration:none;color:var(--ink);display:block}
+a.hm-kpi:hover{box-shadow:0 6px 16px rgba(0,0,0,.07)}
+.hm-kpi .l{font-size:13px;color:var(--muted);font-weight:600}
+.hm-kpi .n{font-size:28px;font-weight:800;margin-top:4px;color:var(--bc,var(--ink))}
+.hm-kpi .s{font-size:12.5px;color:var(--muted);margin-top:4px}
+.hm-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px}
+.hm-grid .card{margin:0}
+.hm-card h3{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.hm-row{display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px dashed var(--line);font-size:14px}
+.hm-row:last-child{border-bottom:none}
+.hm-row b{font-size:16px}
+.hm-big{font-size:34px;font-weight:800;color:#2f7d55;line-height:1.1}
+.hm-note{font-size:12.5px;color:var(--muted);margin-top:8px}
+.hm-bar{height:7px;background:var(--line);border-radius:4px;overflow:hidden;margin-top:4px}
+.hm-bar i{display:block;height:100%;background:var(--bc,#2f7d55)}
+.hm-wait{color:var(--muted);font-size:13.5px}
+</style>
+<script>
+/* =====================================================================
+   🏠 الصفحة الرئيسية: أول ما تفتح السيستم تشوف الأرقام اللي تهمك
+   - أوردرات النهارده (Squad) — أوردرات مستنية الرفع على QP من كل المصادر
+   - QP: المحفظة / التحصيل / أوردرات امبارح / راجع لينا / المُحصّل في الشهر
+   - الرسايل والمهام — الفلوس في الخزن — آخر رفع
+   كل كارت بيظهر بس للي معاه صلاحية القسم بتاعه
+   ===================================================================== */
+(function(){
+  const sb = () => window.__sbClient || (window.AuthGate && window.AuthGate.sb);
+  const me = () => (window.AuthGate && window.AuthGate.me && window.AuthGate.me()) || {};
+  const can = r => !!(me().is_admin || (window.AuthGate && window.AuthGate.canSee && window.AuthGate.canSee('#/' + r)));
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const fmt = n => Number(n || 0).toLocaleString('ar-EG', { maximumFractionDigits: 0 });
+  const isHome = () => { const r = (location.hash.replace('#/', '') || 'home').split('/')[0]; return r === 'home' || r === ''; };
+  const dayStart = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
+  const phoneKey = p => { let t = String(p || '').replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/\D/g, ''); if(t.startsWith('20') && t.length === 12) t = t.slice(2); return t.replace(/^0/, ''); };
+  const isCancel = st => /cancel|ملغ|refus|رفض|return/i.test(String(st || ''));
+
+  const H = { today:null, pend:null, qp:null, qpErr:'', acc:null, last:null, loading:false, at:null };
+
+  async function loadToday(){
+    const { data } = await sb().from('orders').select('agent_id, amount, created_at, status').gte('created_at', dayStart().toISOString()).limit(3000);
+    const { data: pr } = await sb().from('profiles').select('id, username, full_name');
+    const names = {}; (pr || []).forEach(p => names[p.id] = p.full_name || p.username || 'موظف');
+    const L = (data || []).filter(o => !isCancel(o.status)), by = {};
+    L.forEach(o => { const b = by[o.agent_id] = by[o.agent_id] || { n:0, v:0 }; b.n++; b.v += Number(o.amount) || 0; });
+    H.today = { n:L.length, v:L.reduce((a, o) => a + (Number(o.amount) || 0), 0), top:Object.entries(by).sort((a, b) => b[1].n - a[1].n).slice(0, 6).map(([id, x]) => ({ name:names[id] || 'موظف', ...x })) };
+  }
+  // 📤 كام أوردر مستني الرفع من كل مصدر (بعد آخر أوردر اتاخد ومن غير اللي اترفع/اتشال)
+  async function loadPending(){
+    const { data: kv } = await sb().from('app_kv').select('*').or('key.like.easy_last_%,key.eq.squad_last_at,key.eq.easy_sources,key.eq.up_done_keys,key.eq.up_history');
+    const K = {}; (kv || []).forEach(r => K[r.key] = r.value || {});
+    const done = new Set(((K.up_done_keys || {}).list || []).map(String));
+    const sources = ((K.easy_sources || {}).list && K.easy_sources.list.length) ? K.easy_sources.list : [
+      { key:'dream', label:'Dream Easy' }, { key:'care', label:'Care Easy' }, { key:'kidzzly', label:'Kidzzly Easy' }, { key:'socky', label:'Socky Easy' } ];
+    const out = [];
+    // Squad
+    const sqFrom = (K.squad_last_at || {}).at || dayStart().toISOString();
+    const { data: sq } = await sb().from('orders').select('created_at, status').gt('created_at', sqFrom).limit(2000);
+    out.push({ label:'🏆 Squad', n:(sq || []).filter(o => !isCancel(o.status) && !done.has('squad|at|' + o.created_at)).length });
+    // EasyOrders
+    for(const src of sources){
+      const ptr = Number(((K[src.key === 'dream' ? 'easy_last_seq' : 'easy_last_seq:' + src.key]) || {}).n) || 0;
+      let q = sb().from('easy_orders').select('seq, status').gt('seq', ptr).limit(2000);
+      q = src.key === 'dream' ? q.or('source.is.null,source.eq.dream') : q.eq('source', src.key);
+      const { data, error } = await q;
+      out.push({ label:'🌐 ' + src.label, n: error ? null : (data || []).filter(o => !isCancel(o.status) && !done.has(src.key + '|seq|' + o.seq)).length });
+    }
+    H.pend = { list:out, total:out.reduce((a, x) => a + (x.n || 0), 0) };
+    const hist = (K.up_history || {}).list || [];
+    H.last = hist[0] || null;
+  }
+  async function loadQP(){
+    if(!window.QP || !window.QP.getSummary){ H.qpErr = ''; return; }
+    if(!window.QP.api.hasCreds()){ H.qpErr = 'سجّل دخول QP من قسم 🚚 QP على الجهاز ده عشان تشوف أرقامه هنا.'; return; }
+    try{ H.qp = await window.QP.getSummary(); H.qpErr = H.qp && H.qp.err ? H.qp.err : ''; }catch(e){ H.qpErr = e.message; }
+  }
+  async function loadAcc(){
+    if(!window.AccAPI) return;
+    const keys = Object.keys(window.AccAPI); if(!keys.length) return;
+    const res = await Promise.all(keys.map(k => window.AccAPI[k].summary(null, null).then(r => ({ k, title:window.AccAPI[k].short || window.AccAPI[k].title, icon:window.AccAPI[k].icon, ...r })).catch(() => null)));
+    H.acc = res.filter(x => x && !x.err);
+  }
+  async function loadAll(){
+    if(H.loading) return;
+    H.loading = true; draw();
+    const jobs = [];
+    if(can('squad')) jobs.push(loadToday().catch(() => {}));
+    if(can('qp-upload')) jobs.push(loadPending().catch(() => {}));
+    if(can('qp')) jobs.push(loadQP().catch(() => {}));
+    if(can('accounts')) jobs.push(loadAcc().catch(() => {}));
+    // كل كارت بيترسم أول ما الداتا بتاعته توصل
+    jobs.forEach(j => j.then(draw));
+    await Promise.all(jobs);
+    H.loading = false; H.at = new Date(); draw();
+  }
+
+  function view(){
+    const m = me(), now = new Date(), hr = now.getHours();
+    const hi = hr < 12 ? 'صباح الخير' : hr < 18 ? 'مساء الخير' : 'مساء النور';
+    let h = `<div class="hm-head"><div><h1>${hi} ${esc(m.full_name || m.username || '')} 👋</h1>
+      <p>${now.toLocaleDateString('ar-EG', { weekday:'long', day:'numeric', month:'long', year:'numeric' })}${H.at ? ' · آخر تحديث ' + H.at.toLocaleTimeString('ar-EG', { hour:'2-digit', minute:'2-digit' }) : ''}</p></div>
+      <button class="hm-btn" id="hmRefresh" ${H.loading ? 'disabled' : ''}>${H.loading ? '⏳ بيحمّل...' : '🔄 حدّث'}</button></div>`;
+
+    // صف الأرقام السريعة
+    const ib = window.Inbox && window.Inbox.count ? window.Inbox.count() : 0;
+    const k = [];
+    if(can('squad')) k.push(`<a class="hm-kpi" href="#/squad" style="--bc:#2f7d55"><div class="l">🧾 أوردرات النهارده</div><div class="n">${H.today ? fmt(H.today.n) : '⏳'}</div><div class="s">${H.today ? fmt(H.today.v) + ' ج' : ''}</div></a>`);
+    if(can('qp-upload')) k.push(`<a class="hm-kpi" href="#/qp-upload" data-hm-all style="--bc:#2b6cb0"><div class="l">📤 مستنية الرفع على QP</div><div class="n">${H.pend ? fmt(H.pend.total) : '⏳'}</div><div class="s">من كل المصادر — دوس ترفعهم</div></a>`);
+    if(can('qp')) k.push(`<a class="hm-kpi" href="#/qp" style="--bc:#b08d57"><div class="l">👛 المحفظة (التحصيل)</div><div class="n">${H.qp && H.qp.wallet != null ? fmt(H.qp.wallet) + ' ج' : (H.qpErr ? '—' : '⏳')}</div><div class="s">${H.qp && H.qp.walletN != null ? fmt(H.qp.walletN) + ' أوردر اتسلم ولسه ماتحصّلش' : ''}</div></a>`);
+    k.push(`<a class="hm-kpi" href="#/inbox" style="--bc:${ib ? '#c0392b' : '#888'}"><div class="l">📥 الرسايل والمهام</div><div class="n">${fmt(ib)}</div><div class="s">${ib ? 'جديد مستنيك' : 'مفيش جديد'}</div></a>`);
+    h += `<div class="hm-kpis">${k.join('')}</div><div class="hm-grid">`;
+
+    // 📤 الرفع
+    if(can('qp-upload')){
+      h += `<div class="card hm-card"><h3>📤 أوردرات مستنية الرفع <a class="hm-btn ok" href="#/qp-upload" data-hm-all>📦 هات الكل وارفع</a></h3>
+        ${H.pend ? H.pend.list.map(x => `<div class="hm-row"><span>${esc(x.label)}</span><b>${x.n == null ? '—' : fmt(x.n)}</b></div>`).join('') + `<div class="hm-row"><span><b>الإجمالي</b></span><b style="color:#2b6cb0">${fmt(H.pend.total)}</b></div>` : '<p class="hm-wait">⏳ بيحسب...</p>'}
+        ${H.last ? `<p class="hm-note">آخر رفع: <b>${fmt(H.last.n)}</b> أوردر · ${new Date(H.last.at).toLocaleString('ar-EG', { weekday:'short', hour:'2-digit', minute:'2-digit' })}${H.last.by ? ' · ' + esc(H.last.by) : ''}</p>` : ''}</div>`;
+    }
+    // 🚚 QP
+    if(can('qp')){
+      const D = H.qp || {};
+      h += `<div class="card hm-card"><h3>🚚 QP <a class="hm-btn" href="#/qp">افتح QP</a></h3>`;
+      if(H.qpErr && !H.qp) h += `<p class="hm-wait">${esc(H.qpErr)}</p>`;
+      else if(!H.qp) h += '<p class="hm-wait">⏳ بيجيب أرقام QP...</p>';
+      else{
+        h += `<div class="hm-row"><span>👛 المحفظة (لسه ماتحصّلش)</span><b style="color:#2f7d55">${D.wallet != null ? fmt(D.wallet) + ' ج' : '—'}</b></div>`;
+        if(D.walletBy) [['italy', '💍 Italy'], ['kidzzly', '🧸 Kidzzly'], ['socky', '🧦 Socky'], ['bloom', '🌸 Bloom'], ['other', '❔ غيره']].filter(([kk]) => D.walletBy[kk]).forEach(([kk, l]) => {
+          h += `<div class="hm-row" style="padding-inline-start:14px;font-size:13px"><span>${l}</span><span>${fmt(D.walletBy[kk].v)} ج</span></div>`; });
+        h += `<div class="hm-row"><span>💵 Collect</span><b style="font-size:14px">${esc(D.collect || '—')}</b></div>
+          <div class="hm-row"><span>📅 أوردرات امبارح</span><b>${D.yesterday != null ? fmt(D.yesterday) : '—'}</b></div>
+          <div class="hm-row"><span>📦 راجع لينا (Ready To Return)</span><b style="color:#b7791f">${D.returns != null ? fmt(D.returns) : '—'}</b></div>
+          <div class="hm-row"><span>💰 المُحصّل آخر شهر (Revenue)</span><b>${D.revenue != null ? fmt(D.revenue) + ' ج' : '—'}</b></div>
+          <div class="hm-row"><span>🚚 Pickup</span><span style="font-size:13px">${esc(D.pickup || '—')}</span></div>`;
+      }
+      h += `</div>`;
+    }
+    // 🧾 الفريق النهارده
+    if(can('squad')){
+      h += `<div class="card hm-card"><h3>🏆 الفريق النهارده <a class="hm-btn" href="#/squad">Squad</a></h3>`;
+      if(!H.today) h += '<p class="hm-wait">⏳</p>';
+      else if(!H.today.top.length) h += '<p class="hm-wait">لسه محدش خد أوردر النهارده.</p>';
+      else { const mx = Math.max(...H.today.top.map(x => x.n));
+        h += H.today.top.map((x, i) => `<div style="padding:6px 0"><div class="hm-row" style="border:none;padding:0"><span>${['🥇','🥈','🥉'][i] || '•'} ${esc(x.name)}</span><b>${fmt(x.n)} <small style="font-weight:500;color:var(--muted)">· ${fmt(x.v)} ج</small></b></div><div class="hm-bar"><i style="width:${x.n / mx * 100}%"></i></div></div>`).join(''); }
+      h += `</div>`;
+    }
+    // 🏦 الخزن
+    if(can('accounts')){
+      h += `<div class="card hm-card"><h3>🏦 الفلوس في الخزن <a class="hm-btn" href="#/accounts-all">الحسابات</a></h3>`;
+      if(!H.acc) h += '<p class="hm-wait">⏳</p>';
+      else { const tot = H.acc.reduce((a, x) => a + (x.total || 0), 0);
+        h += `<div class="hm-big">${fmt(tot)} ج</div>` + H.acc.map(x => `<div class="hm-row"><span>${esc(x.icon || '')} ${esc(x.title)}</span><b>${fmt(x.total)} ج</b></div>`).join(''); }
+      h += `</div>`;
+    }
+    h += `</div><p class="hm-note" style="margin-top:16px"><a href="#/guide">🧭 دليل الشركة (إزاي الشركة شغالة)</a></p>`;
+    return h;
+  }
+
+  function draw(){
+    if(!isHome()) return;
+    const main = document.getElementById('main'); if(!main) return;
+    main.innerHTML = view();
+    const r = document.getElementById('hmRefresh'); if(r) r.onclick = loadAll;
+    // "هات الكل وارفع" بيفتح رفع الأوردرات على 📦 الكل ويجيب على طول
+    document.querySelectorAll('[data-hm-all]').forEach(a => a.onclick = () => { try{ sessionStorage.setItem('upAutoAll', '1'); }catch(e){} });
+  }
+  function mount(){ draw(); if(!H.loading && (!H.at || Date.now() - H.at > 60000)) loadAll(); }
+  let lastIb = -1;
+  window.HomeDash = { inboxChanged(n){ if(n !== lastIb){ lastIb = n; if(isHome()) draw(); } } };
+  const _render = render;
+  render = function(){ _render.apply(this, arguments); if(isHome()) mount(); };
+  window.addEventListener('hashchange', () => { if(isHome()) setTimeout(mount, 0); });
+  const w = setInterval(() => { if(me().id && sb()){ clearInterval(w); if(isHome()) mount(); } }, 600);
 })();
 </script>
 
