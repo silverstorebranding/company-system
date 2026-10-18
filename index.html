@@ -10935,6 +10935,8 @@ a.hm-kpi:hover{box-shadow:0 6px 16px rgba(0,0,0,.07)}
 .pr-modal{position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.35);display:grid;place-items:center;padding:16px}
 .pr-box{background:var(--panel);color:var(--ink);border-radius:14px;padding:18px 20px;width:min(520px,100%);max-height:90vh;overflow:auto;box-shadow:0 20px 50px rgba(0,0,0,.25)}
 .pr-box h3{margin:0 0 12px}
+.pr-link{border:1px dashed #b7c3cf;background:none;border-radius:8px;padding:1px 7px;font-family:inherit;font-size:12px;color:#2b6cb0;cursor:pointer}
+.pr-link:hover{background:var(--slate-l)}
 .pr-sql{direction:ltr;text-align:left;white-space:pre-wrap;font-size:12px;background:var(--slate-l);padding:10px;border-radius:8px;max-height:280px;overflow:auto}
 </style>
 <script>
@@ -11093,7 +11095,7 @@ a.hm-kpi:hover{box-shadow:0 6px 16px rgba(0,0,0,.07)}
     if(S.tab === 'sheet'){
       h += `<div class="card"><h3>📋 كشف مرتبات ${esc(monthLabel(S.month))}</h3>${C.length ? `<div class="tablewrap"><table class="pr-t"><thead><tr><th>الموظف</th><th>القسم</th><th>📝 EOD</th><th>الأساسي</th><th>🏆 عمولة Squad</th><th>إضافات</th><th>خصومات</th><th>سلف</th><th>الصافي</th><th>اتصرف</th><th>الحالة</th><th></th></tr></thead><tbody>
         ${C.map(({ e, c }) => { const st = c.paid <= 0 ? ['no', 'لسه'] : c.left > 0.5 ? ['part', 'باقي ' + fmt(c.left)] : ['paid', 'اتصرف ✓'];
-          let r = `<tr><td><b style="cursor:pointer" data-propen="${e.id}">${S.open === String(e.id) ? '🔽' : '◀️'} ${esc(e.name)}</b><div style="font-size:12px;color:var(--muted)">${esc(e.job || '')}${e.active ? '' : ' · مش شغّال'}${e.profile_id ? ' · 🔗 ' + esc(profName(e.profile_id)) : ' · <span style="color:#b7791f">مش مربوط بأكونت</span>'}</div></td>
+          let r = `<tr><td><b style="cursor:pointer" data-propen="${e.id}">${S.open === String(e.id) ? '🔽' : '◀️'} ${esc(e.name)}</b><div style="font-size:12px;color:var(--muted)">${esc(e.job || '')}${e.active ? '' : ' · مش شغّال'} · <button type="button" class="pr-link" data-plinkpick="${e.id}">${e.profile_id ? '🔗 ' + esc(profName(e.profile_id)) : '🔗 اربطها بأكونت'}</button></div></td>
             <td>${esc(e.dept || '—')}</td><td>${c.eod == null ? '—' : `<b>${fmt(c.eod)}</b> يوم`}</td><td>${fmt(c.base)}</td>
             <td class="pos">${!e.profile_id ? '—' : c.cm ? `<b>+${fmt(c.comm)}</b><div style="font-size:11px;color:var(--muted)">${fmt(c.cm.orders)} أوردر · تسليم ${Math.round((c.cm.delRate || 0) * 100)}%</div>` : '⏳'}</td><td class="pos">${c.bonus ? '+' + fmt(c.bonus) : '—'}</td><td class="neg">${c.ded ? '−' + fmt(c.ded) : '—'}</td><td class="neg">${c.adv ? '−' + fmt(c.adv) : '—'}</td>
             <td class="net">${fmt(c.net)}</td><td>${c.paid ? fmt(c.paid) : '—'}</td><td><span class="pr-st ${st[0]}">${st[1]}</span></td>
@@ -11115,16 +11117,38 @@ a.hm-kpi:hover{box-shadow:0 6px 16px rgba(0,0,0,.07)}
       const L = S.emps.filter(e => S.showOff || e.active);
       h += `<div class="card"><h3 style="display:flex;justify-content:space-between;align-items:center">👥 الموظفين (${L.length})
           <label style="font-size:13px;font-weight:500"><input type="checkbox" id="prShowOff" ${S.showOff ? 'checked' : ''}> اعرض اللي سابوا الشغل</label></h3>
-        ${L.length ? `<div class="tablewrap"><table class="pr-t"><thead><tr><th>الاسم</th><th>الوظيفة</th><th>القسم</th><th>الراتب الأساسي</th><th>بدأ من</th><th>الموبايل</th><th>الحالة</th><th></th></tr></thead><tbody>
-        ${L.map(e => `<tr><td><b>${esc(e.name)}</b></td><td>${esc(e.job || '—')}</td><td>${esc(e.dept || '—')}</td><td><b>${fmt(e.base_salary)} ج</b></td><td>${esc(e.start_date || '—')}</td><td style="direction:ltr">${esc(e.phone || '—')}</td>
+        ${L.length ? `<div class="tablewrap"><table class="pr-t"><thead><tr><th>الاسم</th><th>🔗 الأكونت في السيستم</th><th>الوظيفة</th><th>القسم</th><th>الراتب الأساسي</th><th>بدأ من</th><th>الموبايل</th><th>الحالة</th><th></th></tr></thead><tbody>
+        ${L.map(e => `<tr><td><b>${esc(e.name)}</b></td><td>${acctSelect(e)}</td><td>${esc(e.job || '—')}</td><td>${esc(e.dept || '—')}</td><td><b>${fmt(e.base_salary)} ج</b></td><td>${esc(e.start_date || '—')}</td><td style="direction:ltr">${esc(e.phone || '—')}</td>
           <td>${e.active ? '<span class="pr-st paid">شغّال</span>' : '<span class="pr-st no">ساب الشغل</span>'}</td><td><button class="pr-btn sm" data-predit="${e.id}">✏️ تعديل</button></td></tr>`).join('')}
         </tbody></table></div>` : '<p style="color:var(--muted)">لسه مفيش موظفين.</p>'}</div>`;
     }
     if(S.modal) h += modalHtml();
     return h;
   }
+  // ليستة الأكونتات لموظف واحد — تختار وبتتحفظ على طول
+  function acctSelect(e){
+    if(S.needCol) return '<span style="color:var(--muted);font-size:12px">شغّل SQL الربط الأول</span>';
+    return `<select data-plinkone="${e.id}" style="max-width:220px;padding:6px 8px;border:1.5px solid ${e.profile_id ? '#a9d8b8' : '#f0d9a8'};border-radius:8px;font-family:inherit;font-size:13px;background:var(--panel);color:var(--ink)">
+      <option value="">— مش مربوط —</option>${(S.profiles || []).map(p => `<option value="${esc(p.id)}" ${e.profile_id === p.id ? 'selected' : ''}>${esc(p.full_name || p.username)}${p.full_name && p.username ? ' (@' + esc(p.username) + ')' : ''}</option>`).join('')}</select>`;
+  }
+  async function linkOne(empId, profId){
+    const e = S.emps.find(x => String(x.id) === String(empId)); if(!e) return;
+    const other = profId && S.emps.find(x => x.profile_id === profId && x.id !== e.id);
+    if(other && !confirm(`الأكونت ده مربوط بـ "${other.name}" — تنقله لـ "${e.name}"؟`)) return draw();
+    if(other) await sb().from('payroll_employees').update({ profile_id:null }).eq('id', other.id);
+    const { error } = await sb().from('payroll_employees').update({ profile_id: profId || null }).eq('id', e.id);
+    if(error) return flash('ماتحفظش: ' + error.message, true);
+    S.modal = null; flash(profId ? `✅ ${e.name} اتربطت بأكونت ${profName(profId)}.` : `✅ اتشال الربط من ${e.name}.`); load();
+  }
   function modalHtml(){
     const M = S.modal;
+    if(M.type === 'linkone'){
+      const e = S.emps.find(x => String(x.id) === String(M.empId)) || {}, sg = suggest(e);
+      return `<div class="pr-modal" id="prModal"><div class="pr-box"><h3>🔗 اربط "${esc(e.name)}" بأكونتها</h3>
+        ${!e.profile_id && sg.p && sg.score >= 0.5 ? `<p style="margin:0 0 10px;font-size:13px">💡 الأقرب: <b>${esc(sg.p.full_name || sg.p.username)}</b> (${Math.round(sg.score * 100)}%) <button class="pr-btn sm" data-linkpick="${esc(sg.p.id)}">اختاره</button></p>` : ''}
+        <div class="pr-form"><div style="grid-column:1/-1"><label>الأكونت في السيستم</label>${acctSelect(e).replace('data-plinkone', 'id="prOneSel" data-x')}</div></div>
+        <div class="pr-bar" style="margin:16px 0 0"><button class="pr-btn pri" id="prOneSave">💾 حفظ</button>${e.profile_id ? '<button class="pr-btn red" id="prOneClear">شيل الربط</button>' : ''}<button class="pr-btn" data-prclose>إلغاء</button></div></div></div>`;
+    }
     if(M.type === 'link'){
       const opts = sel => `<option value="">— مش مربوط —</option>` + (S.profiles || []).map(p => `<option value="${esc(p.id)}" ${sel === p.id ? 'selected' : ''}>${esc(p.full_name || p.username)}${p.full_name && p.username ? ' (@' + esc(p.username) + ')' : ''}</option>`).join('');
       return `<div class="pr-modal" id="prModal"><div class="pr-box" style="width:min(720px,100%)"><h3>🔗 اربط كل موظف بالأكونت بتاعه في السيستم</h3>
@@ -11180,6 +11204,15 @@ a.hm-kpi:hover{box-shadow:0 6px 16px rgba(0,0,0,.07)}
         else { const sg = suggest(e); score[e.id] = sg.score; if(sg.p && sg.score >= 0.5) map[e.id] = sg.p.id; } });
       S.modal = { type:'link', map, score }; draw();
     };
+    document.querySelectorAll('[data-plinkone]').forEach(el => el.onchange = () => linkOne(el.dataset.plinkone, el.value));
+    document.querySelectorAll('[data-plinkpick]').forEach(b => b.onclick = async () => {
+      if(S.needCol) return flash('شغّل سطر الـ SQL بتاع الربط الأول.', true);
+      if(!S.profiles){ const { data } = await sb().from('profiles').select('id, username, full_name'); S.profiles = data || []; }
+      S.modal = { type:'linkone', empId:b.dataset.plinkpick }; draw();
+    });
+    document.querySelectorAll('[data-linkpick]').forEach(b => b.onclick = () => { const sel = $('prOneSel'); if(sel) sel.value = b.dataset.linkpick; });
+    if($('prOneSave')) $('prOneSave').onclick = () => linkOne(S.modal.empId, $('prOneSel').value);
+    if($('prOneClear')) $('prOneClear').onclick = () => linkOne(S.modal.empId, '');
     document.querySelectorAll('[data-plink]').forEach(el => el.onchange = () => { S.modal.map[el.dataset.plink] = el.value; S.modal.score[el.dataset.plink] = null; });
     if($('prSaveLink')) $('prSaveLink').onclick = async () => {
       const M = S.modal; let n = 0;
