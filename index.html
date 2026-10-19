@@ -442,6 +442,7 @@ html:not(.auth-ok) #app{display:none}
     </div>
     <div class="grp"><div class="grp-title">العمل</div>
       <span id="workAnchor"></span>
+      <a class="navlink" href="#/urgent">🚨 أوردرات عاجلة <span class="ib-badge" id="urgBadge"></span></a>
     </div>
     <div class="grp"><div class="grp-title">الأقسام</div>
       <div id="deptlinks"></div>
@@ -4997,7 +4998,7 @@ async function exportToSheet(btn) {
     if(!me) return false;
     const { r, p } = parse(hash);
     if(me.is_admin) return true;
-    if(r === 'inbox') return true; // 📨 الرسايل والمهام مفتوحة لكل الناس
+    if(r === 'inbox' || r === 'urgent') return true; // 📨 الرسايل والمهام و 🚨 الأوردرات العاجلة مفتوحين لكل الناس
     if(r === 'admin') return false;
     const al = allowedSet();
     if(r === 'dept') return al.has('dept:' + p);
@@ -5222,7 +5223,7 @@ async function exportToSheet(btn) {
       .filter(g => g.items.length);
     // 📨 الرسايل والمهام لكل الناس — أول حاجة في القايمة، وجنبها عدد الجديد
     const ibN = (window.Inbox && window.Inbox.count) ? window.Inbox.count() : 0;
-    groups.unshift({ title:'التواصل', items:[{ label:'📨 الرسايل والمهام' + (ibN ? ' (' + ibN + ' جديد)' : ''), href:'#/inbox' }] });
+    groups.unshift({ title:'التواصل', items:[{ label:'📨 الرسايل والمهام' + (ibN ? ' (' + ibN + ' جديد)' : ''), href:'#/inbox' }, { label:'🚨 أوردرات عاجلة', href:'#/urgent' }] });
     if(me && me.is_admin) groups.push({ title:'الإدارة', items:[{ label:'⚙️ الحسابات والصلاحيات', href:'#/admin' }] });
     return groups;
   }
@@ -9342,6 +9343,12 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
 .scan-cnt .last.err{color:#ffb4ab}
 .up-dupbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 8px;padding:8px;border-radius:9px;background:#fff8e6}
 .up-dupst{display:flex;align-items:center;gap:6px;padding:4px 8px;border:1px solid #f0d9a8;border-radius:9px;background:#fff;font-size:13px}
+.urg-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 14px;border-radius:10px;background:#fdecea;color:#7a2a1f;margin:12px 0;font-size:14px}
+.urg-tag{display:inline-block;margin-top:3px;padding:1px 7px;border-radius:8px;font-size:11px;background:#fdecea;color:#a3271a}
+.urg-tag.done{background:#e3f3e8;color:#23784a}
+.urg-modal{position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.35);display:grid;place-items:center;padding:16px}
+.urg-box{background:var(--panel);color:var(--ink);border-radius:14px;padding:18px 20px;width:min(480px,100%);box-shadow:0 20px 50px rgba(0,0,0,.25)}
+.urg-box h3{margin:0 0 8px}
 .up-grp{margin:10px 0 14px;border:1px solid #f1c7c2;border-radius:10px;padding:8px}
 .up-grp-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-weight:700;font-size:14px;margin:0 0 6px;color:#7a2a1f}
 .up-grp-h b{background:#fdecea;border-radius:10px;padding:0 8px}
@@ -9567,7 +9574,7 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
       const page = String(o.page_name || '').trim() || 'بدون مصدر';
       const r = { name:o.customer_name || '', phone:o.customer_phone || '', address:o.customer_address || '', amount:String(o.amount ?? ''),
         agent: SQ.names[o.agent_id] || '', contents: [o.order_type && o.order_type !== 'اكسسوارات' ? o.order_type + ':' : '', o.order_details || ''].filter(Boolean).join(' '),
-        source:page, size:o.size || '', note:'', city:'', srcKey:'squad', sqId:o.id, sqAt:o.created_at, page,
+        source:page, size:o.size || '', note:'', city:'', srcKey:'squad', sqId:o.id, sqAt:o.created_at, orderAt:o.created_at, page,
         ref: SQ.names[o.agent_id] || '', estatus: o.status === 'pending' ? '' : (o.status || '') };
       r.city = guessCity(r.address);
       return check(r);
@@ -9612,12 +9619,12 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
       const item = `${pn}${vr ? ' - ' + vr : ''}${/^[2-9]$/.test(q) ? ' × ' + q : ''}`.trim();
       if(g){ if(item) g.items.push(item); return; }
       const city = String(key(row, 'city')).trim(), addr = String(key(row, 'address')).trim();
-      by.set(id, { id, status:String(key(row, 'status')).trim(), name:String(key(row, 'fullname', 'full name')).trim(), phone:String(key(row, 'phone')),
+      by.set(id, { id, at:String(key(row, 'createdat', 'created at')).trim(), status:String(key(row, 'status')).trim(), name:String(key(row, 'fullname', 'full name')).trim(), phone:String(key(row, 'phone')),
         address: city && !addr.includes(city) ? `${addr} - ${city}` : addr, amount:String(key(row, 'total cost', 'total')), items: item ? [item] : [], city });
     });
     return [...by.values()].sort((a, b) => a.id - b.id).map(x => {
       const r = { name:x.name, phone:x.phone, address:x.address, amount:x.amount, agent:'', contents:x.items.join(' + '), source:'', size:'', note:'', city:'',
-        easy:true, xid:x.id, srcKey:src, ref:'#' + x.id, estatus:x.status };
+        easy:true, xid:x.id, srcKey:src, ref:'#' + x.id, estatus:x.status, orderAt:x.at };
       r.city = guessCity(x.city + ' ' + x.address);
       return check(r);
     });
@@ -9635,7 +9642,7 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     }
     const { data, error } = await filt(sbc().from('easy_orders').select('*')).gt('seq', E.showOld ? 0 : p.seq).order('seq', { ascending:true }).limit(500);
     if(error) throw error;
-    return (data || []).map(x => { const r = fromEasy(x.payload || {}, x.seq, src); r.estatus = x.status || r.estatus; return r; });
+    return (data || []).map(x => { const r = fromEasy(x.payload || {}, x.seq, src); r.estatus = x.status || r.estatus; r.orderAt = (x.payload && (x.payload.created_at || x.payload.createdAt)) || x.received_at || ''; return r; });
   }
   /* 🔎 فحص التكرار: كل موبايل في الشيت بيتدوّر عليه في أوردرات QP آخر 10 أيام
      لو لقاه → الصف بيتلوّن أصفر ومكتوب "مرفوع في QP" برقم الشحنة والتاريخ (وإنت تقرر تمسحه ولا ترفعه) */
@@ -10072,6 +10079,91 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     return h;
   }
 
+  /* =====================================================================
+     🚨 أوردرات عاجلة: تبعت الأوردرات اللي فيها مشاكل لحد يصلّحها، وترجع تضمّها للشيت
+     ===================================================================== */
+  const U = { list:null, people:null, sending:false };
+  const urgKey = r => r.srcKey === 'squad' || isEasy(r.srcKey) ? skipKey(r) : 'row|' + phoneOf(r.phone) + '|' + (r.name || '');
+  const rowData = r => ({ name:r.name, phone:phoneOf(r.phone), address:r.address, amount:r.amount, contents:contentsOf(r), city:r.city || '', note:r.note || '',
+    srcKey:r.srcKey, seq:r.seq || null, xid:r.xid || null, sqAt:r.sqAt || null, sqId:r.sqId || null, page:r.page || '', ref:r.ref || '', estatus:r.estatus || '', orderAt:r.orderAt || '', agent:r.agent || '' });
+  async function loadUrgent(){
+    const { data, error } = await sbc().from('urgent_orders').select('*').eq('from_id', me().id).in('status', ['open', 'done', 'failed']).order('created_at', { ascending:false }).limit(500);
+    if(error){ U.list = []; U.missing = /urgent_orders|relation|schema cache|does not exist/i.test(error.message); return; }
+    U.list = data || []; U.missing = false;
+    const m = new Map(U.list.map(u => [u.row_key, u]));
+    (S.rows || []).forEach(r => { r.urgent = m.get(urgKey(r)) || null; });
+  }
+  async function urgPeople(){
+    if(U.people) return U.people;
+    const { data } = await sbc().from('profiles').select('id, username, full_name');
+    U.people = (data || []).filter(p => p.id !== me().id).map(p => ({ id:p.id, name:p.full_name || p.username || 'موظف' })).sort((a, b) => a.name.localeCompare(b.name, 'ar'));
+    return U.people;
+  }
+  // اختيار الشخص + إرسال
+  async function sendUrgent(rows){
+    rows = rows.filter(r => !r.serial && !(r.urgent && r.urgent.status === 'open'));
+    if(!rows.length) return flash('الأوردرات دي اتبعتت قبل كده أو اترفعت.', true);
+    const ppl = await urgPeople();
+    S.urgPick = { rows, to:'', note:'' };
+    draw();
+  }
+  async function confirmUrgent(){
+    const P = S.urgPick; if(!P) return;
+    const to = (U.people || []).find(p => p.id === P.to); if(!to) return flash('اختار هتبعتهم لمين.', true);
+    U.sending = true; draw();
+    const batch = Date.now().toString(36), by = me().full_name || me().username || '';
+    const recs = P.rows.map(r => ({ batch, status:'open', from_id:me().id, from_name:by, assigned_to:to.id, assigned_name:to.name,
+      row_key:urgKey(r), problem: problemsOf(r).join('، ') || 'محتاج مراجعة', data:rowData(r), note:P.note || null }));
+    const { error } = await sbc().from('urgent_orders').insert(recs);
+    if(error){ U.sending = false; draw(); return flash(/urgent_orders|relation|schema cache/i.test(error.message) ? 'جدول الأوردرات العاجلة مش متعمل — شغّل ملف urgent_orders.sql في Supabase.' : 'ماتبعتش: ' + error.message, true); }
+    await sbc().from('inbox').insert({ kind:'task', from_id:me().id, from_name:by, to_id:to.id, to_name:to.name,
+      title:`🚨 عندك ${P.rows.length} أوردر عاجل محتاج يتصلّح`, body:`${P.rows.length} أوردر فيهم مشاكل (رقم ناقص / عنوان ناقص / ...).\nافتح قسم 🚨 أوردرات عاجلة وصلّحهم، ودوس ✔ تم.${P.note ? '\n\nملاحظة: ' + P.note : ''}`, due_date:ymd(new Date()) });
+    U.sending = false; S.urgPick = null;
+    await loadUrgent();
+    flash(`🚨 اتبعت ${recs.length} أوردر لـ ${to.name} — هيجيلك إشعار لما يخلّصهم.`);
+    if(window.Inbox && window.Inbox.reload) window.Inbox.reload();
+  }
+  // ✅ ضم اللي اتصلّح للشيت
+  async function mergeUrgent(){
+    await loadUrgent();
+    const done = (U.list || []).filter(u => u.status === 'done');
+    if(!done.length) return flash('لسه مفيش أوردرات عاجلة اتصلّحت.', true);
+    let upd = 0, add = 0;
+    done.forEach(u => {
+      const f = { ...(u.data || {}), ...(u.fixed || {}) };
+      let r = (S.rows || []).find(x => urgKey(x) === u.row_key);
+      if(!r){ r = { agent:f.agent || '', source:'', size:'', srcKey:f.srcKey || 'restore', seq:f.seq || undefined, xid:f.xid || undefined, sqAt:f.sqAt || undefined, sqId:f.sqId || undefined, page:f.page || '', ref:f.ref || '', estatus:f.estatus || '', orderAt:f.orderAt || '' };
+        S.rows = S.rows || []; S.rows.push(r); add++; } else upd++;
+      Object.assign(r, { name:f.name || '', phone:f.phone || '', address:f.address || '', amount:String(f.amount ?? ''), contents:f.contents || '', size:'', city:f.city || r.city || '', note:f.note || r.note || '', upErr:'' });
+      if(!r.city) r.city = guessCity(r.address);
+      r.urgent = null;
+    });
+    dupCheck();
+    await sbc().from('urgent_orders').update({ status:'merged' }).in('id', done.map(u => u.id));
+    await loadUrgent();
+    flash(`✅ اتضم ${done.length} أوردر اتصلّحوا${add ? ` (${add} منهم اتضافوا للشيت)` : ''} — اللي بقى سليم طلع في الجاهزين.`);
+    dupQP();
+  }
+  function urgentBar(){
+    if(!U.list) return '';
+    const open = U.list.filter(u => u.status === 'open').length, done = U.list.filter(u => u.status === 'done').length;
+    if(!open && !done) return '';
+    return `<div class="urg-bar">🚨 أوردرات عاجلة: <b>${open}</b> لسه عند الناس · <b style="color:#2f7d55">${done}</b> اتصلّحوا
+      ${done ? `<button class="up-btn ok" id="urgMerge" style="padding:5px 12px;font-size:13px">➕ ضم اللي اتصلّح للشيت (${done})</button>` : ''}
+      <button class="up-btn" id="urgRefresh" style="padding:5px 12px;font-size:13px">🔄</button></div>`;
+  }
+  function urgPickHtml(){
+    const P = S.urgPick; if(!P) return '';
+    return `<div class="urg-modal" id="urgModal"><div class="urg-box"><h3>🚨 ابعت ${P.rows.length} أوردر عاجل</h3>
+      <p style="margin:0 0 10px;font-size:13px;color:var(--muted)">هيوصلوا للشخص ده في قسم <b>🚨 أوردرات عاجلة</b> + مهمة بإشعار وصوت. أول ما يخلّصهم يجيلك إشعار، وتضمّهم للشيت بدوسة.</p>
+      <label style="font-size:13px;color:var(--muted)">لمين؟</label>
+      <select id="urgTo" style="width:100%;padding:9px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;margin:4px 0 10px"><option value="">— اختار —</option>${(U.people || []).map(p => `<option value="${esc(p.id)}" ${P.to === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select>
+      <label style="font-size:13px;color:var(--muted)">ملاحظة (اختياري)</label>
+      <input id="urgNote" value="${esc(P.note)}" placeholder="مثلاً: كلّمي العملاء وخدي العنوان كامل" style="width:100%;padding:9px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;margin-top:4px;box-sizing:border-box">
+      <div style="max-height:180px;overflow:auto;margin-top:10px;font-size:12.5px;color:var(--muted)">${P.rows.map(r => `• ${esc(r.name || '—')} — ${esc(problemsOf(r).join('، '))}`).join('<br>')}</div>
+      <div class="up-row" style="margin-top:14px"><button class="up-btn ok" id="urgSend" ${U.sending ? 'disabled' : ''}>${U.sending ? '⏳' : '📨 ابعتهم'}</button><button class="up-btn" id="urgCancel">إلغاء</button></div></div></div>`;
+  }
+
   function easyFinish(rows, label){
     E.hiddenOld = 0;
     const cancelled = rows.filter(r => isCancel(r.estatus));
@@ -10084,6 +10176,7 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     D.done = false; D.msg = '';
     draw();
     dupQP();
+    loadUrgent().then(draw);
   }
   function easyErr(e){
     E.missing = /easy_orders|app_kv|relation|schema cache|does not exist/i.test(e.message || '');
@@ -10215,6 +10308,12 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
   const notesOk = () => (S.rows || []).every(r => finalNote(r));
   // ✅ جاهز للرفع = مفيهوش مشاكل + الـ notes مكتوبة + مش متكرر في QP (أو إنت قلت ارفعه برضه)
   const dupStatus = r => String((r.qpDup && r.qpDup[0] && r.qpDup[0].st) || '—').replace(/\s*#\d+$/, '').trim() || '—';
+  // 🕒 وقت الأوردر بالظبط (للعرض بس — مش بيترفع على QP)
+  function orderTime(r){
+    const v = r.orderAt; if(!v) return '';
+    const d = new Date(v); if(isNaN(d)) return String(v);
+    return d.toLocaleString('ar-EG', { weekday:'short', day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' });
+  }
   const isDupPending = r => !r.serial && r.qpDup && r.qpDup.length && !r.dupOk;
   const problemsOf = r => [...r.errs, ...(finalNote(r) ? [] : ['notes فاضية']), ...(r.upErr ? ['❌ QP: ' + r.upErr] : []), ...(isDupPending(r) ? ['⚠️ مرفوع في QP قبل كده'] : [])];
   const isReady = r => !r.serial && !problemsOf(r).length;
@@ -10375,6 +10474,7 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
 
     // 3) الشيت
     const bad = S.rows.filter(r => r.errs.length).length, total = S.rows.reduce((a, r) => a + (numOf(r.amount) || 0), 0);
+    h += urgentBar() + urgPickHtml();
     h += `<div class="card"><h3>3️⃣ الشيت زي ما هيترفع على QP</h3>
       <div class="up-kpis"><div><b>${S.rows.length}</b><span>أوردر</span></div><div><b>${total.toLocaleString('ar-EG')} ج</b><span>الإجمالي</span></div>
         <div><b style="color:${bad ? '#b3261e' : '#2f7d55'}">${bad ? bad : '✔'}</b><span>${bad ? 'فيهم مشاكل' : 'كله تمام'}</span></div>
@@ -10386,7 +10486,7 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
       ${(() => {
         const head = `<thead><tr><th class="col"></th><th class="col">B</th><th class="col"></th><th class="col">C</th><th class="col">D</th><th class="col">E</th><th class="col">F</th><th class="col">G</th><th class="col">I</th><th class="col">K</th><th class="col"></th><th class="col"></th><th class="col"></th></tr>
           <tr><th>1</th><th>serial</th><th>المصدر</th><th>full name</th><th>phone</th><th>address</th><th>total amount</th><th>notes</th><th>shipment contents</th><th>city</th><th>في QP؟</th><th>الحالة</th><th></th></tr></thead>`;
-        const rowHtml = (r, i) => `<tr class="${r.serial ? '' : (r.errs.length || r.upErr || !finalNote(r) ? 'bad' : (isDupPending(r) ? 'dup' : ''))}" ${r.serial ? 'style="background:#eef8f1"' : ''}><td class="rn">${i + 2}</td><td style="font-size:12px;padding:4px 6px;color:#2f7d55">${esc(r.serial || '')}</td><td style="font-size:11.5px;padding:4px 6px;white-space:nowrap;color:${esc((srcOf(r.srcKey) || {}).color || '#8a6a3a')}"><b>${esc(r.srcKey === 'squad' ? '🏆 ' + r.page : srcLabel(r.srcKey))}</b><br>${esc(r.ref || '')} <span style="color:#888">${esc(r.estatus || '')}</span></td>
+        const rowHtml = (r, i) => `<tr class="${r.serial ? '' : (r.errs.length || r.upErr || !finalNote(r) ? 'bad' : (isDupPending(r) ? 'dup' : ''))}" ${r.serial ? 'style="background:#eef8f1"' : ''}><td class="rn">${i + 2}</td><td style="font-size:12px;padding:4px 6px;color:#2f7d55">${esc(r.serial || '')}</td><td style="font-size:11.5px;padding:4px 6px;white-space:nowrap;color:${esc((srcOf(r.srcKey) || {}).color || '#8a6a3a')}"><b>${esc(r.srcKey === 'squad' ? '🏆 ' + r.page : srcLabel(r.srcKey))}</b><br>${esc(r.ref || '')} <span style="color:#888">${esc(r.estatus || '')}</span>${orderTime(r) ? `<div style="color:#2b2f33;margin-top:2px">🕒 ${esc(orderTime(r))}</div>` : ''}${r.urgent ? `<div class="urg-tag ${r.urgent.status}">${r.urgent.status === 'done' ? '✅ اتصلّح — ' : '🚨 عند '}${esc(r.urgent.to_name || '')}</div>` : ''}</td>
           <td><input data-upf="${i}.name" value="${esc(r.name)}"></td>
           <td><input data-upf="${i}.phone" value="${esc(phoneOf(r.phone))}" style="direction:ltr;text-align:left;min-width:105px"></td>
           <td><input data-upf="${i}.address" value="${esc(r.address)}" style="min-width:260px"></td>
@@ -10396,7 +10496,7 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
           <td>${qpCities ? `<select data-upcity="${i}" style="border:none;padding:6px;font-family:Arial;font-size:13px;background:transparent;min-width:100px"><option value="">— اختار —</option>${qpCities.map(c => `<option ${c.name === r.city ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select>` : `<input data-upf="${i}.city" value="${esc(r.city)}" style="min-width:80px">`}</td>
           <td class="qpd">${r.serial ? '' : (r.qpDup && r.qpDup.length ? r.qpDup.slice(0, 2).map(q => `<div>⚠️ مرفوع: <b>${esc(q.serial)}</b> · ${new Date(q.date).toLocaleDateString('ar-EG', { day:'numeric', month:'short' })} · ${esc(String(q.price || '').replace(/\.00$/, ''))} ج · ${esc(q.st)}</div>`).join('') + (r.qpDup.length > 2 ? `<div>+ ${r.qpDup.length - 2} كمان</div>` : '') + (r.dupOk ? '<div class="ok">✔ هيترفع برضه</div>' : `<button class="up-btn" data-dupok="${i}" style="padding:2px 8px;font-size:11.5px;margin-top:3px">✔ ارفعه برضه</button>`) : (D.done ? '<span class="ok">✔ جديد</span>' : (D.loading ? '⏳' : '')))}</td>
           <td class="err">${r.serial ? `<span style="color:#2f7d55;font-weight:700">✅ اترفع ${esc(r.serial)}</span>` : esc(problemsOf(r).filter(x => !/مرفوع في QP قبل كده/.test(x)).join('، '))}</td>
-          <td class="x">${r.serial ? '' : `<button data-updel="${i}" title="امسح الأوردر ده">✕</button>`}</td></tr>`;
+          <td class="x">${r.serial ? '' : `${!isReady(r) && !(r.urgent && r.urgent.status === 'open') ? `<button data-urgone="${i}" title="ابعته لحد يصلّحه (أوردرات عاجلة)">🚨</button>` : ''}<button data-updel="${i}" title="امسح الأوردر ده">✕</button>`}</td></tr>`;
         const idx = S.rows.map((r, i) => ({ r, i }));
         const ready = idx.filter(x => isReady(x.r)), probs = idx.filter(x => !x.r.serial && !isReady(x.r)), done = idx.filter(x => x.r.serial);
         let t = `<h4 class="up-sec ok">✅ جاهزة للرفع على QP <b>${ready.length}</b> <span>${ready.reduce((a, x) => a + (numOf(x.r.amount) || 0), 0).toLocaleString('ar-EG')} ج</span></h4>`;
@@ -10413,7 +10513,7 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
           G.push({ k:'other', t:'❌ بيانات ناقصة أو غلط / QP رفضها', hint:'صلّح الخانة اللي فيها المشكلة (مكتوبة في عمود الحالة)', list: probs.filter(x => !used.has(x.i)) });
           const phoneN = G[0].list.filter(x => x.r.errs.includes('الموبايل متكرر')).length;
           t += `<h4 class="up-sec bad">⚠️ فيها مشاكل — صلّحها أو امسحها <b>${probs.length}</b> <span>أول ما تتصلّح بتطلع فوق لوحدها</span></h4>
-            <div class="up-row" style="margin:0 0 8px">${phoneN ? `<button class="up-btn" id="upDupResolve" style="background:#2b6cb0;border-color:#2b6cb0;color:#fff">🔀 الأرقام المتكررة: خلّي الأغلى يطلع فوق (${phoneN})</button>` : ''}
+            <div class="up-row" style="margin:0 0 8px"><button class="up-btn" id="urgAll" style="background:#c0392b;border-color:#c0392b;color:#fff">🚨 ابعت كل اللي فيهم مشاكل لحد يصلّحهم (${probs.filter(x => !x.r.urgent || x.r.urgent.status !== 'open').length})</button>${phoneN ? `<button class="up-btn" id="upDupResolve" style="background:#2b6cb0;border-color:#2b6cb0;color:#fff">🔀 الأرقام المتكررة: خلّي الأغلى يطلع فوق (${phoneN})</button>` : ''}
               ${probs.some(x => x.r.dupLoserOf) ? `<button class="up-btn" id="upDupLosersDel" style="padding:6px 12px;font-size:13px">🧹 امسح الأرخص المتكرر (${probs.filter(x => x.r.dupLoserOf).length})</button>` : ''}</div>`;
           // 🟡 أزرار سريعة للمرفوعين قبل كده: حسب حالتهم في QP
           const qpG = G.find(g => g.k === 'qp');
@@ -10627,6 +10727,16 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
       histSheet(x);
     });
     if($('upDup')) $('upDup').onclick = dupQP;
+    // 🚨 أوردرات عاجلة
+    document.querySelectorAll('[data-urgone]').forEach(b => b.onclick = () => sendUrgent([S.rows[Number(b.dataset.urgone)]]));
+    if($('urgAll')) $('urgAll').onclick = () => sendUrgent(S.rows.filter(r => !r.serial && !isReady(r)));
+    if($('urgTo')) $('urgTo').onchange = e => { S.urgPick.to = e.target.value; };
+    if($('urgNote')) $('urgNote').oninput = e => { S.urgPick.note = e.target.value; };
+    if($('urgSend')) $('urgSend').onclick = confirmUrgent;
+    if($('urgCancel')) $('urgCancel').onclick = () => { S.urgPick = null; draw(); };
+    if($('urgModal')) $('urgModal').onclick = e => { if(e.target.id === 'urgModal'){ S.urgPick = null; draw(); } };
+    if($('urgMerge')) $('urgMerge').onclick = mergeUrgent;
+    if($('urgRefresh')) $('urgRefresh').onclick = () => loadUrgent().then(draw);
     document.querySelectorAll('[data-dupok]').forEach(b => b.onclick = () => { S.rows[Number(b.dataset.dupok)].dupOk = true; draw(); });
     document.querySelectorAll('[data-dupact]').forEach(b => b.onclick = () => {
       const act = b.dataset.dupact;
@@ -11317,6 +11427,138 @@ create policy "payroll emp: all" on public.payroll_employees for all to authenti
 create policy "payroll ent: all" on public.payroll_entries for all to authenticated using (public.app_has_section('payroll')) with check (public.app_has_section('payroll'));
 grant select, insert, update, delete on public.payroll_employees, public.payroll_entries to authenticated;`;
   window.Payroll = { sql: PAYROLL_SQL };
+})();
+</script>
+
+<style>
+/* 🚨 أوردرات عاجلة */
+.ug-batch{border:1px solid #f1c7c2;border-radius:14px;padding:12px;margin-bottom:16px;background:var(--panel)}
+.ug-bh{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px;font-size:14px}
+.ug-bh b{font-size:15.5px}
+.ug-bh .note{flex-basis:100%;background:#fff8e6;border-radius:8px;padding:6px 10px;font-size:13px;color:#6b4e12}
+.ug-card{border:1px solid var(--line);border-inline-start:5px solid #c0392b;border-radius:10px;padding:10px 12px;margin-bottom:10px}
+.ug-card.done{border-inline-start-color:#2f7d55;opacity:.8}
+.ug-card.failed{border-inline-start-color:#9a9a9a;opacity:.7}
+.ug-prob{display:inline-block;background:#fdecea;color:#a3271a;border-radius:8px;padding:2px 9px;font-size:12.5px;font-weight:600;margin-bottom:8px}
+.ug-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px}
+.ug-grid label{display:block;font-size:12px;color:var(--muted);margin-bottom:3px}
+.ug-grid input{width:100%;padding:8px 10px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;background:var(--panel);color:var(--ink);box-sizing:border-box}
+.ug-grid input.bad{border-color:#e6b4ad;background:#fff6f5}
+.ug-grid .wide{grid-column:1/-1}
+.ug-meta{font-size:12px;color:var(--muted);margin-top:6px}
+.ug-act{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.ug-btn{padding:8px 14px;border:1.5px solid var(--line);border-radius:9px;background:var(--panel);color:var(--ink);font-family:inherit;font-size:14px;font-weight:600;cursor:pointer}
+.ug-btn.ok{background:#2f7d55;border-color:#2f7d55;color:#fff}
+.ug-btn.no{color:#b3261e;border-color:#e6b4ad}
+.ug-tabs{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap}
+.ug-tabs button{padding:8px 16px;border:1px solid var(--line);border-radius:9px;background:var(--panel);color:var(--ink);font-family:inherit;font-weight:600;cursor:pointer}
+.ug-tabs button.on{background:#c0392b;border-color:#c0392b;color:#fff}
+.ug-msg{padding:10px 14px;border-radius:9px;margin-bottom:12px;background:#e3f3e8;color:#23784a}
+.ug-msg.err{background:#fdecea;color:#a3271a}
+.ug-sql{direction:ltr;text-align:left;white-space:pre-wrap;font-size:12px;background:var(--slate-l);padding:10px;border-radius:8px;max-height:260px;overflow:auto}
+</style>
+<script>
+/* =====================================================================
+   🚨 أوردرات عاجلة — الأوردرات اللي فيها مشاكل (رقم ناقص / عنوان ناقص...) بتتبعت لحد يصلّحها
+   - اللي اتبعتله بيصلّح البيانات هنا ويدوس ✔ تم ← اللي بعت بيجيله إشعار ويضمها لشيت الرفع
+   ===================================================================== */
+(function(){
+  const sb = () => window.__sbClient || (window.AuthGate && window.AuthGate.sb);
+  const me = () => (window.AuthGate && window.AuthGate.me && window.AuthGate.me()) || {};
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const isUG = () => (location.hash.replace('#/', '') || 'home').split('/')[0] === 'urgent';
+  const phoneOk = p => /^1[0125]\d{8}$/.test(String(p || '').replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/\D/g, '').replace(/^20(?=1\d{9}$)/, '').replace(/^0/, ''));
+  const S = { tab:'mine', list:null, missing:false, msg:'', msgErr:false, edits:{} };
+
+  async function load(){
+    const m = me(); if(!m.id) return;
+    let q = sb().from('urgent_orders').select('*').order('created_at', { ascending:false }).limit(600);
+    if(S.tab === 'mine') q = q.eq('assigned_to', m.id).in('status', ['open', 'done', 'failed']);
+    else if(S.tab === 'sent') q = q.eq('from_id', m.id);
+    const { data, error } = await q;
+    if(error){ S.missing = /urgent_orders|relation|schema cache|does not exist/i.test(error.message); S.list = []; S.msg = S.missing ? '' : error.message; S.msgErr = !S.missing; draw(); return; }
+    S.missing = false; S.list = data || []; draw(); badge();
+  }
+  async function badge(){
+    const m = me(); if(!m.id || !sb()) return;
+    const { count } = await sb().from('urgent_orders').select('id', { count:'exact', head:true }).eq('assigned_to', m.id).eq('status', 'open');
+    const b = document.getElementById('urgBadge'); if(b){ b.textContent = count || ''; b.classList.toggle('on', !!count); }
+  }
+  const flash = (t, err) => { S.msg = t; S.msgErr = !!err; draw(); setTimeout(() => { if(S.msg === t){ S.msg = ''; draw(); } }, 6000); };
+  const val = (u, k) => (S.edits[u.id] && S.edits[u.id][k] !== undefined) ? S.edits[u.id][k] : ((u.fixed || {})[k] ?? (u.data || {})[k] ?? '');
+
+  async function finish(ids, status, reason){
+    const L = S.list.filter(u => ids.includes(u.id) && u.status === 'open');
+    for(const u of L){
+      const fixed = status === 'done' ? { name:val(u, 'name'), phone:val(u, 'phone'), address:val(u, 'address'), amount:val(u, 'amount'), contents:val(u, 'contents'), city:val(u, 'city') } : null;
+      if(status === 'done' && (!String(fixed.name).trim() || !phoneOk(fixed.phone) || !String(fixed.address).trim())){
+        return flash(`⚠️ "${fixed.name || 'أوردر'}": لازم الاسم والموبايل الصح (11 رقم) والعنوان يتكتبوا قبل ✔ تم.`, true);
+      }
+      const { error } = await sb().from('urgent_orders').update({ status, fixed, fail_reason: reason || null, done_at:new Date().toISOString(), done_by_name: me().full_name || me().username || '' }).eq('id', u.id);
+      if(error) return flash('ماتحفظش: ' + error.message, true);
+      u.status = status; u.fixed = fixed; delete S.edits[u.id];
+    }
+    // لو الدفعة كلها خلصت → إشعار للي بعتها
+    const batches = [...new Set(L.map(u => u.batch))];
+    for(const b of batches){
+      const all = S.list.filter(u => u.batch === b);
+      if(all.length && all.every(u => u.status !== 'open')){
+        const d = all.filter(u => u.status === 'done').length, f = all.length - d, u0 = all[0];
+        await sb().from('inbox').insert({ kind:'message', from_id:me().id, from_name: me().full_name || me().username || '', to_id:u0.from_id, to_name:u0.from_name,
+          title:`✅ الأوردرات العاجلة خلصت (${all.length})`, body:`اتصلّح ${d} أوردر${f ? ` و ${f} مانفعش` : ''}.\nادخل 📤 رفع الأوردرات ودوس "➕ ضم اللي اتصلّح للشيت".` });
+      }
+    }
+    flash(status === 'done' ? `✅ اتسجل — ${L.length} أوردر اتصلّح.` : `اتسجل إن ${L.length} أوردر مانفعش.`);
+    draw(); badge();
+  }
+
+  function card(u){
+    const D = u.data || {}, open = u.status === 'open', mine = u.assigned_to === me().id;
+    const inp = (k, l, extra = '') => `<div class="${k === 'address' || k === 'contents' ? 'wide' : ''}"><label>${l}</label><input data-ug="${u.id}" data-k="${k}" value="${esc(val(u, k))}" ${open && mine ? '' : 'disabled'} ${extra}
+      class="${open && ((k === 'phone' && !phoneOk(val(u, k))) || ((k === 'address' || k === 'name') && !String(val(u, k)).trim())) ? 'bad' : ''}"></div>`;
+    return `<div class="ug-card ${u.status}"><span class="ug-prob">${esc(u.problem || 'محتاج مراجعة')}</span>
+      ${u.status === 'done' ? '<span class="ug-prob" style="background:#e3f3e8;color:#23784a">✅ اتصلّح</span>' : u.status === 'failed' ? `<span class="ug-prob" style="background:var(--slate-l);color:var(--muted)">❌ مانفعش${u.fail_reason ? ': ' + esc(u.fail_reason) : ''}</span>` : u.status === 'merged' ? '<span class="ug-prob" style="background:#e6eef8;color:#2c5282">➕ اتضم للشيت</span>' : ''}
+      <div class="ug-grid">${inp('name', 'الاسم')}${inp('phone', 'الموبايل', 'inputmode="tel" style="direction:ltr"')}${inp('amount', 'السعر', 'inputmode="decimal"')}${inp('city', 'المحافظة')}${inp('address', 'العنوان')}${inp('contents', 'الطلب')}</div>
+      <div class="ug-meta">${D.page ? '📣 ' + esc(D.page) + ' · ' : ''}${D.agent ? '👤 ' + esc(D.agent) + ' · ' : ''}${D.orderAt ? '🕒 ' + esc(new Date(D.orderAt).toLocaleString('ar-EG', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' })) : ''}${D.ref ? ' · ' + esc(D.ref) : ''}</div>
+      ${open && mine ? `<div class="ug-act"><button class="ug-btn ok" data-ugdone="${u.id}">✔ تم</button><button class="ug-btn no" data-ugfail="${u.id}">❌ مينفعش</button>
+        ${phoneOk(val(u, 'phone')) ? `<a class="ug-btn" href="tel:0${esc(String(val(u, 'phone')).replace(/\D/g, '').replace(/^0/, ''))}" style="text-decoration:none">📞 اتصل</a><a class="ug-btn" target="_blank" rel="noopener" href="https://wa.me/20${esc(String(val(u, 'phone')).replace(/\D/g, '').replace(/^0/, ''))}" style="text-decoration:none">💬 واتساب</a>` : ''}</div>` : ''}</div>`;
+  }
+  function view(){
+    let h = `<div class="pagehead"><h1>🚨 أوردرات عاجلة</h1><p>أوردرات فيها مشاكل (رقم ناقص، عنوان ناقص...) اتبعتتلك عشان تصلّحيها. صلّحي البيانات ودوسي ✔ تم — واللي بعتها هيجيله إشعار ويرفعها.</p></div>`;
+    if(S.missing) return h + `<div class="ug-msg err">جدول الأوردرات العاجلة لسه مش متعمل في Supabase.${me().is_admin ? ' شغّل ملف urgent_orders.sql في SQL Editor.' : ' كلّم الأدمن.'}</div>`;
+    if(S.msg) h += `<div class="ug-msg ${S.msgErr ? 'err' : ''}">${esc(S.msg)}</div>`;
+    h += `<div class="ug-tabs">${[['mine', '📥 اللي عندي'], ['sent', '📤 اللي بعته']].concat(me().is_admin ? [['all', '👁️ الكل']] : []).map(([k, l]) => `<button class="${S.tab === k ? 'on' : ''}" data-ugtab="${k}">${l}</button>`).join('')}</div>`;
+    if(!S.list) return h + '<p style="color:var(--muted)">⏳ بيحمّل...</p>';
+    if(!S.list.length) return h + `<div class="card"><p style="color:var(--muted);margin:0">${S.tab === 'mine' ? 'مفيش أوردرات عاجلة عندك دلوقتي 👌' : 'مفيش حاجة.'}</p></div>`;
+    const groups = {}; S.list.forEach(u => (groups[u.batch] = groups[u.batch] || []).push(u));
+    Object.values(groups).forEach(L => { const u0 = L[0], open = L.filter(u => u.status === 'open'), mine = u0.assigned_to === me().id;
+      h += `<div class="ug-batch"><div class="ug-bh"><b>${S.tab === 'sent' ? 'لـ ' + esc(u0.assigned_name) : 'من ' + esc(u0.from_name)}${S.tab === 'all' ? ' → ' + esc(u0.assigned_name) : ''}</b>
+        <span>${new Date(u0.created_at).toLocaleString('ar-EG', { weekday:'short', day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' })}</span>
+        <span>· ${L.length} أوردر · <b style="color:#c0392b">${open.length}</b> لسه</span>
+        ${open.length && mine ? `<button class="ug-btn ok" data-ugall="${esc(u0.batch)}" style="margin-inline-start:auto">✔ خلّصت الكل (${open.length})</button>` : ''}
+        ${u0.note ? `<div class="note">📝 ${esc(u0.note)}</div>` : ''}</div>${L.map(card).join('')}</div>`; });
+    return h;
+  }
+  function draw(){
+    if(!isUG()) return;
+    const main = document.getElementById('main'); if(!main) return;
+    // ما نعيدش الرسم وإنت بتكتب
+    const a = document.activeElement; const keep = a && a.dataset && a.dataset.ug ? { id:a.dataset.ug, k:a.dataset.k, pos:a.selectionStart } : null;
+    const y = scrollY; main.innerHTML = view(); scrollTo(0, y);
+    if(keep){ const e = main.querySelector(`[data-ug="${keep.id}"][data-k="${keep.k}"]`); if(e){ e.focus(); try{ e.setSelectionRange(keep.pos, keep.pos); }catch(_){} } }
+    main.querySelectorAll('[data-ugtab]').forEach(b => b.onclick = () => { S.tab = b.dataset.ugtab; S.list = null; draw(); load(); });
+    main.querySelectorAll('[data-ug]').forEach(el => el.oninput = () => { const id = Number(el.dataset.ug); (S.edits[id] = S.edits[id] || {})[el.dataset.k] = el.value;
+      el.classList.toggle('bad', (el.dataset.k === 'phone' && !phoneOk(el.value)) || ((el.dataset.k === 'address' || el.dataset.k === 'name') && !el.value.trim())); });
+    main.querySelectorAll('[data-ugdone]').forEach(b => b.onclick = () => finish([Number(b.dataset.ugdone)], 'done'));
+    main.querySelectorAll('[data-ugfail]').forEach(b => b.onclick = () => { const r = prompt('ليه مينفعش؟ (مثلاً: العميل مش بيرد / العميل لغى)'); if(r !== null) finish([Number(b.dataset.ugfail)], 'failed', r.trim() || 'مينفعش'); });
+    main.querySelectorAll('[data-ugall]').forEach(b => b.onclick = () => finish(S.list.filter(u => u.batch === b.dataset.ugall && u.status === 'open').map(u => u.id), 'done'));
+  }
+  function mount(){ document.querySelectorAll('#sidebar a.navlink').forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#/urgent')); draw(); load(); }
+  const _render = render;
+  render = function(){ _render.apply(this, arguments); if(isUG()) mount(); };
+  window.addEventListener('hashchange', () => { if(isUG()) setTimeout(mount, 0); });
+  const w = setInterval(() => { if(me().id && sb()){ clearInterval(w); badge(); if(isUG()) mount(); setInterval(badge, 60000); } }, 700);
+  window.Urgent = { count: async () => { const { count } = await sb().from('urgent_orders').select('id', { count:'exact', head:true }).eq('assigned_to', me().id).eq('status', 'open'); return count || 0; } };
 })();
 </script>
 
