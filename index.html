@@ -10200,12 +10200,15 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
       try{ rows = rows.concat(await sourceRows(src.key)); }catch(e){ errs.push(src.label + ': ' + e.message); }
     }
     let sqN = 0;
-    try{ const sq = await squadRows(); sqN = sq.filter(r => !isCancel(r.estatus)).length; rows = sq.concat(rows); }catch(e){ errs.push('Squad: ' + e.message); }
+    try{ const sq = await squadRows(); rows = sq.concat(rows); }catch(e){ errs.push('Squad: ' + e.message); }
     E.loading = false;
     rows = notDone(rows);
     if(errs.length){ easyErr(new Error(errs.join(' | '))); }
     easyFinish(rows, 'من كل المصادر');
-    if(sqN) S.msg += ` (منهم ${sqN} من Squad)`;
+    // العدد لكل مصدر — بعد ما شلنا الملغي واللي اترفع أو اتشال قبل كده (نفس اللي ظاهر في الشيت)
+    const per = {}; (S.rows || []).forEach(r => { const k = r.srcKey === 'squad' ? '🏆 Squad' : srcLabel(r.srcKey); per[k] = (per[k] || 0) + 1; });
+    const parts = Object.entries(per).map(([k, n]) => `${k} ${n}`);
+    if(parts.length) S.msg += ` (${parts.join(' · ')})`;
     draw();
   }
   async function readExcel(file){
@@ -10451,7 +10454,7 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     if(S.src === 'squad' || S.src === 'all'){
       const keys = [...new Set(S.rows.map(r => r.srcKey === 'squad' ? 'page:' + r.page : r.srcKey))];
       const cnt = k => S.rows.filter(r => (r.srcKey === 'squad' ? 'page:' + r.page : r.srcKey) === k).length;
-      const lbl = k => k.startsWith('page:') ? '🏆 ' + k.slice(5) : srcLabel(k);
+      const lbl = k => k.startsWith('page:') ? '🏆 Squad · ' + k.slice(5) : srcLabel(k);
       const val = k => k.startsWith('page:') ? (SQ.pageNotes[k.slice(5)] || '') : (S.allNotes[k] ?? srcNote(k));
       h += `<div class="up-ask ${done ? 'done' : ''}"><h3>2️⃣ ${done ? '✅' : '⚠️'} الـ notes لكل مصدر</h3>
         <p style="margin:0 0 10px;font-size:13.5px;color:#555">كل أوردر بيتكتب في عمود G بالـ notes بتاعة المصدر بتاعه.${S.rows.some(r => r.srcKey === 'squad') ? ' مصادر Squad (الصفحات) بتتحفظ، فالمرة الجاية بتتملى لوحدها.' : ''}</p>
@@ -10486,7 +10489,7 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
       ${(() => {
         const head = `<thead><tr><th class="col"></th><th class="col">B</th><th class="col"></th><th class="col">C</th><th class="col">D</th><th class="col">E</th><th class="col">F</th><th class="col">G</th><th class="col">I</th><th class="col">K</th><th class="col"></th><th class="col"></th><th class="col"></th></tr>
           <tr><th>1</th><th>serial</th><th>المصدر</th><th>full name</th><th>phone</th><th>address</th><th>total amount</th><th>notes</th><th>shipment contents</th><th>city</th><th>في QP؟</th><th>الحالة</th><th></th></tr></thead>`;
-        const rowHtml = (r, i) => `<tr class="${r.serial ? '' : (r.errs.length || r.upErr || !finalNote(r) ? 'bad' : (isDupPending(r) ? 'dup' : ''))}" ${r.serial ? 'style="background:#eef8f1"' : ''}><td class="rn">${i + 2}</td><td style="font-size:12px;padding:4px 6px;color:#2f7d55">${esc(r.serial || '')}</td><td style="font-size:11.5px;padding:4px 6px;white-space:nowrap;color:${esc((srcOf(r.srcKey) || {}).color || '#8a6a3a')}"><b>${esc(r.srcKey === 'squad' ? '🏆 ' + r.page : srcLabel(r.srcKey))}</b><br>${esc(r.ref || '')} <span style="color:#888">${esc(r.estatus || '')}</span>${orderTime(r) ? `<div style="color:#2b2f33;margin-top:2px">🕒 ${esc(orderTime(r))}</div>` : ''}${r.urgent ? `<div class="urg-tag ${r.urgent.status}">${r.urgent.status === 'done' ? '✅ اتصلّح — ' : '🚨 عند '}${esc(r.urgent.to_name || '')}</div>` : ''}</td>
+        const rowHtml = (r, i) => `<tr class="${r.serial ? '' : (r.errs.length || r.upErr || !finalNote(r) ? 'bad' : (isDupPending(r) ? 'dup' : ''))}" ${r.serial ? 'style="background:#eef8f1"' : ''}><td class="rn">${i + 2}</td><td style="font-size:12px;padding:4px 6px;color:#2f7d55">${esc(r.serial || '')}</td><td style="font-size:11.5px;padding:4px 6px;white-space:nowrap;color:${esc((srcOf(r.srcKey) || {}).color || '#8a6a3a')}"><b>${esc(r.srcKey === 'squad' ? '🏆 Squad · ' + r.page : srcLabel(r.srcKey))}</b><br>${esc(r.ref || '')} <span style="color:#888">${esc(r.estatus || '')}</span>${orderTime(r) ? `<div style="color:#2b2f33;margin-top:2px">🕒 ${esc(orderTime(r))}</div>` : ''}${r.urgent ? `<div class="urg-tag ${r.urgent.status}">${r.urgent.status === 'done' ? '✅ اتصلّح — ' : '🚨 عند '}${esc(r.urgent.to_name || '')}</div>` : ''}</td>
           <td><input data-upf="${i}.name" value="${esc(r.name)}"></td>
           <td><input data-upf="${i}.phone" value="${esc(phoneOf(r.phone))}" style="direction:ltr;text-align:left;min-width:105px"></td>
           <td><input data-upf="${i}.address" value="${esc(r.address)}" style="min-width:260px"></td>
