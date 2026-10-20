@@ -7819,6 +7819,26 @@ function makeAccounts(CFG){
     list.filter(r => r.kind === kind && !isTrf(r)).forEach(r => { const k = r.category || 'بدون بند'; m[k] = (m[k] || 0) + Number(r.amount); });
     return Object.entries(m).sort((a, b) => b[1] - a[1]);
   }
+  /* 🧹 تصفير الحسابات (للأدمن): بينزّل نسخة Excel بكل حاجة الأول، وبعدين يمسح كل الحركات */
+  async function wipeAll(){
+    if(!me().is_admin) return;
+    const typed = prompt(`⚠️ تصفير ${CFG.title}: هيتمسح كل الإيرادات والمصروفات والتحويلات وأرصدة أول المدة نهائيًا.\nهينزل ملف Excel بنسخة من كل حاجة قبل المسح.\n\nلو متأكد اكتب كلمة:  مسح`);
+    if(typed === null) return;
+    if(typed.trim() !== 'مسح') return flash('ماتمسحش حاجة — لازم تكتب كلمة "مسح" بالظبط.', true);
+    S.busy = true; flash('⏳ بينزّل نسخة وبيمسح...');
+    try{
+      const { data: all, error: e1 } = await sb().from(CFG.table).select('*').limit(100000);
+      if(e1) throw e1;
+      if(window.XLSX && all && all.length){
+        const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(all), 'كل الحركات');
+        XLSX.writeFile(wb, `نسخة قبل التصفير — ${CFG.title} ${new Date().toISOString().slice(0, 10)}.xlsx`);
+      }
+      const { error } = await sb().from(CFG.table).delete().not('id', 'is', null);
+      if(error) throw error;
+      S.busy = false; flash(`✅ اتصفّرت ${CFG.title} (اتمسح ${all ? all.length : 0} حركة) — والنسخة نزلت عندك.`);
+      load();
+    }catch(e){ S.busy = false; flash('ماتمسحش: ' + (e.message || e), true); }
+  }
   function flash(msg, isErr){ S.msg = msg; S.msgErr = !!isErr; draw(); }
 
   /* ---------- الرسم ---------- */
@@ -7909,6 +7929,7 @@ function makeAccounts(CFG){
       <span style="flex:1"></span>
       ${window.XLSX ? '<button class="ac-btn" data-act="xlsx">⬇️ Excel</button>' : ''}
       <button class="ac-btn" data-act="reload">🔄 تحديث</button>
+      ${me().is_admin ? '<button class="ac-btn" data-act="wipe" style="color:#b3261e;border-color:#e6b4ad">🧹 تصفير الحسابات</button>' : ''}
     </div>
     <div class="ac-bar" style="margin-bottom:8px">
       <button class="ac-btn ${S.show === 'all' ? 'on' : ''}" data-show="all">الكل</button>
@@ -8057,6 +8078,7 @@ function makeAccounts(CFG){
     root.querySelectorAll('[data-del]').forEach(b => b.onclick = e => { e.stopPropagation(); del(b.dataset.del); });
     const rl = root.querySelector('[data-act=reload]'); if(rl) rl.onclick = () => { S.msg = ''; load(); };
     const x = root.querySelector('[data-act=xlsx]'); if(x) x.onclick = exportXlsx;
+    const wp = root.querySelector('[data-act=wipe]'); if(wp) wp.onclick = wipeAll;
   }
 
   async function add(){
