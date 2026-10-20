@@ -432,6 +432,7 @@ html:not(.auth-ok) #app{display:none}
       <a class="navlink" href="#/squad">🏆 Squad</a>
       <a class="navlink" href="#/qp-upload">📤 رفع الأوردرات</a>
       <a class="navlink" href="#/qp-delete">📷 البوالص</a>
+      <a class="navlink" href="#/pickup">📦 مراجعة البيكب</a>
       <a class="navlink" href="#/dept/warehouse">🏬 المخزن</a>
     </div>
     <div class="grp"><div class="grp-title">المالية</div>
@@ -4962,6 +4963,7 @@ async function exportToSheet(btn) {
       { key:'meta_ads', label:'📊 Ads (Meta)', routes:['meta-ads'] },
       { key:'qp_upload', label:'📤 رفع الأوردرات', routes:['qp-upload'] },
       { key:'qp_delete', label:'🗑️ مسح بوالص من QP', routes:['qp-delete'] },
+      { key:'pickup_review', label:'📦 مراجعة البيكب', routes:['pickup'] },
       { key:'profits', label:'💰 الأرباح',    routes:['profits'] },
       { key:'payroll', label:'💵 الرواتب', routes:['payroll'] },
       { key:'brands', label:'🏷️ Brands', routes:['brands'] },
@@ -9395,7 +9397,7 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const me = () => (window.AuthGate && window.AuthGate.me && window.AuthGate.me()) || {};
   const upRoute = () => (location.hash.replace('#/', '') || 'home').split('/')[0];
-  const isUP = () => upRoute() === 'qp-upload' || upRoute() === 'qp-delete';
+  const isUP = () => upRoute() === 'qp-upload' || upRoute() === 'qp-delete' || upRoute() === 'pickup';
   const digits = s => String(s ?? '').replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d));
   const numOf = s => { const t = digits(s).replace(/[,\s]/g, '').replace(/ج|جنيه|egp|le/gi, ''); return t !== '' && !isNaN(t) ? Number(t) : null; };
   const phoneOf = s => { let t = digits(s).replace(/[^\d]/g, ''); if(t.startsWith('20') && t.length === 12) t = t.slice(2); if(t.startsWith('0')) t = t.slice(1); return t; };
@@ -9749,6 +9751,7 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
       o.frequency.value = ok ? 1200 : 300; o.type = 'square'; g.gain.value = 0.08; o.connect(g); g.connect(c.destination); o.start(); o.stop(c.currentTime + (ok ? 0.12 : 0.3)); }catch(e){}
   }
   async function addSerial(raw){
+    if(X.mode === 'pickup') return pkAdd(raw);
     if(X.mode === 'restore'){
       const sr = serialFrom(raw); if(X.log === null) await loadDelLog();
       const hit = sr && (X.log || []).find(x => String(x.serial) === sr && !x.restored);
@@ -10002,6 +10005,83 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
   }
 
   // 🔢 العدّاد اللي فوق الكاميرا: بيتحدّث مع كل بوليصة بتتصوّر
+  /* =====================================================================
+     📦 مراجعة البيكب: تصوّر باركود كل بوليصة اتجهزت (بيعدّ)، وفي الآخر يقارن بالـ Pending في QP
+     ويقولك الفرق وأنهي أوردرات لسه ماتجهزتش
+     ===================================================================== */
+  const PK = { day: ymd(new Date()), to: ymd(new Date()), list:[], res:null, loading:false, msg:'' };
+  const pkKey = () => 'pk_scan_' + PK.day + '_' + PK.to;
+  const pkLoad = () => { try{ PK.list = JSON.parse(localStorage.getItem(pkKey()) || '[]'); }catch(e){ PK.list = []; } };
+  const pkSave = () => { try{ localStorage.setItem(pkKey(), JSON.stringify(PK.list)); }catch(e){} };
+  pkLoad();
+  function pkAdd(raw){
+    const sr = serialFrom(raw);
+    if(!sr){ PK.msg = 'مش قادر أقرا رقم شحنة.'; beep(false); draw(); return; }
+    if(PK.list.some(x => x.s === sr)){ PK.msg = `${sr} اتصوّرت قبل كده ✋`; beep(false); draw(); return; }
+    PK.list.unshift({ s:sr, at:Date.now() }); pkSave(); PK.msg = `✅ ${sr}`; PK.res = null; beep(true); draw();
+  }
+  async function pkCompare(){
+    const api = window.QP && window.QP.api;
+    if(!api || !api.hasCreds()){ PK.msg = '⚠️ لازم تكون عامل دخول QP من قسم 🚚 QP على الجهاز ده.'; draw(); return; }
+    PK.loading = true; PK.msg = 'بيجيب أوردرات الـ Pending من QP...'; draw();
+    try{
+      let L = await api.fetchRange(PK.day, PK.to, n => { PK.msg = `بيجيب... ${n} أوردر`; draw(); });
+      L = L.filter(q => { const d = ymd(new Date(q.order_date)); return d >= PK.day && d <= PK.to && String(q.Order_Delivery_Status ?? '').trim() === '1'; });
+      const scanned = new Set(PK.list.map(x => x.s)), pend = new Set(L.map(q => String(q.serial)));
+      PK.res = { pending:L, ok:L.filter(q => scanned.has(String(q.serial))), missing:L.filter(q => !scanned.has(String(q.serial))), extra:PK.list.filter(x => !pend.has(x.s)), at:new Date() };
+      PK.msg = '';
+    }catch(e){ PK.msg = 'مقدرتش أجيب من QP: ' + e.message; }
+    PK.loading = false; draw();
+  }
+  function pkSheet(which){
+    if(!window.XLSX || !PK.res) return;
+    const L = which === 'missing' ? PK.res.missing : PK.res.ok;
+    const ws = XLSX.utils.json_to_sheet(L.map(q => ({ 'رقم الشحنة':String(q.serial), 'العميل':q.full_name || '', 'الموبايل':String(q.phone || ''), 'العنوان':q.address || '', 'المحتوى':q.shipment_contents || '', 'السعر':numOf(q.total_amount ?? q.price), 'notes':q.notes || '', 'تاريخ الأوردر':q.order_date ? new Date(q.order_date).toLocaleString('ar-EG') : '' })));
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, which === 'missing' ? 'ماتجهزش' : 'اتجهز');
+    XLSX.writeFile(wb, `مراجعة البيكب ${PK.day}${PK.to !== PK.day ? ' لـ ' + PK.to : ''} — ${which === 'missing' ? 'ماتجهزش' : 'اتجهز'} (${L.length}).xlsx`);
+  }
+  function pickupHtml(){
+    const R = PK.res, qrow = q => `<tr><td style="padding:6px 8px;direction:ltr;font-weight:700">${esc(q.serial)}</td><td style="padding:6px 8px">${esc(q.full_name || '')}</td><td style="padding:6px 8px;direction:ltr">${esc(q.phone || '')}</td><td style="padding:6px 8px;max-width:260px;white-space:normal">${esc(q.shipment_contents || '')}</td><td style="padding:6px 8px">${esc(q.notes || '')}</td><td style="padding:6px 8px">${numOf(q.total_amount ?? q.price).toLocaleString('ar-EG')}</td></tr>`;
+    const head = '<thead><tr><th>رقم الشحنة</th><th>العميل</th><th>الموبايل</th><th>المحتوى</th><th>notes</th><th>السعر</th></tr></thead>';
+    let h = `<div class="card"><h3>📦 صوّر بوالص الأوردرات اللي اتجهزت</h3>
+      <p style="margin:0 0 10px;font-size:13.5px;color:var(--muted)">صوّر باركود كل بوليصة جاهزة (أو اكتب رقمها). السيستم بيعدّ، وفي الآخر دوس "قارن بالـ Pending" يقولك لو فيه فرق وأنهي أوردرات ماتجهزتش. الليستة بتتحفظ على الجهاز لو عملت Refresh.</p>
+      <div class="up-row">
+        <label style="font-size:13.5px">أوردرات من <input type="date" id="pkFrom" value="${esc(PK.day)}" style="padding:7px 9px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit"></label>
+        <label style="font-size:13.5px">لـ <input type="date" id="pkTo" value="${esc(PK.to)}" style="padding:7px 9px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit"></label>
+      </div>
+      <div class="up-row" style="margin-top:10px">
+        ${X.scanning ? '<button class="up-btn" id="upScanStop">⏹️ وقّف الكاميرا</button>' : '<button class="up-btn pri" id="upScanStart">📷 صوّر البوالص بالكاميرا</button>'}
+        <label class="up-file">📸 صوّر البوليصة<input type="file" id="upPhoto" accept="image/*" capture="environment"></label>
+        <input id="upSerial" placeholder="أو اكتب رقم البوليصة" style="max-width:220px;padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;direction:ltr">
+        <button class="up-btn" id="upSerialAdd">➕ ضيف</button>
+      </div>
+      <div class="scan-cnt"><span class="n">${PK.list.length}</span><span>بوليصة اتجهزت واتصوّرت</span>${PK.msg ? `<span class="last">${esc(PK.msg)}</span>` : ''}</div>
+      <div id="upScanBox" style="${X.scanning ? 'display:block;margin-top:12px;width:100%;max-width:460px;min-height:240px;border-radius:12px;overflow:hidden;background:#000' : 'display:none'}"></div>
+      <div class="up-row" style="margin-top:12px">
+        <button class="up-btn ok" id="pkCmp" ${PK.loading ? 'disabled' : ''}>${PK.loading ? '⏳ بيقارن...' : '🔍 قارن بالـ Pending في QP'}</button>
+        ${PK.list.length ? '<button class="up-btn" id="pkClear">🧹 ابدأ من جديد</button>' : ''}
+      </div></div>`;
+    if(R){
+      const diff = R.pending.length - R.ok.length;
+      h += `<div class="card"><h3>🔍 النتيجة <span style="font-size:13px;font-weight:500;color:var(--muted)">— ${R.at.toLocaleTimeString('ar-EG', { hour:'2-digit', minute:'2-digit' })}</span></h3>
+        <div class="up-kpis">
+          <div><b>${R.pending.length}</b><span>Pending في QP</span></div>
+          <div><b>${PK.list.length}</b><span>اتصوّر</span></div>
+          <div><b style="color:#2f7d55">${R.ok.length}</b><span>✅ اتجهز</span></div>
+          <div><b style="color:${diff ? '#b3261e' : '#2f7d55'}">${diff}</b><span>❌ ماتجهزش</span></div>
+          ${R.extra.length ? `<div><b style="color:#b7791f">${R.extra.length}</b><span>⚠️ اتصوّر ومش في الـ Pending</span></div>` : ''}
+        </div>
+        ${!diff && !R.extra.length ? '<div class="up-msg ok">👌 تمام — كل أوردرات الـ Pending اتجهزت، ومفيش فرق.</div>' : ''}
+        ${diff ? `<h4 class="up-sec bad">❌ أوردرات Pending ماتجهزتش <b>${diff}</b> <span><button class="up-btn" data-pksheet="missing" style="padding:4px 10px;font-size:12.5px">⬇️ نزّلهم شيت</button></span></h4>
+          <div class="up-sheet"><table>${head}<tbody>${R.missing.map(qrow).join('')}</tbody></table></div>` : ''}
+        ${R.extra.length ? `<h4 class="up-sec" style="background:#fff3cd;color:#8a5a00">⚠️ اتصوّرت بس مش في الـ Pending بتاع الفترة دي <b>${R.extra.length}</b> <span>ممكن تكون من يوم تاني أو اتمسحت أو حالتها اتغيرت</span></h4>
+          <p style="direction:ltr;text-align:right;font-size:13px">${R.extra.map(x => esc(x.s)).join(' · ')}</p>` : ''}
+        ${R.ok.length ? `<div class="up-row" style="margin-top:10px"><button class="up-btn" data-pksheet="ok">⬇️ نزّل شيت اللي اتجهز (${R.ok.length})</button></div>` : ''}
+      </div>`;
+    }
+    return h;
+  }
+
   function scanCounter(){
     if(X.mode === 'restore'){
       if(!X.scanning && !X.pick.size) return '';
@@ -10423,7 +10503,12 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
   /* ---------- الرسم ---------- */
   function view(){
     // 🗑️ صفحة مسح البوالص لوحدها (من الأيقونة اللي في القايمة)
+    if(upRoute() === 'pickup'){
+      S.src = 'delete'; X.mode = 'pickup';
+      return `<div class="pagehead"><h1>📦 مراجعة البيكب</h1><p>اتأكد إن كل أوردرات الـ Pending اتجهزت قبل ما المندوب ييجي.</p></div><div class="up-wrap">` + pickupHtml() + '</div>';
+    }
     if(upRoute() === 'qp-delete'){
+      if(X.mode === 'pickup') X.mode = 'delete';
       if(S.src !== 'delete'){ S.src = 'delete'; }
       return `<div class="pagehead"><h1>📷 البوالص</h1><p>صوّر باركود البوالص: يا تمسحها من QP، يا تعمل منها شيت ببياناتها.</p></div><div class="up-wrap">` + delHtml() + '</div>';
     }
@@ -10437,6 +10522,7 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     if(S.src === 'settings') return h + settingsHtml() + '</div>';
     if(S.src === 'delete') return h + delHtml() + '</div>';
     if(S.msg) h += `<div class="up-msg ${S.msgErr ? 'err' : 'ok'}">${esc(S.msg)}</div>`;
+    h += todayUpBtn();
     if(S.src === 'restore') h += `<div class="card"><h3>♻️ أوردرات اتمسحت ورجعت</h3><p style="margin:0;font-size:13.5px">دي أوردرات كانت اتمسحت من QP وبضاعتها جت. راجعها تحت وارفعها — الـ notes والمحتوى والسعر جايين من البوليصة القديمة. <a href="#" id="upBackScan">↩️ ارجع لـ 📷 البوالص</a></p></div>`;
     else if(isEasy(S.src)) h += easyStep1();
     else if(S.src === 'all') h += allStep1();
@@ -10646,6 +10732,27 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Sheet3');
     XLSX.writeFile(wb, `رفعة ${new Date(x.at).toLocaleDateString('en-CA')} ${new Date(x.at).toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' }).replace(':', '-')} (${x.orders.length}).xlsx`);
   }
+  // 📊 رفعنا النهارده كام أوردر على QP — من سجل الرفع (لكل الأجهزة)
+  function todayUploads(){
+    const t = ymd(new Date()), seen = new Set(), out = [];
+    (histShared || []).concat(S.hist || []).forEach(x => { if(!x.qp || ymd(new Date(x.at)) !== t || !x.orders) return;
+      x.orders.forEach(o => { if(seen.has(String(o.serial))) return; seen.add(String(o.serial)); out.push({ ...o, at:x.at, by:x.by }); }); });
+    return out;
+  }
+  function todayUpBtn(){
+    if(histShared === null){ loadHist().then(draw).catch(() => { histShared = []; }); return ''; }
+    const L = todayUploads();
+    return `<div class="up-row" style="margin:0 0 12px"><button class="up-btn" id="upTodaySheet" ${L.length ? '' : 'disabled'} style="border-color:#2b6cb0;color:#2b6cb0">📊 رفعنا النهارده ${L.length.toLocaleString('ar-EG')} أوردر على QP — ⬇️ نزّلهم في شيت</button></div>`;
+  }
+  function todaySheet(){
+    const L = todayUploads(); if(!L.length || !window.XLSX) return;
+    const H = [null, 'serial', 'full name', 'phone', 'address', 'total amount', 'notes', 'order date', 'shipment contents', 'weight', 'city', 'المصدر', 'رفعه', 'وقت الرفع'];
+    const aoa = [H].concat(L.map(o => [null, String(o.serial), o.name, o.phone, o.address, o.amount, o.notes, null, o.contents, 1, o.city || null, o.src || '', o.by || '', new Date(o.at).toLocaleTimeString('ar-EG', { hour:'2-digit', minute:'2-digit' })]));
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    for(let i = 2; i <= aoa.length; i++){ ['B', 'D'].forEach(c => { const v = ws[c + i]; if(v){ v.t = 's'; v.v = String(v.v); v.z = '@'; } }); }
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Sheet3');
+    XLSX.writeFile(wb, `اترفع على QP ${ymd(new Date())} (${L.length}).xlsx`);
+  }
   function histOnly(){
     if(histShared === null){ loadHist().then(draw).catch(() => { histShared = []; }); }
     // المشترك أولاً، وبعده أي حاجة اتسجلت على الجهاز ده بس (شيتات اتنزّلت / رفعات قديمة)
@@ -10698,6 +10805,12 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     if($('upSend')) $('upSend').onclick = sendToQP;
     // 🗑️ مسح بوالص
     if($('upScanStart')) $('upScanStart').onclick = startScan;
+    // 📦 مراجعة البيكب
+    if($('pkFrom')) $('pkFrom').onchange = e => { PK.day = e.target.value || ymd(new Date()); if(PK.to < PK.day) PK.to = PK.day; pkLoad(); PK.res = null; draw(); };
+    if($('pkTo')) $('pkTo').onchange = e => { PK.to = e.target.value || PK.day; if(PK.to < PK.day) PK.day = PK.to; pkLoad(); PK.res = null; draw(); };
+    if($('pkCmp')) $('pkCmp').onclick = pkCompare;
+    if($('pkClear')) $('pkClear').onclick = () => { if(!confirm('تمسح كل البوالص اللي اتصوّرت وتبدأ من الأول؟')) return; PK.list = []; PK.res = null; PK.msg = ''; pkSave(); draw(); };
+    document.querySelectorAll('[data-pksheet]').forEach(b => b.onclick = () => pkSheet(b.dataset.pksheet));
     if($('upScanStop')) $('upScanStop').onclick = stopScan;
     if($('upPhoto')) $('upPhoto').onchange = e => scanPhoto(e.target.files[0]);
     const addTyped = async () => { const el = $('upSerial'); if(!el) return; const vals = digits(el.value).match(/\d{6,12}/g) || []; el.value = ''; if(!vals.length) return; try{ await connect(); }catch(e){} for(const v of vals) await addSerial(v); };
@@ -10724,6 +10837,7 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     if($('upQdDay')) $('upQdDay').onchange = e => { QD.day = e.target.value || ymd(new Date()); QD.msg = ''; };
     if($('upQdPend')) $('upQdPend').onchange = e => { QD.pendOnly = e.target.checked; };
     if($('upQdGo')) $('upQdGo').onclick = exportQPDay;
+    if($('upTodaySheet')) $('upTodaySheet').onclick = todaySheet;
     document.querySelectorAll('[data-hist]').forEach(el => el.onclick = () => { histOpen = histOpen === el.dataset.hist ? '' : el.dataset.hist; draw(); });
     document.querySelectorAll('[data-histx]').forEach(b => b.onclick = () => {
       const all = (histShared || []).concat(S.hist); const x = all.find((h, i) => (h.id || ('l' + i)) === b.dataset.histx) || all.find(h => h.id === b.dataset.histx);
@@ -10843,6 +10957,7 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     try{ if(sessionStorage.getItem('upAutoAll') && upRoute() === 'qp-upload'){ sessionStorage.removeItem('upAutoAll'); if(S.src !== 'all') switchSrc('all'); setTimeout(() => fetchAllSources(), 50); } }catch(e){}
     // 🗑️ الأيقونة اللي في القايمة بتفتح تاب مسح البوالص على طول
     if(upRoute() === 'qp-delete' && S.src !== 'delete') switchSrc('delete');
+    if(upRoute() === 'pickup'){ S.src = 'delete'; X.mode = 'pickup'; }
     draw(); if(!E.srcLoaded && sbc()) loadSources().then(() => { if(!E.ptrLoaded) return loadPtr(); }).then(() => { if(!SQ.loaded) return loadSquadPtr(); }).then(draw); }
   const _render = render;
   render = function(){ _render.apply(this, arguments); if(isUP()) mount(); };
@@ -10855,7 +10970,7 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
 /* ⭐ ترتيب القايمة: الأساسي فوق (Squad / رفع الأوردرات / مبيعات مباشرة / الحسابات / المخزن)
    وأي لينك تاني اتحط جنب Squad (زي EOD وتحليل المكونات) يرجع لمجموعة "العمل" */
 (function(){
-  const FAV = ['#/squad', '#/qp-upload', '#/qp-delete', '#/direct', '#/accounts', '#/dept/warehouse'];
+  const FAV = ['#/squad', '#/qp-upload', '#/qp-delete', '#/pickup', '#/direct', '#/accounts', '#/dept/warehouse'];
   function arrangeFav(){
     const fav = document.getElementById('favGrp'), work = document.getElementById('workAnchor');
     if(!fav) return;
