@@ -1489,7 +1489,7 @@ const Squad = (function(){
      - order     = عمولة الأوردر وهو لسه قيد التنفيذ
      - delivered = عمولة التسليم (بتحل مكان عمولة الأوردر، مش بتتجمع عليها)
      - أي أوردر سعره أكبر من 625 ج: عمولة التسليم بتاعته = 30 ج (HIGH_PRICE / HIGH_COMM تحت)
-     - عمولة الأوردر قبل التسليم (قيد التنفيذ): 5 ج لو سعره 625 أو أقل، و10 ج لو أكبر من 625 (PENDING_LOW / PENDING_HIGH)
+     - عمولة أي أوردر ماتسلمش (قيد التنفيذ / اندلفرد / ملغي): 5 ج ثابت (NOT_DELIVERED_COMM) — مستحقة بس لو نسبة التسليم عدّت 50%
      - 💰 العمولة الإجمالية = عمولة اللي اتسلم + عمولة كل الأوردرات اللي قيد التنفيذ (من غير شرط)
      - ✅ العمولة المستحقة = عمولة اللي اتسلم + عمولة قيد التنفيذ، بس لو نسبة تسليمات الموظف عدّت 50%
        (لو النسبة مش عدّت 50% المستحقة = عمولة اللي اتسلم بس)
@@ -1539,7 +1539,9 @@ const Squad = (function(){
   // (لو المصدر عمولته أعلى أصلاً — زي إرسال صفحة — بتفضل زي ما هي)
   const PENDING_LOW = 5, PENDING_HIGH = 10;
   const pendingByPrice = o => Number(o && o.amount) > HIGH_PRICE ? PENDING_HIGH : PENDING_LOW;
-  const pendingCommission = o => isNewRule(o) ? Math.max(rulesFor(o).order, pendingByPrice(o)) : 0;
+  // ✅ القاعدة الجديدة: أي أوردر ماتسلمش (قيد التنفيذ / اندلفرد / ملغي) عليه 5 ج — وبتدخل المستحقة بس لو نسبة التسليم عدّت 50%
+  const NOT_DELIVERED_COMM = 5;
+  const pendingCommission = o => NOT_DELIVERED_COMM;
   // 📏 لو عمود المقاس لسه مش متضاف في Supabase، الأوردر بيتسجل من غيره بدل ما يفشل خالص
   const missingSizeCol = e => !!e && /size/i.test(e.message || '') && /column|schema/i.test(e.message || '');
   const SIZE_SQL_MSG = 'المقاس مااتحفظش في قاعدة البيانات — لازم سطر الـ SQL بتاع عمود المقاس يتشغّل في Supabase. (المقاس اتبعت للشيت عادي)';
@@ -1547,8 +1549,8 @@ const Squad = (function(){
     let delivered = 0, cancelled = 0, undelivered = 0, pending = 0, delComm = 0, pendComm = 0, delValue = 0;
     (orders || []).forEach(o => {
       if(o.status === 'delivered'){ delivered++; delComm += deliveredCommission(o); delValue += Number(o.amount) || 0; }
-      else if(o.status === 'cancelled') cancelled++;
-      else if(o.status === 'undelivered') undelivered++; // اندلفرد في شركة الشحن = مش قيد التنفيذ ومالوش عمولة
+      else if(o.status === 'cancelled'){ cancelled++; pendComm += pendingCommission(o); }
+      else if(o.status === 'undelivered'){ undelivered++; pendComm += pendingCommission(o); }
       else { pending++; pendComm += pendingCommission(o); }
     });
     const decided = delivered + cancelled + undelivered;
@@ -2128,7 +2130,6 @@ const Squad = (function(){
 
   function commCell(o, active){
     if(o.status === 'delivered') return `<b>${deliveredCommission(o)} ج</b>`;
-    if(o.status === 'cancelled' || o.status === 'undelivered') return '—';
     const c = pendingCommission(o);
     if(!c) return '—';
     return active ? `${c} ج` : `<span title="مش مستحقة لحد ما نسبة التسليم تعدّي 50%" style="opacity:.55">${c} ج</span>`;
