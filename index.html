@@ -10192,8 +10192,36 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     const { data, error } = await sbc().from('urgent_orders').select('*').eq('from_id', me().id).in('status', ['open', 'done', 'failed']).order('created_at', { ascending:false }).limit(500);
     if(error){ U.list = []; U.missing = /urgent_orders|relation|schema cache|does not exist/i.test(error.message); return; }
     U.list = data || []; U.missing = false;
-    const m = new Map(U.list.map(u => [u.row_key, u]));
+    const m = new Map(U.list.filter(u => u.status === 'open').map(u => [u.row_key, u]));
     (S.rows || []).forEach(r => { r.urgent = m.get(urgKey(r)) || null; });
+    applyUrgentFixes();
+  }
+  /* ✅ اللي اتصلّح بيظهر لوحده في الشيت (في الجاهزين) ومكتوب جنبه اتعدّل إمتى ومين، واتطلب إمتى
+     وبيفضل يظهر لحد ما يترفع على QP أو تشيله */
+  function applyUrgentFixes(){
+    const done = (U.list || []).filter(u => u.status === 'done');
+    if(!done.length) return 0;
+    if(!S.rows) S.rows = [];
+    let n = 0;
+    done.forEach(u => {
+      let r = S.rows.find(x => x.urgentId === u.id) || S.rows.find(x => urgKey(x) === u.row_key);
+      if(r && r.urgentApplied === u.id) return;
+      const f = { ...(u.data || {}), ...(u.fixed || {}) };
+      if(!r){ r = { agent:f.agent || '', source:'', srcKey:f.srcKey || 'restore', seq:f.seq || undefined, xid:f.xid || undefined, sqAt:f.sqAt || undefined, sqId:f.sqId || undefined, page:f.page || '', ref:f.ref || '', estatus:f.estatus || '', orderAt:f.orderAt || '' };
+        S.rows.push(r); }
+      Object.assign(r, { name:f.name || '', phone:f.phone || '', address:f.address || '', amount:String(f.amount ?? ''), contents:f.contents || '', size:'', city:f.city || r.city || '', note:f.note || r.note || '', upErr:'' });
+      if(!r.city) r.city = guessCity(r.address);
+      r.urgent = null; r.urgentId = u.id; r.urgentApplied = u.id;
+      r.urgentFix = { fixedAt:u.done_at, by:u.done_by_name || u.assigned_name || '', askedAt:u.created_at };
+      n++;
+    });
+    if(n) dupCheck();
+    return n;
+  }
+  async function closeUrgent(rows){
+    const ids = rows.filter(r => r.urgentId).map(r => r.urgentId);
+    if(ids.length) await sbc().from('urgent_orders').update({ status:'merged' }).in('id', ids);
+    if(U.list) U.list = U.list.filter(u => !ids.includes(u.id));
   }
   async function urgPeople(){
     if(U.people) return U.people;
@@ -10250,8 +10278,7 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     if(!U.list) return '';
     const open = U.list.filter(u => u.status === 'open').length, done = U.list.filter(u => u.status === 'done').length;
     if(!open && !done) return '';
-    return `<div class="urg-bar">🚨 أوردرات عاجلة: <b>${open}</b> لسه عند الناس · <b style="color:#2f7d55">${done}</b> اتصلّحوا
-      ${done ? `<button class="up-btn ok" id="urgMerge" style="padding:5px 12px;font-size:13px">➕ ضم اللي اتصلّح للشيت (${done})</button>` : ''}
+    return `<div class="urg-bar">🚨 أوردرات عاجلة: <b>${open}</b> لسه عند الناس · <b style="color:#2f7d55">${done}</b> اتصلّحوا${done ? ' ورجعوا في الشيت تحت ✅' : ''}
       <button class="up-btn" id="urgRefresh" style="padding:5px 12px;font-size:13px">🔄</button></div>`;
   }
   function urgPickHtml(){
@@ -10413,6 +10440,13 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
   const notesOk = () => (S.rows || []).every(r => finalNote(r));
   // ✅ جاهز للرفع = مفيهوش مشاكل + الـ notes مكتوبة + مش متكرر في QP (أو إنت قلت ارفعه برضه)
   const dupStatus = r => String((r.qpDup && r.qpDup[0] && r.qpDup[0].st) || '—').replace(/\s*#\d+$/, '').trim() || '—';
+  // "النهارده 2:30 م" / "امبارح ..." / "الأحد 19 أكتوبر ..."
+  function fixWhen(v){
+    if(!v) return ''; const d = new Date(v), t = new Date(); if(isNaN(d)) return '';
+    const hm = d.toLocaleTimeString('ar-EG', { hour:'2-digit', minute:'2-digit' });
+    const same = (a, b) => a.toDateString() === b.toDateString(), y = new Date(t); y.setDate(t.getDate() - 1);
+    return same(d, t) ? 'النهارده ' + hm : same(d, y) ? 'امبارح ' + hm : d.toLocaleDateString('ar-EG', { weekday:'long', day:'numeric', month:'long' }) + ' ' + hm;
+  }
   // 🕒 وقت الأوردر بالظبط (للعرض بس — مش بيترفع على QP)
   function orderTime(r){
     const v = r.orderAt; if(!v) return '';
@@ -10498,6 +10532,7 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     if(ok && (S.src === 'squad' || S.src === 'all' || isEasy(S.src))){
       try{ await saveDone([...(S.rows || []).filter(r => r.serial && (r.srcKey === 'squad' || isEasy(r.srcKey))).map(skipKey), ...[...(S.skipped || [])]]); }catch(e){}
     }
+    if(ok){ try{ await closeUrgent(rows.filter(r => r.serial)); }catch(e){} }
     if(ok && S.src === 'restore'){ try{ await markRestored(S.rows || []); }catch(e){} }
     // أوردرات Squad اللي اترفعت من 📦 الكل تتعلّم في تاب Squad كمان
     if(ok && S.src === 'all' && S.store.squad && S.store.squad.rows){ const up = new Set((S.rows || []).filter(r => r.srcKey === 'squad' && r.serial)); S.store.squad.rows = S.store.squad.rows.filter(r => !up.has(r) || r.serial); }
@@ -10597,7 +10632,7 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
       ${(() => {
         const head = `<thead><tr><th class="col"></th><th class="col">B</th><th class="col"></th><th class="col">C</th><th class="col">D</th><th class="col">E</th><th class="col">F</th><th class="col">G</th><th class="col">I</th><th class="col">K</th><th class="col"></th><th class="col"></th><th class="col"></th></tr>
           <tr><th>1</th><th>serial</th><th>المصدر</th><th>full name</th><th>phone</th><th>address</th><th>total amount</th><th>notes</th><th>shipment contents</th><th>city</th><th>في QP؟</th><th>الحالة</th><th></th></tr></thead>`;
-        const rowHtml = (r, i) => `<tr class="${r.serial ? '' : (r.errs.length || r.upErr || !finalNote(r) ? 'bad' : (isDupPending(r) ? 'dup' : ''))}" ${r.serial ? 'style="background:#eef8f1"' : ''}><td class="rn">${i + 2}</td><td style="font-size:12px;padding:4px 6px;color:#2f7d55">${esc(r.serial || '')}</td><td style="font-size:11.5px;padding:4px 6px;white-space:nowrap;color:${esc((srcOf(r.srcKey) || {}).color || '#8a6a3a')}"><b>${esc(r.srcKey === 'squad' ? '🏆 Squad · ' + r.page : srcLabel(r.srcKey))}</b><br>${esc(r.ref || '')} <span style="color:#888">${esc(r.estatus || '')}</span>${orderTime(r) ? `<div style="color:#2b2f33;margin-top:2px">🕒 ${esc(orderTime(r))}</div>` : ''}${r.urgent ? `<div class="urg-tag ${r.urgent.status}">${r.urgent.status === 'done' ? '✅ اتصلّح — ' : '🚨 عند '}${esc(r.urgent.to_name || '')}</div>` : ''}</td>
+        const rowHtml = (r, i) => `<tr class="${r.serial ? '' : (r.errs.length || r.upErr || !finalNote(r) ? 'bad' : (isDupPending(r) ? 'dup' : ''))}" ${r.serial ? 'style="background:#eef8f1"' : ''}><td class="rn">${i + 2}</td><td style="font-size:12px;padding:4px 6px;color:#2f7d55">${esc(r.serial || '')}</td><td style="font-size:11.5px;padding:4px 6px;white-space:nowrap;color:${esc((srcOf(r.srcKey) || {}).color || '#8a6a3a')}"><b>${esc(r.srcKey === 'squad' ? '🏆 Squad · ' + r.page : srcLabel(r.srcKey))}</b><br>${esc(r.ref || '')} <span style="color:#888">${esc(r.estatus || '')}</span>${orderTime(r) ? `<div style="color:#2b2f33;margin-top:2px">🕒 ${esc(orderTime(r))}</div>` : ''}${r.urgent ? `<div class="urg-tag open">🚨 عند ${esc(r.urgent.assigned_name || '')}</div>` : ''}${r.urgentFix ? `<div class="urg-tag done">✏️ اتعدّل ${esc(fixWhen(r.urgentFix.fixedAt))}${r.urgentFix.by ? ' — ' + esc(r.urgentFix.by) : ''}<br>📨 التعديل اتطلب ${esc(fixWhen(r.urgentFix.askedAt))}</div>` : ''}</td>
           <td><input data-upf="${i}.name" value="${esc(r.name)}"></td>
           <td><input data-upf="${i}.phone" value="${esc(phoneOf(r.phone))}" style="direction:ltr;text-align:left;min-width:105px"></td>
           <td><input data-upf="${i}.address" value="${esc(r.address)}" style="min-width:260px"></td>
@@ -10915,7 +10950,7 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     document.querySelectorAll('[data-updel]').forEach(b => b.onclick = () => {
       const r = S.rows[Number(b.dataset.updel)];
       if(isEasy(r.srcKey) || r.srcKey === 'squad'){ if(!confirm('تشيل الأوردر ده؟ هيتحسب إنه اتاخد ومش هيظهر تاني بعد الرفع.')) return; S.skipped.add(skipKey(r)); }
-      S.rows.splice(Number(b.dataset.updel), 1); dupCheck(); draw(); if(isEasy(r.srcKey) || r.srcKey === 'squad') persistTaken(); });
+      S.rows.splice(Number(b.dataset.updel), 1); dupCheck(); draw(); if(isEasy(r.srcKey) || r.srcKey === 'squad') persistTaken(); if(r.urgentId) closeUrgent([r]); });
     document.querySelectorAll('[data-upsrc]').forEach(b => b.onclick = () => switchSrc(b.dataset.upsrc));
     if($('upEasyFetch')) $('upEasyFetch').onclick = fetchEasy;
     if($('upAllFetch')) $('upAllFetch').onclick = fetchAllSources;
@@ -10980,6 +11015,7 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     // 🗑️ الأيقونة اللي في القايمة بتفتح تاب مسح البوالص على طول
     if(upRoute() === 'qp-delete' && S.src !== 'delete') switchSrc('delete');
     if(upRoute() === 'pickup'){ S.src = 'delete'; X.mode = 'pickup'; }
+    if(upRoute() === 'qp-upload' && S.src !== 'delete' && S.src !== 'settings' && sbc()) loadUrgent().then(() => { if(S.rows && S.rows.some(r => r.urgentFix)){ try{ connect(); }catch(e){} } draw(); });
     draw(); if(!E.srcLoaded && sbc()) loadSources().then(() => { if(!E.ptrLoaded) return loadPtr(); }).then(() => { if(!SQ.loaded) return loadSquadPtr(); }).then(draw); }
   const _render = render;
   render = function(){ _render.apply(this, arguments); if(isUP()) mount(); };
