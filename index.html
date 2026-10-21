@@ -687,7 +687,7 @@ const SOPS = [
 const CHANNELS = "WhatsApp, Messenger, Instagram, TikTok, Phone";
 
 /* ---------------- PROFITS DATA/LOGIC ---------------- */
-const PR_BRANDS=["dream","dream msg site","dream wa","msg","lo gel nails","fastplt","cara silver","cara silver un","cara wa","rs kids","bloom"];
+const PR_BRANDS=["dream","dream msg site","dream wa","msg","lo gel nails","fastplt","cara silver","cara silver un","cara wa","rs kids","kidzzly","bloom"];
 const PR_PNL_BRANDS=PR_BRANDS.filter(b=>b!=="lo gel nails");
 const PR_SOLO="lo gel nails";
 const PR_MSG_GROUP=["msg","dream msg site","fastplt"];
@@ -699,6 +699,7 @@ const PR_COLS=[
  {type:"brand",key:"cara wa",h:"CARA WA"},
  {type:"agg",key:"cara_group",h:"CARA مجمع",brands:["cara silver","cara silver un","cara wa"]},
  {type:"brand",key:"rs kids",h:"RS KIDS",sum:true}, // بيظهر كمان في جدول الخلاصة
+ {type:"brand",key:"kidzzly",h:"KIDZZLY",sum:true}, // 🧸 براند KIDZZLY — نفس معاملة RS KIDS
  {type:"brand",key:"bloom",h:"BLOOM",sum:true}      // 🌸 براند جديد — بيظهر كمان في جدول الخلاصة
 ];
 // راتب مساعد مدير المكتب: 16000 شهريًا
@@ -716,11 +717,26 @@ const PR_RATE_OVERRIDES={
   "cara silver un":{ofd:0.38,hold:0.15},
   "cara wa":{ofd:0.38,hold:0.15},
   "rs kids":{ofd:0.70,hold:0.30},
+  "kidzzly":{ofd:0.70,hold:0.30}, // نفس RS KIDS
   "bloom":{ofd:0.60,hold:0.30}
 };
 const prRatesFor=b=>PR_RATE_OVERRIDES[b]||{ofd:PR_OFD_RATE,hold:PR_HOLD_RATE};
 // براندات تكلفة بضاعتها نسبة ثابتة من المبيعات (بدل 65.2 / 94 للقطعة)
-const PR_COGS_PCT={"rs kids":0.50,"bloom":0.45};
+const PR_COGS_PCT={"bloom":0.45};
+// 🧸 KIDZZLY و 👶 RS KIDS: تكلفة البضاعة = عدد القطع في الطلب × سعر القطعة
+const PR_PIECE_COST={"kidzzly":100,"rs kids":175};
+// بيعدّ القطع من خانة المحتوى: القطع مفصولة بـ "+" و "× 2" معناها قطعتين
+// (لو المحتوى فاضي بيستنتج من السعر: 279=1، 728=3، 1000=4، 1248=6)
+function prPieces(contents, price){
+  const t=String(contents||"").replace(/[٠-٩]/g,d=>"٠١٢٣٤٥٦٧٨٩".indexOf(d)).trim();
+  if(t){
+    const parts=t.split(/\s*\+\s*|\n+/).map(x=>x.trim()).filter(Boolean);
+    let n=0; parts.forEach(p=>{const m=p.match(/[×xX\*]\s*(\d+)\s*$/); n+=m?Math.max(1,parseInt(m[1],10)):1;});
+    if(n) return n;
+  }
+  const pr=Math.round(prNum(price)); const map={279:1,728:3,1000:4,1248:6};
+  return map[pr]||Math.max(1,Math.round(pr/250));
+}
 const PR_statusCol=15,PR_priceCol=5,PR_shipCol=6,PR_notesCol=10,PR_contentsCol=12,PR_returnedCol=9,PR_dateCol=11;
 // ⏳ حالة Pending (كابيتال أو سمول مش فارقة) — بتتعامل في التوقع زي "تحت التسليم" بالظبط
 const prIsPending=r=>String(r[PR_statusCol-1]||'').trim().toLowerCase()==='pending';
@@ -738,6 +754,7 @@ let prBrandCalc={}, prPendingTotal=0, prRealCols=[], prExpCols=[], prUnbranded=[
 function prGetBrand(note){
   const n=String(note||"").toLowerCase().trim().split("\n")[0].trim().replace(/\s+/g," "); // المسافات الزيادة بتتوحّد لمسافة واحدة
   if(n.startsWith("bloom"))return"bloom"; // 🌸 براند BLOOM
+  if(n.startsWith("kidzzly")||n.startsWith("kidzly")||n.startsWith("kidz"))return"kidzzly"; // 🧸 براند KIDZZLY (kidzzly / kidzzly msg ...)
   if(n.startsWith("rs kids")||n.startsWith("rskids")||n.startsWith("rs-kids")||n.startsWith("rs_kids"))return"rs kids"; // براند RS KIDS
   if(/^rs(\s|$|[^a-z])/.test(n))return"rs kids"; // ملاحظة "rs" لوحدها = براند RS
   if(n.startsWith("dream msg site"))return"dream msg site";
@@ -799,10 +816,13 @@ function prProcess(rows){
     const isRet=r=>{const v=r[PR_returnedCol-1];return v&&String(v).trim()!==""&&String(v).trim()!=="NaT";};
     const shipUndel=undelRows.filter(r=>!isRet(r)).reduce((s,r)=>s+prNum(r[PR_shipCol-1]),0);
     const wIns=delivered.filter(r=>prHasInsial(r[PR_contentsCol-1])).length;
-    const cogs=(brand in PR_COGS_PCT)
+    const pieces=(brand in PR_PIECE_COST)?delivered.reduce((s,r)=>s+prPieces(r[PR_contentsCol-1],r[PR_priceCol-1]),0):0;
+    const cogs=(brand in PR_PIECE_COST)
+      ? pieces*PR_PIECE_COST[brand]
+      : (brand in PR_COGS_PCT)
       ? revenue*PR_COGS_PCT[brand]
       : wIns*PR_COGS_YES+(delivered.length-wIns)*PR_COGS_NO;
-    return {n:rs.length,delivered:delivered.length,returned:returned.length,hold,ofd,pend,undel,revenue,shipAll,shipDel,shipRet,shipUndel,cogs};
+    return {pieces,n:rs.length,delivered:delivered.length,returned:returned.length,hold,ofd,pend,undel,revenue,shipAll,shipDel,shipRet,shipUndel,cogs};
   }
   prBrandCalc={}; PR_BRANDS.forEach(b=>prBrandCalc[b]=calcOne(b));
 
@@ -1343,19 +1363,20 @@ function viewProfits(){
       <input type="file" id="prFileIn" accept=".xlsx,.xls,.csv">
       <button class="mockbtn" onclick="prRunReport()">▶️ شغّل التقرير</button>
     </div>
-    <div class="mono-note">الشيت لازم يكون بنفس ترتيب أعمدة "orders" الأصلي: أول صف عناوين، وبعدين الأعمدة بالترتيب — العمود E = السعر، F = الشحن، I = تاريخ الإرجاع، J = الملاحظة (اسم البراند)، K = التاريخ، L = المحتويات، O = الحالة.<br>⏳ الأوردرات اللي حالتها <b>Pending</b> في العمود O بتتحسب في التوقع زي الأوردرات اللي تحت التسليم بالظبط.<br>👶 أوردرات براند <b>RS KIDS</b>: اكتب في أول العمود J كلمة <b>rs kids</b> أو <b>rs</b> (أو rskids) — كابيتال أو سمول مش فارقة.<br>🌸 أوردرات براند <b>BLOOM</b>: اكتب في أول العمود J كلمة <b>bloom</b> — كابيتال أو سمول مش فارقة.</div>
+    <div class="mono-note">الشيت لازم يكون بنفس ترتيب أعمدة "orders" الأصلي: أول صف عناوين، وبعدين الأعمدة بالترتيب — العمود E = السعر، F = الشحن، I = تاريخ الإرجاع، J = الملاحظة (اسم البراند)، K = التاريخ، L = المحتويات، O = الحالة.<br>⏳ الأوردرات اللي حالتها <b>Pending</b> في العمود O بتتحسب في التوقع زي الأوردرات اللي تحت التسليم بالظبط.<br>👶 أوردرات براند <b>RS KIDS</b>: اكتب في أول العمود J كلمة <b>rs kids</b> أو <b>rs</b> (أو rskids) — كابيتال أو سمول مش فارقة. تكلفة البضاعة = <b>عدد القطع × 175 ج</b>.<br>🧸 أوردرات براند <b>KIDZZLY</b>: اكتب في أول العمود J كلمة <b>kidzzly</b> (حتى لو بعدها msg) — تكلفة البضاعة = <b>عدد القطع × 100 ج</b> (القطع بتتعدّ من عمود المحتوى L: مفصولة بـ + و "× 2" = قطعتين)، والتوقع زي RS KIDS.<br>🌸 أوردرات براند <b>BLOOM</b>: اكتب في أول العمود J كلمة <b>bloom</b> — كابيتال أو سمول مش فارقة.</div>
     <div id="prStatus" style="font-size:13px;color:var(--muted);margin-top:8px"></div>
   </div>
   <div id="prResults" style="display:none">
-    <div class="card"><h3>⭐ الخلاصة — DREAM و CARA و RS KIDS و BLOOM</h3>
+    <div class="card"><h3>⭐ الخلاصة — DREAM و CARA و RS KIDS و KIDZZLY و BLOOM</h3>
       <div class="tablewrap"><table class="sum">
-        <tr><th rowspan="2">البند</th><th colspan="2" class="grp g-dream">DREAM المجمع</th><th colspan="2" class="grp g-cara sep">CARA المجمع</th><th colspan="2" class="grp g-rs sep">RS KIDS</th><th colspan="2" class="grp g-bloom sep">BLOOM</th></tr>
-        <tr><th class="act">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th><th class="act sep">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th><th class="act sep">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th><th class="act sep">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th></tr>
+        <tr><th rowspan="2">البند</th><th colspan="2" class="grp g-dream">DREAM المجمع</th><th colspan="2" class="grp g-cara sep">CARA المجمع</th><th colspan="2" class="grp g-rs sep">RS KIDS</th><th colspan="2" class="grp g-rs sep">KIDZZLY</th><th colspan="2" class="grp g-bloom sep">BLOOM</th></tr>
+        <tr><th class="act">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th><th class="act sep">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th><th class="act sep">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th><th class="act sep">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th><th class="act sep">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th></tr>
         ${[['rev','📥 المبيعات',''],['cost','🔴 التكاليف',''],['prof','✅ الأرباح','big'],['pct','📊 نسبة الأرباح','big'],['ads','📢 نسبة الإعلانات','']].map(([k,l,cls])=>`
         <tr class="${cls}"><td class="lbl">${l}</td>
           <td class="act" id="S_${k}_dream_group_A">—</td><td class="exp" id="S_${k}_dream_group_F">—</td>
           <td class="act sep" id="S_${k}_cara_group_A">—</td><td class="exp" id="S_${k}_cara_group_F">—</td>
           <td class="act sep" id="S_${k}_rs kids_A">—</td><td class="exp" id="S_${k}_rs kids_F">—</td>
+          <td class="act sep" id="S_${k}_kidzzly_A">—</td><td class="exp" id="S_${k}_kidzzly_F">—</td>
           <td class="act sep" id="S_${k}_bloom_A">—</td><td class="exp" id="S_${k}_bloom_F">—</td></tr>`).join('')}
       </table></div>
       <div class="legend">
@@ -3271,7 +3292,7 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
     { key:'cara',    name:'CARA',    color:'#2f5f73', spend:5, orders:6,  msgs:7,    pr:'cara silver', prBrands:['cara silver','cara silver un','cara wa'] },
     { key:'fastplt', name:'FASTPLT', color:'#8a6d3b', spend:9, orders:10, msgs:null, pr:'fastplt',     prBrands:['fastplt'] },
     // 👶 RS KIDS: صرف الإعلانات في العمود P (رقم 15) — من غير عمود أوردرات، فمش داخل في حسبة البوصلة
-    { key:'rs',      name:'RS KIDS', color:'#a0456e', spend:15, orders:null, msgs:null, pr:'rs kids',   prBrands:['rs kids'] },
+    { key:'rs',      name:'RS KIDS', color:'#a0456e', spend:15, orders:null, msgs:null, pr:'rs kids',   prBrands:['rs kids', 'kidzzly'] },
   ];
   const MONTHS = ['january','february','march','april','may','june','july','august','september','october','november','december'];
 
@@ -4204,7 +4225,7 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
     const n = String(note || '').toLowerCase().trim();
     if(/^(sock|سوك|شراب)/.test(n)) return 'socky';
     let b = null; try{ b = prGetBrand(note); }catch(e){}
-    if(b === 'rs kids') return 'kidzzly';
+    if(b === 'rs kids' || b === 'kidzzly') return 'kidzzly';
     if(b === 'bloom') return 'bloom';
     if(['dream', 'dream wa', 'dream msg site', 'msg', 'fastplt', 'cara silver', 'cara silver un', 'cara wa'].includes(b)) return 'italy';
     return 'other';
