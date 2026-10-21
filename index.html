@@ -687,7 +687,7 @@ const SOPS = [
 const CHANNELS = "WhatsApp, Messenger, Instagram, TikTok, Phone";
 
 /* ---------------- PROFITS DATA/LOGIC ---------------- */
-const PR_BRANDS=["dream","dream msg site","dream wa","msg","lo gel nails","fastplt","cara silver","cara silver un","cara wa","rs kids","kidzzly","bloom"];
+const PR_BRANDS=["dream","dream msg site","dream wa","msg","lo gel nails","fastplt","cara silver","cara silver un","cara wa","squad","rs kids","kidzzly","socky","bloom"];
 const PR_PNL_BRANDS=PR_BRANDS.filter(b=>b!=="lo gel nails");
 const PR_SOLO="lo gel nails";
 const PR_MSG_GROUP=["msg","dream msg site","fastplt"];
@@ -700,6 +700,8 @@ const PR_COLS=[
  {type:"agg",key:"cara_group",h:"CARA مجمع",brands:["cara silver","cara silver un","cara wa"]},
  {type:"brand",key:"rs kids",h:"RS KIDS",sum:true}, // بيظهر كمان في جدول الخلاصة
  {type:"brand",key:"kidzzly",h:"KIDZZLY",sum:true}, // 🧸 براند KIDZZLY — نفس معاملة RS KIDS
+ {type:"brand",key:"squad",h:"SQUAD",sum:true}, // 🏆 notes = squad — بيتحسب زي الفضة الإيطالي
+ {type:"brand",key:"socky",h:"SOCKY",sum:true}, // 🧦 SOCKY
  {type:"brand",key:"bloom",h:"BLOOM",sum:true}      // 🌸 براند جديد — بيظهر كمان في جدول الخلاصة
 ];
 // راتب مساعد مدير المكتب: 16000 شهريًا
@@ -745,7 +747,7 @@ const prRatesFor=b=>PR_RATE_OVERRIDES[b]||{ofd:PR_OFD_RATE,hold:PR_HOLD_RATE};
 // براندات تكلفة بضاعتها نسبة ثابتة من المبيعات (بدل 65.2 / 94 للقطعة)
 const PR_COGS_PCT={"bloom":0.45};
 // 🧸 KIDZZLY و 👶 RS KIDS: تكلفة البضاعة = عدد القطع في الطلب × سعر القطعة
-const PR_PIECE_COST={"kidzzly":100,"rs kids":175};
+const PR_PIECE_COST={"kidzzly":100,"rs kids":175,"socky":0}; // ⚠️ سوكي: تكلفة القطعة لسه مش متسجلة (0)
 // بيعدّ القطع من خانة المحتوى: القطع مفصولة بـ "+" و "× 2" معناها قطعتين
 // (لو المحتوى فاضي بيستنتج من السعر: 279=1، 728=3، 1000=4، 1248=6)
 function prPieces(contents, price){
@@ -775,6 +777,8 @@ let prBrandCalc={}, prPendingTotal=0, prRealCols=[], prExpCols=[], prUnbranded=[
 function prGetBrand(note){
   const n=String(note||"").toLowerCase().trim().split("\n")[0].trim().replace(/\s+/g," "); // المسافات الزيادة بتتوحّد لمسافة واحدة
   if(n.startsWith("bloom"))return"bloom"; // 🌸 براند BLOOM
+  if(n.startsWith("squad"))return"squad"; // 🏆 SQUAD
+  if(n.startsWith("sock")||n.startsWith("سوك"))return"socky"; // 🧦 SOCKY
   if(n.startsWith("kidzzly")||n.startsWith("kidzly")||n.startsWith("kidz"))return"kidzzly"; // 🧸 براند KIDZZLY (kidzzly / kidzzly msg ...)
   if(n.startsWith("rs kids")||n.startsWith("rskids")||n.startsWith("rs-kids")||n.startsWith("rs_kids"))return"rs kids"; // براند RS KIDS
   if(/^rs(\s|$|[^a-z])/.test(n))return"rs kids"; // ملاحظة "rs" لوحدها = براند RS
@@ -1056,7 +1060,11 @@ function prBuildCountsTable(){
   PR_BRANDS.forEach(b=>{
     h+=`<tr><td class="lbl">${b.toUpperCase()}${b===PR_SOLO?' ⭐':''}</td><td>${prBrandCalc[b].n}</td></tr>`;
   });
+  // 🔎 أي notes مش متعرفة: بالاسم والعدد عشان تقولّي تبع أنهي براند
+  const unk={}; prUnbranded.forEach(r=>{const n=String(r[PR_notesCol-1]??'').trim()||'(فاضي)'; unk[n]=(unk[n]||0)+1;});
+  const unkL=Object.entries(unk).sort((a,b)=>b[1]-a[1]);
   h+=`<tr><td class="lbl">بدون براند (غير محسوبة)</td><td>${prUnbranded.length}</td></tr>`;
+  unkL.forEach(([n,c])=>{h+=`<tr><td class="lbl" style="padding-inline-start:22px;color:#b3261e">↳ ${n.replace(/[<>&]/g,'')}</td><td style="color:#b3261e">${c}</td></tr>`;});
   h+=`<tr class="total"><td class="lbl">الإجمالي (كل الملف)</td><td>${total+prUnbranded.length}</td></tr>`;
   t.innerHTML=h;
 }
@@ -1417,16 +1425,18 @@ function viewProfits(){
     <div id="prStatus" style="font-size:13px;color:var(--muted);margin-top:8px"></div>
   </div>
   <div id="prResults" style="display:none">
-    <div class="card"><h3>⭐ الخلاصة — DREAM و CARA و RS KIDS و KIDZZLY و BLOOM</h3>
+    <div class="card"><h3>⭐ الخلاصة — DREAM و CARA و RS KIDS و KIDZZLY و SQUAD و SOCKY و BLOOM</h3>
       <div class="tablewrap"><table class="sum">
-        <tr><th rowspan="2">البند</th><th colspan="2" class="grp g-dream">DREAM المجمع</th><th colspan="2" class="grp g-cara sep">CARA المجمع</th><th colspan="2" class="grp g-rs sep">RS KIDS</th><th colspan="2" class="grp g-rs sep">KIDZZLY</th><th colspan="2" class="grp g-bloom sep">BLOOM</th></tr>
-        <tr><th class="act">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th><th class="act sep">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th><th class="act sep">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th><th class="act sep">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th><th class="act sep">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th></tr>
+        <tr><th rowspan="2">البند</th><th colspan="2" class="grp g-dream">DREAM المجمع</th><th colspan="2" class="grp g-cara sep">CARA المجمع</th><th colspan="2" class="grp g-rs sep">RS KIDS</th><th colspan="2" class="grp g-rs sep">KIDZZLY</th><th colspan="2" class="grp g-dream sep">SQUAD</th><th colspan="2" class="grp g-rs sep">SOCKY</th><th colspan="2" class="grp g-bloom sep">BLOOM</th></tr>
+        <tr><th class="act">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th><th class="act sep">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th><th class="act sep">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th><th class="act sep">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th><th class="act sep">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th><th class="act sep">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th><th class="act sep">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th></tr>
         ${[['rev','📥 المبيعات',''],['cost','🔴 التكاليف',''],['prof','✅ الأرباح','big'],['pct','📊 نسبة الأرباح','big'],['ads','📢 نسبة الإعلانات','']].map(([k,l,cls])=>`
         <tr class="${cls}"><td class="lbl">${l}</td>
           <td class="act" id="S_${k}_dream_group_A">—</td><td class="exp" id="S_${k}_dream_group_F">—</td>
           <td class="act sep" id="S_${k}_cara_group_A">—</td><td class="exp" id="S_${k}_cara_group_F">—</td>
           <td class="act sep" id="S_${k}_rs kids_A">—</td><td class="exp" id="S_${k}_rs kids_F">—</td>
           <td class="act sep" id="S_${k}_kidzzly_A">—</td><td class="exp" id="S_${k}_kidzzly_F">—</td>
+          <td class="act sep" id="S_${k}_squad_A">—</td><td class="exp" id="S_${k}_squad_F">—</td>
+          <td class="act sep" id="S_${k}_socky_A">—</td><td class="exp" id="S_${k}_socky_F">—</td>
           <td class="act sep" id="S_${k}_bloom_A">—</td><td class="exp" id="S_${k}_bloom_F">—</td></tr>`).join('')}
       </table></div>
       <div class="legend">
@@ -4296,7 +4306,7 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
     let b = null; try{ b = prGetBrand(o.notes); }catch(e){}
     const contents = o.shipment_contents || o.contents || '', price = num(o.total_amount ?? o.price);
     try{
-      if(b && typeof PR_PIECE_COST !== 'undefined' && PR_PIECE_COST[b]) return prPieces(contents, price) * PR_PIECE_COST[b];
+      if(b && typeof PR_PIECE_COST !== 'undefined' && (b in PR_PIECE_COST)) return PR_PIECE_COST[b] ? prPieces(contents, price) * PR_PIECE_COST[b] : null;
       if(b && typeof PR_COGS_PCT !== 'undefined' && PR_COGS_PCT[b] != null) return price * PR_COGS_PCT[b];
       if(b) return prHasInsial(contents) ? PR_COGS_YES : PR_COGS_NO;
     }catch(e){}
