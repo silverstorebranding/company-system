@@ -9368,6 +9368,15 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
 .scan-cnt .last.err{color:#ffb4ab}
 .up-dupbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 8px;padding:8px;border-radius:9px;background:#fff8e6}
 .up-dupst{display:flex;align-items:center;gap:6px;padding:4px 8px;border:1px solid #f0d9a8;border-radius:9px;background:#fff;font-size:13px}
+.sp-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}
+.sp-col{border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.sp-h{font-size:14px;color:var(--muted);margin-bottom:8px}.sp-h b{font-size:20px;color:var(--ink)}
+.sp-row{display:grid;grid-template-columns:1fr auto;gap:2px 10px;padding:7px 0;border-bottom:1px dashed var(--line)}
+.sp-row:last-child{border-bottom:none}
+.sp-l b{font-size:15px}.sp-l small{display:block;font-size:11.5px;color:var(--muted)}
+.sp-n{font-size:20px;font-weight:800;text-align:left}.sp-n small{font-size:12px;font-weight:500;color:var(--muted)}
+.sp-bar{grid-column:1/-1;height:7px;background:var(--line);border-radius:4px;overflow:hidden}.sp-bar i{display:block;height:100%}
+.sp-sub{grid-column:1/-1;font-size:11.5px;color:var(--muted)}
 .urg-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 14px;border-radius:10px;background:#fdecea;color:#7a2a1f;margin:12px 0;font-size:14px}
 .urg-tag{display:inline-block;margin-top:3px;padding:1px 7px;border-radius:8px;font-size:11px;background:#fdecea;color:#a3271a}
 .urg-tag.done{background:#e3f3e8;color:#23784a}
@@ -10585,8 +10594,8 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     else if(isEasy(S.src)) h += easyStep1();
     else if(S.src === 'all') h += allStep1();
     else h += squadStep1();
-    if(!S.rows) return h + histHtml() + '</div>';
-    if(!S.rows.length) return h + histHtml() + '</div>';
+    if(!S.rows) return h + splitCard() + histHtml() + '</div>';
+    if(!S.rows.length) return h + splitCard() + histHtml() + '</div>';
     if(S.conn) h += `<div class="up-msg ok">${esc(S.conn)}</div>`;
     if(S.connErr){ const c = getCreds() || {};
       h += `<div class="up-ask"><h3>🔐 دخول QP للرفع</h3><p style="margin:0 0 8px;font-size:13.5px;color:#555">${esc(S.connErr)}</p>
@@ -10697,7 +10706,7 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
         <button class="up-btn" id="upExport" ${R.length ? '' : 'disabled'}>⬇️ نزّل شيت الجاهزين بس</button>
       </div>
       <p style="font-size:12.5px;color:var(--muted);margin:10px 0 0">${R.length ? 'الأوردرات بتتعمل في QP على طول وهتلاقيها في Orders List. ' : (probN ? 'صلّح الأوردرات اللي فيها مشاكل وهتطلع في الجاهزين. ' : '✅ كل الأوردرات اترفعت. ')}${!qpCities ? 'لازم الاتصال بـ QP يشتغل الأول (فوق). ' : ''}اللي يترفع بيتعلّم بالأخضر ومش بيترفع تاني.</p></div>`;
-    return h + histHtml() + '</div>';
+    return h + splitCard() + histHtml() + '</div>';
   }
   function easyStep1(){
     const src = srcOf(S.src) || {}, p = P(S.src), admin = !!me().is_admin;
@@ -10796,6 +10805,35 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     (histShared || []).concat(S.hist || []).forEach(x => { if(!x.qp || ymd(new Date(x.at)) !== t || !x.orders) return;
       x.orders.forEach(o => { if(seen.has(String(o.serial))) return; seen.add(String(o.serial)); out.push({ ...o, at:x.at, by:x.by }); }); });
     return out;
+  }
+  /* 📊 تقسيمة الأوردرات اللي اترفعت حسب البراند (من الـ notes) */
+  const BR = [ ['italy', '💍 Italy', 'دريم + كارا + واتساتهم', '#b08d57'], ['kidzzly', '🧸 Kidzzly', 'كيدزلي + RS', '#4f8fd8'], ['socky', '🧦 Socky', '', '#3f9b74'], ['bloom', '🌸 Bloom', '', '#c0628f'], ['other', '❔ أخرى', '', '#9a9a9a'] ];
+  function brandOf(note){
+    const n = String(note || '').toLowerCase();
+    if(/kid|كيدز|rs\b|^rs|رويال|royal/.test(n)) return 'kidzzly';
+    if(/sock|سوك|شراب/.test(n)) return 'socky';
+    if(/bloom|بلوم/.test(n)) return 'bloom';
+    if(/dream|دريم|cara|كارا|msg|fastplt|silver|ايطال|إيطال|italy/.test(n)) return 'italy';
+    return 'other';
+  }
+  function splitStats(list){
+    const g = {}; list.forEach(o => { const k = brandOf(o.notes); const x = g[k] = g[k] || { n:0, v:0, notes:{} }; x.n++; x.v += numOf(o.amount) || 0; const nt = String(o.notes || '—'); x.notes[nt] = (x.notes[nt] || 0) + 1; });
+    return g;
+  }
+  function splitCol(title, list){
+    if(!list.length) return '';
+    const g = splitStats(list), tot = list.length;
+    return `<div class="sp-col"><div class="sp-h">${title} <b>${tot.toLocaleString('ar-EG')}</b> أوردر</div>
+      ${BR.filter(([k]) => g[k]).map(([k, l, sub, c]) => { const x = g[k], pct = Math.round(x.n / tot * 100);
+        return `<div class="sp-row"><div class="sp-l"><b>${l}</b>${sub ? `<small>${sub}</small>` : ''}</div><div class="sp-n">${x.n.toLocaleString('ar-EG')} <small>${pct}%</small></div>
+          <div class="sp-bar"><i style="width:${pct}%;background:${c}"></i></div>
+          <div class="sp-sub">${Math.round(x.v).toLocaleString('ar-EG')} ج · ${Object.entries(x.notes).sort((a, b) => b[1] - a[1]).map(([nt, n]) => esc(nt) + ' ' + n).join(' · ')}</div></div>`; }).join('')}</div>`;
+  }
+  function splitCard(){
+    const sess = (S.rows || []).filter(r => r.serial).map(r => ({ notes:finalNote(r), amount:r.amount }));
+    const today = histShared === null ? [] : todayUploads().map(o => ({ notes:o.notes, amount:o.amount }));
+    if(!sess.length && !today.length) return '';
+    return `<div class="card sp-card"><h3>📊 تقسيمة الأوردرات اللي اترفعت على QP</h3><div class="sp-grid">${splitCol('⬆️ الرفعة دي', sess)}${splitCol('📅 النهارده كله', today)}</div></div>`;
   }
   function todayUpBtn(){
     if(histShared === null){ loadHist().then(draw).catch(() => { histShared = []; }); return ''; }
