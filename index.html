@@ -703,8 +703,29 @@ const PR_COLS=[
  {type:"brand",key:"bloom",h:"BLOOM",sum:true}      // 🌸 براند جديد — بيظهر كمان في جدول الخلاصة
 ];
 // راتب مساعد مدير المكتب: 16000 شهريًا
-const PR_A_SAL_D=16000/30, PR_MSG_SAL_D=150, PR_SHR_SAL_D=300, PR_RENT_D=200;
-const PR_COGS_NO=65.2, PR_COGS_YES=94, PR_BRANCH_PCT=0.145, PR_PEND_VAL=75;
+// 🏢 المصاريف الثابتة الشهرية — بتتوزع على الإيطالي و Kidzzly و RS حسب عدد الأوردرات (Bloom مالوش دعوة)
+//   الإيجار 5000 — المرتبات 4 × 8000 = 32000 — البرامج / النثريات وتشغيل المكتب (بتتكتب في صفحة الأرباح)
+const PR_FIXED_DEF={rent:5000,salaries:32000,software:1500,ops:0,power:100,net:500,mobile:500};
+const PR_FIXED_LS='pr_fixed_costs';
+let PR_FIXED=(()=>{try{return {...PR_FIXED_DEF,...JSON.parse(localStorage.getItem(PR_FIXED_LS)||'{}')};}catch(e){return {...PR_FIXED_DEF};}})();
+const PR_FIXED_EXCLUDE=['bloom'];
+function prSetFixed(k,v){PR_FIXED[k]=prNum(v);try{localStorage.setItem(PR_FIXED_LS,JSON.stringify(PR_FIXED));}catch(e){}
+  if(document.getElementById('prFileIn')&&document.getElementById('prFileIn').files[0]&&document.getElementById('prResults').style.display==='block')prRunReport();
+  const t=document.getElementById('prFixedTotal');if(t)t.textContent=prFmt(prFixedSum());}
+const prFixedSum=()=>['rent','salaries','software','ops','power','net','mobile'].reduce((s,k)=>s+(+PR_FIXED[k]||0),0);
+// 💔 الهوالك: 0.25% من المبيعات
+const PR_WASTE_PCT=0.0025;
+// 🏆 عمولة البنات (Squad) للفترة — بتتجاب من Squad وبتتوزع زي المرتبات
+let prCommTotal=null, prCommKey='', prCommBusy=false;
+// (قديم — لسه مستخدم في صفحة Brands للعرض بس)
+const PR_A_SAL_D=PR_FIXED.salaries/30, PR_MSG_SAL_D=0, PR_SHR_SAL_D=0, PR_RENT_D=PR_FIXED.rent/30;
+// 💍 تكلفة بضاعة الإيطالي للأوردر:
+//   الطقم: سلسلة 25 + حلق 4 + خاتم 10 + علبة الطقم 13.5 = 52.5
+//   باكدج الهدية: كيس جلد 4 + أكياس قطيفة 2 + شهادة ضمان 0.5 + كيس بلاستيك 0.25 + كارت هدايا 2 = 8.75
+//   من غير انسيال = 61.25 — بالانسيال: + انسيال 15 + علبة الانسيال 13.5 = 89.75
+const PR_COGS_NO=61.25, PR_COGS_YES=89.75, PR_BRANCH_PCT=0.145, PR_PEND_VAL=75;
+// 💔 الشحن البايظ: الشركة بتحسب شحن كامل، لكن في الحقيقة متوسطه 25 ج للأوردر
+const PR_UNDEL_SHIP=25;
 // نسبة التوقع: ofd = للأوردرات "تحت التسليم" و "Pending" (نفس المعاملة)، hold = للـ Hold
 const PR_OFD_RATE=0.35, PR_HOLD_RATE=0.15;
 const PR_RATE_OVERRIDES={
@@ -744,7 +765,7 @@ const prIsPending=r=>String(r[PR_statusCol-1]||'').trim().toLowerCase()==='pendi
 // البنود اليدوية — بتتكتب مرة واحدة في الجدول الأساسي وبتتطبق على الجدولين
 const PR_MANUAL=[
   {id:"ads",  lbl:"📢 إعلانات"},
-  {id:"other",lbl:"🧾 هوالك - نثريات - أخرى"}
+  {id:"other",lbl:"🧾 أخرى (يدوي)"}
 ];
 let prManualVals={}; // prManualVals[id][brand]
 const prMan=(id,b)=>(prManualVals[id]&&prManualVals[id][b])||0;
@@ -795,6 +816,7 @@ function prRunReport(){
 }
 
 function prProcess(rows){
+  window.__prLastRows=rows;
   const byBrand={}; PR_BRANDS.forEach(b=>byBrand[b]=[]);
   prUnbranded=[];
   rows.forEach(r=>{const b=prGetBrand(r[PR_notesCol-1]); if(b)byBrand[b].push(r); else prUnbranded.push(r);});
@@ -814,7 +836,7 @@ function prProcess(rows){
     const shipRet=returned.reduce((s,r)=>s+prNum(r[PR_shipCol-1]),0);
     // الشحن البايظ: Undelivered وملوش تاريخ إرجاع (اللي له تاريخ إرجاع بيتحسب في المرتجعات بس)
     const isRet=r=>{const v=r[PR_returnedCol-1];return v&&String(v).trim()!==""&&String(v).trim()!=="NaT";};
-    const shipUndel=undelRows.filter(r=>!isRet(r)).reduce((s,r)=>s+prNum(r[PR_shipCol-1]),0);
+    const shipUndel=undelRows.filter(r=>!isRet(r)).length*PR_UNDEL_SHIP; // 25 ج لكل أوردر بايظ (بدل الشحن الكامل اللي في الشيت)
     const wIns=delivered.filter(r=>prHasInsial(r[PR_contentsCol-1])).length;
     const pieces=(brand in PR_PIECE_COST)?delivered.reduce((s,r)=>s+prPieces(r[PR_contentsCol-1],r[PR_priceCol-1]),0):0;
     const cogs=(brand in PR_PIECE_COST)
@@ -828,17 +850,27 @@ function prProcess(rows){
 
   let times=[]; rows.forEach(r=>{const v=r[PR_dateCol-1]; if(!v)return; const d=v instanceof Date?v:new Date(v); if(!isNaN(d))times.push(+d);});
   const days=times.length?Math.max(1,Math.floor((Math.max(...times)-Math.min(...times))/86400000)+1):1;
-  const A_SAL=PR_A_SAL_D*days, MSG_SAL=PR_MSG_SAL_D*days, SHR_SAL=PR_SHR_SAL_D*days, RENT=PR_RENT_D*days;
+  // المصاريف الثابتة للفترة = الشهري ÷ 30 × عدد الأيام
+  const FX={rent:PR_FIXED.rent/30*days,salaries:PR_FIXED.salaries/30*days,software:PR_FIXED.software/30*days,ops:PR_FIXED.ops/30*days,
+    utils:((+PR_FIXED.power||0)+(+PR_FIXED.net||0)+(+PR_FIXED.mobile||0))/30*days};
+  // 🏆 عمولة البنات للفترة دي (بتتجاب مرة واحدة لكل فترة، والتقرير بيتحدث لما توصل)
+  if(times.length && window.SquadAPI && window.SquadAPI.rangeCommission){
+    const f=new Date(Math.min(...times)), t=new Date(Math.max(...times)), key=f.toDateString()+'|'+t.toDateString();
+    if(key!==prCommKey && !prCommBusy){ prCommBusy=true; prCommKey=key; prCommTotal=null;
+      window.SquadAPI.rangeCommission(f,t).then(v=>{prCommTotal=v;}).catch(()=>{prCommTotal=0;}).finally(()=>{prCommBusy=false; if(document.getElementById('prResults')&&document.getElementById('prResults').style.display==='block'&&window.__prLastRows)prProcess(window.__prLastRows);});
+    }
+  }
+  const COMM=prCommTotal||0;
 
-  const totalOrders=PR_PNL_BRANDS.reduce((s,b)=>s+prBrandCalc[b].n,0);
-  const msgTotal=PR_MSG_GROUP.reduce((s,b)=>s+prBrandCalc[b].n,0);
+  const fxBrands=PR_PNL_BRANDS.filter(b=>!PR_FIXED_EXCLUDE.includes(b));
+  const totalOrders=fxBrands.reduce((s,b)=>s+prBrandCalc[b].n,0);
 
   prRealCols=PR_PNL_BRANDS.map(b=>{
     const c=prBrandCalc[b];
-    const share=totalOrders?c.n/totalOrders:0;
-    const msgSal=(PR_MSG_GROUP.includes(b)&&msgTotal)?MSG_SAL*(c.n/msgTotal):0;
+    const share=(totalOrders&&!PR_FIXED_EXCLUDE.includes(b))?c.n/totalOrders:0;
     return {key:b,revenue:c.revenue,shipDel:c.shipDel,shipUndel:c.shipUndel,shipRet:c.shipRet,
-      aSal:A_SAL*share,msgSal,shrSal:SHR_SAL*share,rent:RENT*share,cogs:c.cogs};
+      salaries:FX.salaries*share,rent:FX.rent*share,software:FX.software*share,ops:FX.ops*share,utils:FX.utils*share,
+      comm:COMM*share,waste:c.revenue*PR_WASTE_PCT,cogs:c.cogs};
   });
 
   prExpCols=PR_PNL_BRANDS.map(b=>{
@@ -883,6 +915,7 @@ function prBuildTable(pfx){
       if(f==='revenue')v+=e.revenue||0;
       else if(f==='shipDel')v+=e.shipExp||0;
       else if(f==='cogs')v+=e.cogsExp||0;
+      else if(f==='waste')v+=(e.revenue||0)*PR_WASTE_PCT;
     }
     return v;
   };
@@ -908,18 +941,21 @@ function prBuildTable(pfx){
   }
   const rev=autoRow('📥 مبيعات التسليمات'+sfx,'revenue');
   const sd =autoRow('🚚 شحن التسليمات'+sfx,'shipDel');
-  const su =autoRow('💔 شحن بايظ (Undelivered)','shipUndel');
+  const su =autoRow('💔 شحن بايظ (Undelivered × 25 ج)','shipUndel');
   const sr =autoRow('↩️ شحن المرتجعات','shipRet');
-  const as =autoRow('👤 راتب مساعد مدير المكتب','aSal');
-  const ms =autoRow('💬 خدمة عملاء','msgSal');
-  const ss =autoRow('👥 راتب مشترك (مدير مكتب)','shrSal');
+  const as =autoRow('👥 الرواتب','salaries');
+  const ms =autoRow('💻 برامج','software');
+  const ss =autoRow('🧾 نثريات وتشغيل مكتب','ops');
   const rt =autoRow('🏢 إيجار مكتب','rent');
+  const ut =autoRow('💡 كهربا ونت وباقات','utils');
+  const cm =autoRow('🏆 عمولة البنات (Squad)'+(prCommTotal==null?' ⏳':''),'comm');
+  const ws =autoRow('💔 هوالك (0.25% من المبيعات)'+sfx,'waste');
   const cg =autoRow('📦 تكلفة البضاعة'+sfx,'cogs');
 
   h+=rev.html+sd.html+su.html+sr.html;
   h+=manRow(PR_MANUAL[0]);
   h+=idRow('📊 نسبة الإعلانات','adsPct');
-  h+=as.html+ms.html+ss.html+rt.html;
+  h+=as.html+cm.html+ms.html+ss.html+rt.html+ut.html+ws.html;
   PR_MANUAL.slice(1).forEach(m=>h+=manRow(m));
   h+=cg.html;
   h+=idRow('🔴 إجمالي التكاليف','cost','total');
@@ -927,7 +963,7 @@ function prBuildTable(pfx){
   h+=idRow('📊 نسبة الربح %','pct');
   t.innerHTML=h;
 
-  const parts=[sd,su,sr,as,ms,ss,rt,cg];
+  const parts=[sd,su,sr,as,cm,ms,ss,rt,ut,ws,cg];
   const fixRow=PR_COLS.map((c,i)=>parts.reduce((s,p)=>s+p.row[i],0));
   const totalFix=parts.reduce((s,p)=>s+p.tot,0);
   t.dataset.rev=JSON.stringify(rev.row); t.dataset.fix=JSON.stringify(fixRow);
@@ -1358,6 +1394,20 @@ function viewProfits(){
     </div>
     <div id="prAutoStatus" style="font-size:13px;color:var(--muted);margin-top:10px"></div>
   </div>
+  <div class="card"><h3>🏢 المصاريف الثابتة الشهرية <span style="font-size:13px;font-weight:500;color:var(--muted)">— بتتوزع على الإيطالي و Kidzzly و RS حسب عدد الأوردرات (Bloom مالوش دعوة)، وبتتحسب على عدد أيام الشيت</span></h3>
+    <div class="uploadrow" style="flex-wrap:wrap;gap:10px">
+      <div class="kpi">🏢 الإيجار <input class="plainIn" type="number" value="${PR_FIXED.rent}" oninput="prSetFixed('rent',this.value)"></div>
+      <div class="kpi">👥 المرتبات (4 × 8000) <input class="plainIn" type="number" value="${PR_FIXED.salaries}" oninput="prSetFixed('salaries',this.value)"></div>
+      <div class="kpi">💻 برامج <input class="plainIn" type="number" value="${PR_FIXED.software}" oninput="prSetFixed('software',this.value)"></div>
+      <div class="kpi">🧾 نثريات وتشغيل مكتب <input class="plainIn" type="number" value="${PR_FIXED.ops}" oninput="prSetFixed('ops',this.value)"></div>
+      <div class="kpi">💡 كهربا <input class="plainIn" type="number" value="${PR_FIXED.power}" oninput="prSetFixed('power',this.value)"></div>
+      <div class="kpi">🌐 نت <input class="plainIn" type="number" value="${PR_FIXED.net}" oninput="prSetFixed('net',this.value)"></div>
+      <div class="kpi">📱 باقات <input class="plainIn" type="number" value="${PR_FIXED.mobile}" oninput="prSetFixed('mobile',this.value)"></div>
+      <div class="kpi">الإجمالي في الشهر: <b id="prFixedTotal">${prFmt(prFixedSum())}</b> ج</div>
+    </div>
+    <div style="font-size:12.5px;color:var(--muted);margin-top:6px">وكمان تلقائي في التقرير: 📢 الإعلانات من جوجل شيت (DREAM / CARA / FASTPLT / KIDZZLY عمود M / RS عمود P) · 🏆 عمولة البنات من Squad لنفس الفترة · 💔 الهوالك 0.25% من المبيعات.</div>
+    <div>
+    </div></div>
   <div class="card"><h3>📄 أو ارفع ملف يدويًا</h3>
     <div class="uploadrow">
       <input type="file" id="prFileIn" accept=".xlsx,.xls,.csv">
@@ -1603,6 +1653,20 @@ const Squad = (function(){
   }
   /* 💵 للرواتب: عمولة موظفة في شهر معيّن (أوردرات الشهر + عملاء المكتب المتأكدين في الشهر) */
   window.SquadAPI = {
+    // 💰 لقسم الأرباح: إجمالي العمولة المستحقة لكل البنات في فترة (أوردرات الفترة + عملاء المكتب المتأكدين)
+    async rangeCommission(from, to){
+      const f = new Date(from); f.setHours(0, 0, 0, 0); const t = new Date(to); t.setHours(23, 59, 59, 999);
+      const ymd = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+      const [o, off] = await Promise.all([
+        sb.from('orders').select('*').gte('created_at', f.toISOString()).lte('created_at', t.toISOString()).limit(20000),
+        sb.from('office_sales').select('amount, status, sale_date').eq('status', 'bought').gte('sale_date', ymd(f)).lte('sale_date', ymd(t)),
+      ]);
+      if(o.error) throw o.error;
+      const by = {}; (o.data || []).forEach(x => (by[x.agent_id] = by[x.agent_id] || []).push(x));
+      const ordersComm = Object.values(by).reduce((s, L) => s + commissionSummary(L).dueComm, 0);
+      const offComm = (off.data || []).reduce((s, r) => s + (Number(r.amount) || 0), 0) * OFFICE_PCT;
+      return Math.round((ordersComm + offComm) * 100) / 100;
+    },
     async monthCommission(agentId, month){
       const [y, m] = month.split('-').map(Number), from = new Date(y, m - 1, 1), to = new Date(y, m, 1);
       const [o, off] = await Promise.all([
@@ -3292,7 +3356,9 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
     { key:'cara',    name:'CARA',    color:'#2f5f73', spend:5, orders:6,  msgs:7,    pr:'cara silver', prBrands:['cara silver','cara silver un','cara wa'] },
     { key:'fastplt', name:'FASTPLT', color:'#8a6d3b', spend:9, orders:10, msgs:null, pr:'fastplt',     prBrands:['fastplt'] },
     // 👶 RS KIDS: صرف الإعلانات في العمود P (رقم 15) — من غير عمود أوردرات، فمش داخل في حسبة البوصلة
-    { key:'rs',      name:'RS KIDS', color:'#a0456e', spend:15, orders:null, msgs:null, pr:'rs kids',   prBrands:['rs kids', 'kidzzly'] },
+    { key:'rs',      name:'RS KIDS', color:'#a0456e', spend:15, orders:null, msgs:null, pr:'rs kids',   prBrands:['rs kids'] },
+    // 🧸 KIDZZLY: صرف الإعلانات في العمود M (رقم 12)
+    { key:'kidzzly', name:'KIDZZLY', color:'#4f8fd8', spend:12, orders:null, msgs:null, pr:'kidzzly',   prBrands:['kidzzly'] },
   ];
   const MONTHS = ['january','february','march','april','may','june','july','august','september','october','november','december'];
 
@@ -3503,12 +3569,12 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
     const box = document.createElement('div');
     box.id = 'adsFillBox'; box.className = 'ads-fill';
     box.innerHTML = `<button class="mockbtn" onclick="Ads.fill()">📢 املأ الإعلانات من جوجل شيت</button>
-      <span id="adsFillStatus">بيجمع الصرف لنفس فترة ملف الأوردرات: DREAM في عمود DREAM، وCARA في CARA SILVER، وFASTPLT في FASTPLT، وRS KIDS في RS KIDS.</span>`;
+      <span id="adsFillStatus">بيجمع الصرف لنفس فترة ملف الأوردرات: DREAM في عمود DREAM، وCARA في CARA SILVER، وFASTPLT في FASTPLT، وRS KIDS في RS KIDS، وKIDZZLY في KIDZZLY.</span>`;
     tbl.closest('.card').insertBefore(box, tbl.parentElement);
   }
 
   async function adsFill(){
-    const st = document.getElementById('adsFillStatus');
+    const st = document.getElementById('adsFillStatus') || { set textContent(v){} };
     const inputs = [...document.querySelectorAll('#prFullTable input[data-man="ads"]')];
     if(!inputs.length){ st.textContent = 'شغّل التقرير الأول.'; return; }
     st.textContent = 'بيجيب الإعلانات من الشيت...';
@@ -3661,7 +3727,10 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
         rows.forEach(r => { const v = r[PR_dateCol-1]; if(!v) return; const d = v instanceof Date ? v : new Date(v); if(!isNaN(d)) ts.push(+d); });
         prOrdersRange = ts.length ? { from: adsKey(new Date(Math.min(...ts))), to: adsKey(new Date(Math.max(...ts))) } : null;
       }catch(e){ prOrdersRange = null; }
-      return _prProcess.apply(this, arguments);
+      const out = _prProcess.apply(this, arguments);
+      // 📢 الإعلانات بتتملى لوحدها من الشيت بعد كل تقرير
+      setTimeout(() => { try{ adsInjectProfitsBtn(); adsFill(); }catch(e){} }, 50);
+      return out;
     };
   }
 
@@ -4131,7 +4200,9 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
           if(String(o.Order_Delivery_Status ?? '').trim() !== '3' || o.Order_Collect_Status === true) return;
           const v = num(o.total_amount ?? o.price) - num(o.total_fees);
           wallet += v; walletN++;
-          const g = walletGroup(o.notes); const W = walletBy[g] = walletBy[g] || { v:0, n:0, days:{} }; W.v += v; W.n++;
+          const g = walletGroup(o.notes); const W = walletBy[g] = walletBy[g] || { v:0, n:0, days:{}, cogs:0, cogsN:0 }; W.v += v; W.n++;
+          // 📈 ربح تقريبي: الفلوس اللي في المحفظة (بعد الشحن) − تكلفة البضاعة (بنفس قواعد قسم الأرباح)
+          const cg = walletCogs(o); if(cg != null){ W.cogs += cg; W.cogsN++; }
           const d = dayKey(o.order_date); if(d){ W.days[d] = (W.days[d] || 0) + 1; lastPick = !lastPick || d > lastPick ? d : lastPick; }
         });
         // 🚚 بيكب آخر يوم = أحدث تاريخ أوردر (order_date) موجود في المحفظة
@@ -4220,6 +4291,16 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
         <select onchange="QP.pickDay(this.value)">${LP.days.map(d => `<option value="${d.day}" ${d.day === LP.day ? 'selected' : ''}>${new Date(d.day + 'T12:00:00').toLocaleDateString('ar-EG', { weekday:'short', day:'numeric', month:'short' })} — ${fmt(d.tot)} أوردر${d.ofd ? ' · ' + fmt(d.ofd) + ' مع المندوب' : ''}</option>`).join('')}</select></label>` : ''}</div>
       <div class="qpw-grid">${cards}</div>
       <p class="qp-userline" style="margin:10px 0 0">البيكب اللي شغالين فيه = أوردرات امبارح، نفس رقم <b>Yesterday Orders</b> اللي فوق${LP ? ` (${fmt(LP.total)} أوردر${D.yesterday != null && LP.day === shiftDay(todayKey(), -1) ? (Number(D.yesterday) === LP.total ? ' ✅ مطابق' : ' — QP كاتب ' + fmt(D.yesterday)) : ''})` : ''}${LP && LP.auto ? '' : ' — إنت مختار يوم تاني'}. النسبة = اللي اتسلم من أوردرات اليوم ده بس ÷ كل أوردرات اليوم ده للبراند.</p></div>`;
+  }
+  function walletCogs(o){
+    let b = null; try{ b = prGetBrand(o.notes); }catch(e){}
+    const contents = o.shipment_contents || o.contents || '', price = num(o.total_amount ?? o.price);
+    try{
+      if(b && typeof PR_PIECE_COST !== 'undefined' && PR_PIECE_COST[b]) return prPieces(contents, price) * PR_PIECE_COST[b];
+      if(b && typeof PR_COGS_PCT !== 'undefined' && PR_COGS_PCT[b] != null) return price * PR_COGS_PCT[b];
+      if(b) return prHasInsial(contents) ? PR_COGS_YES : PR_COGS_NO;
+    }catch(e){}
+    return null; // براند مش معروف (زي Socky) = مش بنحسبله ربح
   }
   function walletGroup(note){
     const n = String(note || '').toLowerCase().trim();
@@ -8841,9 +8922,10 @@ textarea.br-in{min-height:64px;resize:vertical}
   // التكاليف المشتركة من قسم الأرباح (بتتوزع على كل البراندات بنسبة عدد الأوردرات)
   const shared = () => {
     try{ return [
-      ['👤 راتب مساعد مدير المكتب', PR_A_SAL_D * 30, 'شهريًا'],
-      ['👥 راتب مشترك (مدير مكتب)', PR_SHR_SAL_D * 30, 'شهريًا (' + fmt(PR_SHR_SAL_D) + ' ج في اليوم)'],
-      ['🏢 إيجار المكتب', PR_RENT_D * 30, 'شهريًا (' + fmt(PR_RENT_D) + ' ج في اليوم)'],
+      ['👥 المرتبات', PR_FIXED.salaries, 'شهريًا'],
+      ['🏢 إيجار المكتب', PR_FIXED.rent, 'شهريًا'],
+      ['💻 برامج', PR_FIXED.software, 'شهريًا'],
+      ['🧾 نثريات وتشغيل مكتب', PR_FIXED.ops, 'شهريًا'],
     ]; }catch(e){ return []; }
   };
 
@@ -11127,6 +11209,9 @@ a.hm-kpi:hover{box-shadow:0 6px 16px rgba(0,0,0,.07)}
 .hm-bar{height:7px;background:var(--line);border-radius:4px;overflow:hidden;margin-top:4px}
 .hm-bar i{display:block;height:100%;background:var(--bc,#2f7d55)}
 .hm-wait{color:var(--muted);font-size:13.5px}
+.hm-wsplit{display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:8px;font-size:12.5px;color:var(--muted)}
+.hm-wsplit b{color:var(--ink)}
+.hm-wprof{margin-top:6px;font-size:13px;color:#2f7d55}.hm-wprof b{font-size:15px}
 </style>
 <script>
 /* =====================================================================
@@ -11148,6 +11233,14 @@ a.hm-kpi:hover{box-shadow:0 6px 16px rgba(0,0,0,.07)}
   const isCancel = st => /cancel|ملغ|refus|رفض|return/i.test(String(st || ''));
 
   const H = { today:null, pend:null, qp:null, qpErr:'', acc:null, last:null, loading:false, at:null };
+  // 💍/🧸 مبيعات المحفظة لكل قسم + الربح التقريبي (المحفظة بعد الشحن − تكلفة البضاعة)
+  const WB = [['italy', '💍 إيطالي'], ['kidzzly', '🧸 كيدزلي'], ['socky', '🧦 سوكي'], ['bloom', '🌸 بلوم'], ['other', '❔ غيره']];
+  function walletProfit(D){
+    if(!D || !D.walletBy) return null;
+    let p = 0, known = 0, unk = 0;
+    Object.values(D.walletBy).forEach(W => { if(W.cogsN){ const share = W.cogsN / W.n; p += W.v * share - W.cogs; known += W.v * share; } unk += W.v * (1 - (W.cogsN || 0) / W.n); });
+    return { p:Math.round(p), unk:Math.round(unk) };
+  }
 
   async function loadToday(){
     const { data } = await sb().from('orders').select('agent_id, amount, created_at, status').gte('created_at', dayStart().toISOString()).limit(3000);
@@ -11218,7 +11311,10 @@ a.hm-kpi:hover{box-shadow:0 6px 16px rgba(0,0,0,.07)}
     const k = [];
     if(can('squad')) k.push(`<a class="hm-kpi" href="#/squad" style="--bc:#2f7d55"><div class="l">🧾 أوردرات النهارده</div><div class="n">${H.today ? fmt(H.today.n) : '⏳'}</div><div class="s">${H.today ? fmt(H.today.v) + ' ج' : ''}</div></a>`);
     if(can('qp-upload')) k.push(`<a class="hm-kpi" href="#/qp-upload" data-hm-all style="--bc:#2b6cb0"><div class="l">📤 مستنية الرفع على QP</div><div class="n">${H.pend ? fmt(H.pend.total) : '⏳'}</div><div class="s">من كل المصادر — دوس ترفعهم</div></a>`);
-    if(can('qp')) k.push(`<a class="hm-kpi" href="#/qp" style="--bc:#b08d57"><div class="l">👛 المحفظة (التحصيل)</div><div class="n">${H.qp && H.qp.wallet != null ? fmt(H.qp.wallet) + ' ج' : (H.qpErr ? '—' : '⏳')}</div><div class="s">${H.qp && H.qp.walletN != null ? fmt(H.qp.walletN) + ' أوردر اتسلم ولسه ماتحصّلش' : ''}</div></a>`);
+    if(can('qp')) k.push(`<a class="hm-kpi" href="#/qp" style="--bc:#b08d57"><div class="l">👛 المحفظة (التحصيل)</div><div class="n">${H.qp && H.qp.wallet != null ? fmt(H.qp.wallet) + ' ج' : (H.qpErr ? '—' : '⏳')}</div><div class="s">${H.qp && H.qp.walletN != null ? fmt(H.qp.walletN) + ' أوردر اتسلم ولسه ماتحصّلش' : ''}</div>${(() => { const D = H.qp; if(!D || !D.walletBy) return '';
+      const parts = WB.filter(([k]) => D.walletBy[k]).map(([k, l]) => `<span>${l} <b>${fmt(D.walletBy[k].v)}</b></span>`).join('');
+      const pr = walletProfit(D);
+      return `<div class="hm-wsplit">${parts}</div>${pr ? `<div class="hm-wprof">📈 ربح تقريبي ≈ <b>${fmt(pr.p)} ج</b></div>` : ''}`; })()}</a>`);
     k.push(`<a class="hm-kpi" href="#/inbox" style="--bc:${ib ? '#c0392b' : '#888'}"><div class="l">📥 الرسايل والمهام</div><div class="n">${fmt(ib)}</div><div class="s">${ib ? 'جديد مستنيك' : 'مفيش جديد'}</div></a>`);
     h += `<div class="hm-kpis">${k.join('')}</div><div class="hm-grid">`;
 
@@ -11237,7 +11333,11 @@ a.hm-kpi:hover{box-shadow:0 6px 16px rgba(0,0,0,.07)}
       else{
         h += `<div class="hm-row"><span>👛 المحفظة (لسه ماتحصّلش)</span><b style="color:#2f7d55">${D.wallet != null ? fmt(D.wallet) + ' ج' : '—'}</b></div>`;
         if(D.walletBy) [['italy', '💍 Italy'], ['kidzzly', '🧸 Kidzzly'], ['socky', '🧦 Socky'], ['bloom', '🌸 Bloom'], ['other', '❔ غيره']].filter(([kk]) => D.walletBy[kk]).forEach(([kk, l]) => {
-          h += `<div class="hm-row" style="padding-inline-start:14px;font-size:13px"><span>${l}</span><span>${fmt(D.walletBy[kk].v)} ج</span></div>`; });
+          const W = D.walletBy[kk], pr = W.cogsN ? Math.round(W.v * (W.cogsN / W.n) - W.cogs) : null;
+          h += `<div class="hm-row" style="padding-inline-start:14px;font-size:13px"><span>${l}</span><span>${fmt(W.v)} ج${pr != null ? ` <small style="color:#2f7d55">· ربح ≈ ${fmt(pr)}</small>` : ''}</span></div>`; });
+        const wp = walletProfit(D);
+        if(wp) h += `<div class="hm-row"><span>📈 ربح تقريبي من المحفظة</span><b style="color:#2f7d55">≈ ${fmt(wp.p)} ج</b></div>
+          <p class="hm-note" style="margin:0 0 6px">= فلوس المحفظة (بعد مصاريف الشحن) − تكلفة البضاعة بقواعد قسم الأرباح (الفضة بالقطعة، كيدزلي × 100، RS × 175). مش داخل فيه الإعلانات والمرتبات.${wp.unk ? ` (${fmt(wp.unk)} ج من براندات مالهاش تكلفة متسجلة مش محسوبة.)` : ''}</p>`;
         h += `<div class="hm-row"><span>💵 Collect</span><b style="font-size:14px">${esc(D.collect || '—')}</b></div>
           <div class="hm-row"><span>📅 أوردرات امبارح</span><b>${D.yesterday != null ? fmt(D.yesterday) : '—'}</b></div>
           <div class="hm-row"><span>📦 راجع لينا (Ready To Return)</span><b style="color:#b7791f">${D.returns != null ? fmt(D.returns) : '—'}</b></div>
