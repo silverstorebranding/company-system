@@ -7636,6 +7636,17 @@ table.pr tr.bd-cat td{background:var(--slate-l);font-weight:700}
   }
   const CUST = () => (B.custom || []).filter(r => r.brand === 'all' || r.brand === B.brand).map(r => ({ ...r, anyN:(r.any || []).map(norm).filter(Boolean), allN:(r.all || []).map(norm).filter(Boolean) }));
   const ruleHit = (r, l) => (!r.allN.length || r.allN.every(w => l.includes(w))) && (!r.anyN.length || r.anyN.some(w => l.includes(w))) && (r.allN.length || r.anyN.length);
+  // 💰 شرط السعر: "728" بالظبط، أو "700-750" من لحد، أو "1000+" وأكتر — على إجمالي سعر الأوردر
+  function priceRange(v){
+    const t = String(v || '').replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/\s/g, '');
+    if(!t) return null; let m;
+    if((m = t.match(/^(\d+(?:\.\d+)?)\+$/))) return { min:+m[1], max:Infinity };
+    if((m = t.match(/^(\d+(?:\.\d+)?)[-–](\d+(?:\.\d+)?)$/))) return { min:Math.min(+m[1], +m[2]), max:Math.max(+m[1], +m[2]) };
+    if((m = t.match(/^(\d+(?:\.\d+)?)$/))) return { min:+m[1], max:+m[1] };
+    return null;
+  }
+  const priceOk = (r, price) => { const pr = priceRange(r.price); return !pr || (price >= pr.min - 0.5 && price <= pr.max + 0.5); };
+  const priceTxt = v => { const p = priceRange(v); return !p ? '' : p.max === Infinity ? p.min + ' وأكتر' : p.min === p.max ? 'بالظبط ' + p.min : 'من ' + p.min + ' لـ ' + p.max; };
 
   // تقسيم محتوى الأوردر لقطع: "+" أو سطر جديد، و"× 3" = 3
   function splitItems(text){
@@ -7649,13 +7660,14 @@ table.pr tr.bd-cat td{background:var(--slate-l);font-weight:700}
     const cust = CUST(), out = { products:{}, comps:{}, unknown:{}, ok:0, unk:0, pieces:0, rows:[] };
     const addP = (name, q, ss) => { const p = out.products[name] = out.products[name] || { qty:0, orders:new Set(), sizes:{}, shapes:{} }; p.qty += q;
       if(ss.size) p.sizes[ss.size] = (p.sizes[ss.size] || 0) + q; if(ss.shape) p.shapes[ss.shape] = (p.shapes[ss.shape] || 0) + q; return p; };
+    const cKey = cust.filter(r => r.anyN.length || r.allN.length), cPrice = cust.filter(r => !r.anyN.length && !r.allN.length && priceRange(r.price));
     orders.forEach((o, oi) => {
-      const row = { o, items:[], unknown:[] };
+      const row = { o, items:[], unknown:[] }, oPrice = parseFloat(String(o.total_amount ?? o.price ?? '').replace(/[^\d.]/g, '')) || 0;
       splitItems(o.shipment_contents).forEach(raw => {
         const l = norm(raw); if(!l) return;
         const mult = itemMult(raw), ss = sizeShape(raw);
         // 1) القواعد بتاعتك الأول
-        const ch = cust.filter(r => ruleHit(r, l));
+        const ch = cKey.filter(r => ruleHit(r, l) && priceOk(r, oPrice));
         if(ch.length){
           ch.forEach(r => { let q = (Number(r.pieces) || 1) * mult;
             if(r.perOcc && r.anyN[0]){ const occ = l.split(r.anyN[0]).length - 1; q = (Number(r.pieces) || 1) * Math.max(1, occ); }
@@ -7671,8 +7683,12 @@ table.pr tr.bd-cat td{background:var(--slate-l);font-weight:700}
             r.items(l).forEach(([n, cat, q]) => { (out.comps[n] = out.comps[n] || { cat, qty:0 }).qty += q * mult; }); });
           out.ok++; return;
         }
-        out.unk++; row.unknown.push(raw); out.unknown[raw] = (out.unknown[raw] || 0) + 1;
+        row.unknown.push(raw);
       });
+      // 3) قاعدة السعر بس (من غير كلمات): لو الأوردر فيه سطور مش مفهومة وسعره مطابق ← بتتحسب مرة واحدة للأوردر
+      const pr = row.unknown.length ? cPrice.find(r => priceOk(r, oPrice)) : null;
+      if(pr){ const q = Number(pr.pieces) || 1; addP(pr.name, q, {}).orders.add(oi); out.pieces += q; row.items.push(pr.name + ' × ' + q + ' (بالسعر)'); out.ok += row.unknown.length; row.unknown = []; }
+      row.unknown.forEach(raw => { out.unk++; out.unknown[raw] = (out.unknown[raw] || 0) + 1; });
       out.rows.push(row);
     });
     Object.values(out.products).forEach(p => p.orders = p.orders.size);
@@ -7730,12 +7746,14 @@ table.pr tr.bd-cat td{background:var(--slate-l);font-weight:700}
         ${window.XLSX ? '<div class="bd-bar"><button class="bd-btn" data-act="bxlsx">⬇️ Excel</button></div>' : ''}</div>`;
       if(uN) h += `<div class="card" id="bdUnk"><h3 style="color:#b3423a">⚠️ مش مفهوم — ${fmt(A.unk)} سطر (${fmt(uN)} شكل مختلف)</h3>
         <p class="none" style="margin-bottom:8px">مش داخلين في العدّ. دوس "➕ قاعدة" جنب أي سطر وقولّي ده إيه وكام قطعة — والسيستم هيلتزم بيها في كل مرة.</p>
-        <div class="tablewrap" style="max-height:420px;overflow-y:auto"><table class="pr"><tr><th>السطر</th><th>اتكرر</th><th></th></tr>
-        ${Object.entries(A.unknown).sort((a, b) => b[1] - a[1]).map(([l, n], i) => `<tr><td class="lbl" style="font-weight:400;white-space:normal">${esc(l)}</td><td>${fmt(n)}</td><td><button class="bd-btn" data-bdnew="${i}">➕ قاعدة</button></td></tr>`).join('')}
+        <div class="tablewrap" style="max-height:420px;overflow-y:auto"><table class="pr"><tr><th>السطر</th><th>سعر الأوردر</th><th>اتكرر</th><th></th></tr>
+        ${Object.entries(A.unknown).sort((a, b) => b[1] - a[1]).map(([l, n], i) => `<tr><td class="lbl" style="font-weight:400;white-space:normal">${esc(l)}</td><td>${esc(unkPrice(l))}</td><td>${fmt(n)}</td><td><button class="bd-btn" data-bdnew="${i}">➕ قاعدة</button></td></tr>`).join('')}
         </table></div></div>`;
     }
     return h + customRulesCard();
   }
+  // سعر الأوردر اللي فيه السطر المش مفهوم (عشان تعمل قاعدة بالسعر)
+  function unkPrice(line){ const r = B.res && B.res.an.rows.find(x => x.unknown.includes(line)); return r ? String(r.o.total_amount ?? r.o.price ?? '').replace(/\.0+$/, '') : ''; }
   function customRulesCard(){
     const L = B.custom || [], E = B.editing;
     let h = `<div class="card" id="bdRules"><h3 style="display:flex;justify-content:space-between;align-items:center">✍️ قواعدك (${fmt(L.length)})
@@ -7747,14 +7765,16 @@ table.pr tr.bd-cat td{background:var(--slate-l);font-weight:700}
         <label>البراند <select id="rBrand" class="bd-btn">${[['all', 'كل البراندات']].concat(BRANDS.map(b => [b.k, b.l])).map(([k, l]) => `<option value="${k}" ${E.brand === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
         <label>لو فيه أي كلمة من (افصل بفاصلة) <input id="rAny" class="bd-btn" value="${esc((E.any || []).join('، '))}" placeholder="دفايه، دفاية" style="width:220px"></label>
         <label>ولازم كمان يكون فيه (اختياري) <input id="rAll" class="bd-btn" value="${esc((E.all || []).join('، '))}" style="width:160px"></label>
+        <label>💰 لو سعر الأوردر (اختياري) <input id="rPrice" class="bd-btn" value="${esc(E.price || '')}" placeholder="728 أو 700-750 أو 1000+" style="width:150px"></label>
         <label>عدد القطع <input id="rPcs" class="bd-btn" type="number" min="1" value="${esc(E.pieces || 1)}" style="width:70px"></label>
         <label><input type="checkbox" id="rOcc" ${E.perOcc ? 'checked' : ''}> عدّ كل مرة أول كلمة تتكرر في السطر</label>
-      </div>${E.sample ? `<p class="none" style="margin:6px 0 0">السطر: ${esc(E.sample)}</p>` : ''}
+      </div>${E.sample ? `<p class="none" style="margin:6px 0 0">السطر: ${esc(E.sample)}${E.samplePrice ? ' · سعر الأوردر: ' + esc(E.samplePrice) : ''}</p>` : ''}
+      <p class="none" style="margin:6px 0 0">💡 لو كتبت <b>سعر من غير كلمات</b>: القاعدة بتتطبق على أي أوردر بالسعر ده فيه سطور مش مفهومة، وبتتحسب مرة واحدة للأوردر (مثلاً 1000 = 4 دفايات). ولو كتبت <b>كلمات وسعر</b>: لازم الاتنين.</p>
       <div class="bd-bar"><button class="bd-btn pri" data-act="rsave" style="padding:7px 16px;font-size:14px">💾 احفظ القاعدة</button><button class="bd-btn" data-act="rcancel">إلغاء</button></div></div>`;
     }
     h += L.length ? `<div class="tablewrap"><table class="pr"><tr><th>المنتج</th><th>البراند</th><th>الكلمات</th><th>القطع</th><th></th></tr>
       ${L.map((r, i) => `<tr><td class="lbl">${esc(r.name)}</td><td>${esc(r.brand === 'all' ? 'الكل' : (BRANDS.find(b => b.k === r.brand) || {}).l || r.brand)}</td>
-        <td style="white-space:normal">${(r.any || []).length ? 'أي: ' + esc(r.any.join(' / ')) : ''}${(r.all || []).length ? '<br>وكمان: ' + esc(r.all.join(' + ')) : ''}${r.perOcc ? '<br>(بيعدّ التكرار)' : ''}</td>
+        <td style="white-space:normal">${(r.any || []).length ? 'أي: ' + esc(r.any.join(' / ')) : ''}${(r.all || []).length ? '<br>وكمان: ' + esc(r.all.join(' + ')) : ''}${r.price ? `<br>💰 السعر ${esc(priceTxt(r.price))}` : ''}${r.perOcc ? '<br>(بيعدّ التكرار)' : ''}</td>
         <td>${fmt(r.pieces || 1)}</td><td style="white-space:nowrap"><button class="bd-btn" data-redit="${i}">✏️</button> <button class="bd-btn" data-rdel="${i}">🗑️</button></td></tr>`).join('')}</table></div>` : '<p class="none">لسه مفيش قواعد منك.</p>';
     return h + '</div>';
   }
@@ -7868,7 +7888,7 @@ table.pr tr.bd-cat td{background:var(--slate-l);font-weight:700}
     const unkKeys = B.res ? Object.entries(B.res.an.unknown).sort((a, b) => b[1] - a[1]).map(x => x[0]) : [];
     root.querySelectorAll('[data-bdnew]').forEach(b => b.onclick = () => { const raw = unkKeys[+b.dataset.bdnew] || '';
       const w = norm(raw).split(' ').filter(x => x.length > 2 && !/^\d+$/.test(x))[0] || '';
-      B.editing = { idx:-1, name:'', brand:B.brand, any:w ? [w] : [], all:[], pieces:1, perOcc:false, sample:raw }; draw();
+      B.editing = { idx:-1, name:'', brand:B.brand, any:w ? [w] : [], all:[], price:'', pieces:1, perOcc:false, sample:raw, samplePrice:unkPrice(raw) }; draw();
       const r = document.getElementById('bdRules'); if(r) r.scrollIntoView({ behavior:'smooth' }); });
     const rn = root.querySelector('[data-act=rnew]'); if(rn) rn.onclick = () => { B.editing = { idx:-1, name:'', brand:B.brand, any:[], all:[], pieces:1, perOcc:false }; draw(); };
     root.querySelectorAll('[data-redit]').forEach(b => b.onclick = () => { const r = B.custom[+b.dataset.redit]; B.editing = { ...r, idx:+b.dataset.redit }; draw(); });
@@ -7876,8 +7896,9 @@ table.pr tr.bd-cat td{background:var(--slate-l);font-weight:700}
     const rc = root.querySelector('[data-act=rcancel]'); if(rc) rc.onclick = () => { B.editing = null; draw(); };
     const rs = root.querySelector('[data-act=rsave]'); if(rs) rs.onclick = async () => {
       const g = id => root.querySelector('#' + id), split = v => String(v || '').split(/[،,]/).map(x => x.trim()).filter(Boolean);
-      const r = { name:g('rName').value.trim(), brand:g('rBrand').value, any:split(g('rAny').value), all:split(g('rAll').value), pieces:Math.max(1, +g('rPcs').value || 1), perOcc:g('rOcc').checked };
-      if(!r.name || (!r.any.length && !r.all.length)){ alert('اكتب اسم المنتج وكلمة واحدة على الأقل.'); return; }
+      const r = { name:g('rName').value.trim(), brand:g('rBrand').value, any:split(g('rAny').value), all:split(g('rAll').value), price:g('rPrice').value.trim(), pieces:Math.max(1, +g('rPcs').value || 1), perOcc:g('rOcc').checked };
+      if(r.price && !priceRange(r.price)){ alert('السعر اكتبه كده: 728 أو 700-750 أو 1000+'); return; }
+      if(!r.name || (!r.any.length && !r.all.length && !r.price)){ alert('اكتب اسم المنتج، وكلمة واحدة على الأقل أو سعر.'); return; }
       B.custom = B.custom || []; if(B.editing.idx >= 0) B.custom[B.editing.idx] = r; else B.custom.push(r);
       B.editing = null; await saveRules(); computeB(); B.msg = '✅ القاعدة اتحفظت واتطبقت.'; B.msgErr = false; draw();
     };
