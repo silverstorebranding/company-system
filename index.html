@@ -760,25 +760,32 @@ function kidsPajamaParse(text, price){
   const r=kidsPajamaText(text, price); if(!r) return null;
   const pr=Math.round(parseFloat(String(price??"").replace(/[^\d.]/g,""))||0);
   const hit=Object.keys(PJ_PRICES).map(Number).find(k=>Math.abs(k-pr)<=1);
-  if(hit!=null){ const n=PJ_PRICES[hit]; return { n, sizes: r.n===n ? r.sizes : {}, byPrice: r.n!==n }; }
+  if(hit!=null){ const n=PJ_PRICES[hit], same=r.n===n;
+    // لو العدد جه من السعر ومش مطابق للمكتوب: الألوان والمقاسات المذكورة بتظهر من غير عدد (مش بنخمّن)
+    return { n, sizes: same ? r.sizes : {}, colors: same ? r.colors : {}, mention: same ? null : { sizes:Object.keys(r.sizes||{}), colors:Object.keys(r.colors||{}) }, byPrice: !same }; }
   return r; // سعر مش في الليستة ← من الكلام المكتوب
 }
+// ألوان كل باقة
+const PJ_COLORS={A:["روز","بيج","نعناعي"], B:["تركواز","روز","ساج"], HK:["هيلو كيتي"]};
 function kidsPajamaText(text, price){
   const t=String(text||"").replace(/[٠-٩]/g,d=>"٠١٢٣٤٥٦٧٨٩".indexOf(d));
   if(!/(set[\s-]*[ab]\b|hk[\s-]*duo|pajama|بيجام)/i.test(t)) return null;
-  const sizes={}; let n=0; const add=(q,sz)=>{n+=q; if(sz) sizes[sz]=(sizes[sz]||0)+q;};
+  const sizes={}, colors={}; let n=0;
+  const add=(q,sz,v,packs)=>{ n+=q; if(sz) sizes[sz]=(sizes[sz]||0)+q;
+    if(v){ const cs=PJ_COLORS[v]||[]; cs.forEach(c=>colors[c]=(colors[c]||0)+(v==="HK"?q:packs)); } };
+  const vOf=sg=>/hk[\s-]*duo|هيلو/i.test(sg)?"HK":/set[\s-]*b\b|gpb-b|تركواز/i.test(sg)?"B":/set[\s-]*a\b|gpb-a|نعناع/i.test(sg)?"A":"";
   const segs=t.split("|").map(x=>x.trim()).filter(Boolean);
   const coded=segs.filter(sg=>/\bset[\s-]*[ab]\s*·|hk[\s-]*duo|bb-gpb|bb-hk/i.test(sg));
   if(coded.length){
-    coded.forEach(sg=>{const qty=+((sg.match(/qty\s*(\d+)/i)||[])[1]||1), sz=(sg.match(/size\s*(\d+)/i)||[])[1]||"";
-      add((/hk[\s-]*duo|طقمين/i.test(sg)?2:3)*qty, sz);});
-    return {n,sizes};
+    coded.forEach(sg=>{const qty=+((sg.match(/qty\s*(\d+)/i)||[])[1]||1), sz=(sg.match(/size\s*(\d+)/i)||[])[1]||"", v=vOf(sg);
+      add((v==="HK"||/طقمين/.test(sg)?2:3)*qty, sz, v, qty);});
+    return {n,sizes,colors};
   }
-  const named=[...t.matchAll(/set\s*[ab]\s*:\s*(\d+)/gi)];
-  if(named.length>=2){ named.forEach(m=>add(3,m[1])); return {n,sizes}; }
+  const named=[...t.matchAll(/set\s*([ab])\s*:\s*(\d+)/gi)];
+  if(named.length>=2){ named.forEach(m=>add(3,m[2],m[1].toUpperCase(),1)); return {n,sizes,colors}; }
   const pr=parseFloat(String(price??"").replace(/[^\d.]/g,""))||0, sets=pr>=950?2:1;
   const sz=(t.match(/\)\s*(\d{1,2})\s*$/)||t.match(/size\s*(\d+)/i)||[])[1]||"";
-  add(3*sets, sz); return {n,sizes,byPrice:true};
+  add(3*sets, sz, vOf(t), sets); return {n,sizes,colors,byPrice:true};
 }
 function prPieces(contents, price){
   const pj=kidsPajamaParse(contents, price); if(pj) return pj.n;
@@ -7687,6 +7694,8 @@ table.pr tr.bd-cat td{background:var(--slate-l);font-weight:700}
   // (المقاس / الشكل) جوه القوس
   function sizeShape(raw){ const m = String(raw).match(/\(([^)]*)\)/); if(!m || !m[1].includes('/')) return {}; const p = m[1].split('/').map(x => x.trim()).filter(Boolean); return { size:p[0] || '', shape:p.slice(1).join(' / ') || '' }; }
 
+  const rowAdd = (row, q, ss) => { row.pcs = (row.pcs || 0) + q; row.sizes = row.sizes || {}; row.colors = row.colors || {};
+    if(ss.size) row.sizes[ss.size] = (row.sizes[ss.size] || 0) + q; if(ss.shape) row.colors[ss.shape] = (row.colors[ss.shape] || 0) + q; };
   function analyzeBrand(orders){
     const cust = CUST(), out = { products:{}, comps:{}, unknown:{}, ok:0, unk:0, pieces:0, rows:[] };
     const addP = (name, q, ss) => { const p = out.products[name] = out.products[name] || { qty:0, orders:new Set(), sizes:{}, shapes:{} }; p.qty += q;
@@ -7695,11 +7704,14 @@ table.pr tr.bd-cat td{background:var(--slate-l);font-weight:700}
     orders.forEach((o, oi) => {
       const row = { o, items:[], unknown:[] }, oPrice = parseFloat(String(o.total_amount ?? o.price ?? '').replace(/[^\d.]/g, '')) || 0;
       // 🩳 بيجامات Kidzzly / RS: الأوردر كله بيتحسب مرة واحدة (إلا لو فيه قاعدة منك بتطابق)
-      if((B.brand === 'kidzzly' || B.brand === 'rs') && typeof kidsPajamaParse === 'function'){
+      if((B.brand === 'kidzzly' || B.brand === 'rs' || B.brand === 'bloom') && typeof kidsPajamaParse === 'function'){
         const whole = norm(o.shipment_contents || ''), ch0 = cKey.filter(r => ruleHit(r, whole) && priceOk(r, oPrice));
         const pj = ch0.length ? null : kidsPajamaParse(o.shipment_contents, oPrice);
         if(pj){ const p = addP('بيجامة', pj.n, {}); p.orders.add(oi); Object.entries(pj.sizes).forEach(([sz, q]) => p.sizes[sz] = (p.sizes[sz] || 0) + q);
+          Object.entries(pj.colors || {}).forEach(([c, q]) => p.shapes[c] = (p.shapes[c] || 0) + q);
           if(pj.byPrice) p.byPrice = (p.byPrice || 0) + 1;
+          row.pcs = pj.n; row.sizes = { ...pj.sizes }; row.colors = { ...(pj.colors || {}) }; row.byPrice = !!pj.byPrice; row.price = oPrice;
+          if(pj.mention){ pj.mention.sizes.forEach(x => row.sizes[x] = '؟'); pj.mention.colors.forEach(x => row.colors[x] = '؟'); }
           out.pieces += pj.n; out.ok++; row.items.push('بيجامة × ' + pj.n + (pj.byPrice ? ' (العدد من السعر)' : '')); out.rows.push(row); return; }
         if(ch0.length){ ch0.forEach(r => { const q = Number(r.pieces) || 1; addP(r.name, q, {}).orders.add(oi); out.pieces += q; row.items.push(r.name + ' × ' + q); }); out.ok++; out.rows.push(row); return; }
       }
@@ -7709,9 +7721,9 @@ table.pr tr.bd-cat td{background:var(--slate-l);font-weight:700}
         // 1) القواعد بتاعتك الأول
         const ch = cKey.filter(r => ruleHit(r, l) && priceOk(r, oPrice));
         if(ch.length){
-          ch.forEach(r => { let q = (Number(r.pieces) || 1) * mult;
+          ch.forEach(r => { let q = (Number(r.pieces) || 1) * mult; row.pcs = (row.pcs || 0) + 0;
             if(r.perOcc && r.anyN[0]){ const occ = l.split(r.anyN[0]).length - 1; q = (Number(r.pieces) || 1) * Math.max(1, occ); }
-            addP(r.name, q, ss).orders.add(oi); out.pieces += q; row.items.push(r.name + ' × ' + q); });
+            addP(r.name, q, ss).orders.add(oi); out.pieces += q; row.items.push(r.name + ' × ' + q); rowAdd(row, q, ss); });
           out.ok++; return;
         }
         // 2) القواعد الجاهزة
@@ -7719,7 +7731,7 @@ table.pr tr.bd-cat td{background:var(--slate-l);font-weight:700}
         if(hits.length){
           // لو "طقم محبس" اتفهم ما نعدّش "سلسلة ومحبس وحلق" تاني لنفس السطر
           const best = hits.filter((r, i) => !(r.name === 'طقم سلسلة ومحبس وحلق (ايطالي)' && hits.some(h => h.name === 'طقم محبس')));
-          best.forEach(r => { addP(r.name, mult, ss).orders.add(oi); out.pieces += mult; row.items.push(r.name + ' × ' + mult);
+          best.forEach(r => { addP(r.name, mult, ss).orders.add(oi); out.pieces += mult; row.items.push(r.name + ' × ' + mult); rowAdd(row, mult, ss);
             r.items(l).forEach(([n, cat, q]) => { (out.comps[n] = out.comps[n] || { cat, qty:0 }).qty += q * mult; }); });
           out.ok++; return;
         }
@@ -7727,7 +7739,8 @@ table.pr tr.bd-cat td{background:var(--slate-l);font-weight:700}
       });
       // 3) قاعدة السعر بس (من غير كلمات): لو الأوردر فيه سطور مش مفهومة وسعره مطابق ← بتتحسب مرة واحدة للأوردر
       const pr = row.unknown.length ? cPrice.find(r => priceOk(r, oPrice)) : null;
-      if(pr){ const q = Number(pr.pieces) || 1; addP(pr.name, q, {}).orders.add(oi); out.pieces += q; row.items.push(pr.name + ' × ' + q + ' (بالسعر)'); out.ok += row.unknown.length; row.unknown = []; }
+      if(pr){ const q = Number(pr.pieces) || 1; addP(pr.name, q, {}).orders.add(oi); out.pieces += q; row.items.push(pr.name + ' × ' + q + ' (بالسعر)'); rowAdd(row, q, {}); out.ok += row.unknown.length; row.unknown = []; }
+      row.price = oPrice;
       row.unknown.forEach(raw => { out.unk++; out.unknown[raw] = (out.unknown[raw] || 0) + 1; });
       out.rows.push(row);
     });
@@ -7794,6 +7807,7 @@ table.pr tr.bd-cat td{background:var(--slate-l);font-weight:700}
         </table></div>
         ${Object.keys(A.comps).length ? `<h3 style="margin-top:16px">📦 المكونات</h3><div class="tablewrap"><table class="pr"><tr><th>المكوّن</th><th>العدد</th></tr>${Object.entries(A.comps).sort((a, b) => b[1].qty - a[1].qty).map(([n, v]) => `<tr><td class="lbl" style="font-weight:400">${esc(n)}</td><td class="num">${fmt(v.qty)}</td></tr>`).join('')}</table></div>` : ''}
         ${window.XLSX ? '<div class="bd-bar"><button class="bd-btn" data-act="bxlsx">⬇️ Excel</button></div>' : ''}</div>`;
+      h += ordersCard(A);
       if(uN) h += `<div class="card" id="bdUnk"><h3 style="color:#b3423a">⚠️ مش مفهوم — ${fmt(A.unk)} سطر (${fmt(uN)} شكل مختلف)</h3>
         <p class="none" style="margin-bottom:8px">مش داخلين في العدّ. دوس "➕ قاعدة" جنب أي سطر وقولّي ده إيه وكام قطعة — والسيستم هيلتزم بيها في كل مرة.</p>
         <div class="tablewrap" style="max-height:420px;overflow-y:auto"><table class="pr"><tr><th>السطر</th><th>سعر الأوردر</th><th>اتكرر</th><th></th></tr>
@@ -7801,6 +7815,35 @@ table.pr tr.bd-cat td{background:var(--slate-l);font-weight:700}
         </table></div></div>`;
     }
     return h + customRulesCard();
+  }
+  /* 🔍 كل أوردر كام قطعة — بفلتر المقاس واللون/الشكل وعدد القطع */
+  B.f = { size:'', color:'', pcs:'', q:'' };
+  const fRows = A => A.rows.filter(r => { const F = B.f;
+    if(F.size && !(r.sizes && r.sizes[F.size])) return false;
+    if(F.color && !(r.colors && r.colors[F.color])) return false;
+    if(F.pcs && String(r.pcs || 0) !== F.pcs) return false;
+    if(F.q && !(String(r.o.serial) + ' ' + (r.o.full_name || '') + ' ' + (r.o.shipment_contents || '')).toLowerCase().includes(F.q.toLowerCase())) return false;
+    return true; });
+  function ordersCard(A){
+    const sizes = new Set(), colors = new Set(), pcs = new Set();
+    A.rows.forEach(r => { Object.keys(r.sizes || {}).forEach(x => sizes.add(x)); Object.keys(r.colors || {}).forEach(x => colors.add(x)); pcs.add(String(r.pcs || 0)); });
+    const L = fRows(A), tot = L.reduce((s, r) => s + (r.pcs || 0), 0), st = o => String(window.QP.api.label(o) || '').replace(/\s*#\d+$/, '');
+    const sel = (id, v, list, ph) => `<select id="${id}" class="bd-btn"><option value="">${ph}</option>${[...list].sort((a, b) => (+a || 0) - (+b || 0) || String(a).localeCompare(String(b), 'ar')).map(x => `<option ${v === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>`;
+    const kv = o => Object.entries(o || {}).map(([k, q]) => `<span class="bd-chip">${esc(k)} ${q === '؟' ? '<small>(مذكور)</small>' : fmt(q)}</span>`).join('');
+    // ملخص عدد القطع: كام أوردر فيه 3 / 6 / 9 ...
+    const dist = {}; L.forEach(r => { const k = r.pcs || 0; dist[k] = (dist[k] || 0) + 1; });
+    return `<div class="card"><h3>🔍 كل أوردر كام قطعة</h3>
+      <div class="bd-bar">${sel('bfSize', B.f.size, sizes, 'كل المقاسات')}${sel('bfColor', B.f.color, colors, 'كل الألوان / الأشكال')}${sel('bfPcs', B.f.pcs, pcs, 'أي عدد قطع')}
+        <input id="bfQ" class="bd-btn" value="${esc(B.f.q)}" placeholder="🔎 رقم شحنة / اسم / كلمة" style="width:200px">
+        ${B.f.size || B.f.color || B.f.pcs || B.f.q ? '<button class="bd-btn" data-act="bfclear">✕ امسح الفلتر</button>' : ''}</div>
+      <div class="bd-kpis" style="margin:10px 0"><div class="bd-kpi"><div class="n">${fmt(L.length)}</div><div class="l">أوردر</div></div><div class="bd-kpi"><div class="n">${fmt(tot)}</div><div class="l">إجمالي القطع</div></div>
+        <div class="bd-kpi" style="grid-column:span 2"><div class="l" style="margin:0 0 6px">كام أوردر في كل عدد</div>${Object.entries(dist).sort((a, b) => a[0] - b[0]).map(([k, n]) => `<span class="bd-chip">${fmt(+k)} قطع: ${fmt(n)} أوردر</span>`).join('')}</div></div>
+      <div class="tablewrap" style="max-height:520px;overflow-y:auto"><table class="pr"><tr><th>#</th><th>رقم الشحنة</th><th>الحالة</th><th>السعر</th><th>القطع</th><th>المقاسات</th><th>الألوان / الأشكال</th><th>المحتوى</th></tr>
+      ${L.map((r, i) => `<tr><td>${fmt(i + 1)}</td><td style="direction:ltr">${esc(r.o.serial || '')}</td><td>${esc(st(r.o))}</td><td>${fmt(r.price || 0)}</td>
+        <td class="num"><b>${fmt(r.pcs || 0)}</b>${r.byPrice ? '<br><small style="color:var(--muted)">من السعر</small>' : ''}${r.unknown.length ? '<br><small style="color:#b3423a">+ مش مفهوم</small>' : ''}</td>
+        <td style="white-space:normal;text-align:right">${kv(r.sizes) || '—'}</td><td style="white-space:normal;text-align:right">${kv(r.colors) || '—'}</td>
+        <td class="lbl" style="font-weight:400;white-space:normal;max-width:360px;font-size:12px">${esc(String(r.o.shipment_contents || '').slice(0, 160))}</td></tr>`).join('') || '<tr><td colspan="8" class="none">مفيش أوردرات بالفلتر ده.</td></tr>'}
+      <tr class="total"><td colspan="4">الإجمالي</td><td>${fmt(tot)}</td><td colspan="3"></td></tr></table></div></div>`;
   }
   // سعر الأوردر اللي فيه السطر المش مفهوم (عشان تعمل قاعدة بالسعر)
   function unkPrice(line){ const r = B.res && B.res.an.rows.find(x => x.unknown.includes(line)); return r ? String(r.o.total_amount ?? r.o.price ?? '').replace(/\.0+$/, '') : ''; }
@@ -7935,6 +7978,9 @@ table.pr tr.bd-cat td{background:var(--slate-l);font-weight:700}
     const bt = root.querySelector('#bdTo'); if(bt) bt.onchange = () => { B.to = bt.value; };
     const bg = root.querySelector('[data-act=bfetch]'); if(bg) bg.onclick = fetchBrand;
     root.querySelectorAll('[data-bdscope]').forEach(b => b.onclick = () => { B.scope = b.dataset.bdscope; computeB(); draw(); });
+    [['bfSize', 'size'], ['bfColor', 'color'], ['bfPcs', 'pcs']].forEach(([id, k]) => { const e = root.querySelector('#' + id); if(e) e.onchange = () => { B.f[k] = e.value; draw(); }; });
+    const bq = root.querySelector('#bfQ'); if(bq) bq.oninput = () => { B.f.q = bq.value; clearTimeout(B.qt); B.qt = setTimeout(() => { draw(); const e = document.getElementById('bfQ'); if(e){ e.focus(); e.setSelectionRange(e.value.length, e.value.length); } }, 350); };
+    const bfc = root.querySelector('[data-act=bfclear]'); if(bfc) bfc.onclick = () => { B.f = { size:'', color:'', pcs:'', q:'' }; draw(); };
     const unkKeys = B.res ? Object.entries(B.res.an.unknown).sort((a, b) => b[1] - a[1]).map(x => x[0]) : [];
     root.querySelectorAll('[data-bdnew]').forEach(b => b.onclick = () => { const raw = unkKeys[+b.dataset.bdnew] || '';
       const w = norm(raw).split(' ').filter(x => x.length > 2 && !/^\d+$/.test(x))[0] || '';
@@ -7956,7 +8002,7 @@ table.pr tr.bd-cat td{background:var(--slate-l);font-weight:700}
       const A = B.res.an, wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(Object.entries(A.products).map(([n, p]) => ({ 'المنتج':n, 'العدد':p.qty, 'في كام أوردر':p.orders, 'المقاسات':Object.entries(p.sizes).map(([s, q]) => s + ' ' + q).join('، '), 'الأشكال':Object.entries(p.shapes).map(([s, q]) => s + ' ' + q).join('، ') }))), 'المنتجات');
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(Object.entries(A.unknown).map(([l, n]) => ({ 'السطر':l, 'اتكرر':n }))), 'مش مفهوم');
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(A.rows.map(r => ({ 'رقم الشحنة':String(r.o.serial || ''), 'notes':r.o.notes || '', 'المحتوى':r.o.shipment_contents || '', 'اتفهم':r.items.join('، '), 'مش مفهوم':r.unknown.join('، ') }))), 'كل أوردر');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(fRows(A).map(r => ({ 'رقم الشحنة':String(r.o.serial || ''), 'السعر':r.price || 0, 'القطع':r.pcs || 0, 'المقاسات':Object.entries(r.sizes || {}).map(([k, q]) => k + ' ' + q).join('، '), 'الألوان / الأشكال':Object.entries(r.colors || {}).map(([k, q]) => k + ' ' + q).join('، '), 'notes':r.o.notes || '', 'المحتوى':r.o.shipment_contents || '', 'اتفهم':r.items.join('، '), 'مش مفهوم':r.unknown.join('، ') }))), 'كل أوردر');
       XLSX.writeFile(wb, `تفصيص ${B.brand} ${B.from} لـ ${B.to}.xlsx`);
     };
     const ta = root.querySelector('#bdText'); if(ta) ta.oninput = () => { S.text = ta.value; };
