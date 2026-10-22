@@ -747,7 +747,18 @@ const prRatesFor=b=>PR_RATE_OVERRIDES[b]||{ofd:PR_OFD_RATE,hold:PR_HOLD_RATE};
 // براندات تكلفة بضاعتها نسبة ثابتة من المبيعات (بدل 65.2 / 94 للقطعة)
 const PR_COGS_PCT={"bloom":0.45};
 // 🧸 KIDZZLY و 👶 RS KIDS: تكلفة البضاعة = عدد القطع في الطلب × سعر القطعة
-const PR_PIECE_COST={"kidzzly":100,"rs kids":175,"socky":0}; // ⚠️ سوكي: تكلفة القطعة لسه مش متسجلة (0)
+const PR_PIECE_DEF={"kidzzly":100,"rs kids":175,"bloom":0,"socky":0};
+const PR_PIECE_COST=(()=>{try{return {...PR_PIECE_DEF,...JSON.parse(localStorage.getItem('pr_piece_cost')||'{}')};}catch(e){return {...PR_PIECE_DEF};}})();
+// Bloom: لو تكلفة القطعة 0 بيفضل 45% من المبيعات
+function prSetPiece(b,v){PR_PIECE_COST[b]=prNum(v);try{localStorage.setItem('pr_piece_cost',JSON.stringify(PR_PIECE_COST));}catch(e){}
+  if(window.__prLastRows&&document.getElementById('prResults')&&document.getElementById('prResults').style.display==='block')prProcess(window.__prLastRows);}
+const PR_BD_KEY={"kidzzly":"kidzzly","rs kids":"rs","bloom":"bloom","socky":"socky"};
+// عدد القطع: من تحليل المكونات لو متاح، وإلا الطريقة القديمة
+function prPiecesSmart(contents, price, brand){
+  const OB=window.OrderBreakdown;
+  if(OB&&OB.countPieces&&PR_BD_KEY[brand]){ try{ return OB.countPieces(contents, price, PR_BD_KEY[brand]).n; }catch(e){} }
+  return prPieces(contents, price);
+}
 // بيعدّ القطع من خانة المحتوى: القطع مفصولة بـ "+" و "× 2" معناها قطعتين
 // (لو المحتوى فاضي بيستنتج من السعر: 279=1، 728=3، 1000=4، 1248=6)
 /* 🩳 بيجامات الأطفال (منتج واحد والعدد بس اللي بيختلف)
@@ -859,6 +870,9 @@ function prRunReport(){
 
 function prProcess(rows){
   window.__prLastRows=rows;
+  if(window.OrderBreakdown&&OrderBreakdown.rulesReady&&!OrderBreakdown.rulesReady()&&!window.__prRulesLoading){
+    window.__prRulesLoading=true; OrderBreakdown.loadRules().then(()=>{ if(window.__prLastRows)prProcess(window.__prLastRows); });
+  }
   const byBrand={}; PR_BRANDS.forEach(b=>byBrand[b]=[]);
   prUnbranded=[];
   rows.forEach(r=>{const b=prGetBrand(r[PR_notesCol-1]); if(b)byBrand[b].push(r); else prUnbranded.push(r);});
@@ -880,8 +894,9 @@ function prProcess(rows){
     const isRet=r=>{const v=r[PR_returnedCol-1];return v&&String(v).trim()!==""&&String(v).trim()!=="NaT";};
     const shipUndel=undelRows.filter(r=>!isRet(r)).length*PR_UNDEL_SHIP; // 25 ج لكل أوردر بايظ (بدل الشحن الكامل اللي في الشيت)
     const wIns=delivered.filter(r=>prHasInsial(r[PR_contentsCol-1])).length;
-    const pieces=(brand in PR_PIECE_COST)?delivered.reduce((s,r)=>s+prPieces(r[PR_contentsCol-1],r[PR_priceCol-1]),0):0;
-    const cogs=(brand in PR_PIECE_COST)
+    const byPiece=(brand in PR_PIECE_COST)&&+PR_PIECE_COST[brand]>0;
+    const pieces=(brand in PR_PIECE_COST)?delivered.reduce((s,r)=>s+prPiecesSmart(r[PR_contentsCol-1],r[PR_priceCol-1],brand),0):0;
+    const cogs=byPiece
       ? pieces*PR_PIECE_COST[brand]
       : (brand in PR_COGS_PCT)
       ? revenue*PR_COGS_PCT[brand]
@@ -1094,16 +1109,16 @@ function prBuildSummaryTable(){
 function prBuildCountsTable(){
   const t=document.getElementById('prCountsTable');
   const total=PR_BRANDS.reduce((s,b)=>s+prBrandCalc[b].n,0);
-  let h='<tr><th>البراند</th><th>عدد الأوردرات</th></tr>';
-  PR_BRANDS.forEach(b=>{
-    h+=`<tr><td class="lbl">${b.toUpperCase()}${b===PR_SOLO?' ⭐':''}</td><td>${prBrandCalc[b].n}</td></tr>`;
+  let h='<tr><th>البراند</th><th>عدد الأوردرات</th><th>🧩 قطع اتسلمت (للتكلفة)</th></tr>';
+  PR_BRANDS.forEach(b=>{const c=prBrandCalc[b], pc=(b in PR_PIECE_COST)?c.pieces:null;
+    h+=`<tr><td class="lbl">${b.toUpperCase()}${b===PR_SOLO?' ⭐':''}</td><td>${c.n}</td><td>${pc==null?'—':pc+(+PR_PIECE_COST[b]>0?` × ${PR_PIECE_COST[b]} = ${prFmt(pc*PR_PIECE_COST[b])} ج`:' (التكلفة بالنسبة)')}</td></tr>`;
   });
   // 🔎 أي notes مش متعرفة: بالاسم والعدد عشان تقولّي تبع أنهي براند
   const unk={}; prUnbranded.forEach(r=>{const n=String(r[PR_notesCol-1]??'').trim()||'(فاضي)'; unk[n]=(unk[n]||0)+1;});
   const unkL=Object.entries(unk).sort((a,b)=>b[1]-a[1]);
-  h+=`<tr><td class="lbl">بدون براند (غير محسوبة)</td><td>${prUnbranded.length}</td></tr>`;
-  unkL.forEach(([n,c])=>{h+=`<tr><td class="lbl" style="padding-inline-start:22px;color:#b3261e">↳ ${n.replace(/[<>&]/g,'')}</td><td style="color:#b3261e">${c}</td></tr>`;});
-  h+=`<tr class="total"><td class="lbl">الإجمالي (كل الملف)</td><td>${total+prUnbranded.length}</td></tr>`;
+  h+=`<tr><td class="lbl">بدون براند (غير محسوبة)</td><td>${prUnbranded.length}</td><td></td></tr>`;
+  unkL.forEach(([n,c])=>{h+=`<tr><td class="lbl" style="padding-inline-start:22px;color:#b3261e">↳ ${n.replace(/[<>&]/g,'')}</td><td style="color:#b3261e">${c}</td><td></td></tr>`;});
+  h+=`<tr class="total"><td class="lbl">الإجمالي (كل الملف)</td><td>${total+prUnbranded.length}</td><td></td></tr>`;
   t.innerHTML=h;
 }
 
@@ -1450,6 +1465,13 @@ function viewProfits(){
       <div class="kpi">🌐 نت <input class="plainIn" type="number" value="${PR_FIXED.net}" oninput="prSetFixed('net',this.value)"></div>
       <div class="kpi">📱 باقات <input class="plainIn" type="number" value="${PR_FIXED.mobile}" oninput="prSetFixed('mobile',this.value)"></div>
       <div class="kpi">الإجمالي في الشهر: <b id="prFixedTotal">${prFmt(prFixedSum())}</b> ج</div>
+    </div>
+    <div class="uploadrow" style="flex-wrap:wrap;gap:10px;margin-top:10px">
+      <div class="kpi"><b>🧩 تكلفة القطعة</b> (عدد القطع بيتجاب من تحليل المكونات أوتوماتيك):</div>
+      <div class="kpi">🧸 Kidzzly <input class="plainIn" type="number" value="${PR_PIECE_COST.kidzzly}" oninput="prSetPiece('kidzzly',this.value)"></div>
+      <div class="kpi">👶 RS <input class="plainIn" type="number" value="${PR_PIECE_COST['rs kids']}" oninput="prSetPiece('rs kids',this.value)"></div>
+      <div class="kpi">🌸 Bloom <input class="plainIn" type="number" value="${PR_PIECE_COST.bloom||''}" placeholder="0 = 45%" oninput="prSetPiece('bloom',this.value)"></div>
+      <div class="kpi">🧦 Socky <input class="plainIn" type="number" value="${PR_PIECE_COST.socky||''}" placeholder="0" oninput="prSetPiece('socky',this.value)"></div>
     </div>
     <div style="font-size:12.5px;color:var(--muted);margin-top:6px">وكمان تلقائي في التقرير: 📢 الإعلانات من جوجل شيت (DREAM / CARA / FASTPLT / KIDZZLY عمود M / RS عمود P) · 🏆 عمولة البنات من Squad لنفس الفترة · 💔 الهوالك 0.25% من المبيعات.</div>
     <div>
@@ -7606,7 +7628,15 @@ table.pr tr.bd-cat td{background:var(--slate-l);font-weight:700}
 
   function analyze(text){ return analyzeCells(parseCells(text)); }
   // 🔁 بيتستخدم كمان في QP → تحليل المرتجعات (بيدّي ليستة نصوص الأوردرات)
-  window.OrderBreakdown = { analyzeCells: cells => analyzeCells(cells), CATS };
+  window.OrderBreakdown = { analyzeCells: cells => analyzeCells(cells), CATS,
+    // 💰 للأرباح: عدد قطع أوردر بنفس حسبة تحليل المكونات (قواعدك + البيجامات بالسعر + القواعد الجاهزة)
+    // السطور المش مفهومة بتتحسب قطعة لكل سطر (زي الأول)
+    rulesReady: () => B.custom !== null,
+    loadRules: () => loadRules(),
+    countPieces(contents, price, bk){
+      const a = analyzeBrand([{ shipment_contents:contents, total_amount:price }], bk), r = a.rows[0] || { unknown:[] };
+      return { n: a.pieces + r.unknown.reduce((s, raw) => s + itemMult(raw), 0), unknown: r.unknown.length };
+    } };
   function analyzeCells(cells){
     const comps = {}, products = {}, unknown = {}, orders = [];
     let lines = 0, unkLines = 0, sets = 0;
@@ -7672,7 +7702,7 @@ table.pr tr.bd-cat td{background:var(--slate-l);font-weight:700}
       if(error) throw error; B.rulesWhere = 'shared'; }
     catch(e){ B.rulesWhere = 'local'; }
   }
-  const CUST = () => (B.custom || []).filter(r => r.brand === 'all' || r.brand === B.brand).map(r => ({ ...r, anyN:(r.any || []).map(norm).filter(Boolean), allN:(r.all || []).map(norm).filter(Boolean) }));
+  const CUST = (bk = B.brand) => (B.custom || []).filter(r => r.brand === 'all' || r.brand === bk).map(r => ({ ...r, anyN:(r.any || []).map(norm).filter(Boolean), allN:(r.all || []).map(norm).filter(Boolean) }));
   const ruleHit = (r, l) => (!r.allN.length || r.allN.every(w => l.includes(w))) && (!r.anyN.length || r.anyN.some(w => l.includes(w))) && (r.allN.length || r.anyN.length);
   // 💰 شرط السعر: "728" بالظبط، أو "700-750" من لحد، أو "1000+" وأكتر — على إجمالي سعر الأوردر
   function priceRange(v){
@@ -7696,15 +7726,15 @@ table.pr tr.bd-cat td{background:var(--slate-l);font-weight:700}
 
   const rowAdd = (row, q, ss) => { row.pcs = (row.pcs || 0) + q; row.sizes = row.sizes || {}; row.colors = row.colors || {};
     if(ss.size) row.sizes[ss.size] = (row.sizes[ss.size] || 0) + q; if(ss.shape) row.colors[ss.shape] = (row.colors[ss.shape] || 0) + q; };
-  function analyzeBrand(orders){
-    const cust = CUST(), out = { products:{}, comps:{}, unknown:{}, ok:0, unk:0, pieces:0, rows:[] };
+  function analyzeBrand(orders, bk = B.brand){
+    const cust = CUST(bk), out = { products:{}, comps:{}, unknown:{}, ok:0, unk:0, pieces:0, rows:[] };
     const addP = (name, q, ss) => { const p = out.products[name] = out.products[name] || { qty:0, orders:new Set(), sizes:{}, shapes:{} }; p.qty += q;
       if(ss.size) p.sizes[ss.size] = (p.sizes[ss.size] || 0) + q; if(ss.shape) p.shapes[ss.shape] = (p.shapes[ss.shape] || 0) + q; return p; };
     const cKey = cust.filter(r => r.anyN.length || r.allN.length), cPrice = cust.filter(r => !r.anyN.length && !r.allN.length && priceRange(r.price));
     orders.forEach((o, oi) => {
       const row = { o, items:[], unknown:[] }, oPrice = parseFloat(String(o.total_amount ?? o.price ?? '').replace(/[^\d.]/g, '')) || 0;
       // 🩳 بيجامات Kidzzly / RS: الأوردر كله بيتحسب مرة واحدة (إلا لو فيه قاعدة منك بتطابق)
-      if((B.brand === 'kidzzly' || B.brand === 'rs' || B.brand === 'bloom') && typeof kidsPajamaParse === 'function'){
+      if((bk === 'kidzzly' || bk === 'rs' || bk === 'bloom') && typeof kidsPajamaParse === 'function'){
         const whole = norm(o.shipment_contents || ''), ch0 = cKey.filter(r => ruleHit(r, whole) && priceOk(r, oPrice));
         const pj = ch0.length ? null : kidsPajamaParse(o.shipment_contents, oPrice);
         if(pj){ const p = addP('بيجامة', pj.n, {}); p.orders.add(oi); Object.entries(pj.sizes).forEach(([sz, q]) => p.sizes[sz] = (p.sizes[sz] || 0) + q);
@@ -7713,7 +7743,9 @@ table.pr tr.bd-cat td{background:var(--slate-l);font-weight:700}
           row.pcs = pj.n; row.sizes = { ...pj.sizes }; row.colors = { ...(pj.colors || {}) }; row.byPrice = !!pj.byPrice; row.price = oPrice;
           if(pj.mention){ pj.mention.sizes.forEach(x => row.sizes[x] = '؟'); pj.mention.colors.forEach(x => row.colors[x] = '؟'); }
           out.pieces += pj.n; out.ok++; row.items.push('بيجامة × ' + pj.n + (pj.byPrice ? ' (العدد من السعر)' : '')); out.rows.push(row); return; }
-        if(ch0.length){ ch0.forEach(r => { const q = Number(r.pieces) || 1; addP(r.name, q, {}).orders.add(oi); out.pieces += q; row.items.push(r.name + ' × ' + q); }); out.ok++; out.rows.push(row); return; }
+        if(ch0.length){ ch0.forEach(r => { let q = Number(r.pieces) || 1;
+            if(r.perOcc && r.anyN[0]){ const occ = whole.split(r.anyN[0]).length - 1; q = (Number(r.pieces) || 1) * Math.max(1, occ); }
+            addP(r.name, q, {}).orders.add(oi); out.pieces += q; row.items.push(r.name + ' × ' + q); rowAdd(row, q, {}); }); out.ok++; row.price = oPrice; out.rows.push(row); return; }
       }
       splitItems(o.shipment_contents).forEach(raw => {
         const l = norm(raw); if(!l) return;
