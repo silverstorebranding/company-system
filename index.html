@@ -7748,7 +7748,41 @@ table.pr tr.bd-cat td{background:var(--slate-l);font-weight:700}
     return out;
   }
 
+  /* 📂 Bloom: ترفع شيت بدل ما تجيب من QP — السيستم بيدوّر لوحده على عمود المحتوى والسعر والحالة */
+  async function readBrandSheet(file){
+    if(!window.XLSX){ B.msg = 'مكتبة Excel مش متحمّلة، اعمل Refresh.'; B.msgErr = true; draw(); return; }
+    B.loading = true; B.msg = 'بيقرا الشيت...'; B.msgErr = false; draw();
+    try{
+      if(B.custom === null) await loadRules();
+      const wb = XLSX.read(await file.arrayBuffer(), { type:'array' });
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header:1, defval:'', raw:false }).filter(r => r.some(c => String(c).trim()));
+      if(!rows.length) throw new Error('الشيت فاضي');
+      const H = rows[0].map(h => norm(h)), find = (...ns) => H.findIndex(h => ns.some(n => h === norm(n) || h.includes(norm(n))));
+      let cC = find('shipment contents', 'المحتوي', 'الطلب', 'الطلبات', 'product', 'المنتج', 'contents', 'order details');
+      let cP = find('total amount', 'total cost', 'السعر', 'الاجمالي', 'price', 'amount', 'total');
+      const cS = find('status', 'الحاله'), cId = find('serial', 'رقم الشحنه', 'id', 'رقم'), cN = find('full name', 'fullname', 'الاسم', 'العميل', 'name');
+      let body = rows.slice(1);
+      // لو مفيش عناوين معروفة: العمود اللي فيه كلام بيجامات أكتر حاجة
+      if(cC < 0){ const score = i => rows.reduce((s, r) => s + (/(pajama|بيجام|set\s*[ab]|دفايه|دفاية)/i.test(String(r[i] || '')) ? 1 : 0), 0);
+        let best = -1, bs = 0; (rows[0] || []).forEach((_, i) => { const sc = score(i); if(sc > bs){ bs = sc; best = i; } }); cC = best;
+        if(score(cC) && !/(pajama|بيجام|set\s*[ab]|دفايه)/i.test(String(rows[0][cC] || ''))) {} else body = rows; }
+      if(cC < 0) throw new Error('مالقيتش عمود المحتوى (الطلب) في الشيت');
+      // مفيش عنوان للسعر: العمود اللي أغلبه أرقام بين 100 و 20000
+      if(cP < 0){ let best = -1, bs = 0; (rows[0] || []).forEach((_, i) => { if(i === cC) return;
+        const sc = body.filter(r => { const v = parseFloat(String(r[i] || '').replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/[^\d.]/g, '')); return v >= 100 && v <= 20000; }).length;
+        if(sc > bs){ bs = sc; best = i; } }); if(bs >= Math.max(1, body.length * 0.6)) cP = best; }
+      const stCode = t => { t = String(t || '').toLowerCase(); if(!t) return '';
+        if(/undeliver|مستلمش|reject|مرفوض|cancel|ملغ|return|مرتجع/.test(t)) return '5'; if(/deliver|اتسلم|تم التسليم|collected/.test(t)) return '3';
+        if(/hold|هولد/.test(t)) return '4'; if(/out for|مع المندوب|shipping|shipped/.test(t)) return '2'; if(/pending|confirm|new|جديد|بيندنج/.test(t)) return '1'; return ''; };
+      B.all = body.map((r, i) => ({ serial: cId >= 0 ? String(r[cId] || '') : '#' + (i + 1), full_name: cN >= 0 ? r[cN] : '', notes:'bloom',
+        shipment_contents: String(r[cC] || ''), total_amount: cP >= 0 ? r[cP] : '', Order_Delivery_Status: cS >= 0 ? stCode(r[cS]) : '', order_date:'' })).filter(o => o.shipment_contents.trim());
+      B.sheetName = file.name; B.noStatus = cS < 0; B.msg = `📂 اتقرا ${B.all.length} أوردر من "${file.name}"${cP < 0 ? ' — ⚠️ مالقيتش عمود السعر، فالعدد هيتحسب من المكتوب بس' : ''}${cS < 0 ? ' — مفيش عمود حالة' : ''}.`;
+      computeB();
+    }catch(e){ B.msg = 'مقدرتش أقرا الشيت: ' + e.message; B.msgErr = true; }
+    B.loading = false; const fi = document.getElementById('bdSheet'); if(fi) fi.value = ''; draw();
+  }
   async function fetchBrand(){
+    B.sheetName = '';
     const api = window.QP && window.QP.api;
     if(!api || !api.hasCreds()){ B.msg = '⚠️ لازم تكون عامل دخول QP من قسم 🚚 QP على الجهاز ده.'; B.msgErr = true; draw(); return; }
     B.loading = true; B.msg = 'بيجيب أوردرات QP...'; B.msgErr = false; draw();
@@ -7760,8 +7794,8 @@ table.pr tr.bd-cat td{background:var(--slate-l);font-weight:700}
     B.loading = false; draw();
   }
   function computeB(){
-    if(!B.all) return;
-    const api = window.QP.api, br = BRANDS.find(x => x.k === B.brand);
+    if(!B.all){ B.res = null; return; }
+    const api = (window.QP && window.QP.api) || { category:o => String(o.Order_Delivery_Status) === '3' ? 'delivered' : 'other', label:o => String(o.Order_Delivery_Status || '—') }, br = BRANDS.find(x => x.k === B.brand);
     const L = B.all.filter(o => br.test(brandOfNote(o.notes)));
     // حالة كل أوردر بالكود بتاع QP: 1 Pending · 2 مع المندوب · 3 اتسلم · 4 Hold · 5 Undelivered · 6 مرفوض — ولو ليه تاريخ إرجاع = رجع
     const code = o => String(o.Order_Delivery_Status ?? '').trim();
@@ -7782,7 +7816,9 @@ table.pr tr.bd-cat td{background:var(--slate-l);font-weight:700}
         <label>من <input type="date" id="bdFrom" value="${esc(B.from)}" class="bd-btn" style="padding:6px 8px"></label>
         <label>لـ <input type="date" id="bdTo" value="${esc(B.to)}" class="bd-btn" style="padding:6px 8px"></label>
         <button class="bd-btn pri" data-act="bfetch" ${B.loading ? 'disabled' : ''}>${B.loading ? '⏳ بيجيب...' : '🔍 هات أوردرات الفترة'}</button>
-      </div></div>`;
+        ${B.brand === 'bloom' ? `<label class="bd-btn" style="cursor:pointer">📂 أو ارفع شيت Bloom<input type="file" id="bdSheet" accept=".xlsx,.xls,.csv" style="display:none"></label>` : ''}
+      </div>${B.brand === 'bloom' && B.sheetName ? `<p class="none" style="margin:8px 0 0">📂 شغال على الشيت: <b>${esc(B.sheetName)}</b> — دوس "🔍 هات أوردرات الفترة" عشان ترجع لـ QP.</p>` : ''}
+      ${B.brand === 'bloom' ? '<p class="none" style="margin:6px 0 0">الشيت: أول صف عناوين — السيستم بيدوّر على عمود المحتوى/الطلب، والسعر (total amount / Total Cost / السعر)، والحالة لو موجودة.</p>' : ''}</div>`;
     if(B.msg) h += `<div class="bd-msg ${B.msgErr ? 'err' : ''}">${esc(B.msg)}</div>`;
     const R = B.res;
     if(R){
@@ -7794,6 +7830,7 @@ table.pr tr.bd-cat td{background:var(--slate-l);font-weight:700}
         <div class="bd-kpi"><div class="n" style="color:#2b6cb0">${fmt(R.K.hold)}</div><div class="l">✋ Hold</div></div>
         <div class="bd-kpi"><div class="n" style="color:#b3423a">${fmt(R.K.undel + R.K.rej)}</div><div class="l">💔 Undelivered${R.K.rej ? ` (منهم مرفوض ${fmt(R.K.rej)})` : ''}</div></div>
         ${R.K.ret ? `<div class="bd-kpi"><div class="n" style="color:#6b7186">${fmt(R.K.ret)}</div><div class="l">↩️ رجع للمخزن</div></div>` : ''}
+        ${R.K.other ? `<div class="bd-kpi"><div class="n" style="color:var(--muted)">${fmt(R.K.other)}</div><div class="l">❔ حالة مش معروفة${B.sheetName ? ' (من الشيت)' : ''}</div></div>` : ''}
         <div class="bd-kpi"><div class="n">${fmt(A.pieces)}</div><div class="l">🧩 قطعة اتعدّت (100%)</div></div>
         <div class="bd-kpi ${A.unk ? 'bad' : ''}" ${A.unk ? 'data-act="to-unk"' : ''}><div class="n">${fmt(A.unk)}</div><div class="l">${A.unk ? '⚠️ سطر مش مفهوم · دوس' : '✅ كله اتفهم'}</div></div></div>
         <div class="card"><div class="bd-bar" style="margin:0">حالات الأوردرات: ${Object.entries(R.st).sort((a, b) => b[1] - a[1]).map(([s, n]) => `<span class="bd-chip">${esc(s)} ${fmt(n)}</span>`).join('')}</div>
@@ -7973,10 +8010,11 @@ table.pr tr.bd-cat td{background:var(--slate-l);font-weight:700}
 
   function wire(root){
     root.querySelectorAll('[data-bdtab]').forEach(b => b.onclick = () => { S.tab = b.dataset.bdtab; draw(); if(S.tab === 'brand' && B.custom === null) loadRules().then(draw); });
-    root.querySelectorAll('[data-bdb]').forEach(b => b.onclick = () => { B.brand = b.dataset.bdb; computeB(); draw(); });
+    root.querySelectorAll('[data-bdb]').forEach(b => b.onclick = () => { B.brand = b.dataset.bdb; if(B.sheetName && B.brand !== 'bloom'){ B.all = null; B.res = null; B.sheetName = ''; B.msg = 'دوس "🔍 هات أوردرات الفترة" عشان تجيب من QP.'; B.msgErr = false; } computeB(); draw(); });
     const bf = root.querySelector('#bdFrom'); if(bf) bf.onchange = () => { B.from = bf.value; };
     const bt = root.querySelector('#bdTo'); if(bt) bt.onchange = () => { B.to = bt.value; };
     const bg = root.querySelector('[data-act=bfetch]'); if(bg) bg.onclick = fetchBrand;
+    const bs = root.querySelector('#bdSheet'); if(bs) bs.onchange = e => { const f = e.target.files[0]; if(f) readBrandSheet(f); };
     root.querySelectorAll('[data-bdscope]').forEach(b => b.onclick = () => { B.scope = b.dataset.bdscope; computeB(); draw(); });
     [['bfSize', 'size'], ['bfColor', 'color'], ['bfPcs', 'pcs']].forEach(([id, k]) => { const e = root.querySelector('#' + id); if(e) e.onchange = () => { B.f[k] = e.value; draw(); }; });
     const bq = root.querySelector('#bfQ'); if(bq) bq.oninput = () => { B.f.q = bq.value; clearTimeout(B.qt); B.qt = setTimeout(() => { draw(); const e = document.getElementById('bfQ'); if(e){ e.focus(); e.setSelectionRange(e.value.length, e.value.length); } }, 350); };
