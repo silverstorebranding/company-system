@@ -7602,8 +7602,165 @@ table.pr tr.bd-cat td{background:var(--slate-l);font-weight:700}
     return { orders, comps, products, unknown, lines, unkLines, sets };
   }
 
+  /* =====================================================================
+     🏷️ تحليل حسب البراند من QP: تختار البراند والفترة ← عدد الأوردرات / اتسلم / ماتسلمش
+     ← تفصيص المحتوى (اللي اتفهم 100% + اللي مش مفهوم تحت) ← وقواعد جديدة بتكتبها إنت
+     ===================================================================== */
+  const BRANDS = [
+    { k:'italy',   l:'💍 إيطالي', test:b => ['dream','dream msg site','dream wa','msg','fastplt','cara silver','cara silver un','cara wa','squad','lo gel nails'].includes(b) },
+    { k:'kidzzly', l:'🧸 Kidzzly', test:b => b === 'kidzzly' },
+    { k:'rs',      l:'👶 RS',      test:b => b === 'rs kids' },
+    { k:'bloom',   l:'🌸 Bloom',   test:b => b === 'bloom' },
+    { k:'socky',   l:'🧦 Socky',   test:b => b === 'socky' },
+  ];
+  const brandOfNote = n => { let b = null; try{ b = prGetBrand(n); }catch(e){} if(!b && /^(sock|سوك)/i.test(String(n || '').trim())) b = 'socky'; return b; };
+  // قواعد إضافية للفضة (أسماء منتجات Squad و QP)
+  const EXTRA = [
+    { name:'طقم محبس', all:['طقم', 'محبس'], set:true, jewelry:true, items: () => [['سلسلة', 'j', 1], ['محبس', 'j', 1], ['حلق', 'j', 1], ['علبة طقم', 'p', 1]] },
+    { name:'طقم فص', all:['طقم', 'فص'], set:true, jewelry:true, items: () => [['سلسلة فص', 'j', 1], ['خاتم فص', 'j', 1], ['حلق فص', 'j', 1], ['علبة طقم', 'p', 1]] },
+  ].map(r => ({ ...r, all:(r.all || []).map(norm), any:(r.any || []).map(norm) }));
+  const RULES_KV = 'bd_rules';
+  const B = { brand:'italy', from:'', to:'', list:null, loading:false, msg:'', msgErr:false, scope:'all', custom:null, editing:null, res:null };
+  (() => { const d = new Date(), f = new Date(d); f.setDate(d.getDate() - 7); const y = x => x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0'); B.from = y(f); B.to = y(d); })();
+  const sbB = () => window.__sbClient || (window.AuthGate && window.AuthGate.sb);
+  async function loadRules(){
+    try{ const { data, error } = await sbB().from('app_kv').select('*').eq('key', RULES_KV).maybeSingle(); if(error) throw error; B.custom = (data && data.value && data.value.list) || []; B.rulesWhere = 'shared'; }
+    catch(e){ try{ B.custom = JSON.parse(localStorage.getItem(RULES_KV) || '[]'); }catch(_){ B.custom = []; } B.rulesWhere = 'local'; }
+  }
+  async function saveRules(){
+    try{ localStorage.setItem(RULES_KV, JSON.stringify(B.custom)); }catch(e){}
+    try{ const m = (window.AuthGate && window.AuthGate.me && window.AuthGate.me()) || {};
+      const { error } = await sbB().from('app_kv').upsert({ key:RULES_KV, value:{ list:B.custom }, updated_at:new Date().toISOString(), updated_by_name:m.full_name || m.username || '' });
+      if(error) throw error; B.rulesWhere = 'shared'; }
+    catch(e){ B.rulesWhere = 'local'; }
+  }
+  const CUST = () => (B.custom || []).filter(r => r.brand === 'all' || r.brand === B.brand).map(r => ({ ...r, anyN:(r.any || []).map(norm).filter(Boolean), allN:(r.all || []).map(norm).filter(Boolean) }));
+  const ruleHit = (r, l) => (!r.allN.length || r.allN.every(w => l.includes(w))) && (!r.anyN.length || r.anyN.some(w => l.includes(w))) && (r.allN.length || r.anyN.length);
+
+  // تقسيم محتوى الأوردر لقطع: "+" أو سطر جديد، و"× 3" = 3
+  function splitItems(text){
+    return String(text || '').replace(/\r/g, '').split(/\s*\+\s*|\n+/).map(x => x.trim()).filter(Boolean);
+  }
+  function itemMult(raw){ const t = String(raw).replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)); const m = t.match(/[×xX\*]\s*(\d{1,2})\s*$/) || t.match(/عدد\s*(\d{1,2})/); return m ? Math.max(1, +m[1]) : 1; }
+  // (المقاس / الشكل) جوه القوس
+  function sizeShape(raw){ const m = String(raw).match(/\(([^)]*)\)/); if(!m || !m[1].includes('/')) return {}; const p = m[1].split('/').map(x => x.trim()).filter(Boolean); return { size:p[0] || '', shape:p.slice(1).join(' / ') || '' }; }
+
+  function analyzeBrand(orders){
+    const cust = CUST(), out = { products:{}, comps:{}, unknown:{}, ok:0, unk:0, pieces:0, rows:[] };
+    const addP = (name, q, ss) => { const p = out.products[name] = out.products[name] || { qty:0, orders:new Set(), sizes:{}, shapes:{} }; p.qty += q;
+      if(ss.size) p.sizes[ss.size] = (p.sizes[ss.size] || 0) + q; if(ss.shape) p.shapes[ss.shape] = (p.shapes[ss.shape] || 0) + q; return p; };
+    orders.forEach((o, oi) => {
+      const row = { o, items:[], unknown:[] };
+      splitItems(o.shipment_contents).forEach(raw => {
+        const l = norm(raw); if(!l) return;
+        const mult = itemMult(raw), ss = sizeShape(raw);
+        // 1) القواعد بتاعتك الأول
+        const ch = cust.filter(r => ruleHit(r, l));
+        if(ch.length){
+          ch.forEach(r => { let q = (Number(r.pieces) || 1) * mult;
+            if(r.perOcc && r.anyN[0]){ const occ = l.split(r.anyN[0]).length - 1; q = (Number(r.pieces) || 1) * Math.max(1, occ); }
+            addP(r.name, q, ss).orders.add(oi); out.pieces += q; row.items.push(r.name + ' × ' + q); });
+          out.ok++; return;
+        }
+        // 2) القواعد الجاهزة
+        const hits = EXTRA.concat(RN).filter(r => (!r.all.length || r.all.every(w => l.includes(w))) && (!r.any.length || r.any.some(w => l.includes(w))));
+        if(hits.length){
+          // لو "طقم محبس" اتفهم ما نعدّش "سلسلة ومحبس وحلق" تاني لنفس السطر
+          const best = hits.filter((r, i) => !(r.name === 'طقم سلسلة ومحبس وحلق (ايطالي)' && hits.some(h => h.name === 'طقم محبس')));
+          best.forEach(r => { addP(r.name, mult, ss).orders.add(oi); out.pieces += mult; row.items.push(r.name + ' × ' + mult);
+            r.items(l).forEach(([n, cat, q]) => { (out.comps[n] = out.comps[n] || { cat, qty:0 }).qty += q * mult; }); });
+          out.ok++; return;
+        }
+        out.unk++; row.unknown.push(raw); out.unknown[raw] = (out.unknown[raw] || 0) + 1;
+      });
+      out.rows.push(row);
+    });
+    Object.values(out.products).forEach(p => p.orders = p.orders.size);
+    return out;
+  }
+
+  async function fetchBrand(){
+    const api = window.QP && window.QP.api;
+    if(!api || !api.hasCreds()){ B.msg = '⚠️ لازم تكون عامل دخول QP من قسم 🚚 QP على الجهاز ده.'; B.msgErr = true; draw(); return; }
+    B.loading = true; B.msg = 'بيجيب أوردرات QP...'; B.msgErr = false; draw();
+    try{
+      if(B.custom === null) await loadRules();
+      const L = await api.fetchRange(B.from, B.to, n => { B.msg = `بيجيب... ${n} أوردر`; draw(); });
+      B.all = L; B.msg = ''; computeB();
+    }catch(e){ B.msg = 'مقدرتش أجيب من QP: ' + e.message; B.msgErr = true; }
+    B.loading = false; draw();
+  }
+  function computeB(){
+    if(!B.all) return;
+    const api = window.QP.api, br = BRANDS.find(x => x.k === B.brand);
+    const L = B.all.filter(o => br.test(brandOfNote(o.notes)));
+    const del = L.filter(o => api.category(o) === 'delivered');
+    const st = {}; L.forEach(o => { const s = String(api.label(o) || '').replace(/\s*#\d+$/, ''); st[s] = (st[s] || 0) + 1; });
+    const scoped = B.scope === 'del' ? del : B.scope === 'notdel' ? L.filter(o => api.category(o) !== 'delivered') : L;
+    B.list = L; B.res = { total:L.length, del:del.length, notdel:L.length - del.length, st, an:analyzeBrand(scoped), scoped:scoped.length };
+  }
+
+  function brandView(){
+    let h = `<div class="card"><div class="bd-bar" style="margin:0 0 10px">${BRANDS.map(b => `<button class="bd-btn ${B.brand === b.k ? 'pri' : ''}" data-bdb="${b.k}" style="${B.brand === b.k ? '' : 'padding:9px 16px;font-size:14.5px'}">${b.l}</button>`).join('')}</div>
+      <div class="bd-bar">
+        <label>من <input type="date" id="bdFrom" value="${esc(B.from)}" class="bd-btn" style="padding:6px 8px"></label>
+        <label>لـ <input type="date" id="bdTo" value="${esc(B.to)}" class="bd-btn" style="padding:6px 8px"></label>
+        <button class="bd-btn pri" data-act="bfetch" ${B.loading ? 'disabled' : ''}>${B.loading ? '⏳ بيجيب...' : '🔍 هات أوردرات الفترة'}</button>
+      </div></div>`;
+    if(B.msg) h += `<div class="bd-msg ${B.msgErr ? 'err' : ''}">${esc(B.msg)}</div>`;
+    const R = B.res;
+    if(R){
+      const A = R.an, uN = Object.keys(A.unknown).length, totItems = A.ok + A.unk;
+      h += `<div class="bd-kpis">
+        <div class="bd-kpi"><div class="n">${fmt(R.total)}</div><div class="l">أوردر ${esc(BRANDS.find(b => b.k === B.brand).l)} في الفترة</div></div>
+        <div class="bd-kpi"><div class="n" style="color:#2f7d55">${fmt(R.del)}</div><div class="l">✅ اتسلم (${R.total ? Math.round(R.del / R.total * 100) : 0}%)</div></div>
+        <div class="bd-kpi"><div class="n" style="color:#b3423a">${fmt(R.notdel)}</div><div class="l">❌ ماتسلمش</div></div>
+        <div class="bd-kpi"><div class="n">${fmt(A.pieces)}</div><div class="l">🧩 قطعة اتعدّت (100%)</div></div>
+        <div class="bd-kpi ${A.unk ? 'bad' : ''}" ${A.unk ? 'data-act="to-unk"' : ''}><div class="n">${fmt(A.unk)}</div><div class="l">${A.unk ? '⚠️ سطر مش مفهوم · دوس' : '✅ كله اتفهم'}</div></div></div>
+        <div class="card"><div class="bd-bar" style="margin:0">حالات الأوردرات: ${Object.entries(R.st).sort((a, b) => b[1] - a[1]).map(([s, n]) => `<span class="bd-chip">${esc(s)} ${fmt(n)}</span>`).join('')}</div>
+        <div class="bd-bar">فصّص مكونات: ${[['all', '📦 كل الأوردرات'], ['del', '✅ المتسلّم بس'], ['notdel', '❌ اللي ماتسلمش']].map(([k, l]) => `<button class="bd-btn ${B.scope === k ? 'pri' : ''}" data-bdscope="${k}" style="${B.scope === k ? 'padding:7px 13px;font-size:13.5px' : ''}">${l}</button>`).join('')}
+          <span style="font-size:12.5px;color:var(--muted)">(${fmt(R.scoped)} أوردر · ${fmt(totItems)} سطر)</span></div></div>`;
+      const prods = Object.entries(A.products).sort((a, b) => b[1].qty - a[1].qty);
+      h += `<div class="card"><h3>✅ اللي اتفهم 100% — ${fmt(A.pieces)} قطعة</h3><div class="tablewrap"><table class="pr bd-big"><tr><th>المنتج</th><th>العدد</th><th>في كام أوردر</th><th>حسب المقاس</th><th>حسب الشكل</th></tr>
+        ${prods.map(([n, p]) => `<tr><td class="lbl">${esc(n)}</td><td class="q">${fmt(p.qty)}</td><td>${fmt(p.orders)}</td>
+          <td style="white-space:normal;text-align:right">${Object.entries(p.sizes).sort((a, b) => b[1] - a[1]).map(([s, q]) => `<span class="bd-chip">${esc(s)} ${fmt(q)}</span>`).join('') || '—'}</td>
+          <td style="white-space:normal;text-align:right">${Object.entries(p.shapes).sort((a, b) => b[1] - a[1]).slice(0, 30).map(([s, q]) => `<span class="bd-chip">${esc(s)} ${fmt(q)}</span>`).join('') || '—'}</td></tr>`).join('') || '<tr><td colspan="5" class="none">—</td></tr>'}
+        </table></div>
+        ${Object.keys(A.comps).length ? `<h3 style="margin-top:16px">📦 المكونات</h3><div class="tablewrap"><table class="pr"><tr><th>المكوّن</th><th>العدد</th></tr>${Object.entries(A.comps).sort((a, b) => b[1].qty - a[1].qty).map(([n, v]) => `<tr><td class="lbl" style="font-weight:400">${esc(n)}</td><td class="num">${fmt(v.qty)}</td></tr>`).join('')}</table></div>` : ''}
+        ${window.XLSX ? '<div class="bd-bar"><button class="bd-btn" data-act="bxlsx">⬇️ Excel</button></div>' : ''}</div>`;
+      if(uN) h += `<div class="card" id="bdUnk"><h3 style="color:#b3423a">⚠️ مش مفهوم — ${fmt(A.unk)} سطر (${fmt(uN)} شكل مختلف)</h3>
+        <p class="none" style="margin-bottom:8px">مش داخلين في العدّ. دوس "➕ قاعدة" جنب أي سطر وقولّي ده إيه وكام قطعة — والسيستم هيلتزم بيها في كل مرة.</p>
+        <div class="tablewrap" style="max-height:420px;overflow-y:auto"><table class="pr"><tr><th>السطر</th><th>اتكرر</th><th></th></tr>
+        ${Object.entries(A.unknown).sort((a, b) => b[1] - a[1]).map(([l, n], i) => `<tr><td class="lbl" style="font-weight:400;white-space:normal">${esc(l)}</td><td>${fmt(n)}</td><td><button class="bd-btn" data-bdnew="${i}">➕ قاعدة</button></td></tr>`).join('')}
+        </table></div></div>`;
+    }
+    return h + customRulesCard();
+  }
+  function customRulesCard(){
+    const L = B.custom || [], E = B.editing;
+    let h = `<div class="card" id="bdRules"><h3 style="display:flex;justify-content:space-between;align-items:center">✍️ قواعدك (${fmt(L.length)})
+        <button class="bd-btn" data-act="rnew">➕ قاعدة جديدة</button></h3>
+      <p class="none" style="margin:0 0 8px">القاعدة: لو السطر فيه الكلمات دي ← يبقى المنتج ده × عدد قطع. قواعدك بتتطبق <b>قبل</b> القواعد الجاهزة. ${B.rulesWhere === 'local' ? '⚠️ متسجلة على الجهاز ده بس (شغّل SQL الصلاحيات عشان تبقى لكل الناس).' : ''}</p>`;
+    if(E){
+      h += `<div class="card" style="border:2px solid var(--brass);margin:8px 0"><div class="bd-bar" style="flex-wrap:wrap;gap:10px">
+        <label>اسم المنتج <input id="rName" class="bd-btn" value="${esc(E.name || '')}" placeholder="مثلاً: دفاية" style="width:160px"></label>
+        <label>البراند <select id="rBrand" class="bd-btn">${[['all', 'كل البراندات']].concat(BRANDS.map(b => [b.k, b.l])).map(([k, l]) => `<option value="${k}" ${E.brand === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+        <label>لو فيه أي كلمة من (افصل بفاصلة) <input id="rAny" class="bd-btn" value="${esc((E.any || []).join('، '))}" placeholder="دفايه، دفاية" style="width:220px"></label>
+        <label>ولازم كمان يكون فيه (اختياري) <input id="rAll" class="bd-btn" value="${esc((E.all || []).join('، '))}" style="width:160px"></label>
+        <label>عدد القطع <input id="rPcs" class="bd-btn" type="number" min="1" value="${esc(E.pieces || 1)}" style="width:70px"></label>
+        <label><input type="checkbox" id="rOcc" ${E.perOcc ? 'checked' : ''}> عدّ كل مرة أول كلمة تتكرر في السطر</label>
+      </div>${E.sample ? `<p class="none" style="margin:6px 0 0">السطر: ${esc(E.sample)}</p>` : ''}
+      <div class="bd-bar"><button class="bd-btn pri" data-act="rsave" style="padding:7px 16px;font-size:14px">💾 احفظ القاعدة</button><button class="bd-btn" data-act="rcancel">إلغاء</button></div></div>`;
+    }
+    h += L.length ? `<div class="tablewrap"><table class="pr"><tr><th>المنتج</th><th>البراند</th><th>الكلمات</th><th>القطع</th><th></th></tr>
+      ${L.map((r, i) => `<tr><td class="lbl">${esc(r.name)}</td><td>${esc(r.brand === 'all' ? 'الكل' : (BRANDS.find(b => b.k === r.brand) || {}).l || r.brand)}</td>
+        <td style="white-space:normal">${(r.any || []).length ? 'أي: ' + esc(r.any.join(' / ')) : ''}${(r.all || []).length ? '<br>وكمان: ' + esc(r.all.join(' + ')) : ''}${r.perOcc ? '<br>(بيعدّ التكرار)' : ''}</td>
+        <td>${fmt(r.pieces || 1)}</td><td style="white-space:nowrap"><button class="bd-btn" data-redit="${i}">✏️</button> <button class="bd-btn" data-rdel="${i}">🗑️</button></td></tr>`).join('')}</table></div>` : '<p class="none">لسه مفيش قواعد منك.</p>';
+    return h + '</div>';
+  }
+
   /* ---------- الحالة والرسم ---------- */
-  let S = { text:'', res:null, msg:'', msgErr:false };
+  let S = { text:'', res:null, msg:'', msgErr:false, tab:'brand' };
 
   function draw(){
     if(!isBD()) return;
@@ -7618,7 +7775,10 @@ table.pr tr.bd-cat td{background:var(--slate-l);font-weight:700}
   }
 
   function view(){
-    let h = `<div class="pagehead"><h1>🧩 تحليل مكونات الطلبات</h1><p>الصق عمود "الطلب" من جوجل شيت، والسيستم يفكّ كل طلب لمكوناته ويطلعلك إجمالي اللي خرج من كل حاجة.</p></div>
+    let h = `<div class="pagehead"><h1>🧩 تحليل مكونات الطلبات</h1><p>اختار البراند والفترة، والسيستم يجيب أوردرات QP ويقولك اتسلم كام ويفصّص المكونات — أو الصق عمود الطلب من جوجل شيت.</p></div>
+      <div class="bd-bar" style="margin:0 0 12px"><button class="bd-btn ${S.tab === 'brand' ? 'pri' : ''}" data-bdtab="brand">🏷️ حسب البراند من QP</button><button class="bd-btn ${S.tab === 'paste' ? 'pri' : ''}" data-bdtab="paste">📋 الصق من الشيت</button></div>`;
+    if(S.tab === 'brand') return h + brandView();
+    h += `
       <div class="card">
         <label for="bdText" style="display:block;font-size:13px;font-weight:600;color:var(--muted);margin-bottom:6px">📋 الصق هنا (حدد عمود الطلب في الشيت ← Ctrl+C ← وهنا Ctrl+V)</label>
         <textarea class="bd-ta" id="bdText" placeholder="سلسله ومحبس وحلق ( ايطالي ) + دبله تنجستين هديه&#10;طقم الدفايه&#10;...">${esc(S.text)}</textarea>
@@ -7699,6 +7859,35 @@ table.pr tr.bd-cat td{background:var(--slate-l);font-weight:700}
   }
 
   function wire(root){
+    root.querySelectorAll('[data-bdtab]').forEach(b => b.onclick = () => { S.tab = b.dataset.bdtab; draw(); if(S.tab === 'brand' && B.custom === null) loadRules().then(draw); });
+    root.querySelectorAll('[data-bdb]').forEach(b => b.onclick = () => { B.brand = b.dataset.bdb; computeB(); draw(); });
+    const bf = root.querySelector('#bdFrom'); if(bf) bf.onchange = () => { B.from = bf.value; };
+    const bt = root.querySelector('#bdTo'); if(bt) bt.onchange = () => { B.to = bt.value; };
+    const bg = root.querySelector('[data-act=bfetch]'); if(bg) bg.onclick = fetchBrand;
+    root.querySelectorAll('[data-bdscope]').forEach(b => b.onclick = () => { B.scope = b.dataset.bdscope; computeB(); draw(); });
+    const unkKeys = B.res ? Object.entries(B.res.an.unknown).sort((a, b) => b[1] - a[1]).map(x => x[0]) : [];
+    root.querySelectorAll('[data-bdnew]').forEach(b => b.onclick = () => { const raw = unkKeys[+b.dataset.bdnew] || '';
+      const w = norm(raw).split(' ').filter(x => x.length > 2 && !/^\d+$/.test(x))[0] || '';
+      B.editing = { idx:-1, name:'', brand:B.brand, any:w ? [w] : [], all:[], pieces:1, perOcc:false, sample:raw }; draw();
+      const r = document.getElementById('bdRules'); if(r) r.scrollIntoView({ behavior:'smooth' }); });
+    const rn = root.querySelector('[data-act=rnew]'); if(rn) rn.onclick = () => { B.editing = { idx:-1, name:'', brand:B.brand, any:[], all:[], pieces:1, perOcc:false }; draw(); };
+    root.querySelectorAll('[data-redit]').forEach(b => b.onclick = () => { const r = B.custom[+b.dataset.redit]; B.editing = { ...r, idx:+b.dataset.redit }; draw(); });
+    root.querySelectorAll('[data-rdel]').forEach(b => b.onclick = async () => { if(!confirm('تمسح القاعدة دي؟')) return; B.custom.splice(+b.dataset.rdel, 1); await saveRules(); computeB(); draw(); });
+    const rc = root.querySelector('[data-act=rcancel]'); if(rc) rc.onclick = () => { B.editing = null; draw(); };
+    const rs = root.querySelector('[data-act=rsave]'); if(rs) rs.onclick = async () => {
+      const g = id => root.querySelector('#' + id), split = v => String(v || '').split(/[،,]/).map(x => x.trim()).filter(Boolean);
+      const r = { name:g('rName').value.trim(), brand:g('rBrand').value, any:split(g('rAny').value), all:split(g('rAll').value), pieces:Math.max(1, +g('rPcs').value || 1), perOcc:g('rOcc').checked };
+      if(!r.name || (!r.any.length && !r.all.length)){ alert('اكتب اسم المنتج وكلمة واحدة على الأقل.'); return; }
+      B.custom = B.custom || []; if(B.editing.idx >= 0) B.custom[B.editing.idx] = r; else B.custom.push(r);
+      B.editing = null; await saveRules(); computeB(); B.msg = '✅ القاعدة اتحفظت واتطبقت.'; B.msgErr = false; draw();
+    };
+    const bx = root.querySelector('[data-act=bxlsx]'); if(bx) bx.onclick = () => {
+      const A = B.res.an, wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(Object.entries(A.products).map(([n, p]) => ({ 'المنتج':n, 'العدد':p.qty, 'في كام أوردر':p.orders, 'المقاسات':Object.entries(p.sizes).map(([s, q]) => s + ' ' + q).join('، '), 'الأشكال':Object.entries(p.shapes).map(([s, q]) => s + ' ' + q).join('، ') }))), 'المنتجات');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(Object.entries(A.unknown).map(([l, n]) => ({ 'السطر':l, 'اتكرر':n }))), 'مش مفهوم');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(A.rows.map(r => ({ 'رقم الشحنة':String(r.o.serial || ''), 'notes':r.o.notes || '', 'المحتوى':r.o.shipment_contents || '', 'اتفهم':r.items.join('، '), 'مش مفهوم':r.unknown.join('، ') }))), 'كل أوردر');
+      XLSX.writeFile(wb, `تفصيص ${B.brand} ${B.from} لـ ${B.to}.xlsx`);
+    };
     const ta = root.querySelector('#bdText'); if(ta) ta.oninput = () => { S.text = ta.value; };
     const go = root.querySelector('[data-act=go]'); if(go) go.onclick = () => {
       if(!S.text.trim()){ S.msg = 'الصق الطلبات الأول.'; S.msgErr = true; S.res = null; draw(); return; }
