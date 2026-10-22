@@ -750,7 +750,38 @@ const PR_COGS_PCT={"bloom":0.45};
 const PR_PIECE_COST={"kidzzly":100,"rs kids":175,"socky":0}; // ⚠️ سوكي: تكلفة القطعة لسه مش متسجلة (0)
 // بيعدّ القطع من خانة المحتوى: القطع مفصولة بـ "+" و "× 2" معناها قطعتين
 // (لو المحتوى فاضي بيستنتج من السعر: 279=1، 728=3، 1000=4، 1248=6)
+/* 🩳 بيجامات الأطفال (منتج واحد والعدد بس اللي بيختلف)
+   - الأشكال المهيكلة (EasyOrders): الباقات مفصولة بـ "|": SET-A / SET-B = 3 بيجامات ، HK-DUO (طقمين هيلو كيتي) = 2 — × qty ، والمقاس من "size ٤"
+   - الشكل الإنجليزي: "Set B — 3 pajamas (...)" ← لو مكتوب "Set A: 2 | Set B: 6" يبقى باقتين، وإلا بالسعر: 950 وأكتر = باقتين (6) ، أقل = باقة (3)
+   بيرجّع null لو المحتوى مش بيجامات */
+// 💰 أسعار البيجامات وعدد قطعها (السعر هو المرجع الأساسي)
+const PJ_PRICES={600:3, 699:3, 999:6, 1398:9, 1896:12};
+function kidsPajamaParse(text, price){
+  const r=kidsPajamaText(text, price); if(!r) return null;
+  const pr=Math.round(parseFloat(String(price??"").replace(/[^\d.]/g,""))||0);
+  const hit=Object.keys(PJ_PRICES).map(Number).find(k=>Math.abs(k-pr)<=1);
+  if(hit!=null){ const n=PJ_PRICES[hit]; return { n, sizes: r.n===n ? r.sizes : {}, byPrice: r.n!==n }; }
+  return r; // سعر مش في الليستة ← من الكلام المكتوب
+}
+function kidsPajamaText(text, price){
+  const t=String(text||"").replace(/[٠-٩]/g,d=>"٠١٢٣٤٥٦٧٨٩".indexOf(d));
+  if(!/(set[\s-]*[ab]\b|hk[\s-]*duo|pajama|بيجام)/i.test(t)) return null;
+  const sizes={}; let n=0; const add=(q,sz)=>{n+=q; if(sz) sizes[sz]=(sizes[sz]||0)+q;};
+  const segs=t.split("|").map(x=>x.trim()).filter(Boolean);
+  const coded=segs.filter(sg=>/\bset[\s-]*[ab]\s*·|hk[\s-]*duo|bb-gpb|bb-hk/i.test(sg));
+  if(coded.length){
+    coded.forEach(sg=>{const qty=+((sg.match(/qty\s*(\d+)/i)||[])[1]||1), sz=(sg.match(/size\s*(\d+)/i)||[])[1]||"";
+      add((/hk[\s-]*duo|طقمين/i.test(sg)?2:3)*qty, sz);});
+    return {n,sizes};
+  }
+  const named=[...t.matchAll(/set\s*[ab]\s*:\s*(\d+)/gi)];
+  if(named.length>=2){ named.forEach(m=>add(3,m[1])); return {n,sizes}; }
+  const pr=parseFloat(String(price??"").replace(/[^\d.]/g,""))||0, sets=pr>=950?2:1;
+  const sz=(t.match(/\)\s*(\d{1,2})\s*$/)||t.match(/size\s*(\d+)/i)||[])[1]||"";
+  add(3*sets, sz); return {n,sizes,byPrice:true};
+}
 function prPieces(contents, price){
+  const pj=kidsPajamaParse(contents, price); if(pj) return pj.n;
   const t=String(contents||"").replace(/[٠-٩]/g,d=>"٠١٢٣٤٥٦٧٨٩".indexOf(d)).trim();
   if(t){
     const parts=t.split(/\s*\+\s*|\n+/).map(x=>x.trim()).filter(Boolean);
@@ -7663,6 +7694,15 @@ table.pr tr.bd-cat td{background:var(--slate-l);font-weight:700}
     const cKey = cust.filter(r => r.anyN.length || r.allN.length), cPrice = cust.filter(r => !r.anyN.length && !r.allN.length && priceRange(r.price));
     orders.forEach((o, oi) => {
       const row = { o, items:[], unknown:[] }, oPrice = parseFloat(String(o.total_amount ?? o.price ?? '').replace(/[^\d.]/g, '')) || 0;
+      // 🩳 بيجامات Kidzzly / RS: الأوردر كله بيتحسب مرة واحدة (إلا لو فيه قاعدة منك بتطابق)
+      if((B.brand === 'kidzzly' || B.brand === 'rs') && typeof kidsPajamaParse === 'function'){
+        const whole = norm(o.shipment_contents || ''), ch0 = cKey.filter(r => ruleHit(r, whole) && priceOk(r, oPrice));
+        const pj = ch0.length ? null : kidsPajamaParse(o.shipment_contents, oPrice);
+        if(pj){ const p = addP('بيجامة', pj.n, {}); p.orders.add(oi); Object.entries(pj.sizes).forEach(([sz, q]) => p.sizes[sz] = (p.sizes[sz] || 0) + q);
+          if(pj.byPrice) p.byPrice = (p.byPrice || 0) + 1;
+          out.pieces += pj.n; out.ok++; row.items.push('بيجامة × ' + pj.n + (pj.byPrice ? ' (العدد من السعر)' : '')); out.rows.push(row); return; }
+        if(ch0.length){ ch0.forEach(r => { const q = Number(r.pieces) || 1; addP(r.name, q, {}).orders.add(oi); out.pieces += q; row.items.push(r.name + ' × ' + q); }); out.ok++; out.rows.push(row); return; }
+      }
       splitItems(o.shipment_contents).forEach(raw => {
         const l = norm(raw); if(!l) return;
         const mult = itemMult(raw), ss = sizeShape(raw);
@@ -7748,7 +7788,7 @@ table.pr tr.bd-cat td{background:var(--slate-l);font-weight:700}
           <span style="font-size:12.5px;color:var(--muted)">(${fmt(R.scoped)} أوردر · ${fmt(totItems)} سطر)</span></div></div>`;
       const prods = Object.entries(A.products).sort((a, b) => b[1].qty - a[1].qty);
       h += `<div class="card"><h3>✅ اللي اتفهم 100% — ${fmt(A.pieces)} قطعة</h3><div class="tablewrap"><table class="pr bd-big"><tr><th>المنتج</th><th>العدد</th><th>في كام أوردر</th><th>حسب المقاس</th><th>حسب الشكل</th></tr>
-        ${prods.map(([n, p]) => `<tr><td class="lbl">${esc(n)}</td><td class="q">${fmt(p.qty)}</td><td>${fmt(p.orders)}</td>
+        ${prods.map(([n, p]) => `<tr><td class="lbl">${esc(n)}${p.byPrice ? `<br><small style="font-weight:400;color:var(--muted)">(${fmt(p.byPrice)} أوردر العدد اتحسب من السعر)</small>` : ''}</td><td class="q">${fmt(p.qty)}</td><td>${fmt(p.orders)}</td>
           <td style="white-space:normal;text-align:right">${Object.entries(p.sizes).sort((a, b) => b[1] - a[1]).map(([s, q]) => `<span class="bd-chip">${esc(s)} ${fmt(q)}</span>`).join('') || '—'}</td>
           <td style="white-space:normal;text-align:right">${Object.entries(p.shapes).sort((a, b) => b[1] - a[1]).slice(0, 30).map(([s, q]) => `<span class="bd-chip">${esc(s)} ${fmt(q)}</span>`).join('') || '—'}</td></tr>`).join('') || '<tr><td colspan="5" class="none">—</td></tr>'}
         </table></div>
