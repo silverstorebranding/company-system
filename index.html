@@ -7710,10 +7710,17 @@ table.pr tr.bd-cat td{background:var(--slate-l);font-weight:700}
     if(!B.all) return;
     const api = window.QP.api, br = BRANDS.find(x => x.k === B.brand);
     const L = B.all.filter(o => br.test(brandOfNote(o.notes)));
-    const del = L.filter(o => api.category(o) === 'delivered');
+    // حالة كل أوردر بالكود بتاع QP: 1 Pending · 2 مع المندوب · 3 اتسلم · 4 Hold · 5 Undelivered · 6 مرفوض — ولو ليه تاريخ إرجاع = رجع
+    const code = o => String(o.Order_Delivery_Status ?? '').trim();
+    const kind = o => { const c = code(o); if(c === '3' || api.category(o) === 'delivered') return 'del';
+      if(o.returned_Client_date || o.returned_client_date) return 'ret';
+      return c === '1' ? 'pend' : c === '2' ? 'ofd' : c === '4' ? 'hold' : c === '5' ? 'undel' : c === '6' ? 'rej' : 'other'; };
+    const K = { del:[], pend:[], ofd:[], hold:[], undel:[], ret:[], rej:[], other:[] };
+    L.forEach(o => K[kind(o)].push(o));
     const st = {}; L.forEach(o => { const s = String(api.label(o) || '').replace(/\s*#\d+$/, ''); st[s] = (st[s] || 0) + 1; });
-    const scoped = B.scope === 'del' ? del : B.scope === 'notdel' ? L.filter(o => api.category(o) !== 'delivered') : L;
-    B.list = L; B.res = { total:L.length, del:del.length, notdel:L.length - del.length, st, an:analyzeBrand(scoped), scoped:scoped.length };
+    const scopes = { all:L, del:K.del, notdel:L.filter(o => kind(o) !== 'del'), way:K.pend.concat(K.ofd), hold:K.hold, undel:K.undel.concat(K.ret, K.rej) };
+    const scoped = scopes[B.scope] || L;
+    B.list = L; B.res = { total:L.length, del:K.del.length, notdel:L.length - K.del.length, K:Object.fromEntries(Object.entries(K).map(([k, v]) => [k, v.length])), st, an:analyzeBrand(scoped), scoped:scoped.length };
   }
 
   function brandView(){
@@ -7730,11 +7737,14 @@ table.pr tr.bd-cat td{background:var(--slate-l);font-weight:700}
       h += `<div class="bd-kpis">
         <div class="bd-kpi"><div class="n">${fmt(R.total)}</div><div class="l">أوردر ${esc(BRANDS.find(b => b.k === B.brand).l)} في الفترة</div></div>
         <div class="bd-kpi"><div class="n" style="color:#2f7d55">${fmt(R.del)}</div><div class="l">✅ اتسلم (${R.total ? Math.round(R.del / R.total * 100) : 0}%)</div></div>
-        <div class="bd-kpi"><div class="n" style="color:#b3423a">${fmt(R.notdel)}</div><div class="l">❌ ماتسلمش</div></div>
+        <div class="bd-kpi"><div class="n" style="color:#b7791f">${fmt(R.K.pend + R.K.ofd)}</div><div class="l">⏳ لسه تحت التسليم<br><small>Pending ${fmt(R.K.pend)} · مع المندوب ${fmt(R.K.ofd)}</small></div></div>
+        <div class="bd-kpi"><div class="n" style="color:#2b6cb0">${fmt(R.K.hold)}</div><div class="l">✋ Hold</div></div>
+        <div class="bd-kpi"><div class="n" style="color:#b3423a">${fmt(R.K.undel + R.K.rej)}</div><div class="l">💔 Undelivered${R.K.rej ? ` (منهم مرفوض ${fmt(R.K.rej)})` : ''}</div></div>
+        ${R.K.ret ? `<div class="bd-kpi"><div class="n" style="color:#6b7186">${fmt(R.K.ret)}</div><div class="l">↩️ رجع للمخزن</div></div>` : ''}
         <div class="bd-kpi"><div class="n">${fmt(A.pieces)}</div><div class="l">🧩 قطعة اتعدّت (100%)</div></div>
         <div class="bd-kpi ${A.unk ? 'bad' : ''}" ${A.unk ? 'data-act="to-unk"' : ''}><div class="n">${fmt(A.unk)}</div><div class="l">${A.unk ? '⚠️ سطر مش مفهوم · دوس' : '✅ كله اتفهم'}</div></div></div>
         <div class="card"><div class="bd-bar" style="margin:0">حالات الأوردرات: ${Object.entries(R.st).sort((a, b) => b[1] - a[1]).map(([s, n]) => `<span class="bd-chip">${esc(s)} ${fmt(n)}</span>`).join('')}</div>
-        <div class="bd-bar">فصّص مكونات: ${[['all', '📦 كل الأوردرات'], ['del', '✅ المتسلّم بس'], ['notdel', '❌ اللي ماتسلمش']].map(([k, l]) => `<button class="bd-btn ${B.scope === k ? 'pri' : ''}" data-bdscope="${k}" style="${B.scope === k ? 'padding:7px 13px;font-size:13.5px' : ''}">${l}</button>`).join('')}
+        <div class="bd-bar">فصّص مكونات: ${[['all', '📦 كل الأوردرات'], ['del', '✅ المتسلّم'], ['way', '⏳ تحت التسليم'], ['hold', '✋ Hold'], ['undel', '💔 Undelivered والمرتجع'], ['notdel', '❌ كل اللي ماتسلمش']].map(([k, l]) => `<button class="bd-btn ${B.scope === k ? 'pri' : ''}" data-bdscope="${k}" style="${B.scope === k ? 'padding:7px 13px;font-size:13.5px' : ''}">${l}</button>`).join('')}
           <span style="font-size:12.5px;color:var(--muted)">(${fmt(R.scoped)} أوردر · ${fmt(totItems)} سطر)</span></div></div>`;
       const prods = Object.entries(A.products).sort((a, b) => b[1].qty - a[1].qty);
       h += `<div class="card"><h3>✅ اللي اتفهم 100% — ${fmt(A.pieces)} قطعة</h3><div class="tablewrap"><table class="pr bd-big"><tr><th>المنتج</th><th>العدد</th><th>في كام أوردر</th><th>حسب المقاس</th><th>حسب الشكل</th></tr>
