@@ -1666,6 +1666,11 @@ function viewProfits(){
         <span style="color:#1f7a45">أخضر = مكسب</span><span style="color:#b3261e">أحمر = خسارة</span>
       </div>
     </div>
+    <div class="card"><h3 style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">📋 جدول استرشادي — كل براند: الأرقام وإزاي اتحسبت
+        <span><button class="mockbtn" onclick="prBuildGuide()">🔄 حدّث من الحسبة</button> <button class="mockbtn" onclick="prGuideReset()">↺ رجّع أرقام السيستم</button></span></h3>
+      <p style="font-size:13px;color:var(--muted)">راجع كل رقم: لو شايفه غلط اكتب الصح في الخانة، والإجمالي والربح بيتحسبوا على طول (التعديل هنا للمراجعة بس ومش بيغيّر الجدول الأساسي — قولّي الصح وأظبطه في القواعد). الخانة اللي اتعدلت بتتلوّن.</p>
+      <div id="prGuide"></div>
+    </div>
     <div class="card"><h3>2) الجدول الأساسي — التكاليف والأرباح بعد التوقع (الفعلي + المتوقع)</h3>
       <p style="font-size:13px;color:var(--muted)">المبيعات وشحن التسليمات وتكلفة البضاعة هنا = الفعلي + المتوقع من الأوردرات "تحت التسليم" و"Pending" (35%) و"Hold" (15%) لباقي البراندات (MSG و FASTPLT) — ما عدا DREAM و DREAM MSG SITE و DREAM WA (30% / 10%)، CARA SILVER و CARA SILVER UN و CARA WA (38% / 15%)، RS KIDS (70% / 30%)، وBLOOM (60% / 30%). الأوردرات الـ Pending بتاخد نفس نسبة "تحت التسليم" بالظبط في كل براند. باقي البنود زي ما هي.</p>
       <p style="font-size:13px;color:var(--muted)">تكلفة البضاعة لـ RS KIDS = 50% من مبيعاته، ولـ BLOOM = 45% من مبيعاته (الفعلي والمتوقع).</p>
@@ -1706,11 +1711,6 @@ function viewProfits(){
       <p style="font-size:13px;color:var(--muted)">كل تفاصيل طلب مختلفة، اتكررت كام مرة في الملف كله، واتسلم منها كام. مترتبة من الأكثر للأقل.</p>
       <input id="prItemsFilter" oninput="prFilterItems(this.value)" placeholder="🔍 دوّر في تفاصيل الطلبات… مثلاً: طقم سلسله" style="width:100%;padding:9px 12px;border:1px solid var(--line);border-radius:8px;margin-bottom:10px;background:var(--panel);color:var(--ink)">
       <div class="tablewrap" id="prItemsWrap" style="max-height:480px;overflow-y:auto"></div>
-    </div>
-    <div class="card"><h3 style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">📋 جدول استرشادي — كل براند: الأرقام وإزاي اتحسبت
-        <span><button class="mockbtn" onclick="prBuildGuide()">🔄 حدّث من الحسبة</button> <button class="mockbtn" onclick="prGuideReset()">↺ رجّع أرقام السيستم</button></span></h3>
-      <p style="font-size:13px;color:var(--muted)">راجع كل رقم: لو شايفه غلط اكتب الصح في الخانة، والإجمالي والربح بيتحسبوا على طول (التعديل هنا للمراجعة بس ومش بيغيّر الجدول الأساسي — قولّي الصح وأظبطه في القواعد). الخانة اللي اتعدلت بتتلوّن.</p>
-      <div id="prGuide"></div>
     </div>
     <div class="card"><h3>8) أوردرات الباكدج</h3>
       <p style="font-size:13px;color:var(--muted)">كام أوردر في العمود L مكتوب فيه كلمة "باكدج" وكام لأ — على كل الأوردرات في الملف.</p>
