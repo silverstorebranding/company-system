@@ -134,9 +134,12 @@ table.pr th{background:var(--slate);color:#fff;font-weight:600}
 .gQPh{font-size:14.5px;margin-bottom:8px}
 table.gQPt{background:#fff}table.gQPt th{background:#2c5282}
 table.gQPt tr.gWarn td{background:#fdecea;color:#a3271a}
+.gNote{display:block;color:#8a5a00;font-size:11.5px;white-space:normal;line-height:1.4;margin-top:2px}
+.gEst{margin-top:8px;padding:7px 10px;border-radius:8px;background:#fff8e6;color:#6b4e12;font-size:13px}
 .gUndel{margin-top:8px;padding:7px 10px;border-radius:8px;background:#fdecea;color:#a3271a}
 table.gTbl tr.gExpRow td{background:#eef4fb}
 .gBrand.gAll{border:2px solid var(--brass)}
+.gAov{display:inline-block;background:#2c5282;color:#fff;border-radius:10px;padding:1px 9px;font-size:12.5px;font-weight:700;margin:0 4px}
 .gBrand.gEmpty{opacity:.6}
 .gUnknown{margin-top:14px;padding:12px 14px;border-radius:10px;background:#fff8e6;border:1px solid #f0d9a8;color:#6b4e12;font-size:14px}
 .gUnknown table{margin-top:8px;background:#fff}
@@ -1204,16 +1207,21 @@ function prGuideAtQP(G){
   const pendNames={}; S.pend.forEach(x=>{const t=String(st(x.r)||'').trim()||'(فاضي)'; pendNames[t]=(pendNames[t]||0)+1;});
   const anyPiece=G.m.some(b=>PR_BD_KEY[b]);
   const pcs=L=>L.reduce((s,x)=>s+(PR_BD_KEY[x.b]?prPiecesSmart(x.r[PR_contentsCol-1],x.r[PR_priceCol-1],x.b):0),0);
-  const goods=L=>L.reduce((s,x)=>s+prRowGoods(x.r,x.b),0), val=L=>L.reduce((s,x)=>s+prNum(x.r[PR_priceCol-1]),0);
+  // 💰 السعر: لو مش مكتوب في الشيت (زي أوردرات الـ Pending) بنحسبه بمتوسط سعر الأوردر المتسلم لنفس البراند
+  const avgP=b=>{const c=prBrandCalc[b]; return c&&c.delivered?c.revenue/c.delivered:0;};
+  const priceOf=x=>{const p=prNum(x.r[PR_priceCol-1]); return p>0?p:avgP(x.b);};
+  const noPrice=L=>L.filter(x=>!(prNum(x.r[PR_priceCol-1])>0)).length;
+  const goods=L=>L.reduce((s,x)=>s+prRowGoods(x.r,x.b),0), val=L=>L.reduce((s,x)=>s+priceOf(x),0);
   // النسبة الافتراضية لكل حالة = متوسط نسب البراندات اللي جوه (حسب عدد أوردراتها)
   const defRate=(L,k)=>{ if(k==='undel'||k==='other'||!L.length) return 0; return L.reduce((s,x)=>{const rt=prRatesFor(x.b); return s+(k==='hold'?rt.hold:rt.ofd);},0)/L.length; };
   const pendLbl='⏳ Pending'+(Object.keys(pendNames).some(n=>n.toLowerCase()!=='pending')?`<br><small style="font-weight:400">(${Object.entries(pendNames).map(([n,q])=>String(n).replace(/[<>&"]/g,'')+' '+q).join(' · ')})</small>`:'');
   const F=x=>prFmt(Math.round(x)), saved=(prQPRates()[G.k])||{};
   const labels={pend:pendLbl,ofd:'🛵 مع المندوب',hold:'✋ هولد',undel:'↩️ Undelivered (مرجعش)',other:'❔ حالات تانية'};
   let tot={n:0,p:0,v:0,g:0}, body='', data=[];
-  ['pend','ofd','hold','undel','other'].forEach(k=>{ const L=S[k]; if(!L.length) return; const n=L.length,p=pcs(L),v=val(L),g=goods(L),r0=defRate(L,k), r=saved[k]!=null?saved[k]/100:r0;
+  let estN=0;
+  ['pend','ofd','hold','undel','other'].forEach(k=>{ const L=S[k]; if(!L.length) return; const n=L.length,p=pcs(L),v=val(L),g=goods(L),r0=defRate(L,k), r=saved[k]!=null?saved[k]/100:r0, np=noPrice(L); estN+=np;
     tot.n+=n; tot.p+=p; tot.v+=v; tot.g+=g; data.push({k,n,v,g,def:r0});
-    body+=`<tr class="${k==='undel'?'gWarn':''}"><td class="lbl">${labels[k]}</td><td>${n}</td>${anyPiece?`<td>${F(p)}</td>`:''}<td>${F(v)}</td><td><b>${F(g)}</b></td>
+    body+=`<tr class="${k==='undel'?'gWarn':''}"><td class="lbl">${labels[k]}</td><td>${n}</td>${anyPiece?`<td>${F(p)}</td>`:''}<td>${F(v)}${np?`<br><small class="gNote">(${np} أوردر من غير سعر في الشيت — اتحسبوا × ${G.m.length===1||new Set(L.map(x=>x.b)).size===1?`متوسط ${F(avgP(L[0].b))} ج`:'متوسط سعر كل براند'})</small>`:''}</td><td><b>${F(g)}</b></td>
       <td><input class="gRate ${saved[k]!=null?'gEdited':''}" type="number" min="0" max="100" step="1" value="${Math.round(r*100)}" data-qb="${G.k}" data-qk="${k}">%</td><td data-qen="${G.k}|${k}"></td><td data-qev="${G.k}|${k}"></td></tr>`; });
   if(!tot.n) return '<div class="gQP">🚚 مفيش أوردرات عند QP دلوقتي.</div>';
   const c=window.__gCalc[G.k], allShip=rows.reduce((s,x)=>s+prNum(x.r[PR_shipCol-1]),0), avgShip=c.delivered?c.shipDel/c.delivered:(rows.length?allShip/rows.length:0);
@@ -1222,6 +1230,7 @@ function prGuideAtQP(G){
   return `<div class="gQP"><div class="gQPh">🚚 عند QP دلوقتي — بضاعتك فيهم <b>${F(tot.g)} ج</b>${anyPiece?` (${F(tot.p)} قطعة)`:''}</div>
     <div class="tablewrap"><table class="pr gQPt"><tr><th>الحالة</th><th>أوردرات</th>${anyPiece?'<th>قطع</th>':''}<th>قيمة البيع</th><th>بضاعتك</th><th>نسبة التسليم المتوقعة</th><th>متوقع يتسلم</th><th>بيع متوقع</th></tr>
     ${body}<tr class="total"><td class="lbl">الإجمالي عند QP</td><td>${tot.n}</td>${anyPiece?`<td>${F(tot.p)}</td>`:''}<td>${F(tot.v)}</td><td>${F(tot.g)}</td><td><button class="mockbtn" style="padding:2px 8px;font-size:11.5px" onclick="prQPReset('${G.k}')">↺ الافتراضي</button></td><td data-qen="${G.k}|tot"></td><td data-qev="${G.k}|tot"></td></tr></table></div>
+    ${estN?`<div class="gEst">💡 ${estN} أوردر سعرهم مش مكتوب في الشيت (غالبًا الـ Pending) — اتحسبوا بمتوسط سعر الأوردر المتسلم لنفس البراند${G.m.length===1?` (${F(avgP(G.m[0]))} ج)`:''}.</div>`:''}
     ${S.undel.length?`<div class="gUndel">↩️ <b>${S.undel.length} أوردر Undelivered لسه مرجعوش</b>${anyPiece?` (${F(pcs(S.undel))} قطعة)`:''} — بضاعة ${F(goods(S.undel))} ج لازم ترجعلك. تابعهم مع QP.</div>`:''}</div>`;
 }
 function prQPRecalc(gk){
@@ -1253,8 +1262,10 @@ function prBuildGuide(){
     const rows=PR_GUIDE_ROWS.map(([k,l])=>{const v=Math.round(prGSum(m,b=>prGVal(b,k))*100)/100;
       return `<tr><td class="lbl">${l}</td><td><input class="plainIn gIn" data-gb="${G.k}" data-gk="${k}" type="number" step="0.01" value="${v}" data-orig="${v}"></td><td class="gHow">${prGuideHow(g,k,c,C)}</td></tr>`;}).join('');
     const rev=Math.round(c.revenue*100)/100;
-    h+=`<details class="gBrand ${G.k==='g_italy'?'gAll':''}" ${gi<3?'open':''}><summary><b>${G.l}</b> — ${c.n} أوردر${m.length>1?` <small>(${m.map(b=>b+' '+prBrandCalc[b].n).join(' · ')})</small>`:''} · <span data-gsum="${G.k}"></span></summary>
+    const aov=c.delivered?Math.round(c.revenue/c.delivered):0;
+    h+=`<details class="gBrand ${G.k==='g_italy'?'gAll':''}" ${gi<3?'open':''}><summary><b>${G.l}</b> <span class="gAov">AOV ${prFmt(aov)} ج</span> — ${c.n} أوردر${m.length>1?` <small>(${m.map(b=>b+' '+prBrandCalc[b].n).join(' · ')})</small>`:''} · <span data-gsum="${G.k}"></span></summary>
       <div class="gInfo">📦 <b>الأوردرات:</b> ${c.n} أوردر: ✅ ${c.delivered} اتسلم · ⏳ ${c.pend+c.ofd} تحت التسليم · ✋ ${c.hold} هولد · 💔 ${c.undel} Undelivered · ↩️ ${c.returned} رجع<br>
+        💰 <b>AOV (متوسط سعر الأوردر المتسلم):</b> ${prFmt(aov)} ج${m.length>1?` <small>(${m.filter(b=>prBrandCalc[b].delivered).map(b=>b+' '+prFmt(Math.round(prBrandCalc[b].revenue/prBrandCalc[b].delivered))).join(' · ')})</small>`:''}<br>
         🧩 <b>البضاعة اللي اتسلمت:</b> ${prGuideItems(m)}</div>${prGuideAtQP(g)}
       <div class="tablewrap"><table class="pr gTbl"><tr><th>البند</th><th>الرقم (تقدر تعدّله)</th><th>إزاي اتحسب</th></tr>
         <tr><td class="lbl">📥 المبيعات</td><td><input class="plainIn gIn" data-gb="${G.k}" data-gk="revenue" type="number" step="0.01" value="${rev}" data-orig="${rev}"></td><td class="gHow">مجموع سعر ${c.delivered} أوردر متسلم${c.delivered?` (متوسط الأوردر ${prFmt(Math.round(c.revenue/c.delivered))} ج)`:''}</td></tr>
