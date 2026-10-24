@@ -127,6 +127,13 @@ input[type=file]{flex:1;min-width:200px;padding:9px;border:1px dashed var(--bras
 table.pr{border-collapse:collapse;width:100%;font-size:13px;min-width:640px}
 table.pr th,table.pr td{border:1px solid var(--line);padding:7px 9px;text-align:center;white-space:nowrap}
 table.pr th{background:var(--slate);color:#fff;font-weight:600}
+/* 📋 الجدول الاسترشادي */
+.gBrand{border:1px solid var(--line);border-radius:12px;padding:8px 12px;margin-bottom:12px;background:var(--panel)}
+.gBrand summary{cursor:pointer;font-size:15px;padding:4px 0}
+.gInfo{font-size:13.5px;line-height:1.9;background:var(--slate-l);border-radius:8px;padding:8px 12px;margin:8px 0}
+table.gTbl td.gHow{white-space:normal;text-align:right;font-size:12.5px;color:var(--muted);min-width:320px}
+table.gTbl input.gIn{width:110px;padding:5px 7px;border:1.5px solid var(--line);border-radius:7px;font-family:inherit;font-size:14px;text-align:center}
+table.gTbl input.gIn.gEdited{border-color:#e0a020;background:#fff8e6}
 table.pr td.lbl{text-align:right;font-weight:600;white-space:normal;min-width:170px}
 table.pr tr.total td{background:#ffe699;font-weight:700;color:#1c2321}
 table.pr tr.profit td{background:#d1fae5;font-weight:700;color:#1c2321}
@@ -949,6 +956,7 @@ function prProcess(rows){
     return s+rs.length;
   },0);
 
+  window.__prCtx={days,FX,totalOrders,COMM,fxBrands,byBrand};
   prBuildTable('F'); // الجدول الأساسي: الفعلي + المتوقع
   prBuildTable('A'); // الجدول الفعلي قبل التوقع
   prBuildSummaryTable();
@@ -957,6 +965,7 @@ function prProcess(rows){
   prBuildItemsTable(rows);
   prRecalc();
   document.getElementById('prResults').style.display='block';
+  setTimeout(prBuildGuide,0); // بعد ما الإعلانات واليدوي يتملوا
 }
 
 function prFmt(n){return (Math.round(n*10)/10).toLocaleString('ar-EG');}
@@ -1031,6 +1040,7 @@ function prRecalc(){
   // اقرأ البنود اليدوية من الجدول الأساسي
   document.querySelectorAll('#prFullTable input[data-man]').forEach(inp=>{
     (prManualVals[inp.dataset.man]=prManualVals[inp.dataset.man]||{})[inp.dataset.brand]=prNum(inp.value);
+    clearTimeout(window.__gT); window.__gT=setTimeout(()=>{try{prBuildGuide();}catch(e){}},400);
   });
   const colMan=(id,c)=>c.type==='agg'?c.brands.reduce((s,b)=>s+prMan(id,b),0):prMan(id,c.key);
   const totMan=id=>PR_PNL_BRANDS.reduce((s,b)=>s+prMan(id,b),0);
@@ -1105,6 +1115,86 @@ function prBuildSummaryTable(){
   h+=prAggRow('CARA مجمع',['cara silver','cara silver un','cara wa']);
   t.innerHTML=h;
 }
+
+/* =====================================================================
+   📋 جدول استرشادي: لكل براند كل رقم وإزاي اتحسب — والأرقام قابلة للتعديل (للمراجعة بس)
+   ===================================================================== */
+const PR_GUIDE_ROWS=[
+  ['cogs','📦 تكلفة البضاعة'],['shipDel','🚚 شحن التسليمات'],['shipUndel','💔 شحن بايظ'],['shipRet','↩️ شحن المرتجعات'],
+  ['ads','📢 الإعلانات'],['salaries','👥 الرواتب'],['comm','🏆 عمولة البنات'],['rent','🏢 الإيجار'],['software','💻 برامج'],
+  ['ops','🧾 نثريات وتشغيل مكتب'],['utils','💡 كهربا ونت وباقات'],['waste','💔 هوالك'],['other','🧾 أخرى (يدوي)']];
+function prGuideItems(b){
+  // تفصيل البضاعة اللي اتسلمت
+  const C=window.__prCtx; if(!C) return '';
+  const del=(C.byBrand[b]||[]).filter(r=>r[PR_statusCol-1]==="Delivered");
+  const bk=PR_BD_KEY[b], OB=window.OrderBreakdown;
+  if(bk&&OB&&OB.analyzeOrders){ try{ const a=OB.analyzeOrders(del.map(r=>({contents:r[PR_contentsCol-1],price:r[PR_priceCol-1]})),bk);
+    const p=Object.entries(a.products).sort((x,y)=>y[1]-x[1]).map(([n,q])=>`${n} ${prFmt(q)}`).join(' · ');
+    return `${prFmt(a.pieces)} قطعة${p?': '+p:''}${a.unknown?` · ⚠️ ${a.unknown} سطر مش مفهوم (اتحسب قطعة)`:''}`; }catch(e){} }
+  const ins=del.filter(r=>prHasInsial(r[PR_contentsCol-1])).length;
+  return `${del.length} أوردر: ${del.length-ins} من غير انسيال · ${ins} بانسيال`;
+}
+function prGuideHow(b,k,c,col,C){
+  const f=x=>prFmt(Math.round(x*100)/100), share=C.totalOrders&&!PR_FIXED_EXCLUDE.includes(b)?c.n/C.totalOrders:0, pct=(share*100).toFixed(1)+'%';
+  const fx=(m,lbl)=>PR_FIXED_EXCLUDE.includes(b)?'Bloom مش بيشيل من المصاريف الثابتة':`${f(m)} في الشهر ÷ 30 × ${C.days} يوم (أيام الشيت) = ${f(m/30*C.days)} × نصيب البراند ${pct} (${c.n} أوردر من ${C.totalOrders} أوردر في كل البراندات ماعدا Bloom)`;
+  switch(k){
+    case 'cogs':{
+      if((b in PR_PIECE_COST)&&+PR_PIECE_COST[b]>0) return `${prFmt(c.pieces)} قطعة اتسلمت × ${PR_PIECE_COST[b]} ج للقطعة (العدد من تحليل المكونات)`;
+      if(b in PR_COGS_PCT) return `${(PR_COGS_PCT[b]*100)}% من المبيعات (${f(c.revenue)})`;
+      const del=(C.byBrand[b]||[]).filter(r=>r[PR_statusCol-1]==="Delivered"), ins=del.filter(r=>prHasInsial(r[PR_contentsCol-1])).length;
+      return `${del.length-ins} أوردر × ${PR_COGS_NO} + ${ins} بانسيال × ${PR_COGS_YES} (الطقم 52.5 + الباكدج 8.75 + الانسيال وعلبته 28.5)`; }
+    case 'shipDel': return `الشحن المكتوب في الشيت لـ ${c.delivered} أوردر متسلم${c.delivered?` (متوسط ${f(c.shipDel/c.delivered)} ج)`:''}`;
+    case 'shipUndel': return `${prFmt(Math.round(c.shipUndel/PR_UNDEL_SHIP))} أوردر Undelivered (من غير إرجاع) × ${PR_UNDEL_SHIP} ج`;
+    case 'shipRet': return `${c.returned} أوردر رجع فعلاً — الشحن الحقيقي المكتوب في الشيت`;
+    case 'ads': return prMan('ads',b)?'من شيت الإعلانات لنفس فترة الأوردرات (أو اللي اتكتب يدوي)':'مفيش صرف إعلانات متسجل للبراند ده';
+    case 'salaries': return fx(PR_FIXED.salaries);
+    case 'rent': return fx(PR_FIXED.rent);
+    case 'software': return fx(PR_FIXED.software);
+    case 'ops': return fx(PR_FIXED.ops);
+    case 'utils': return fx((+PR_FIXED.power||0)+(+PR_FIXED.net||0)+(+PR_FIXED.mobile||0))+' — كهربا '+f(+PR_FIXED.power||0)+' + نت '+f(+PR_FIXED.net||0)+' + باقات '+f(+PR_FIXED.mobile||0);
+    case 'comm': return `إجمالي عمولة البنات في الفترة ${f(C.COMM)} ج × نصيب البراند ${pct}`+(prCommTotal==null?' (⏳ لسه بتتجاب)':'');
+    case 'waste': return `0.25% × المبيعات ${f(c.revenue)}`;
+    case 'other': return 'اللي اتكتب يدوي في الجدول الأساسي';
+  }
+  return '';
+}
+function prBuildGuide(){
+  const box=document.getElementById('prGuide'); const C=window.__prCtx; if(!box||!C) return;
+  const brands=PR_PNL_BRANDS.filter(b=>prBrandCalc[b]&&prBrandCalc[b].n);
+  const val=(b,k)=>{const col=prRealCols.find(x=>x.key===b)||{}; if(k==='ads'||k==='other') return prMan(k,b); return +col[k]||0;};
+  let h='';
+  brands.forEach((b,bi)=>{
+    const c=prBrandCalc[b], col=prRealCols.find(x=>x.key===b)||{};
+    const rows=PR_GUIDE_ROWS.map(([k,l])=>{const v=Math.round(val(b,k)*100)/100;
+      return `<tr><td class="lbl">${l}</td><td><input class="plainIn gIn" data-gb="${b}" data-gk="${k}" type="number" step="0.01" value="${v}" data-orig="${v}"></td><td class="gHow">${prGuideHow(b,k,c,col,C)}</td></tr>`;}).join('');
+    h+=`<details class="gBrand" ${bi<3?'open':''}><summary><b>${b.toUpperCase()}</b> — ${c.n} أوردر · <span data-gsum="${b}"></span></summary>
+      <div class="gInfo">📦 <b>الأوردرات:</b> ${c.n} أوردر: ✅ ${c.delivered} اتسلم · ⏳ ${c.pend+c.ofd} تحت التسليم · ✋ ${c.hold} هولد · 💔 ${c.undel} Undelivered · ↩️ ${c.returned} رجع<br>
+        🧩 <b>البضاعة اللي اتسلمت:</b> ${prGuideItems(b)}</div>
+      <div class="tablewrap"><table class="pr gTbl"><tr><th>البند</th><th>الرقم (تقدر تعدّله)</th><th>إزاي اتحسب</th></tr>
+        <tr><td class="lbl">📥 المبيعات</td><td><input class="plainIn gIn" data-gb="${b}" data-gk="revenue" type="number" step="0.01" value="${Math.round(c.revenue*100)/100}" data-orig="${Math.round(c.revenue*100)/100}"></td><td class="gHow">مجموع سعر ${c.delivered} أوردر متسلم${c.delivered?` (متوسط الأوردر ${prFmt(Math.round(c.revenue/c.delivered))} ج)`:''}</td></tr>
+        ${rows}
+        <tr class="total"><td class="lbl">🔴 إجمالي التكاليف</td><td data-gtot="${b}"></td><td class="gHow">مجموع البنود اللي فوق</td></tr>
+        <tr class="total"><td class="lbl">✅ صافي الربح</td><td data-gnet="${b}"></td><td class="gHow" data-gpct="${b}"></td></tr>
+        <tr><td class="lbl">📊 لكل أوردر متسلم</td><td data-gper="${b}"></td><td class="gHow">التكلفة الشاملة والربح ÷ ${c.delivered} أوردر</td></tr>
+      </table></div></details>`;
+  });
+  box.innerHTML=h||'<p class="none">مفيش براندات في الملف.</p>';
+  box.querySelectorAll('.gIn').forEach(i=>i.oninput=()=>{i.classList.toggle('gEdited',String(+i.value)!==String(+i.dataset.orig)); prGuideRecalc();});
+  prGuideRecalc();
+}
+function prGuideRecalc(){
+  const box=document.getElementById('prGuide'); if(!box) return;
+  const by={}; box.querySelectorAll('.gIn').forEach(i=>{(by[i.dataset.gb]=by[i.dataset.gb]||{})[i.dataset.gk]=+i.value||0;});
+  Object.entries(by).forEach(([b,v])=>{
+    const cost=PR_GUIDE_ROWS.reduce((s,[k])=>s+(v[k]||0),0), net=(v.revenue||0)-cost, c=prBrandCalc[b]||{delivered:0};
+    const set=(a,t)=>{const e=box.querySelector(`[${a}="${b}"]`); if(e) e.innerHTML=t;};
+    set('data-gtot',prFmt(Math.round(cost))); set('data-gnet',`<b style="color:${net>=0?'#2f7d55':'#b3261e'}">${prFmt(Math.round(net))}</b>`);
+    set('data-gpct',v.revenue?`نسبة الربح ${(net/v.revenue*100).toFixed(1)}% من المبيعات`:'');
+    set('data-gper',c.delivered?`تكلفة ${prFmt(Math.round(cost/c.delivered))} · ربح ${prFmt(Math.round(net/c.delivered))}`:'—');
+    set('data-gsum',`مبيعات ${prFmt(Math.round(v.revenue||0))} · تكاليف ${prFmt(Math.round(cost))} · <b style="color:${net>=0?'#2f7d55':'#b3261e'}">ربح ${prFmt(Math.round(net))}</b>`);
+  });
+}
+function prGuideReset(){ document.querySelectorAll('#prGuide .gIn').forEach(i=>{i.value=i.dataset.orig;i.classList.remove('gEdited');}); prGuideRecalc(); }
 
 function prBuildCountsTable(){
   const t=document.getElementById('prCountsTable');
@@ -1545,6 +1635,11 @@ function viewProfits(){
       <p style="font-size:13px;color:var(--muted)">كل تفاصيل طلب مختلفة، اتكررت كام مرة في الملف كله، واتسلم منها كام. مترتبة من الأكثر للأقل.</p>
       <input id="prItemsFilter" oninput="prFilterItems(this.value)" placeholder="🔍 دوّر في تفاصيل الطلبات… مثلاً: طقم سلسله" style="width:100%;padding:9px 12px;border:1px solid var(--line);border-radius:8px;margin-bottom:10px;background:var(--panel);color:var(--ink)">
       <div class="tablewrap" id="prItemsWrap" style="max-height:480px;overflow-y:auto"></div>
+    </div>
+    <div class="card"><h3 style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">📋 جدول استرشادي — كل براند: الأرقام وإزاي اتحسبت
+        <span><button class="mockbtn" onclick="prBuildGuide()">🔄 حدّث من الحسبة</button> <button class="mockbtn" onclick="prGuideReset()">↺ رجّع أرقام السيستم</button></span></h3>
+      <p style="font-size:13px;color:var(--muted)">راجع كل رقم: لو شايفه غلط اكتب الصح في الخانة، والإجمالي والربح بيتحسبوا على طول (التعديل هنا للمراجعة بس ومش بيغيّر الجدول الأساسي — قولّي الصح وأظبطه في القواعد). الخانة اللي اتعدلت بتتلوّن.</p>
+      <div id="prGuide"></div>
     </div>
     <div class="card"><h3>8) أوردرات الباكدج</h3>
       <p style="font-size:13px;color:var(--muted)">كام أوردر في العمود L مكتوب فيه كلمة "باكدج" وكام لأ — على كل الأوردرات في الملف.</p>
@@ -7573,8 +7668,8 @@ table.pr tr.bd-cat td{background:var(--slate-l);font-weight:700}
       items: () => [['باكدج', 'p', 1]] },
     { name:'انسيال فصوص زاركونيا', any:['انسيال'], jewelry:true,
       items: () => [['انسيال زاركونيا', 'j', 1], ['علبة انسيال', 'p', 1]] },
-    { name:'طقم الدفاية', any:['دفايه'],
-      items: () => [['طقم الدفاية', 'k', 1]] },
+    { name:'دفاية', any:['دفايه', 'دفايات'],
+      items: () => [['دفاية', 'k', 1]] },
     { name:'طقم الأسد ولادي وبناتي', any:['الاسد'],
       items: () => [['طقم الأسد ولادي وبناتي', 'k', 1]] },
   ];
@@ -7633,6 +7728,12 @@ table.pr tr.bd-cat td{background:var(--slate-l);font-weight:700}
     // السطور المش مفهومة بتتحسب قطعة لكل سطر (زي الأول)
     rulesReady: () => B.custom !== null,
     loadRules: () => loadRules(),
+    analyzeOrders(list, bk){
+      const a = analyzeBrand(list.map(x => ({ shipment_contents:x.contents, total_amount:x.price })), bk);
+      const products = {}; Object.entries(a.products).forEach(([n, p]) => products[n] = p.qty);
+      let extra = 0, unknown = 0; a.rows.forEach(r => { unknown += r.unknown.length; extra += r.unknown.reduce((s, raw) => s + itemMult(raw), 0); });
+      return { products, pieces: a.pieces + extra, unknown };
+    },
     countPieces(contents, price, bk){
       const a = analyzeBrand([{ shipment_contents:contents, total_amount:price }], bk), r = a.rows[0] || { unknown:[] };
       return { n: a.pieces + r.unknown.reduce((s, raw) => s + itemMult(raw), 0), unknown: r.unknown.length };
