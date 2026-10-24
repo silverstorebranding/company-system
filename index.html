@@ -10686,7 +10686,8 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
   const U = { list:null, people:null, sending:false };
   const urgKey = r => r.srcKey === 'squad' || isEasy(r.srcKey) ? skipKey(r) : 'row|' + phoneOf(r.phone) + '|' + (r.name || '');
   const rowData = r => ({ name:r.name, phone:phoneOf(r.phone), address:r.address, amount:r.amount, contents:contentsOf(r), city:r.city || '', note:r.note || '',
-    srcKey:r.srcKey, seq:r.seq || null, xid:r.xid || null, sqAt:r.sqAt || null, sqId:r.sqId || null, page:r.page || '', ref:r.ref || '', estatus:r.estatus || '', orderAt:r.orderAt || '', agent:r.agent || '' });
+    srcKey:r.srcKey, seq:r.seq || null, xid:r.xid || null, sqAt:r.sqAt || null, sqId:r.sqId || null, page:r.page || '', ref:r.ref || '', estatus:r.estatus || '', orderAt:r.orderAt || '', agent:r.agent || '',
+    srcLabel: r.srcKey === 'squad' ? '🏆 Squad · ' + (r.page || '') : srcLabel(r.srcKey), qpNote: finalNote(r) || '' });
   async function loadUrgent(){
     const { data, error } = await sbc().from('urgent_orders').select('*').eq('from_id', me().id).in('status', ['open', 'done', 'failed']).order('created_at', { ascending:false }).limit(500);
     if(error){ U.list = []; U.missing = /urgent_orders|relation|schema cache|does not exist/i.test(error.message); return; }
@@ -10746,7 +10747,7 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     const { error } = await sbc().from('urgent_orders').insert(recs);
     if(error){ U.sending = false; draw(); return flash(/urgent_orders|relation|schema cache/i.test(error.message) ? 'جدول الأوردرات العاجلة مش متعمل — شغّل ملف urgent_orders.sql في Supabase.' : 'ماتبعتش: ' + error.message, true); }
     await sbc().from('inbox').insert({ kind:'task', from_id:me().id, from_name:by, to_id:to.id, to_name:to.name,
-      title:`🚨 عندك ${P.rows.length} أوردر عاجل محتاج يتصلّح`, body:`${P.rows.length} أوردر فيهم مشاكل (رقم ناقص / عنوان ناقص / ...).\nافتح قسم 🚨 أوردرات عاجلة وصلّحهم، ودوس ✔ تم.${P.note ? '\n\nملاحظة: ' + P.note : ''}`, due_date:ymd(new Date()) });
+      title:`🚨 عندك ${P.rows.length} أوردر عاجل محتاج يتصلّح`, body:`${P.rows.length} أوردر فيهم مشاكل (رقم ناقص / عنوان ناقص / ...).\nالمصادر: ${[...new Set(P.rows.map(r => r.srcKey === 'squad' ? 'Squad · ' + (r.page || '') : srcLabel(r.srcKey)))].join('، ')}.\nافتح قسم 🚨 أوردرات عاجلة وصلّحهم، ودوس ✔ تم.${P.note ? '\n\nملاحظة: ' + P.note : ''}`, due_date:ymd(new Date()) });
     U.sending = false; S.urgPick = null;
     await loadUrgent();
     flash(`🚨 اتبعت ${recs.length} أوردر لـ ${to.name} — هيجيلك إشعار لما يخلّصهم.`);
@@ -12161,6 +12162,7 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
 .ug-card{border:1px solid var(--line);border-inline-start:5px solid #c0392b;border-radius:10px;padding:10px 12px;margin-bottom:10px}
 .ug-card.done{border-inline-start-color:#2f7d55;opacity:.8}
 .ug-card.failed{border-inline-start-color:#9a9a9a;opacity:.7}
+.ug-src{font-size:13.5px;margin-bottom:6px;padding:6px 10px;border-radius:8px;background:var(--slate-l)}
 .ug-prob{display:inline-block;background:#fdecea;color:#a3271a;border-radius:8px;padding:2px 9px;font-size:12.5px;font-weight:600;margin-bottom:8px}
 .ug-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px}
 .ug-grid label{display:block;font-size:12px;color:var(--muted);margin-bottom:3px}
@@ -12234,14 +12236,17 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
     draw(); badge();
   }
 
+  // 📣 مصدر الأوردر (للأوردرات اللي اتبعتت قبل التعديل بنستنتجه من بياناته)
+  const SRC_NAMES = { dream:'🌐 Dream Easy', care:'🌐 Care Easy', kidzzly:'🌐 Kidzzly Easy', socky:'🌐 Socky Easy', restore:'♻️ اتمسحت قبل كده' };
+  const srcOfU = D => D.srcLabel || (D.srcKey === 'squad' ? '🏆 Squad · ' + (D.page || '') : SRC_NAMES[D.srcKey] || (D.srcKey ? '🌐 ' + D.srcKey : '—'));
   function card(u){
     const D = u.data || {}, open = u.status === 'open', mine = u.assigned_to === me().id;
     const inp = (k, l, extra = '') => `<div class="${k === 'address' || k === 'contents' ? 'wide' : ''}"><label>${l}</label><input data-ug="${u.id}" data-k="${k}" value="${esc(val(u, k))}" ${open && mine ? '' : 'disabled'} ${extra}
       class="${open && ((k === 'phone' && !phoneOk(val(u, k))) || ((k === 'address' || k === 'name') && !String(val(u, k)).trim())) ? 'bad' : ''}"></div>`;
-    return `<div class="ug-card ${u.status}"><span class="ug-prob">${esc(u.problem || 'محتاج مراجعة')}</span>
+    return `<div class="ug-card ${u.status}"><div class="ug-src">📣 المصدر: <b>${esc(srcOfU(D))}</b>${D.agent ? ` · 👤 خدته ${esc(D.agent)}` : ''}${D.qpNote ? ` · 🏷️ ${esc(D.qpNote)}` : ''}</div><span class="ug-prob">${esc(u.problem || 'محتاج مراجعة')}</span>
       ${u.status === 'done' ? '<span class="ug-prob" style="background:#e3f3e8;color:#23784a">✅ اتصلّح</span>' : u.status === 'failed' ? `<span class="ug-prob" style="background:var(--slate-l);color:var(--muted)">❌ مانفعش${u.fail_reason ? ': ' + esc(u.fail_reason) : ''}</span>` : u.status === 'merged' ? '<span class="ug-prob" style="background:#e6eef8;color:#2c5282">➕ اتضم للشيت</span>' : ''}
       <div class="ug-grid">${inp('name', 'الاسم')}${inp('phone', 'الموبايل', 'inputmode="tel" style="direction:ltr"')}${inp('amount', 'السعر', 'inputmode="decimal"')}${inp('city', 'المحافظة')}${inp('address', 'العنوان')}${inp('contents', 'الطلب')}</div>
-      <div class="ug-meta">${D.page ? '📣 ' + esc(D.page) + ' · ' : ''}${D.agent ? '👤 ' + esc(D.agent) + ' · ' : ''}${D.orderAt ? '🕒 ' + esc(new Date(D.orderAt).toLocaleString('ar-EG', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' })) : ''}${D.ref ? ' · ' + esc(D.ref) : ''}</div>
+      <div class="ug-meta">${D.orderAt ? '🕒 ' + esc(new Date(D.orderAt).toLocaleString('ar-EG', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' })) : ''}${D.ref ? ' · ' + esc(D.ref) : ''}</div>
       ${open && mine ? `<div class="ug-act"><button class="ug-btn ok" data-ugdone="${u.id}">✔ تم</button><button class="ug-btn no" data-ugfail="${u.id}">❌ مينفعش</button>
         ${phoneOk(val(u, 'phone')) ? `<a class="ug-btn" href="tel:0${esc(String(val(u, 'phone')).replace(/\D/g, '').replace(/^0/, ''))}" style="text-decoration:none">📞 اتصل</a><a class="ug-btn" target="_blank" rel="noopener" href="https://wa.me/20${esc(String(val(u, 'phone')).replace(/\D/g, '').replace(/^0/, ''))}" style="text-decoration:none">💬 واتساب</a>` : ''}</div>` : ''}</div>`;
   }
