@@ -1197,15 +1197,19 @@ function prGuideAtQP(G){
   const isRet=r=>{const v=r[PR_returnedCol-1];return v&&String(v).trim()!==""&&String(v).trim()!=="NaT";}, st=r=>r[PR_statusCol-1];
   const rows=[]; G.m.forEach(b=>(C.byBrand[b]||[]).forEach(r=>rows.push({r,b})));
   const atQP=rows.filter(x=>st(x.r)!=="Delivered"&&!isRet(x.r));
-  const S={pend:atQP.filter(x=>prIsPending(x.r)), ofd:atQP.filter(x=>st(x.r)==="Out for Delivery"&&!prIsPending(x.r)), hold:atQP.filter(x=>st(x.r)==="Hold"), undel:atQP.filter(x=>st(x.r)==="Undelivered")};
-  S.other=atQP.filter(x=>!S.pend.includes(x)&&!S.ofd.includes(x)&&!S.hold.includes(x)&&!S.undel.includes(x));
+  // ⏳ Pending: أي أوردر عند QP مش (مع المندوب / هولد / Undelivered) بيتحسب Pending ويتعامل زي تحت التسليم
+  const known=r=>{const t=String(st(r)||'').trim().toLowerCase(); return t==='out for delivery'||t==='hold'||t==='undelivered';};
+  const S={ofd:atQP.filter(x=>String(st(x.r)||'').trim().toLowerCase()==='out for delivery'), hold:atQP.filter(x=>String(st(x.r)||'').trim().toLowerCase()==='hold'), undel:atQP.filter(x=>String(st(x.r)||'').trim().toLowerCase()==='undelivered')};
+  S.pend=atQP.filter(x=>!known(x.r)); S.other=[];
+  const pendNames={}; S.pend.forEach(x=>{const t=String(st(x.r)||'').trim()||'(فاضي)'; pendNames[t]=(pendNames[t]||0)+1;});
   const anyPiece=G.m.some(b=>PR_BD_KEY[b]);
   const pcs=L=>L.reduce((s,x)=>s+(PR_BD_KEY[x.b]?prPiecesSmart(x.r[PR_contentsCol-1],x.r[PR_priceCol-1],x.b):0),0);
   const goods=L=>L.reduce((s,x)=>s+prRowGoods(x.r,x.b),0), val=L=>L.reduce((s,x)=>s+prNum(x.r[PR_priceCol-1]),0);
   // النسبة الافتراضية لكل حالة = متوسط نسب البراندات اللي جوه (حسب عدد أوردراتها)
   const defRate=(L,k)=>{ if(k==='undel'||k==='other'||!L.length) return 0; return L.reduce((s,x)=>{const rt=prRatesFor(x.b); return s+(k==='hold'?rt.hold:rt.ofd);},0)/L.length; };
+  const pendLbl='⏳ Pending'+(Object.keys(pendNames).some(n=>n.toLowerCase()!=='pending')?`<br><small style="font-weight:400">(${Object.entries(pendNames).map(([n,q])=>String(n).replace(/[<>&"]/g,'')+' '+q).join(' · ')})</small>`:'');
   const F=x=>prFmt(Math.round(x)), saved=(prQPRates()[G.k])||{};
-  const labels={pend:'⏳ Pending',ofd:'🛵 مع المندوب',hold:'✋ هولد',undel:'↩️ Undelivered (مرجعش)',other:'❔ حالات تانية'};
+  const labels={pend:pendLbl,ofd:'🛵 مع المندوب',hold:'✋ هولد',undel:'↩️ Undelivered (مرجعش)',other:'❔ حالات تانية'};
   let tot={n:0,p:0,v:0,g:0}, body='', data=[];
   ['pend','ofd','hold','undel','other'].forEach(k=>{ const L=S[k]; if(!L.length) return; const n=L.length,p=pcs(L),v=val(L),g=goods(L),r0=defRate(L,k), r=saved[k]!=null?saved[k]/100:r0;
     tot.n+=n; tot.p+=p; tot.v+=v; tot.g+=g; data.push({k,n,v,g,def:r0});
