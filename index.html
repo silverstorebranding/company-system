@@ -130,6 +130,8 @@ table.pr th{background:var(--slate);color:#fff;font-weight:600}
 /* 📋 الجدول الاسترشادي */
 .gBrand{border:1px solid var(--line);border-radius:12px;padding:8px 12px;margin-bottom:12px;background:var(--panel)}
 .gBrand summary{cursor:pointer;font-size:15px;padding:4px 0}
+.gQP{font-size:13.5px;line-height:1.9;background:#eef4fb;border:1px solid #cfe0f3;border-radius:8px;padding:8px 12px;margin:0 0 8px}
+.gQP span{font-size:12.5px}
 .gInfo{font-size:13.5px;line-height:1.9;background:var(--slate-l);border-radius:8px;padding:8px 12px;margin:8px 0}
 table.gTbl td.gHow{white-space:normal;text-align:right;font-size:12.5px;color:var(--muted);min-width:320px}
 table.gTbl input.gIn{width:110px;padding:5px 7px;border:1.5px solid var(--line);border-radius:7px;font-family:inherit;font-size:14px;text-align:center}
@@ -1158,6 +1160,27 @@ function prGuideHow(b,k,c,col,C){
   }
   return '';
 }
+/* 🚚 البضاعة اللي عند QP دلوقتي + اللي المفروض يرجع ومرجعش (لكل براند) */
+function prGuideAtQP(b){
+  const C=window.__prCtx; if(!C) return '';
+  const rs=C.byBrand[b]||[], isRet=r=>{const v=r[PR_returnedCol-1];return v&&String(v).trim()!==""&&String(v).trim()!=="NaT";};
+  const st=r=>r[PR_statusCol-1];
+  const atQP=rs.filter(r=>st(r)!=="Delivered"&&!isRet(r));                 // لسه عند QP (أي حالة غير متسلم وماررجعش)
+  const way=atQP.filter(r=>st(r)==="Out for Delivery"||prIsPending(r));     // Pending ومع المندوب
+  const hold=atQP.filter(r=>st(r)==="Hold"), undel=atQP.filter(r=>st(r)==="Undelivered");
+  const rt=prRatesFor(b), bk=PR_BD_KEY[b];
+  const pcs=list=>list.reduce((s,r)=>s+(bk?prPiecesSmart(r[PR_contentsCol-1],r[PR_priceCol-1],b):1),0);
+  const goods=list=>{ if((b in PR_PIECE_COST)&&+PR_PIECE_COST[b]>0) return pcs(list)*PR_PIECE_COST[b];
+    if(b in PR_COGS_PCT) return list.reduce((s,r)=>s+prNum(r[PR_priceCol-1]),0)*PR_COGS_PCT[b];
+    return list.reduce((s,r)=>s+(prHasInsial(r[PR_contentsCol-1])?PR_COGS_YES:PR_COGS_NO),0); };
+  const val=list=>list.reduce((s,r)=>s+prNum(r[PR_priceCol-1]),0), F=x=>prFmt(Math.round(x));
+  const expN=way.length*rt.ofd+hold.length*rt.hold, expV=val(way)*rt.ofd+val(hold)*rt.hold;
+  const unit=bk?'قطعة':'أوردر';
+  let h=`<div class="gQP"><b>🚚 عند QP دلوقتي:</b> ${atQP.length} أوردر${bk?` · ${F(pcs(atQP))} قطعة`:''} · قيمتهم ${F(val(atQP))} ج · <b>بضاعتك فيهم ${F(goods(atQP))} ج</b>
+    <br><span>⏳ تحت التسليم ${way.length} (${F(val(way))} ج) × ${Math.round(rt.ofd*100)}% · ✋ هولد ${hold.length} (${F(val(hold))} ج) × ${Math.round(rt.hold*100)}% ← <b>متوقع يتسلم ≈ ${prFmt(Math.round(expN*10)/10)} أوردر بـ ${F(expV)} ج</b></span>`;
+  if(undel.length) h+=`<br><span style="color:#b3261e">↩️ <b>المفروض يرجع ومرجعش:</b> ${undel.length} أوردر Undelivered${bk?` · ${F(pcs(undel))} قطعة`:''} · بضاعة ${F(goods(undel))} ج (قيمتهم ${F(val(undel))} ج) — تابعهم مع QP</span>`;
+  return h+'</div>';
+}
 function prBuildGuide(){
   const box=document.getElementById('prGuide'); const C=window.__prCtx; if(!box||!C) return;
   const brands=PR_PNL_BRANDS.filter(b=>prBrandCalc[b]&&prBrandCalc[b].n);
@@ -1169,7 +1192,7 @@ function prBuildGuide(){
       return `<tr><td class="lbl">${l}</td><td><input class="plainIn gIn" data-gb="${b}" data-gk="${k}" type="number" step="0.01" value="${v}" data-orig="${v}"></td><td class="gHow">${prGuideHow(b,k,c,col,C)}</td></tr>`;}).join('');
     h+=`<details class="gBrand" ${bi<3?'open':''}><summary><b>${b.toUpperCase()}</b> — ${c.n} أوردر · <span data-gsum="${b}"></span></summary>
       <div class="gInfo">📦 <b>الأوردرات:</b> ${c.n} أوردر: ✅ ${c.delivered} اتسلم · ⏳ ${c.pend+c.ofd} تحت التسليم · ✋ ${c.hold} هولد · 💔 ${c.undel} Undelivered · ↩️ ${c.returned} رجع<br>
-        🧩 <b>البضاعة اللي اتسلمت:</b> ${prGuideItems(b)}</div>
+        🧩 <b>البضاعة اللي اتسلمت:</b> ${prGuideItems(b)}</div>${prGuideAtQP(b)}
       <div class="tablewrap"><table class="pr gTbl"><tr><th>البند</th><th>الرقم (تقدر تعدّله)</th><th>إزاي اتحسب</th></tr>
         <tr><td class="lbl">📥 المبيعات</td><td><input class="plainIn gIn" data-gb="${b}" data-gk="revenue" type="number" step="0.01" value="${Math.round(c.revenue*100)/100}" data-orig="${Math.round(c.revenue*100)/100}"></td><td class="gHow">مجموع سعر ${c.delivered} أوردر متسلم${c.delivered?` (متوسط الأوردر ${prFmt(Math.round(c.revenue/c.delivered))} ج)`:''}</td></tr>
         ${rows}
