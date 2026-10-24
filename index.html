@@ -130,8 +130,14 @@ table.pr th{background:var(--slate);color:#fff;font-weight:600}
 /* 📋 الجدول الاسترشادي */
 .gBrand{border:1px solid var(--line);border-radius:12px;padding:8px 12px;margin-bottom:12px;background:var(--panel)}
 .gBrand summary{cursor:pointer;font-size:15px;padding:4px 0}
-.gQP{font-size:13.5px;line-height:1.9;background:#eef4fb;border:1px solid #cfe0f3;border-radius:8px;padding:8px 12px;margin:0 0 8px}
-.gQP span{font-size:12.5px}
+.gQP{font-size:13.5px;background:#eef4fb;border:1px solid #cfe0f3;border-radius:10px;padding:10px 12px;margin:0 0 10px}
+.gQPh{font-size:14.5px;margin-bottom:8px}
+table.gQPt{background:#fff}table.gQPt th{background:#2c5282}
+table.gQPt tr.gWarn td{background:#fdecea;color:#a3271a}
+.gUndel{margin-top:8px;padding:7px 10px;border-radius:8px;background:#fdecea;color:#a3271a}
+table.gTbl tr.gExpRow td{background:#eef4fb}
+input.gRate{width:56px;padding:3px 5px;border:1.5px solid var(--line);border-radius:6px;font-family:inherit;font-size:13.5px;text-align:center}
+input.gRate.gEdited{border-color:#e0a020;background:#fff8e6}
 .gInfo{font-size:13.5px;line-height:1.9;background:var(--slate-l);border-radius:8px;padding:8px 12px;margin:8px 0}
 table.gTbl td.gHow{white-space:normal;text-align:right;font-size:12.5px;color:var(--muted);min-width:320px}
 table.gTbl input.gIn{width:110px;padding:5px 7px;border:1.5px solid var(--line);border-radius:7px;font-family:inherit;font-size:14px;text-align:center}
@@ -1160,26 +1166,59 @@ function prGuideHow(b,k,c,col,C){
   }
   return '';
 }
-/* 🚚 البضاعة اللي عند QP دلوقتي + اللي المفروض يرجع ومرجعش (لكل براند) */
+/* 🚚 البضاعة اللي عند QP دلوقتي (جدول) + اللي المفروض يرجع ومرجعش + المتوقع (للربح المتوقع) */
+window.__prExp={}; window.__prExpData={};
+const prQPRates=()=>{try{return JSON.parse(localStorage.getItem('pr_qp_rates')||'{}');}catch(e){return {};}};
+// 🔮 يحسب المتوقع من النسب اللي في الخانات (بعد أي تعديل)
+function prQPRecalc(b){
+  const D=window.__prExpData[b]; if(!D) return;
+  const F=x=>prFmt(Math.round(x)), F1=x=>prFmt(Math.round(x*10)/10), box=document.getElementById('prGuide'); if(!box) return;
+  let en=0,ev=0,eg=0,way=0,enWay=0;
+  D.data.forEach(d=>{ const i=box.querySelector(`.gRate[data-qb="${b}"][data-qk="${d.k}"]`), r=i?Math.max(0,Math.min(100,+i.value||0))/100:d.def;
+    en+=d.n*r; ev+=d.v*r; eg+=d.g*r; if(d.k!=='undel'){ way+=d.n; enWay+=d.n*r; }
+    const a=box.querySelector(`[data-qen="${b}|${d.k}"]`), v=box.querySelector(`[data-qev="${b}|${d.k}"]`);
+    if(a) a.textContent=r?F1(d.n*r):'—'; if(v) v.textContent=r?F(d.v*r):'—'; });
+  const a=box.querySelector(`[data-qen="${b}|tot"]`), v=box.querySelector(`[data-qev="${b}|tot"]`); if(a) a.textContent=F1(en); if(v) v.textContent=F(ev);
+  // البيع المتوقع − بضاعته − شحنه − الشحن البايظ للي مش هيتسلم (من تحت التسليم والهولد) − الهوالك
+  // (الـ Undelivered شحنه البايظ محسوب أصلاً في الربح الحالي)
+  const brokenN=Math.max(0,way-enWay);
+  const expShip=en*D.avgShip, expBroken=brokenN*PR_UNDEL_SHIP, expWaste=ev*PR_WASTE_PCT;
+  window.__prExp[b]={rev:ev, cost:eg+expShip+expBroken+expWaste, n:en,
+    how:`بيع متوقع ${F(ev)} − بضاعة ${F(eg)} − شحن ${F1(en)} أوردر × ${F(D.avgShip)} = ${F(expShip)} − شحن بايظ للي مش هيتسلم ${F1(brokenN)} × ${PR_UNDEL_SHIP} = ${F(expBroken)} − هوالك ${F(expWaste)}`};
+  prGuideRecalc();
+}
+function prQPReset(b){ const all=prQPRates(); delete all[b]; try{localStorage.setItem('pr_qp_rates',JSON.stringify(all));}catch(e){} prBuildGuide(); }
 function prGuideAtQP(b){
   const C=window.__prCtx; if(!C) return '';
   const rs=C.byBrand[b]||[], isRet=r=>{const v=r[PR_returnedCol-1];return v&&String(v).trim()!==""&&String(v).trim()!=="NaT";};
   const st=r=>r[PR_statusCol-1];
-  const atQP=rs.filter(r=>st(r)!=="Delivered"&&!isRet(r));                 // لسه عند QP (أي حالة غير متسلم وماررجعش)
-  const way=atQP.filter(r=>st(r)==="Out for Delivery"||prIsPending(r));     // Pending ومع المندوب
+  const atQP=rs.filter(r=>st(r)!=="Delivered"&&!isRet(r));
+  const pend=atQP.filter(r=>prIsPending(r)), ofd=atQP.filter(r=>st(r)==="Out for Delivery"&&!prIsPending(r));
   const hold=atQP.filter(r=>st(r)==="Hold"), undel=atQP.filter(r=>st(r)==="Undelivered");
+  const other=atQP.filter(r=>!pend.includes(r)&&!ofd.includes(r)&&!hold.includes(r)&&!undel.includes(r));
   const rt=prRatesFor(b), bk=PR_BD_KEY[b];
-  const pcs=list=>list.reduce((s,r)=>s+(bk?prPiecesSmart(r[PR_contentsCol-1],r[PR_priceCol-1],b):1),0);
+  const pcs=list=>list.reduce((s,r)=>s+(bk?prPiecesSmart(r[PR_contentsCol-1],r[PR_priceCol-1],b):0),0);
   const goods=list=>{ if((b in PR_PIECE_COST)&&+PR_PIECE_COST[b]>0) return pcs(list)*PR_PIECE_COST[b];
     if(b in PR_COGS_PCT) return list.reduce((s,r)=>s+prNum(r[PR_priceCol-1]),0)*PR_COGS_PCT[b];
     return list.reduce((s,r)=>s+(prHasInsial(r[PR_contentsCol-1])?PR_COGS_YES:PR_COGS_NO),0); };
-  const val=list=>list.reduce((s,r)=>s+prNum(r[PR_priceCol-1]),0), F=x=>prFmt(Math.round(x));
-  const expN=way.length*rt.ofd+hold.length*rt.hold, expV=val(way)*rt.ofd+val(hold)*rt.hold;
-  const unit=bk?'قطعة':'أوردر';
-  let h=`<div class="gQP"><b>🚚 عند QP دلوقتي:</b> ${atQP.length} أوردر${bk?` · ${F(pcs(atQP))} قطعة`:''} · قيمتهم ${F(val(atQP))} ج · <b>بضاعتك فيهم ${F(goods(atQP))} ج</b>
-    <br><span>⏳ تحت التسليم ${way.length} (${F(val(way))} ج) × ${Math.round(rt.ofd*100)}% · ✋ هولد ${hold.length} (${F(val(hold))} ج) × ${Math.round(rt.hold*100)}% ← <b>متوقع يتسلم ≈ ${prFmt(Math.round(expN*10)/10)} أوردر بـ ${F(expV)} ج</b></span>`;
-  if(undel.length) h+=`<br><span style="color:#b3261e">↩️ <b>المفروض يرجع ومرجعش:</b> ${undel.length} أوردر Undelivered${bk?` · ${F(pcs(undel))} قطعة`:''} · بضاعة ${F(goods(undel))} ج (قيمتهم ${F(val(undel))} ج) — تابعهم مع QP</span>`;
-  return h+'</div>';
+  const val=list=>list.reduce((s,r)=>s+prNum(r[PR_priceCol-1]),0), F=x=>prFmt(Math.round(x)), F1=x=>prFmt(Math.round(x*10)/10);
+  // نسبة التسليم المتوقعة لكل حالة: الافتراضي من نسب التوقع، وتقدر تغيّرها (بتتحفظ على الجهاز)
+  const saved=(prQPRates()[b])||{};
+  const R=[['pend','⏳ Pending',pend,rt.ofd],['ofd','🛵 مع المندوب',ofd,rt.ofd],['hold','✋ هولد',hold,rt.hold],['undel','↩️ Undelivered (مرجعش)',undel,0]];
+  if(other.length) R.push(['other','❔ حالات تانية',other,0]);
+  let tot={n:0,p:0,v:0,g:0}, body='', data=[];
+  R.forEach(([k,l,L,r0])=>{ if(!L.length) return; const n=L.length,p=pcs(L),v=val(L),g=goods(L), r=saved[k]!=null?saved[k]/100:r0;
+    tot.n+=n; tot.p+=p; tot.v+=v; tot.g+=g; data.push({k,n,v,g,def:r0});
+    body+=`<tr class="${k==='undel'?'gWarn':''}"><td class="lbl">${l}</td><td>${n}</td>${bk?`<td>${F(p)}</td>`:''}<td>${F(v)}</td><td><b>${F(g)}</b></td>
+      <td><input class="gRate ${saved[k]!=null?'gEdited':''}" type="number" min="0" max="100" step="1" value="${Math.round(r*100)}" data-qb="${b}" data-qk="${k}">%</td><td data-qen="${b}|${k}"></td><td data-qev="${b}|${k}"></td></tr>`; });
+  if(!tot.n) return '<div class="gQP">🚚 مفيش أوردرات للبراند ده عند QP دلوقتي.</div>';
+  const c=prBrandCalc[b], avgShip=c.delivered?c.shipDel/c.delivered:(rs.length?rs.reduce((s,r)=>s+prNum(r[PR_shipCol-1]),0)/rs.length:0);
+  window.__prExpData[b]={data,avgShip};
+  setTimeout(()=>prQPRecalc(b),0);
+  return `<div class="gQP"><div class="gQPh">🚚 عند QP دلوقتي — بضاعتك فيهم <b>${F(tot.g)} ج</b>${bk?` (${F(tot.p)} قطعة)`:''}</div>
+    <div class="tablewrap"><table class="pr gQPt"><tr><th>الحالة</th><th>أوردرات</th>${bk?'<th>قطع</th>':''}<th>قيمة البيع</th><th>بضاعتك</th><th>نسبة التسليم المتوقعة</th><th>متوقع يتسلم</th><th>بيع متوقع</th></tr>
+    ${body}<tr class="total"><td class="lbl">الإجمالي عند QP</td><td>${tot.n}</td>${bk?`<td>${F(tot.p)}</td>`:''}<td>${F(tot.v)}</td><td>${F(tot.g)}</td><td><button class="mockbtn" style="padding:2px 8px;font-size:11.5px" onclick="prQPReset('${b}')">↺ الافتراضي</button></td><td data-qen="${b}|tot"></td><td data-qev="${b}|tot"></td></tr></table></div>
+    ${undel.length?`<div class="gUndel">↩️ <b>${undel.length} أوردر Undelivered لسه مرجعوش</b>${bk?` (${F(pcs(undel))} قطعة)`:''} — بضاعة ${F(goods(undel))} ج لازم ترجعلك. تابعهم مع QP.</div>`:''}</div>`;
 }
 function prBuildGuide(){
   const box=document.getElementById('prGuide'); const C=window.__prCtx; if(!box||!C) return;
@@ -1199,10 +1238,13 @@ function prBuildGuide(){
         <tr class="total"><td class="lbl">🔴 إجمالي التكاليف</td><td data-gtot="${b}"></td><td class="gHow">مجموع البنود اللي فوق</td></tr>
         <tr class="total"><td class="lbl">✅ صافي الربح</td><td data-gnet="${b}"></td><td class="gHow" data-gpct="${b}"></td></tr>
         <tr><td class="lbl">📊 لكل أوردر متسلم</td><td data-gper="${b}"></td><td class="gHow">التكلفة الشاملة والربح ÷ ${c.delivered} أوردر</td></tr>
+        <tr class="gExpRow"><td class="lbl">🔮 الربح المتوقع<br><small>(بعد ما اللي عند QP يتسلم)</small></td><td data-gexp="${b}"></td><td class="gHow" data-gexph="${b}"></td></tr>
       </table></div></details>`;
   });
   box.innerHTML=h||'<p class="none">مفيش براندات في الملف.</p>';
   box.querySelectorAll('.gIn').forEach(i=>i.oninput=()=>{i.classList.toggle('gEdited',String(+i.value)!==String(+i.dataset.orig)); prGuideRecalc();});
+  box.querySelectorAll('.gRate').forEach(i=>i.oninput=()=>{ const all=prQPRates(); (all[i.dataset.qb]=all[i.dataset.qb]||{})[i.dataset.qk]=Math.max(0,Math.min(100,+i.value||0));
+    try{localStorage.setItem('pr_qp_rates',JSON.stringify(all));}catch(e){} i.classList.add('gEdited'); prQPRecalc(i.dataset.qb); });
   prGuideRecalc();
 }
 function prGuideRecalc(){
@@ -1214,7 +1256,13 @@ function prGuideRecalc(){
     set('data-gtot',prFmt(Math.round(cost))); set('data-gnet',`<b style="color:${net>=0?'#2f7d55':'#b3261e'}">${prFmt(Math.round(net))}</b>`);
     set('data-gpct',v.revenue?`نسبة الربح ${(net/v.revenue*100).toFixed(1)}% من المبيعات`:'');
     set('data-gper',c.delivered?`تكلفة ${prFmt(Math.round(cost/c.delivered))} · ربح ${prFmt(Math.round(net/c.delivered))}`:'—');
-    set('data-gsum',`مبيعات ${prFmt(Math.round(v.revenue||0))} · تكاليف ${prFmt(Math.round(cost))} · <b style="color:${net>=0?'#2f7d55':'#b3261e'}">ربح ${prFmt(Math.round(net))}</b>`);
+    const E=(window.__prExp||{})[b];
+    let sumExp='';
+    if(E){ const r2=(v.revenue||0)+E.rev, n2=net+E.rev-E.cost, pc=r2?n2/r2*100:0;
+      set('data-gexp',`<b style="color:${n2>=0?'#2f7d55':'#b3261e'}">${prFmt(Math.round(n2))}</b><br><small>${pc.toFixed(1)}%</small>`);
+      set('data-gexph',`الربح الحالي ${prFmt(Math.round(net))} + (${E.how}) ← مبيعات متوقعة ${prFmt(Math.round(r2))} · نسبة الربح المتوقعة <b>${pc.toFixed(1)}%</b>`);
+      sumExp=` · 🔮 متوقع ${prFmt(Math.round(n2))} (${pc.toFixed(1)}%)`; }
+    set('data-gsum',`مبيعات ${prFmt(Math.round(v.revenue||0))} · تكاليف ${prFmt(Math.round(cost))} · <b style="color:${net>=0?'#2f7d55':'#b3261e'}">ربح ${prFmt(Math.round(net))}</b>${sumExp}`);
   });
 }
 function prGuideReset(){ document.querySelectorAll('#prGuide .gIn').forEach(i=>{i.value=i.dataset.orig;i.classList.remove('gEdited');}); prGuideRecalc(); }
