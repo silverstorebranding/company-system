@@ -796,6 +796,55 @@ function prPiecesSmart(contents, price, brand){
    - الشكل الإنجليزي: "Set B — 3 pajamas (...)" ← لو مكتوب "Set A: 2 | Set B: 6" يبقى باقتين، وإلا بالسعر: 950 وأكتر = باقتين (6) ، أقل = باقة (3)
    بيرجّع null لو المحتوى مش بيجامات */
 // 💰 أسعار البيجامات وعدد قطعها (السعر هو المرجع الأساسي)
+/* 👶 RS KIDS: عدد القطع (القطعة بتتكلف 175)
+   1) لو مكتوب العدد صريح: "4 قطع" / "قطعتين" / "اربع قطع" / "6 اطقم"
+   2) لو سطور فيها "منهم 2" أو رقم في آخر كل سطر (1/ البيج فيونكه منهم 2 — 2/ البينك كرز 1) ← بنجمعهم
+   3) غير كده: من السعر — بنتعلم من أوردرات RS اللي عددها واضح (السعر ده = كام قطعة غالبًا)،
+      ولو السعر جديد: السعر ÷ متوسط سعر القطعة اللي اتعلمناه */
+const RS_WORDS={'قطعه':1,'قطعة':1,'قطعتين':2,'قطعتان':2,'طقمين':2,'اتنين':2,'اثنين':2,'تلات':3,'تلاته':3,'تلاتة':3,'ثلاث':3,'ثلاثة':3,'ثلاثه':3,'اربع':4,'أربع':4,'اربعة':4,'اربعه':4,'خمس':5,'خمسة':5,'خمسه':5,'ست':6,'ستة':6,'سته':6,'سبع':7,'تمن':8,'ثمان':8,'تسع':9,'عشر':10};
+let RS_MODEL=null;   // { table:{price:n}, unit, n }
+function rsNum(t){return String(t||"").replace(/[٠-٩]/g,d=>"٠١٢٣٤٥٦٧٨٩".indexOf(d));}
+function rsExplicit(text){
+  const t=rsNum(text).replace(/\r/g,'');
+  // 1) العدد مكتوب صريح: "4 قطع" / "قطعتين" / "اربع قطع" / "3 اطقم"
+  let m=t.match(/(\d{1,2})\s*(?:قطع|قطعة|قطعه|اطقم|أطقم|طقم|بيجامات|pcs|pieces)(?![\u0600-\u06FF])/i); if(m&&+m[1]>0) return {n:+m[1],how:`مكتوب "${m[0].trim()}"`};
+  for(const [w,n] of Object.entries(RS_WORDS)){ if(n<2) continue; const re=new RegExp('(^|\\s)'+w+'(\\s|$)'); if(re.test(t)&&/(قطع|اطقم|طقم|بيجام)/.test(t)) return {n,how:`مكتوب "${w}"`}; }
+  if(/(^|\s)(قطعتين|طقمين)(\s|$)/.test(t)) return {n:2,how:'مكتوب "قطعتين"'};
+  // 2) "المقاس: ... الشكل: ..." متكررة ← كل "الشكل" (أو "المقاس") = قطعة
+  const shp=(t.match(/(?:ال)?شكل\s*[:：]/g)||[]).length, siz=(t.match(/(?:ال)?مقاس\s*[:：]/g)||[]).length, col=(t.match(/(?:ال)?لون\s*[:：]/g)||[]).length;
+  const occ=Math.max(shp,siz,col); if(occ>=1) return {n:occ,how:`${occ} × "${shp>=siz&&shp>=col?'الشكل:':siz>=col?'المقاس:':'اللون:'}" في الطلب (كل واحدة قطعة)`};
+  // 3) قطع مفصولة بـ "+" أو "|" — و"× 2" = قطعتين
+  const parts=t.split(/\s*[+|]\s*/).map(x=>x.trim()).filter(Boolean);
+  if(parts.length>1||/[×xX\*]\s*\d{1,2}\s*$/.test(t)){ let n=0; parts.forEach(p=>{const q=p.match(/[×xX\*]\s*(\d{1,2})\s*$/); n+=q?Math.max(1,+q[1]):1;}); return {n,how:parts.length===1?`مكتوب "× ${n}"`:`${parts.length} صنف مفصولين بـ "+"${n!==parts.length?' (مع الكميات ×)':''} = ${n}`}; }
+  // 4) سطور بأرقام: "منهم 2" أو رقم في آخر السطر
+  const lines=t.split(/\n+/).map(x=>x.trim()).filter(x=>x&&!/^\d+\s*(قطع|قطعة|قطعه)?$/.test(x));
+  if(lines.length){ let sum=0, all=true;
+    lines.forEach(l=>{ const a=l.match(/منهم\s*(\d{1,2})/)||l.match(/[×xX\*]\s*(\d{1,2})\s*$/)||l.match(/\s(\d{1,2})\s*$/); if(a) sum+=+a[1]; else all=false; });
+    if(all&&sum>0) return {n:sum,how:`مجموع الأعداد في السطور = ${sum}`};
+    if(lines.length>1) return {n:lines.length,how:`${lines.length} سطور = ${lines.length} قطع`}; }
+  return null;
+}
+// بنتعلم من أوردرات RS اللي عددها مكتوب صريح: السعر ده = كام قطعة
+function rsLearn(list){ // list: [{contents, price}]
+  const by={}, per=[];
+  list.forEach(o=>{ const e=rsExplicit(o.contents), p=Math.round(parseFloat(rsNum(o.price).replace(/[^\d.]/g,''))||0); if(!e||!p) return;
+    (by[p]=by[p]||{})[e.n]=((by[p]||{})[e.n]||0)+1; per.push(p/e.n); });
+  const table={}; Object.entries(by).forEach(([p,c])=>{ table[p]=+Object.entries(c).sort((a,b)=>b[1]-a[1])[0][0]; });
+  per.sort((a,b)=>a-b); const unit=per.length?per[Math.floor(per.length/2)]:0;
+  RS_MODEL={table,unit,n:per.length}; return RS_MODEL;
+}
+function rsCount(text, price){
+  const e=rsExplicit(text), p0=Math.round(parseFloat(rsNum(price).replace(/[^\d.]/g,''))||0), M0=RS_MODEL||{};
+  if(e){ // 🔎 مقارنة بالسعر: لو العدد بعيد عن اللي السعر بيقوله بننبّه
+    if(p0&&M0.unit){ const est=Math.max(1,Math.round(p0/M0.unit)); if(Math.abs(est-e.n)>=2) return {...e,how:e.how+` — ⚠️ السعر ${p0} بيقول حوالي ${est}`,warn:true}; }
+    return e; }
+  const p=Math.round(parseFloat(rsNum(price).replace(/[^\d.]/g,''))||0), M=RS_MODEL||{table:{},unit:0};
+  if(p&&M.table[p]) return {n:M.table[p],how:`من السعر: أوردرات RS تانية بسعر ${p} كان فيها ${M.table[p]} قطع`,byPrice:true};
+  if(p&&M.unit) return {n:Math.max(1,Math.round(p/M.unit)),how:`من السعر: ${p} ÷ متوسط سعر القطعة ${Math.round(M.unit)} = ${Math.max(1,Math.round(p/M.unit))}`,byPrice:true};
+  const parts=String(text||'').split(/\s*\+\s*|\n+/).map(x=>x.trim()).filter(Boolean);
+  return {n:Math.max(1,parts.length),how:'مفيش عدد مكتوب ولا أسعار نتعلم منها ← كل سطر قطعة',guess:true};
+}
+
 const PJ_PRICES={600:3, 699:3, 999:6, 1398:9, 1896:12};
 function kidsPajamaParse(text, price){
   const r=kidsPajamaText(text, price); if(!r) return null;
@@ -900,6 +949,7 @@ function prRunReport(){
 
 function prProcess(rows){
   window.__prLastRows=rows;
+  try{ rsLearn(rows.filter(r=>prGetBrand(r[PR_notesCol-1])==='rs kids').map(r=>({contents:r[PR_contentsCol-1],price:r[PR_priceCol-1]}))); }catch(e){}
   if(window.OrderBreakdown&&OrderBreakdown.rulesReady&&!OrderBreakdown.rulesReady()&&!window.__prRulesLoading){
     window.__prRulesLoading=true; OrderBreakdown.loadRules().then(()=>{ if(window.__prLastRows)prProcess(window.__prLastRows); });
   }
@@ -1273,7 +1323,7 @@ function prPiecesModal(b, onlyBad){
       <div class="gpm-f"><button class="${!f?'on':''}" data-f="">الكل</button>${Object.keys(dist).sort((a,b)=>a-b).map(n=>`<button class="${f===n?'on':''}" data-f="${n}">${n} قطع (${dist[n]})</button>`).join('')}
         <button class="${f==='bad'?'on':''}" data-f="bad" style="color:#b3261e">⚠️ فيها سطر مش مفهوم (${L.filter(o=>o.x.unknown.length).length})</button></div>
       <div class="gpm-t"><table class="pr"><tr><th>#</th><th>السعر</th><th>المحتوى (زي ما هو في الشيت)</th><th>اتعدّ</th><th>إزاي</th></tr>
-      ${R.map((o,i)=>`<tr class="${o.x.unknown.length?'gWarn':''}"><td>${i+1}</td><td>${prFmt(prNum(o.r[PR_priceCol-1]))}</td><td style="white-space:normal;text-align:right;max-width:460px;font-size:12.5px">${esc2(o.r[PR_contentsCol-1])}</td>
+      ${R.map((o,i)=>`<tr class="${o.x.unknown.length||o.x.items.some(t=>/كل سطر قطعة|⚠️/.test(t))?'gWarn':''}"><td>${i+1}</td><td>${prFmt(prNum(o.r[PR_priceCol-1]))}</td><td style="white-space:normal;text-align:right;max-width:460px;font-size:12.5px">${esc2(o.r[PR_contentsCol-1])}</td>
         <td><b>${o.x.n}</b></td><td style="white-space:normal;text-align:right;font-size:12.5px">${o.x.items.map(esc2).join('<br>')}${o.x.unknown.length?`<br><span style="color:#b3261e">مش مفهوم ← اتحسب ${o.x.guessed}: ${o.x.unknown.map(esc2).join(' / ')}</span>`:''}</td></tr>`).join('')}
       <tr class="total"><td colspan="3">الإجمالي (${R.length} أوردر)</td><td>${prFmt(tot)}</td><td></td></tr></table></div>
       <p class="gpm-n">لو عدد أوردر غلط: اعمل قاعدة في 🧩 تحليل المكونات ← 🏷️ ${bk==='rs'?'👶 RS':bk==='kidzzly'?'🧸 Kidzzly':bk} ← ✍️ قواعدك، وشغّل التقرير تاني.</p></div>`;
@@ -7992,7 +8042,14 @@ table.pr tr.bd-cat td{background:var(--slate-l);font-weight:700}
     orders.forEach((o, oi) => {
       const row = { o, items:[], unknown:[] }, oPrice = parseFloat(String(o.total_amount ?? o.price ?? '').replace(/[^\d.]/g, '')) || 0;
       // 🩳 بيجامات Kidzzly / RS: الأوردر كله بيتحسب مرة واحدة (إلا لو فيه قاعدة منك بتطابق)
-      if((bk === 'kidzzly' || bk === 'rs' || bk === 'bloom') && typeof kidsPajamaParse === 'function'){
+      if(bk === 'rs' && typeof rsCount === 'function'){
+        const whole = norm(o.shipment_contents || ''), ch0 = cKey.filter(r => ruleHit(r, whole) && priceOk(r, oPrice));
+        if(!ch0.length){ const rc = rsCount(o.shipment_contents, o.total_amount ?? o.price);
+          const p = addP('قطعة RS', rc.n, {}); p.orders.add(oi); if(rc.byPrice) p.byPrice = (p.byPrice || 0) + 1;
+          row.pcs = rc.n; row.sizes = {}; row.colors = {}; row.byPrice = !!rc.byPrice; row.price = oPrice;
+          out.pieces += rc.n; out.ok++; row.items.push('قطعة × ' + rc.n + ' — ' + rc.how); if(rc.guess) row.guessRS = true; out.rows.push(row); return; }
+      }
+      if((bk === 'kidzzly' || bk === 'bloom') && typeof kidsPajamaParse === 'function'){
         const whole = norm(o.shipment_contents || ''), ch0 = cKey.filter(r => ruleHit(r, whole) && priceOk(r, oPrice));
         const pj = ch0.length ? null : kidsPajamaParse(o.shipment_contents, oPrice);
         if(pj){ const p = addP('بيجامة', pj.n, {}); p.orders.add(oi); Object.entries(pj.sizes).forEach(([sz, q]) => p.sizes[sz] = (p.sizes[sz] || 0) + q);
@@ -8097,6 +8154,7 @@ table.pr tr.bd-cat td{background:var(--slate-l);font-weight:700}
     const st = {}; L.forEach(o => { const s = String(api.label(o) || '').replace(/\s*#\d+$/, ''); st[s] = (st[s] || 0) + 1; });
     const scopes = { all:L, del:K.del, notdel:L.filter(o => kind(o) !== 'del'), way:K.pend.concat(K.ofd), hold:K.hold, undel:K.undel.concat(K.ret, K.rej) };
     const scoped = scopes[B.scope] || L;
+    if(B.brand === 'rs' && typeof rsLearn === 'function') rsLearn(L.map(o => ({ contents:o.shipment_contents, price:o.total_amount ?? o.price })));
     B.list = L; B.res = { total:L.length, del:K.del.length, notdel:L.length - K.del.length, K:Object.fromEntries(Object.entries(K).map(([k, v]) => [k, v.length])), st, an:analyzeBrand(scoped), scoped:scoped.length };
   }
 
