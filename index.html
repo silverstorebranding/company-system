@@ -460,6 +460,7 @@ html:not(.auth-ok) #app{display:none}
     <div class="grp"><div class="grp-title">المالية</div>
       <a class="navlink" href="#/profits">💰 الأرباح</a>
       <a class="navlink" href="#/payroll">💵 الرواتب</a>
+      <a class="navlink" href="#/transfers">💳 التحويلات</a>
       <a class="navlink" href="#/brands">🏷️ Brands</a>
       <a class="navlink" href="#/meta-ads">📊 Ads (Meta)</a>
     </div>
@@ -2501,6 +2502,8 @@ const Squad = (function(){
   }
 
 
+  // 💳 زرار التحويل (إنستاباي / فودافون كاش) — الشغل كله في موديول التحويلات تحت
+  const trBtnHtml = o => `<button type="button" class="tr-btn" data-tr-id="${esc(o.id)}" data-tr-name="${esc(o.customer_name || '')}" data-tr-phone="${esc(o.customer_phone || '')}" data-tr-amount="${esc(o.amount || '')}" data-tr-page="${esc(o.page_name || '')}" data-tr-agent="${esc(o.agent_id || '')}" data-tr-agent-name="${esc(o.agent_name || '')}">💳 تحويل</button>`;
   function DashboardView(){
     const orders = state.myOrders || [];
     const s = withOffice(commissionSummary(orders), state.session?.user?.id);
@@ -2526,6 +2529,7 @@ const Squad = (function(){
           </select>
         </td>
         <td data-label="إجراءات"><div class="sq-actions">
+          ${trBtnHtml(o)}
           <button class="sq-icon" title="تعديل الأوردر" aria-label="تعديل الأوردر" data-edit-id="${esc(o.id)}">✏️</button>
           ${isAdminUser() ? `<button class="sq-icon danger" title="مسح الأوردر" aria-label="مسح الأوردر" data-delete-id="${esc(o.id)}">🗑️</button>` : ''}
         </div></td>
@@ -3133,7 +3137,7 @@ const Squad = (function(){
       </div>
       <div class="sq-tablecard">
         ${list.length ? `<table class="sq-table">
-          <thead><tr><th>العميل</th><th>الموبايل</th><th>العنوان</th><th>الطلب</th><th>المقاس</th><th>المصدر</th><th>القيمة</th><th>العمولة</th><th>الحالة</th><th>التاريخ</th>${isAdminUser() ? '<th></th>' : ''}</tr></thead>
+          <thead><tr><th>العميل</th><th>الموبايل</th><th>العنوان</th><th>الطلب</th><th>المقاس</th><th>المصدر</th><th>القيمة</th><th>العمولة</th><th>الحالة</th><th>التاريخ</th><th></th></tr></thead>
           <tbody>${list.map(o => { const st = statusLabel(o.status); return `<tr>
             <td data-label="العميل">${esc(o.customer_name || '—')}</td>
             <td class="mut" data-label="الموبايل">${esc(o.customer_phone || '—')}</td>
@@ -3145,7 +3149,7 @@ const Squad = (function(){
             <td class="mut" data-label="العمولة">${commCell(o, s.active)}</td>
             <td data-label="الحالة"><span class="sq-badge ${st.cls}">${st.text}</span></td>
             <td class="mut" data-label="التاريخ">${fmtDate(o.created_at)}</td>
-            ${isAdminUser() ? `<td data-label="مسح"><button class="sq-icon danger" title="مسح الأوردر" aria-label="مسح الأوردر" data-delete-id="${esc(o.id)}">🗑️</button></td>` : ''}</tr>`; }).join('')}</tbody></table>`
+            <td data-label="إجراءات"><div class="sq-actions">${trBtnHtml(o)}${isAdminUser() ? `<button class="sq-icon danger" title="مسح الأوردر" aria-label="مسح الأوردر" data-delete-id="${esc(o.id)}">🗑️</button>` : ''}</div></td></tr>`; }).join('')}</tbody></table>`
         : `<div class="sq-empty">${all.length ? 'مفيش أوردرات بالفلتر ده.' : 'الموظف ده لسه مسجلش أوردرات.'}</div>`}
       </div>`;
     return h;
@@ -5349,6 +5353,7 @@ async function exportToSheet(btn) {
       { key:'pickup_review', label:'📦 مراجعة البيكب', routes:['pickup'] },
       { key:'profits', label:'💰 الأرباح',    routes:['profits'] },
       { key:'payroll', label:'💵 الرواتب', routes:['payroll'] },
+      { key:'transfers', label:'💳 التحويلات (إنستاباي / فودافون كاش)', routes:['transfers'] },
       { key:'brands', label:'🏷️ Brands', routes:['brands'] },
       { key:'dept:warehouse', label:'🏬 المخزن', routes:[] },
       { key:'ads',     label:'📢 الإعلانات',  routes:['ads'] },
@@ -12649,6 +12654,197 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
   window.addEventListener('hashchange', () => { if(isUG()) setTimeout(mount, 0); });
   const w = setInterval(() => { if(me().id && sb()){ clearInterval(w); badge(); if(isUG()) mount(); setInterval(badge, 60000); } }, 700);
   window.Urgent = { count: async () => { const { count } = await sb().from('urgent_orders').select('id', { count:'exact', head:true }).eq('assigned_to', me().id).eq('status', 'open'); return count || 0; } };
+})();
+</script>
+
+<style>
+/* 💳 التحويلات (إنستاباي / فودافون كاش) */
+.tr-btn{padding:4px 9px;border:1.5px solid #9ec5e8;border-radius:8px;background:#eef5fc;color:#2b6cb0;font-family:inherit;font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap}
+.tr-btn.has{background:#e3f3e8;border-color:#a9d8b8;color:#23784a}
+.tr-modal{position:fixed;inset:0;z-index:80;background:rgba(0,0,0,.4);display:grid;place-items:center;padding:14px}
+.tr-box{background:var(--panel);color:var(--ink);border-radius:14px;padding:18px 20px;width:min(520px,100%);max-height:92vh;overflow:auto;box-shadow:0 20px 50px rgba(0,0,0,.25)}
+.tr-box h3{margin:0 0 6px}
+.tr-box label{display:block;font-size:13px;color:var(--muted);margin:10px 0 4px}
+.tr-box input,.tr-box select{width:100%;padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:15px;background:var(--panel);color:var(--ink);box-sizing:border-box}
+.tr-kind{display:flex;gap:8px}.tr-kind button{flex:1;padding:9px;border:1.5px solid var(--line);border-radius:9px;background:var(--panel);font-family:inherit;font-weight:700;cursor:pointer;color:var(--ink)}
+.tr-kind button.on{border-color:#2b6cb0;background:#eef5fc;color:#2b6cb0}
+.tr-pick{display:flex;align-items:center;justify-content:center;gap:8px;padding:16px;border:2px dashed #9ec5e8;border-radius:12px;cursor:pointer;color:#2b6cb0;font-weight:700;background:#f6fafe}
+.tr-prev{max-width:100%;max-height:260px;border-radius:10px;display:block;margin:8px auto 0;border:1px solid var(--line)}
+.tr-act{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}
+.tr-act button{padding:10px 16px;border:none;border-radius:9px;font-family:inherit;font-size:15px;font-weight:700;cursor:pointer}
+.tr-ok{background:#2f7d55;color:#fff}.tr-cancel{background:var(--slate-l);color:var(--ink)}.tr-del{background:#fdecea;color:#a3271a}
+.tr-old{border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin-top:8px;font-size:13.5px;display:flex;gap:10px;align-items:center}
+.tr-old img{width:56px;height:56px;object-fit:cover;border-radius:8px;cursor:pointer}
+.tr-msg{padding:9px 12px;border-radius:9px;margin-top:10px;font-size:14px;background:#fdecea;color:#a3271a}
+.tr-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-bottom:14px}
+.tr-kpi{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px}.tr-kpi .n{font-size:22px;font-weight:800}.tr-kpi .l{font-size:12.5px;color:var(--muted)}
+.tr-t{width:100%;border-collapse:collapse;font-size:14px}.tr-t th{background:var(--slate-l);font-size:12.5px;color:var(--muted);padding:8px;text-align:right}
+.tr-t td{padding:8px;border-bottom:1px solid var(--line);vertical-align:middle}
+.tr-thumb{width:46px;height:46px;object-fit:cover;border-radius:7px;cursor:pointer;border:1px solid var(--line)}
+.tr-big{position:fixed;inset:0;z-index:90;background:rgba(0,0,0,.8);display:grid;place-items:center;padding:20px;cursor:zoom-out}.tr-big img{max-width:100%;max-height:100%;border-radius:10px}
+</style>
+<script>
+/* =====================================================================
+   💳 التحويلات: زرار "تحويل" جنب كل أوردر في Squad ← صورة التحويل + المبلغ (إنستاباي / فودافون كاش)
+   وصفحة "💳 التحويلات" فيها أوردرات الشهر اللي اتدفعت تحويل وقيمتها (جدول order_transfers)
+   ===================================================================== */
+(function(){
+  const sb = () => window.__sbClient || (window.AuthGate && window.AuthGate.sb);
+  const me = () => (window.AuthGate && window.AuthGate.me && window.AuthGate.me()) || {};
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const fmt = n => Math.round(Number(n) || 0).toLocaleString('ar-EG');
+  const num = v => parseFloat(String(v ?? '').replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/[^\d.]/g, '')) || 0;
+  const METHODS = { instapay:'📲 إنستاباي', vfcash:'📱 فودافون كاش' };
+  const ymd = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  let has = {}, missing = false;        // order_id → { n, amount }
+
+  // الصورة بتتصغّر قبل ما تتحفظ (أقصى عرض 1200 بكسل) عشان تبقى خفيفة
+  function compress(file){
+    return new Promise((res, rej) => { const fr = new FileReader(); fr.onerror = rej; fr.onload = () => { const img = new Image(); img.onerror = rej; img.onload = () => {
+      const k = Math.min(1, 1200 / Math.max(img.width, img.height)), c = document.createElement('canvas'); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); res(c.toDataURL('image/jpeg', 0.72)); }; img.src = fr.result; }; fr.readAsDataURL(file); });
+  }
+  function bigImg(src){ const d = document.createElement('div'); d.className = 'tr-big'; d.innerHTML = `<img src="${src}" alt="صورة التحويل">`; d.onclick = () => d.remove(); document.body.appendChild(d); }
+
+  /* ---------- النافذة ---------- */
+  async function open(o){
+    let M = { o, method:'instapay', amount: o.amount || '', note:'', img:'', old:[], busy:false, err:'' };
+    const wrap = document.createElement('div'); wrap.className = 'tr-modal'; document.body.appendChild(wrap);
+    const close = () => wrap.remove();
+    wrap.onclick = e => { if(e.target === wrap) close(); };
+    const draw = () => {
+      wrap.innerHTML = `<div class="tr-box"><h3>💳 تحويل — ${esc(o.name || 'أوردر')}</h3>
+        <div style="font-size:13px;color:var(--muted)">${esc(o.phone || '')}${o.page ? ' · ' + esc(o.page) : ''}${o.amount ? ' · قيمة الأوردر ' + fmt(o.amount) + ' ج' : ''}</div>
+        ${M.old.length ? `<div style="margin-top:10px;font-size:13.5px"><b>اتسجل قبل كده:</b>${M.old.map(t => `<div class="tr-old">${t.image ? `<img src="${t.image}" data-trbig="${t.id}" alt="">` : '<span>🖼️ مفيش صورة</span>'}
+          <div style="flex:1"><b>${fmt(t.amount)} ج</b> · ${esc(METHODS[t.method] || t.method || '')}<br><small style="color:var(--muted)">${new Date(t.created_at).toLocaleString('ar-EG', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' })} · ${esc(t.created_by_name || '')}${t.note ? ' · ' + esc(t.note) : ''}</small></div>
+          ${t.created_by === me().id || me().is_admin ? `<button class="tr-del" style="padding:6px 10px;border:none;border-radius:8px;cursor:pointer;font-family:inherit" data-trdel="${t.id}">🗑️</button>` : ''}</div>`).join('')}</div>` : ''}
+        <label>اتدفع إزاي؟</label><div class="tr-kind">${Object.entries(METHODS).map(([k, l]) => `<button type="button" class="${M.method === k ? 'on' : ''}" data-trm="${k}">${l}</button>`).join('')}</div>
+        <label>المبلغ اللي اتحوّل (ج)</label><input id="trAmt" inputmode="decimal" value="${esc(M.amount)}">
+        <label>صورة التحويل (سكرين شوت)</label>
+        <label class="tr-pick" style="margin:0">${M.img ? '🔄 غيّر الصورة' : '📷 اختار / صوّر سكرين التحويل'}<input type="file" id="trFile" accept="image/*" style="display:none"></label>
+        ${M.img ? `<img class="tr-prev" src="${M.img}" alt="">` : ''}
+        <label>ملاحظة (اختياري)</label><input id="trNote" value="${esc(M.note)}" placeholder="مثلاً: آخر 4 أرقام 1234">
+        ${M.err ? `<div class="tr-msg">${esc(M.err)}</div>` : ''}
+        <div class="tr-act"><button class="tr-ok" id="trSave" ${M.busy ? 'disabled' : ''}>${M.busy ? '⏳ بيتحفظ...' : '💾 سجّل التحويل'}</button><button class="tr-cancel" id="trClose">إلغاء</button></div></div>`;
+      const $ = id => wrap.querySelector('#' + id);
+      wrap.querySelectorAll('[data-trm]').forEach(b => b.onclick = () => { keep(); M.method = b.dataset.trm; draw(); });
+      $('trFile').onchange = async e => { const f = e.target.files[0]; if(!f) return; keep(); try{ M.img = await compress(f); M.err = ''; }catch(_){ M.err = 'الصورة مش مقروءة، جرّب صورة تانية.'; } draw(); };
+      $('trClose').onclick = close;
+      wrap.querySelectorAll('[data-trbig]').forEach(i => i.onclick = () => bigImg(i.src));
+      wrap.querySelectorAll('[data-trdel]').forEach(b => b.onclick = async () => { if(!confirm('تمسح التحويل ده؟')) return; await sb().from('order_transfers').delete().eq('id', b.dataset.trdel); M.old = M.old.filter(t => String(t.id) !== b.dataset.trdel); refreshOne(o.id); draw(); });
+      $('trSave').onclick = save;
+    };
+    const keep = () => { const a = wrap.querySelector('#trAmt'), n = wrap.querySelector('#trNote'); if(a) M.amount = a.value; if(n) M.note = n.value; };
+    async function save(){
+      keep(); const amt = num(M.amount);
+      if(!(amt > 0)){ M.err = 'اكتب المبلغ اللي اتحوّل.'; return draw(); }
+      if(!M.img){ M.err = 'ارفع صورة التحويل.'; return draw(); }
+      M.busy = true; M.err = ''; draw();
+      const row = { order_id:o.id, customer_name:o.name || null, customer_phone:o.phone || null, page_name:o.page || null, agent_id:o.agent || null, agent_name:o.agentName || null,
+        order_amount: num(o.amount) || null, amount:amt, method:M.method, note:M.note.trim() || null, image:M.img, created_by:me().id, created_by_name:me().full_name || me().username || '' };
+      const { error } = await sb().from('order_transfers').insert(row);
+      if(error){ M.busy = false; M.err = /order_transfers|relation|schema cache|does not exist/i.test(error.message) ? 'جدول التحويلات لسه مش متعمل — شغّل ملف order_transfers.sql في Supabase.' : 'ماتحفظش: ' + error.message; return draw(); }
+      close(); await refreshOne(o.id);
+      toast(`✅ اتسجل تحويل ${fmt(amt)} ج (${METHODS[M.method]}) لـ ${o.name || 'الأوردر'}.`);
+    }
+    draw();
+    try{ const { data } = await sb().from('order_transfers').select('*').eq('order_id', o.id).order('created_at', { ascending:true }); M.old = data || []; draw(); }catch(e){}
+  }
+  function toast(t){ const d = document.createElement('div'); d.textContent = t; d.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:95;background:#2f7d55;color:#fff;padding:11px 18px;border-radius:10px;font-weight:700;box-shadow:0 8px 20px rgba(0,0,0,.2)'; document.body.appendChild(d); setTimeout(() => d.remove(), 4000); }
+
+  /* ---------- الزراير اللي جنب الأوردرات: بتتحدّث لوحدها ---------- */
+  function paint(){
+    document.querySelectorAll('[data-tr-id]').forEach(b => { const h = has[b.dataset.trId];
+      b.classList.toggle('has', !!h); b.textContent = h ? `💳 ${fmt(h.amount)} ج` : '💳 تحويل'; b.title = h ? 'اتسجل تحويل — دوس تشوفه أو تزود' : 'سجّل إن الأوردر اتدفع تحويل'; });
+  }
+  let pend = false;
+  async function scan(){
+    if(pend || missing || !sb() || !me().id) return;
+    const ids = [...document.querySelectorAll('[data-tr-id]')].map(b => b.dataset.trId).filter(id => !(id in has));
+    if(!ids.length){ paint(); return; }
+    pend = true;
+    try{
+      const { data, error } = await sb().from('order_transfers').select('order_id, amount').in('order_id', ids);
+      if(error){ if(/order_transfers|relation|schema cache|does not exist/i.test(error.message)) missing = true; }
+      else { ids.forEach(id => has[id] = null); (data || []).forEach(t => { const x = has[t.order_id] = has[t.order_id] || { n:0, amount:0 }; x.n++; x.amount += Number(t.amount) || 0; }); }
+    }catch(e){}
+    pend = false; paint();
+  }
+  async function refreshOne(id){ delete has[id]; await scan(); if(isTR()) load(); }
+  setInterval(scan, 1500);
+  document.addEventListener('click', e => { const b = e.target.closest('[data-tr-id]'); if(!b) return; e.preventDefault(); e.stopPropagation();
+    open({ id:b.dataset.trId, name:b.dataset.trName, phone:b.dataset.trPhone, amount:b.dataset.trAmount, page:b.dataset.trPage, agent:b.dataset.trAgent, agentName:b.dataset.trAgentName }); }, true);
+  window.Transfers = { open, btn: o => `<button type="button" class="tr-btn" data-tr-id="${esc(o.id)}" data-tr-name="${esc(o.customer_name || '')}" data-tr-phone="${esc(o.customer_phone || '')}" data-tr-amount="${esc(o.amount || '')}" data-tr-page="${esc(o.page_name || '')}" data-tr-agent="${esc(o.agent_id || '')}" data-tr-agent-name="${esc(o.agent_name || '')}">💳 تحويل</button>` };
+
+  /* ---------- صفحة 💳 التحويلات: كل تحويلات الشهر وقيمتها ---------- */
+  const isTR = () => (location.hash.replace('#/', '') || 'home').split('/')[0] === 'transfers';
+  const S = { month: ymd(new Date()).slice(0, 7), list:null, err:'', q:'', method:'' };
+  async function load(){
+    const [y, m] = S.month.split('-').map(Number), from = new Date(y, m - 1, 1), to = new Date(y, m, 1);
+    const { data, error } = await sb().from('order_transfers').select('id, order_id, customer_name, customer_phone, page_name, agent_id, agent_name, order_amount, amount, method, note, created_by_name, created_at')
+      .gte('created_at', from.toISOString()).lt('created_at', to.toISOString()).order('created_at', { ascending:false }).limit(5000);
+    if(error){ S.err = /order_transfers|relation|schema cache|does not exist/i.test(error.message) ? 'جدول التحويلات لسه مش متعمل — شغّل ملف order_transfers.sql في Supabase.' : error.message; S.list = []; draw(); return; }
+    S.err = ''; S.list = data || [];
+    // حالة الأوردرات (اتسلم / لسه / ...) من Squad
+    const ids = [...new Set(S.list.map(t => t.order_id).filter(Boolean))];
+    S.st = {};
+    if(ids.length){ const { data:o } = await sb().from('orders').select('id, status, agent_id').in('id', ids); (o || []).forEach(x => S.st[x.id] = x); }
+    if(!S.names){ const { data:p } = await sb().from('profiles').select('id, full_name, username'); S.names = {}; (p || []).forEach(x => S.names[x.id] = x.full_name || x.username); }
+    draw();
+  }
+  const ST = { pending:'قيد التنفيذ', delivered:'✅ اتسلم', cancelled:'اتلغى', undelivered:'💔 اندلفرد' };
+  function rows(){ return (S.list || []).filter(t => (!S.method || t.method === S.method) && (!S.q || [t.customer_name, t.customer_phone, t.page_name, t.note].join(' ').includes(S.q))); }
+  function view(){
+    const mLabel = new Date(S.month + '-15').toLocaleDateString('ar-EG', { month:'long', year:'numeric' });
+    let h = `<div class="pagehead"><h1>💳 التحويلات</h1><p>الأوردرات اللي اتدفعت إنستاباي أو فودافون كاش (يعني بتتحصّل بصفر من شركة الشحن) — عددها وفلوسها كل شهر.</p></div>
+      <div class="card"><div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+        <label>الشهر <input type="month" id="trMonth" value="${esc(S.month)}" style="padding:7px 9px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit"></label>
+        <select id="trMeth" style="padding:8px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit"><option value="">كل الطرق</option>${Object.entries(METHODS).map(([k, l]) => `<option value="${k}" ${S.method === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
+        <input id="trQ" value="${esc(S.q)}" placeholder="🔎 اسم / موبايل / صفحة" style="padding:8px 10px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit">
+        ${window.XLSX ? '<button class="tr-btn" id="trX" style="padding:8px 14px;font-size:14px">⬇️ نزّل شيت الشهر</button>' : ''}</div>
+        <p style="margin:8px 0 0;font-size:12.5px;color:var(--muted)">💡 التحويل بيتسجل من زرار <b>💳 تحويل</b> اللي جنب كل أوردر في Squad.</p></div>`;
+    if(S.err) return h + `<div class="mono-note">${esc(S.err)}</div>`;
+    if(!S.list) return h + '<p style="color:var(--muted)">⏳ بيحمّل...</p>';
+    const L = rows(), tot = L.reduce((s, t) => s + (Number(t.amount) || 0), 0), by = k => L.filter(t => t.method === k);
+    const orders = new Set(L.map(t => t.order_id)).size;
+    const del = L.filter(t => (S.st[t.order_id] || {}).status === 'delivered'), und = L.filter(t => ['undelivered', 'cancelled'].includes((S.st[t.order_id] || {}).status));
+    h += `<div class="tr-kpis">
+      <div class="tr-kpi" style="border-top:4px solid #2b6cb0"><div class="n">${fmt(orders)}</div><div class="l">أوردر اتدفع تحويل في ${esc(mLabel)}</div></div>
+      <div class="tr-kpi" style="border-top:4px solid #2f7d55"><div class="n">${fmt(tot)} ج</div><div class="l">💰 إجمالي فلوس التحويلات</div></div>
+      ${Object.entries(METHODS).map(([k, l]) => `<div class="tr-kpi"><div class="n">${fmt(by(k).reduce((s, t) => s + (Number(t.amount) || 0), 0))} ج</div><div class="l">${l} (${by(k).length})</div></div>`).join('')}
+      <div class="tr-kpi"><div class="n">${fmt(del.length)}</div><div class="l">✅ منهم اتسلم</div></div>
+      ${und.length ? `<div class="tr-kpi" style="border-top:4px solid #b3261e"><div class="n">${fmt(und.length)}</div><div class="l">⚠️ اتدفع ومااتسلمش (اندلفرد / اتلغى) — ${fmt(und.reduce((s, t) => s + (Number(t.amount) || 0), 0))} ج</div></div>` : ''}</div>`;
+    h += `<div class="card"><div style="overflow-x:auto"><table class="tr-t"><thead><tr><th>التاريخ</th><th>العميل</th><th>الموبايل</th><th>الصفحة</th><th>الموظفة</th><th>الطريقة</th><th>المبلغ</th><th>قيمة الأوردر</th><th>حالة الأوردر</th><th>الصورة</th><th>ملاحظة</th></tr></thead><tbody>
+      ${L.map(t => { const o = S.st[t.order_id] || {}; const diff = t.order_amount && Math.abs(Number(t.order_amount) - Number(t.amount)) > 1;
+        return `<tr><td>${new Date(t.created_at).toLocaleDateString('ar-EG', { day:'numeric', month:'short' })}</td><td>${esc(t.customer_name || '—')}</td><td style="direction:ltr">${esc(t.customer_phone || '')}</td>
+          <td>${esc(t.page_name || '—')}</td><td>${esc(t.agent_name || (S.names || {})[t.agent_id || o.agent_id] || '—')}</td><td>${esc(METHODS[t.method] || t.method || '')}</td>
+          <td><b>${fmt(t.amount)} ج</b></td><td>${t.order_amount ? fmt(t.order_amount) + ' ج' + (diff ? '<br><small style="color:#b7791f">⚠️ مختلف</small>' : '') : '—'}</td>
+          <td>${esc(ST[o.status] || o.status || '—')}</td><td><button class="tr-btn" data-trimg="${t.id}">🖼️ شوف</button></td><td style="font-size:12.5px">${esc(t.note || '')}</td></tr>`; }).join('') || '<tr><td colspan="11" style="text-align:center;color:var(--muted);padding:20px">مفيش تحويلات متسجلة الشهر ده.</td></tr>'}
+      ${L.length ? `<tr style="background:var(--slate-l);font-weight:800"><td colspan="6">الإجمالي (${fmt(orders)} أوردر)</td><td>${fmt(tot)} ج</td><td colspan="4"></td></tr>` : ''}
+      </tbody></table></div></div>`;
+    return h;
+  }
+  function draw(){
+    if(!isTR()) return;
+    const main = document.getElementById('main'); if(!main) return;
+    main.innerHTML = view();
+    const $ = id => document.getElementById(id);
+    if($('trMonth')) $('trMonth').onchange = e => { if(e.target.value){ S.month = e.target.value; S.list = null; draw(); load(); } };
+    if($('trMeth')) $('trMeth').onchange = e => { S.method = e.target.value; draw(); };
+    if($('trQ')) $('trQ').oninput = e => { S.q = e.target.value.trim(); clearTimeout(S.t); S.t = setTimeout(() => { draw(); const q = $('trQ'); if(q){ q.focus(); q.setSelectionRange(q.value.length, q.value.length); } }, 300); };
+    document.querySelectorAll('[data-trimg]').forEach(b => b.onclick = async () => { const { data } = await sb().from('order_transfers').select('image').eq('id', b.dataset.trimg).maybeSingle(); if(data && data.image) bigImg(data.image); else alert('مفيش صورة.'); });
+    if($('trX')) $('trX').onclick = () => {
+      const L = rows(), ws = XLSX.utils.json_to_sheet(L.map(t => ({ 'التاريخ':new Date(t.created_at).toLocaleDateString('en-CA'), 'العميل':t.customer_name || '', 'الموبايل':t.customer_phone || '', 'الصفحة':t.page_name || '',
+        'الموظفة':t.agent_name || (S.names || {})[t.agent_id] || '', 'الطريقة':(METHODS[t.method] || t.method || '').replace(/^\S+\s/, ''), 'المبلغ':Number(t.amount) || 0, 'قيمة الأوردر':Number(t.order_amount) || '',
+        'حالة الأوردر':(ST[(S.st[t.order_id] || {}).status] || '').replace(/^\S+\s/, ''), 'ملاحظة':t.note || '', 'سجّله':t.created_by_name || '' })));
+      const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'التحويلات'); XLSX.writeFile(wb, `التحويلات ${S.month}.xlsx`);
+    };
+  }
+  function mount(){ document.querySelectorAll('#sidebar a.navlink').forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#/transfers')); draw(); load(); }
+  const _render = render;
+  render = function(){ _render.apply(this, arguments); if(isTR()) mount(); };
+  window.addEventListener('hashchange', () => { if(isTR()) setTimeout(mount, 0); });
+  const w = setInterval(() => { if(me().id && sb()){ clearInterval(w); if(isTR()) mount(); } }, 700);
 })();
 </script>
 
