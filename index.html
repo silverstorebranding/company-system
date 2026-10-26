@@ -5479,6 +5479,7 @@ async function exportToSheet(btn) {
     if(!me) return false;
     const { r, p } = parse(hash);
     if(me.is_admin) return true;
+    if(r === 'payroll') return false; // 💵 كشف الرواتب كله للأدمن بس — الموظفة بتشوف راتبها من 💵 راتبي والمديرة فريقها من 👥 فريقي
     if(r === 'inbox' || r === 'urgent' || r === 'team' || r === 'my-salary') return true; // 📨 الرسايل والمهام و 🚨 الأوردرات العاجلة مفتوحين لكل الناس
     if(r === 'admin') return false;
     const al = allowedSet();
@@ -12618,11 +12619,17 @@ a.hm-kpi:hover{box-shadow:0 6px 16px rgba(0,0,0,.07)}
     const row = { name: String(d.name || '').trim(), job: d.job || null, dept: d.dept || null, base_salary: num(d.base_salary), phone: d.phone || null, start_date: d.start_date || null, active: d.active !== false, notes: d.notes || null };
     if(!S.needCol) row.profile_id = d.profile_id || null;
     if(S.hasMgr){ row.is_manager = !!d.is_manager && d.is_manager !== '0'; row.manager_emp_id = d.manager_emp_id ? Number(d.manager_emp_id) : null; }
-    if(!row.name) return flash('اكتب اسم الموظف.', true);
-    const q = d.id ? sb().from('payroll_employees').update(row).eq('id', d.id) : sb().from('payroll_employees').insert(row);
-    const { error } = await q;
-    if(error) return flash('ماتحفظش: ' + error.message, true);
-    S.modal = null; flash(d.id ? '✅ اتعدّل.' : '✅ الموظف اتضاف.'); load();
+    if(!row.name){ S.modalErr = 'اكتب اسم الموظف.'; return draw(); }
+    const run = r => d.id ? sb().from('payroll_employees').update(r).eq('id', d.id) : sb().from('payroll_employees').insert(r);
+    let { error } = await run(row), dropped = [];
+    // لو فيه خانة لسه مش متعملة في Supabase (لسه ماشغّلتش ملف SQL) بنحفظ من غيرها ونقولك
+    for(let i = 0; error && i < 4 && /column|schema cache/i.test(error.message); i++){
+      const m = error.message.match(/'([a-z_]+)' column|column "?([a-z_]+)"?/i), c = m && (m[1] || m[2]);
+      if(!c || !(c in row)) break; delete row[c]; dropped.push(c); ({ error } = await run(row));
+    }
+    if(error){ S.modalErr = 'ماتحفظش: ' + error.message + (/policy|permission|rls/i.test(error.message) ? ' — اتأكد إنك داخل بأكونت الأدمن ومش في وضع "اتفرج كأنك".' : ''); return draw(); }
+    S.modal = null; S.modalErr = '';
+    flash((d.id ? '✅ اتعدّل.' : '✅ الموظف اتضاف.') + (dropped.length ? ` (⚠️ اتحفظ من غير: ${dropped.join('، ')} — شغّل ملفات SQL الرواتب في Supabase)` : '')); load();
   }
   function exportMonth(){
     if(!window.XLSX) return;
@@ -12639,6 +12646,7 @@ a.hm-kpi:hover{box-shadow:0 6px 16px rgba(0,0,0,.07)}
   function monthLabel(m){ return new Date(m + '-15').toLocaleDateString('ar-EG', { month:'long', year:'numeric' }); }
   function view(){
     const admin = !!me().is_admin;
+    if(!admin) return `<div class="pagehead"><h1>💵 الرواتب</h1></div><div class="card"><p style="margin:0">كشف الرواتب كله للأدمن بس. راتبك من <a href="#/my-salary">💵 راتبي</a>${'' }، ولو إنتي مديرة: رواتب فريقك من <a href="#/team">👥 فريقي ورواتبهم</a>.</p></div>`;
     let h = `<div class="pagehead"><h1>💵 الرواتب</h1><p>كل الموظفين ومرتباتهم، والخصومات والإضافات والسلف كل شهر، والصرف.</p></div>`;
     if(S.missing) return h + `<div class="pr-msg err">جداول الرواتب لسه مش متعملة في Supabase.${admin ? ' شغّل الكود ده مرة واحدة في Supabase → SQL Editor:' : ' كلّم الأدمن.'}</div>${admin ? `<pre class="pr-sql">${esc(PAYROLL_SQL)}</pre>` : ''}`;
     if(S.msg) h += `<div class="pr-msg ${S.msgErr ? 'err' : ''}">${esc(S.msg)}</div>`;
@@ -12689,6 +12697,18 @@ a.hm-kpi:hover{box-shadow:0 6px 16px rgba(0,0,0,.07)}
         ${L.slice().reverse().map(x => `<tr style="${okE(x) ? '' : 'opacity:.6'}"><td>${esc(x.entry_date || '')}</td><td>${esc(x.employee_name || '')}</td><td>${esc(KINDS[x.kind] ? KINDS[x.kind].l : x.kind)}${x.status === 'requested' ? ' <span class="pr-st part">طلب مدير — مستني</span>' : x.status === 'rejected' ? ' <span class="pr-st no">اترفض</span>' : x.requested_by_name ? ` <small style="color:var(--muted)">(طلب ${esc(x.requested_by_name)})</small>` : ''}</td><td>${esc(x.reason || '')}</td>
           <td class="${x.kind === 'bonus' ? 'pos' : x.kind === 'payment' ? '' : 'neg'}"><b>${fmt(x.amount)}</b></td><td>${esc(x.note || '')}</td><td style="font-size:12px">${esc(x.created_by_name || '')}</td><td><button class="pr-btn sm red" data-prdel="${x.id}">🗑️</button></td></tr>`).join('')}
         </tbody></table></div>` : '<p style="color:var(--muted)">مفيش حاجة متسجلة الشهر ده.</p>'}</div>`;
+    }
+    if(S.tab === 'emps' && S.profiles){
+      const linked = new Set(S.emps.map(e => e.profile_id).filter(Boolean)), myId = me().id;
+      const free = S.profiles.filter(p => !linked.has(p.id) && p.id !== myId);
+      if(free.length) h += `<div class="card" style="border:2px dashed var(--brass)"><h3>👤 أكونتات في السيستم لسه مش مضافة في الرواتب (${free.length})</h3>
+        <p style="margin:0 0 10px;font-size:13px;color:var(--muted)">اكتب الراتب (والوظيفة والمدير لو حابب) ودوس ➕ — بتتضاف وتتربط بأكونتها على طول، وتقدر تشوف راتبها هي بس من 💵 راتبي.</p>
+        <div class="tablewrap"><table class="pr-t"><thead><tr><th>الأكونت</th><th>الوظيفة</th><th>الراتب الأساسي</th><th>تحت مين</th><th></th></tr></thead><tbody>
+        ${free.map(p => `<tr><td><b>${esc(p.full_name || p.username)}</b><div style="font-size:12px;color:var(--muted)">@${esc(p.username || '')}</div></td>
+          <td><input data-qa-job="${esc(p.id)}" placeholder="مثلاً: خدمة عملاء" style="width:150px;padding:6px 8px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit"></td>
+          <td><input data-qa-sal="${esc(p.id)}" inputmode="decimal" placeholder="الراتب" style="width:110px;padding:6px 8px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit"></td>
+          <td><select data-qa-mgr="${esc(p.id)}" style="padding:6px 8px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit"><option value="">—</option>${S.emps.filter(x => x.is_manager).map(x => `<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select></td>
+          <td><button class="pr-btn sm pri" data-qa-add="${esc(p.id)}">➕ ضيف</button></td></tr>`).join('')}</tbody></table></div></div>`;
     }
     if(S.tab === 'emps'){
       const L = S.emps.filter(e => S.showOff || e.active);
@@ -12750,7 +12770,7 @@ a.hm-kpi:hover{box-shadow:0 6px 16px rgba(0,0,0,.07)}
         <div><label>الدور</label><select data-pf="is_manager"><option value="0" ${!d.is_manager ? 'selected' : ''}>👤 موظف</option><option value="1" ${d.is_manager ? 'selected' : ''}>🧑‍💼 مدير</option></select></div>
         <div><label>تحت مين (المدير بتاعه)</label><select data-pf="manager_emp_id"><option value="">— مالوش مدير —</option>${(S.emps || []).filter(x => x.is_manager && x.id !== d.id).map(x => `<option value="${x.id}" ${String(d.manager_emp_id) === String(x.id) ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></div>
         <div style="grid-column:1/-1"><label>🔗 الأكونت بتاعه في السيستم (عشان الـ EOD وعمولة Squad${d.is_manager ? ' — ولازم للمدير عشان يدخل يشوف فريقه' : ''})</label><select data-pf="profile_id"><option value="">— مش مربوط —</option>${(S.profiles || []).map(p => `<option value="${esc(p.id)}" ${d.profile_id === p.id ? 'selected' : ''}>${esc(p.full_name || p.username)}</option>`).join('')}</select></div>
-      </div><div class="pr-bar" style="margin:16px 0 0"><button class="pr-btn pri" id="prSaveEmp">💾 حفظ</button><button class="pr-btn" data-prclose>إلغاء</button></div></div></div>`; }
+      </div>${S.modalErr ? `<div class="pr-msg err" style="margin-top:12px">${esc(S.modalErr)}</div>` : ''}<div class="pr-bar" style="margin:16px 0 0"><button class="pr-btn pri" id="prSaveEmp">💾 حفظ</button><button class="pr-btn" data-prclose>إلغاء</button></div></div></div>`; }
     const emp = S.emps.find(x => String(x.id) === String(M.empId)) || {}, K = KINDS[M.kind], c = calc(emp);
     const dayRate = num(emp.base_salary) / 30;
     return `<div class="pr-modal" id="prModal"><div class="pr-box"><h3>${M.kind === 'payment' ? '💵 صرف مرتب' : (M.kind === 'bonus' ? '➕ إضافة' : M.kind === 'advance' ? '💸 سلفة' : '➖ خصم')} — ${esc(emp.name || '')}</h3>
@@ -12773,7 +12793,7 @@ a.hm-kpi:hover{box-shadow:0 6px 16px rgba(0,0,0,.07)}
     const $ = id => document.getElementById(id);
     if($('prMonth')) $('prMonth').onchange = e => { if(e.target.value){ S.month = e.target.value; S.open = ''; load(); } };
     if($('prPrev')) $('prPrev').onclick = () => { const d = new Date(S.month + '-15'); d.setMonth(d.getMonth() - 1); S.month = ymd(d).slice(0, 7); load(); };
-    if($('prAddEmp')) $('prAddEmp').onclick = () => { S.modal = { type:'emp', d:{ active:true } }; draw(); };
+    if($('prAddEmp')) $('prAddEmp').onclick = async () => { S.modalErr = ''; if(!S.profiles){ const { data } = await sb().from('profiles').select('id, username, full_name'); S.profiles = data || []; } S.modal = { type:'emp', d:{ active:true } }; draw(); };
     if($('prExport')) $('prExport').onclick = exportMonth;
     if($('prLink')) $('prLink').onclick = async () => {
       if(S.needCol) return flash('شغّل سطر الـ SQL اللي فوق الأول.', true);
@@ -12803,11 +12823,22 @@ a.hm-kpi:hover{box-shadow:0 6px 16px rgba(0,0,0,.07)}
     document.querySelectorAll('[data-propen]').forEach(b => b.onclick = () => { S.open = S.open === b.dataset.propen ? '' : b.dataset.propen; draw(); });
     document.querySelectorAll('[data-pradd]').forEach(b => b.onclick = () => { S.modal = { type:'entry', empId:b.dataset.pradd, kind:b.dataset.k }; draw(); const a = $('prAmt'); if(a) a.focus(); });
     document.querySelectorAll('[data-prdel]').forEach(b => b.onclick = () => delEntry(b.dataset.prdel));
-    document.querySelectorAll('[data-predit]').forEach(b => b.onclick = () => { const e = S.emps.find(x => String(x.id) === b.dataset.predit); S.modal = { type:'emp', d:{ ...e } }; draw(); });
+    document.querySelectorAll('[data-predit]').forEach(b => b.onclick = () => { const e = S.emps.find(x => String(x.id) === b.dataset.predit); S.modalErr = ''; S.modal = { type:'emp', d:{ ...e } }; draw(); });
     document.querySelectorAll('[data-prclose]').forEach(b => b.onclick = () => { S.modal = null; draw(); });
     if($('prModal')) $('prModal').onclick = e => { if(e.target.id === 'prModal'){ S.modal = null; draw(); } };
     document.querySelectorAll('[data-pf]').forEach(el => el.oninput = el.onchange = () => { const k = el.dataset.pf; S.modal.d[k] = (k === 'active' || k === 'is_manager' || k === 'show_self') ? el.value === '1' : el.value; if(k === 'is_manager') draw(); });
     if($('prSaveEmp')) $('prSaveEmp').onclick = () => saveEmp(S.modal.d);
+    document.querySelectorAll('[data-qa-add]').forEach(b => b.onclick = async () => {
+      const id = b.dataset.qaAdd, p = (S.profiles || []).find(x => x.id === id); if(!p) return;
+      const v = k => (document.querySelector(`[data-qa-${k}="${id}"]`) || {}).value || '';
+      const row = { name:p.full_name || p.username, job:v('job') || null, base_salary:num(v('sal')), active:true, profile_id:id };
+      if(S.hasMgr && v('mgr')) row.manager_emp_id = Number(v('mgr'));
+      b.disabled = true; let { error } = await sb().from('payroll_employees').insert(row);
+      if(error && /manager_emp_id/.test(error.message)){ delete row.manager_emp_id; ({ error } = await sb().from('payroll_employees').insert(row)); }
+      if(error && /profile_id/.test(error.message)){ delete row.profile_id; ({ error } = await sb().from('payroll_employees').insert(row)); }
+      if(error){ b.disabled = false; return flash('ماتضافتش: ' + error.message, true); }
+      flash(`✅ ${row.name} اتضافت بالراتب ${fmt(row.base_salary)} ج${row.profile_id ? ' واتربطت بأكونتها' : ''}.`); load();
+    });
     document.querySelectorAll('[data-rqok]').forEach(b => b.onclick = () => decideReq(b.dataset.rqok, true));
     document.querySelectorAll('[data-rqno]').forEach(b => b.onclick = () => decideReq(b.dataset.rqno, false));
     const emp = S.modal && S.modal.type === 'entry' ? S.emps.find(x => String(x.id) === String(S.modal.empId)) : null;
@@ -12872,8 +12903,13 @@ alter table public.payroll_employees enable row level security;
 alter table public.payroll_entries enable row level security;
 drop policy if exists "payroll emp: all" on public.payroll_employees;
 drop policy if exists "payroll ent: all" on public.payroll_entries;
-create policy "payroll emp: all" on public.payroll_employees for all to authenticated using (public.app_has_section('payroll')) with check (public.app_has_section('payroll'));
-create policy "payroll ent: all" on public.payroll_entries for all to authenticated using (public.app_has_section('payroll')) with check (public.app_has_section('payroll'));
+-- 🔐 كشف الرواتب كله (قراءة وتعديل) للأدمن بس
+create or replace function public.app_is_admin() returns boolean
+language sql stable security definer set search_path = public as $$
+  select coalesce((select is_admin from public.profiles where id = auth.uid()), false);
+$$;
+create policy "payroll emp: all" on public.payroll_employees for all to authenticated using (public.app_is_admin()) with check (public.app_is_admin());
+create policy "payroll ent: all" on public.payroll_entries for all to authenticated using (public.app_is_admin()) with check (public.app_is_admin());
 -- 💵 راتبي: الموظفة تشوف راتبها وحركاتها (لو الأدمن فاتحلها)
 alter table public.payroll_employees add column if not exists show_self boolean not null default false;
 create or replace function public.payroll_my_emp_id() returns bigint
