@@ -10547,15 +10547,16 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     await sbc().from('app_kv').upsert({ key:PN_KV, value:{ map:SQ.pageNotes }, updated_at:new Date().toISOString(), updated_by_name: me().full_name || me().username || '' });
   }
   const dayStartIso = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.toISOString(); };
-  async function squadRows(){
+  async function squadRows(fromOverride){
     if(!SQ.loaded) await loadSquadPtr();
     if(!Object.keys(SQ.names).length){
       const { data: pr } = await sbc().from('profiles').select('id, username, full_name');
       (pr || []).forEach(p => SQ.names[p.id] = p.full_name || p.username || 'موظف');
     }
-    const from = E.showOld ? dayStartIso() : (SQ.at || dayStartIso());
-    const { data, error } = await sbc().from('orders').select('*').gt('created_at', from).order('created_at', { ascending:true }).limit(1000);
-    if(error) throw error;
+    const from = fromOverride || (E.showOld ? dayStartIso() : (SQ.at || dayStartIso()));
+    let data = [], off = 0;
+    for(;;){ const r = await sbc().from('orders').select('*').gt('created_at', from).order('created_at', { ascending:true }).range(off, off + 999);
+      if(r.error) throw r.error; data = data.concat(r.data || []); if(!r.data || r.data.length < 1000 || data.length >= 20000) break; off += 1000; }
     return (data || []).map(o => {
       const page = String(o.page_name || '').trim() || 'بدون مصدر';
       const r = { name:o.customer_name || '', phone:o.customer_phone || '', address:o.customer_address || '', amount:String(o.amount ?? ''),
@@ -10626,9 +10627,104 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
       const maxSeq = mx && mx[0] ? Number(mx[0].seq) : 0;
       if(p.seq > maxSeq) await savePtr(src, 'seq', 0);
     }
-    const { data, error } = await filt(sbc().from('easy_orders').select('*')).gt('seq', E.showOld ? 0 : p.seq).order('seq', { ascending:true }).limit(500);
-    if(error) throw error;
-    return (data || []).map(x => { const r = fromEasy(x.payload || {}, x.seq, src); r.estatus = x.status || r.estatus; r.orderAt = (x.payload && (x.payload.created_at || x.payload.createdAt)) || x.received_at || ''; return r; });
+    // ⚠️ كان فيه حد 500 أوردر — لو فيه أوردرات قديمة اترفعت ومتحدّثش العلامة، الجديد كان بيتقطع. دلوقتي بيجيب كله صفحة صفحة
+    let data = [], from = 0;
+    for(;;){
+      const r = await filt(sbc().from('easy_orders').select('*')).gt('seq', E.showOld ? 0 : p.seq).order('seq', { ascending:true }).range(from, from + 999);
+      if(r.error) throw r.error;
+      data = data.concat(r.data || []); if(!r.data || r.data.length < 1000 || data.length >= 20000) break; from += 1000;
+    }
+    const rows = data.map(x => { const r = fromEasy(x.payload || {}, x.seq, src); r.estatus = x.status || r.estatus; r.orderAt = (x.payload && (x.payload.created_at || x.payload.createdAt)) || x.received_at || ''; return r; });
+    // 📍 العلامة بتتقدّم لوحدها على الأوردرات المتتالية اللي اترفعت أو اتشالت أو اتلغت
+    if(!E.showOld){ try{ await loadDone(); let last = 0; for(const r of rows){ if(DONE.has(skipKey(r)) || isCancel(r.estatus)) last = r.seq; else break; }
+      if(last > (p.seq || 0)) await savePtr(src, 'seq', last); }catch(e){} }
+    return rows;
+  }
+  /* 🔎 افحص مصدر: كل الأوردرات اللي وصلت من وقت معيّن — ومين هيظهر ومين لأ وليه */
+  const XD = { open:false, from:'', busy:false, res:null };
+  (() => { const d = new Date(); d.setDate(d.getDate() - 1); d.setHours(15, 0, 0, 0); XD.from = new Date(d - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16); })();
+  async function diagSource(src){
+    XD.busy = true; XD.res = null; draw();
+    try{
+      await loadDone(); const p = P(src), since = new Date(XD.from).toISOString();
+      let all = [], from = 0;
+      for(;;){ const r = await sbc().from('easy_orders').select('*').gte('received_at', since).order('seq', { ascending:true }).range(from, from + 999);
+        if(r.error) throw r.error; all = all.concat(r.data || []); if(!r.data || r.data.length < 1000 || all.length >= 20000) break; from += 1000; }
+      const bySrc = {}; all.forEach(x => { const k = x.source || 'dream'; bySrc[k] = (bySrc[k] || 0) + 1; });
+      const mine = all.filter(x => (x.source || 'dream') === src);
+      const L = mine.map(x => { const r = fromEasy(x.payload || {}, x.seq, src); r.estatus = x.status || r.estatus; r.orderAt = (x.payload && (x.payload.created_at || x.payload.createdAt)) || x.received_at;
+        let why = 'show';
+        if(isCancel(r.estatus)) why = 'cancel';
+        else if(DONE.has(skipKey(r))) why = 'done';
+        else if(r.seq <= (p.seq || 0)) why = 'lost';
+        return { r, why, at:x.received_at }; });
+      XD.res = { src, total:mine.length, bySrc, L, ptr:p.seq || 0 };
+    }catch(e){ XD.res = { err:e.message }; }
+    XD.busy = false; draw();
+  }
+  /* 🔎 افحص كل المصادر مرة واحدة (Squad + كل أكونتات EasyOrders) */
+  const XA = { open:false, busy:false, res:null };
+  async function diagAll(){
+    XA.busy = true; XA.res = null; draw();
+    try{
+      await loadDone(); if(!SQ.loaded) await loadSquadPtr();
+      const since = new Date(XD.from).toISOString(), out = [], lost = [];
+      // EasyOrders
+      let all = [], off = 0;
+      for(;;){ const r = await sbc().from('easy_orders').select('*').gte('received_at', since).order('seq', { ascending:true }).range(off, off + 999);
+        if(r.error) throw r.error; all = all.concat(r.data || []); if(!r.data || r.data.length < 1000 || all.length >= 20000) break; off += 1000; }
+      const keys = [...new Set(SOURCES.map(x => x.key).concat(all.map(x => x.source || 'dream')))];
+      keys.forEach(k => { const p = P(k), c = { show:0, done:0, cancel:0, lost:0 };
+        all.filter(x => (x.source || 'dream') === k).forEach(x => { const r = fromEasy(x.payload || {}, x.seq, k); r.estatus = x.status || r.estatus; r.orderAt = (x.payload && (x.payload.created_at || x.payload.createdAt)) || x.received_at;
+          if(isCancel(r.estatus)) c.cancel++; else if(DONE.has(skipKey(r))) c.done++; else if(r.seq <= (p.seq || 0)){ c.lost++; lost.push(r); } else c.show++; });
+        const lbl = (srcOf(k) || {}).label || ('❔ ' + k);
+        out.push({ k, l:'🌐 ' + lbl, total:c.show + c.done + c.cancel + c.lost, ...c, unknown:!srcOf(k) }); });
+      // Squad
+      const sq = await squadRows(since), cs = { show:0, done:0, cancel:0, lost:0 };
+      sq.forEach(r => { if(isCancel(r.estatus)) cs.cancel++; else if(DONE.has(skipKey(r))) cs.done++; else if(SQ.at && new Date(r.sqAt) <= new Date(SQ.at)){ cs.lost++; lost.push(r); } else cs.show++; });
+      out.unshift({ k:'squad', l:'🏆 Squad', total:sq.length, ...cs });
+      XA.res = { out, lost };
+    }catch(e){ XA.res = { err:e.message }; }
+    XA.busy = false; draw();
+  }
+  function diagAllHtml(){
+    let h = `<div class="card" style="border:2px dashed #2b6cb0"><h3>🔎 افحص كل المصادر: وصل كام من وقت معيّن</h3>
+      <div class="up-row"><label style="font-size:13.5px">من <input type="datetime-local" id="xdFrom" value="${esc(XD.from)}" style="padding:7px 9px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit"></label>
+        <span style="font-size:13.5px">لحد دلوقتي</span><button class="up-btn pri" id="xaGo" ${XA.busy ? 'disabled' : ''}>${XA.busy ? '⏳ بيفحص...' : '🔎 افحص الكل'}</button><button class="up-btn" id="xaClose">✕ قفل</button></div>`;
+    const R = XA.res;
+    if(R && R.err) h += `<div class="up-msg err">${esc(R.err)}</div>`;
+    else if(R){ const T = k => R.out.reduce((s, x) => s + x[k], 0);
+      h += `<div class="up-sheet"><table><thead><tr><th>المصدر</th><th>وصل</th><th>✅ هيظهر</th><th>📤 اترفع / اتشال قبل كده</th><th>🚫 ملغي</th><th>⚠️ ضاع (العلامة عدّته)</th></tr></thead><tbody>
+        ${R.out.map(x => `<tr${x.unknown ? ' style="background:#fff8e6"' : ''}><td style="padding:6px 10px"><b>${esc(x.l)}</b>${x.unknown ? '<br><small style="color:#8a5a00">مصدر مش متسجل في ⚙️ — راجع رابط الـ Webhook</small>' : ''}</td><td style="padding:6px 10px"><b>${x.total}</b></td>
+          <td style="padding:6px 10px;color:#23784a;font-weight:700">${x.show}</td><td style="padding:6px 10px">${x.done}</td><td style="padding:6px 10px">${x.cancel}</td><td style="padding:6px 10px;color:${x.lost ? '#b3261e' : 'inherit'};font-weight:${x.lost ? 700 : 400}">${x.lost}</td></tr>`).join('')}
+        <tr style="background:var(--slate-l);font-weight:800"><td style="padding:6px 10px">الإجمالي</td><td style="padding:6px 10px">${T('total')}</td><td style="padding:6px 10px">${T('show')}</td><td style="padding:6px 10px">${T('done')}</td><td style="padding:6px 10px">${T('cancel')}</td><td style="padding:6px 10px">${T('lost')}</td></tr></tbody></table></div>
+        <p style="font-size:12.5px;color:var(--muted);margin:8px 0 0">✅ هيظهر = هيجيلك لما تدوس "📦 هات كل الأوردرات". قارن "وصل" بعدد الأوردرات في EasyOrders نفسه لنفس الفترة — لو أقل يبقى الأوردرات ماوصلتش للسيستم أصلًا (رابط الـ Webhook).</p>
+        ${R.lost.length ? `<div class="up-row"><button class="up-btn ok" id="xaLost">↩️ رجّع كل الضايعين (${R.lost.length}) للشيت</button></div>` : ''}`; }
+    return h + '</div>';
+  }
+  function diagHtml(src){
+    const names = Object.fromEntries((SOURCES || []).map(x => [x.key, x.label]));
+    let h = `<div class="card" style="border:2px dashed #2b6cb0"><h3>🔎 افحص ${esc(names[src] || src)}: كل اللي وصل من وقت معيّن</h3>
+      <div class="up-row"><label style="font-size:13.5px">من <input type="datetime-local" id="xdFrom" value="${esc(XD.from)}" style="padding:7px 9px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit"></label>
+        <span style="font-size:13.5px">لحد دلوقتي</span><button class="up-btn pri" id="xdGo" ${XD.busy ? 'disabled' : ''}>${XD.busy ? '⏳ بيفحص...' : '🔎 افحص'}</button><button class="up-btn" id="xdClose">✕ قفل</button></div>`;
+    const R = XD.res;
+    if(R && R.err) h += `<div class="up-msg err">${esc(R.err)}</div>`;
+    else if(R && R.src === src){
+      const c = k => R.L.filter(x => x.why === k).length;
+      const WHY = { show:['✅ هيظهر في الشيت','#23784a'], done:['📤 اترفع أو اتشال قبل كده','#6b7186'], cancel:['🚫 ملغي','#8a5a00'], lost:['⚠️ العلامة عدّته ومااترفعش','#b3261e'] };
+      h += `<div class="up-kpis"><div><b>${R.total}</b><span>أوردر وصل لـ ${esc(names[src] || src)}</span></div>
+        <div><b style="color:#23784a">${c('show')}</b><span>✅ هيظهر</span></div><div><b>${c('done')}</b><span>📤 اترفع / اتشال قبل كده</span></div>
+        <div><b>${c('cancel')}</b><span>🚫 ملغي</span></div><div><b style="color:#b3261e">${c('lost')}</b><span>⚠️ ضاع (العلامة عدّته)</span></div></div>
+        <p style="font-size:13px;margin:6px 0">📥 كل المصادر في نفس الفترة: ${Object.entries(R.bySrc).map(([k, n]) => `<b>${esc(names[k] || k)}</b> ${n}`).join(' · ')}
+          ${Object.keys(R.bySrc).length && !R.total ? ' — <b style="color:#b3261e">مفيش ولا أوردر وصل للمصدر ده! غالبًا رابط الـ Webhook في EasyOrders بتاعه غلط أو ناقص ?src=' + esc(src) + '</b>' : ''}</p>
+        ${c('lost') ? `<div class="up-row"><button class="up-btn ok" id="xdLost">↩️ رجّع الـ ${c('lost')} اللي ضاعوا للشيت</button></div>` : ''}
+        <div class="up-sheet" style="max-height:360px;overflow:auto"><table><thead><tr><th>#</th><th>وصل</th><th>رقم</th><th>العميل</th><th>الموبايل</th><th>السعر</th><th>الحالة في EasyOrders</th><th>هيظهر؟</th></tr></thead><tbody>
+        ${R.L.map((x, i) => `<tr><td class="rn">${i + 1}</td><td style="padding:5px 8px;white-space:nowrap">${new Date(x.at).toLocaleString('ar-EG', { weekday:'short', hour:'2-digit', minute:'2-digit' })}</td><td style="padding:5px 8px">${x.r.seq}</td>
+          <td style="padding:5px 8px">${esc(x.r.name)}</td><td style="padding:5px 8px;direction:ltr">${esc(x.r.phone)}</td><td style="padding:5px 8px">${esc(x.r.amount)}</td><td style="padding:5px 8px">${esc(x.r.estatus || '')}</td>
+          <td style="padding:5px 8px;color:${WHY[x.why][1]};font-weight:700">${WHY[x.why][0]}</td></tr>`).join('') || '<tr><td colspan="8" style="padding:12px;text-align:center;color:var(--muted)">مفيش أوردرات وصلت في الفترة دي.</td></tr>'}
+        </tbody></table></div>`;
+    }
+    return h + '</div>';
   }
   /* 🔎 فحص التكرار: كل موبايل في الشيت بيتدوّر عليه في أوردرات QP آخر 10 أيام
      لو لقاه → الصف بيتلوّن أصفر ومكتوب "مرفوع في QP" برقم الشحنة والتاريخ (وإنت تقرر تمسحه ولا ترفعه) */
@@ -11672,7 +11768,9 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
         <label class="up-file">📂 أو ارفع ملف الإكسل من EasyOrders<input type="file" id="upEasyFile" accept=".xlsx,.xls,.csv"></label>
         <label style="font-size:13px;color:var(--muted)"><input type="checkbox" id="upShowOld" ${E.showOld ? 'checked' : ''}> اعرض كمان اللي اتاخد قبل كده</label>
         ${S.rows ? '<button class="up-btn" id="upClear">🧹 ابدأ من جديد</button>' : ''}
+        <button class="up-btn" id="xdOpen" style="border-color:#2b6cb0;color:#2b6cb0">🔎 افحص: وصل كام من وقت معيّن</button>
       </div>
+      ${XD.open ? diagHtml(S.src) : ''}
       ${E.hiddenOld ? `<p style="font-size:13px;color:var(--muted);margin:8px 0 0">اتشال ${E.hiddenOld} أوردر من الملف لأنهم اتاخدوا قبل كده (رقمهم لحد #${p.xid}).</p>` : ''}
       ${E.err ? `<div class="up-msg err">${esc(E.err)}</div>` : ''}`;
     if(E.missing) h += `<div class="up-msg err">جداول EasyOrders لسه مش متعملة في Supabase. ${admin ? 'شغّل ملف easyorders_setup.sql وبعده easyorders_multi.sql في Supabase → SQL Editor.' : 'كلّم الأدمن.'}</div>`;
@@ -11698,7 +11796,9 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     return `<div class="card"><h3>1️⃣ 📦 هات أوردرات كل المصادر مرة واحدة</h3>
       <p style="margin:0 0 10px;font-size:14px">بيجيب الأوردرات الجديدة من: <b>🏆 Squad</b>، ${SOURCES.map(x => '<b>' + esc(x.label) + '</b>').join('، ')} — كلهم تحت بعض في شيت واحد، وكل أوردر بالـ notes بتاعة مصدره، وكل مصدر بيكمل من بعد آخر أوردر اتاخد منه.</p>
       <div class="up-row"><button class="up-btn pri" id="upAllFetch" ${E.loading ? 'disabled' : ''}>${E.loading ? '⏳ بيجيب...' : '📦 هات كل الأوردرات'}</button>
-        ${S.rows ? '<button class="up-btn" id="upClear">🧹 ابدأ من جديد</button>' : ''}</div>
+        ${S.rows ? '<button class="up-btn" id="upClear">🧹 ابدأ من جديد</button>' : ''}
+        <button class="up-btn" id="xaOpen" style="border-color:#2b6cb0;color:#2b6cb0">🔎 افحص كل المصادر: وصل كام من وقت معيّن</button></div>
+      ${XA.open ? diagAllHtml() : ''}
       ${E.err ? `<div class="up-msg err">${esc(E.err)}</div>` : ''}</div>`;
   }
   function settingsHtml(){
@@ -11945,6 +12045,19 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
       S.rows.splice(Number(b.dataset.updel), 1); dupCheck(); draw(); if(isEasy(r.srcKey) || r.srcKey === 'squad') persistTaken(); if(r.urgentId) closeUrgent([r]); });
     document.querySelectorAll('[data-upsrc]').forEach(b => b.onclick = () => switchSrc(b.dataset.upsrc));
     if($('upEasyFetch')) $('upEasyFetch').onclick = fetchEasy;
+    if($('xdOpen')) $('xdOpen').onclick = () => { XD.open = !XD.open; draw(); };
+    if($('xdClose')) $('xdClose').onclick = () => { XD.open = false; draw(); };
+    if($('xdFrom')) $('xdFrom').onchange = e => { XD.from = e.target.value; };
+    if($('xdGo')) $('xdGo').onclick = () => diagSource(S.src);
+    if($('xaOpen')) $('xaOpen').onclick = () => { XA.open = !XA.open; draw(); };
+    if($('xaClose')) $('xaClose').onclick = () => { XA.open = false; draw(); };
+    if($('xaGo')) $('xaGo').onclick = diagAll;
+    if($('xaLost')) $('xaLost').onclick = () => { const add = XA.res.lost, k = r => skipKey(r);
+      const have = new Set((S.rows || []).map(k)); S.rows = (S.rows || []).concat(add.filter(r => !have.has(k(r)))); dupCheck(); XA.open = false;
+      flash(`↩️ اتضاف ${add.length} أوردر كانوا ضايعين من كل المصادر — راجعهم وارفعهم.`); dupQP(); };
+    if($('xdLost')) $('xdLost').onclick = () => { const add = XD.res.L.filter(x => x.why === 'lost').map(x => x.r);
+      S.rows = (S.rows || []).filter(r => !add.some(a => a.seq === r.seq && a.srcKey === r.srcKey)).concat(add); dupCheck(); XD.open = false;
+      flash(`↩️ اتضاف ${add.length} أوردر كانوا ضايعين — راجعهم وارفعهم.`); dupQP(); };
     if($('upAllFetch')) $('upAllFetch').onclick = fetchAllSources;
     document.querySelectorAll('[data-allnote]').forEach(el => {
       el.oninput = () => { const k = el.dataset.allnote; if(k.startsWith('page:')) SQ.pageNotes[k.slice(5)] = el.value.trim(); else S.allNotes[k] = el.value; refreshReady(); };
