@@ -10674,16 +10674,41 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
       for(;;){ const r = await sbc().from('easy_orders').select('*').gte('received_at', since).order('seq', { ascending:true }).range(off, off + 999);
         if(r.error) throw r.error; all = all.concat(r.data || []); if(!r.data || r.data.length < 1000 || all.length >= 20000) break; off += 1000; }
       const keys = [...new Set(SOURCES.map(x => x.key).concat(all.map(x => x.source || 'dream')))];
+      // ⏪ اللي هييجي برضه من قبل الوقت ده (بعد آخر أوردر اتاخد ولسه ماترفعش)
+      const older = {};
+      for(const k of SOURCES.map(x => x.key)){
+        try{ const rows = await sourceRows(k); older[k] = rows.filter(r => !isCancel(r.estatus) && !DONE.has(skipKey(r)) && r.orderAt && new Date(r.orderAt) < new Date(since)); }catch(e){ older[k] = []; }
+      }
       keys.forEach(k => { const p = P(k), c = { show:0, done:0, cancel:0, lost:0 };
         all.filter(x => (x.source || 'dream') === k).forEach(x => { const r = fromEasy(x.payload || {}, x.seq, k); r.estatus = x.status || r.estatus; r.orderAt = (x.payload && (x.payload.created_at || x.payload.createdAt)) || x.received_at;
           if(isCancel(r.estatus)) c.cancel++; else if(DONE.has(skipKey(r))) c.done++; else if(r.seq <= (p.seq || 0)){ c.lost++; lost.push(r); } else c.show++; });
-        const lbl = (srcOf(k) || {}).label || ('❔ ' + k);
-        out.push({ k, l:'🌐 ' + lbl, total:c.show + c.done + c.cancel + c.lost, ...c, unknown:!srcOf(k) }); });
+        const lbl = (srcOf(k) || {}).label || ('❔ ' + k), od = older[k] || [];
+        out.push({ k, l:'🌐 ' + lbl, total:c.show + c.done + c.cancel + c.lost, ...c, unknown:!srcOf(k), old:od.length, oldest:od.length ? od.map(r => r.orderAt).sort()[0] : null }); });
       // Squad
       const sq = await squadRows(since), cs = { show:0, done:0, cancel:0, lost:0 };
       sq.forEach(r => { if(isCancel(r.estatus)) cs.cancel++; else if(DONE.has(skipKey(r))) cs.done++; else if(SQ.at && new Date(r.sqAt) <= new Date(SQ.at)){ cs.lost++; lost.push(r); } else cs.show++; });
-      out.unshift({ k:'squad', l:'🏆 Squad', total:sq.length, ...cs });
-      XA.res = { out, lost };
+      let sqOld = []; try{ sqOld = (await squadRows()).filter(r => !isCancel(r.estatus) && !DONE.has(skipKey(r)) && new Date(r.sqAt) < new Date(since)); }catch(e){}
+      out.unshift({ k:'squad', l:'🏆 Squad', total:sq.length, ...cs, old:sqOld.length, oldest:sqOld.length ? sqOld.map(r => r.sqAt).sort()[0] : null });
+      // 🕐 آخر أوردر في كل مصدر: وقته وبياناته واترفع على QP ولا لأ
+      const last = [];
+      try{ if(histShared === null) await loadHist(); }catch(e){}
+      const H = (histShared || []).concat(S.hist || []);
+      const findUp = r => { const ph = phoneOf(r.phone); if(!ph) return null;
+        for(const x of H){ const o = (x.orders || []).find(o => phoneOf(o.phone) === ph); if(o) return { serial:o.serial, at:x.at, by:x.by }; } return null; };
+      const qpSt = async serial => { try{ await connect(); let q = await qpCall('order/' + encodeURIComponent(serial)); if(q && q.data && !q.serial) q = q.data;
+        return (window.QP && window.QP.api && window.QP.api.label) ? String(window.QP.api.label(q)).replace(/\s*#\d+$/, '') : String(q.Order_Delivery_Status ?? q.status ?? ''); }catch(e){ return '—'; } };
+      const lastOne = async (label, r, extra) => { const up = findUp(r);
+        last.push({ label, at:r.orderAt || r.sqAt, name:r.name, phone:r.phone, amount:r.amount, estatus:r.estatus,
+          up, removed: !up && DONE.has(skipKey(r)), cancel:isCancel(r.estatus), qp: up && up.serial ? await qpSt(up.serial) : '', ...extra }); };
+      try{ const { data } = await sbc().from('orders').select('*').order('created_at', { ascending:false }).limit(1);
+        if(data && data[0]){ const o = data[0]; await lastOne('🏆 Squad', { name:o.customer_name, phone:o.customer_phone, amount:o.amount, sqAt:o.created_at, srcKey:'squad', estatus:o.status === 'pending' ? '' : o.status }); } }catch(e){}
+      for(const src of SOURCES){ try{
+        let q = sbc().from('easy_orders').select('*'); q = src.key === 'dream' ? q.or('source.is.null,source.eq.dream') : q.eq('source', src.key);
+        const { data } = await q.order('seq', { ascending:false }).limit(1);
+        if(data && data[0]){ const x = data[0], r = fromEasy(x.payload || {}, x.seq, src.key); r.estatus = x.status || r.estatus; r.orderAt = (x.payload && (x.payload.created_at || x.payload.createdAt)) || x.received_at; await lastOne('🌐 ' + src.label, r); }
+        else last.push({ label:'🌐 ' + src.label, none:true });
+      }catch(e){} }
+      XA.res = { out, lost, last };
     }catch(e){ XA.res = { err:e.message }; }
     XA.busy = false; draw();
   }
@@ -10694,10 +10719,20 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     const R = XA.res;
     if(R && R.err) h += `<div class="up-msg err">${esc(R.err)}</div>`;
     else if(R){ const T = k => R.out.reduce((s, x) => s + x[k], 0);
-      h += `<div class="up-sheet"><table><thead><tr><th>المصدر</th><th>وصل</th><th>✅ هيظهر</th><th>📤 اترفع / اتشال قبل كده</th><th>🚫 ملغي</th><th>⚠️ ضاع (العلامة عدّته)</th></tr></thead><tbody>
+      const when = v => v ? new Date(v).toLocaleString('ar-EG', { weekday:'short', day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }) : '';
+      if(R.last && R.last.length) h += `<h4 style="margin:4px 0 8px">🕐 آخر أوردر وصل في كل مصدر</h4><div class="up-sheet" style="margin-bottom:14px"><table><thead><tr><th>المصدر</th><th>وصل إمتى</th><th>العميل</th><th>الموبايل</th><th>السعر</th><th>اترفع على QP؟</th><th>اترفع إمتى</th><th>السيريال</th><th>حالته</th></tr></thead><tbody>
+        ${R.last.map(x => x.none ? `<tr><td style="padding:6px 10px"><b>${esc(x.label)}</b></td><td colspan="8" style="padding:6px 10px;color:#b3261e">مفيش ولا أوردر وصل من المصدر ده — راجع رابط الـ Webhook</td></tr>`
+          : `<tr><td style="padding:6px 10px"><b>${esc(x.label)}</b></td><td style="padding:6px 10px;white-space:nowrap">${esc(when(x.at))}</td><td style="padding:6px 10px">${esc(x.name || '')}</td><td style="padding:6px 10px;direction:ltr">${esc(x.phone || '')}</td><td style="padding:6px 10px">${esc(x.amount || '')}</td>
+            <td style="padding:6px 10px;font-weight:700;color:${x.up ? '#23784a' : x.cancel ? '#8a5a00' : x.removed ? '#6b7186' : '#b3261e'}">${x.up ? '✅ اترفع' : x.cancel ? '🚫 ملغي' : x.removed ? '✕ اتشال من الشيت' : '⏳ لسه ماترفعش'}</td>
+            <td style="padding:6px 10px;white-space:nowrap">${x.up ? esc(when(x.up.at)) + (x.up.by ? '<br><small>' + esc(x.up.by) + '</small>' : '') : '—'}</td><td style="padding:6px 10px;direction:ltr;font-weight:700">${x.up ? esc(x.up.serial) : '—'}</td>
+            <td style="padding:6px 10px">${x.up ? esc(x.qp || '—') : esc(x.estatus || '—')}</td></tr>`).join('')}</tbody></table></div>
+        <h4 style="margin:4px 0 8px">📊 من الوقت اللي اخترته لحد دلوقتي</h4>`;
+      h += `<div class="up-sheet"><table><thead><tr><th>المصدر</th><th>وصل</th><th>✅ هيظهر</th><th>📤 اترفع / اتشال قبل كده</th><th>🚫 ملغي</th><th>⚠️ ضاع (العلامة عدّته)</th><th>⏪ أقدم من الوقت ده ولسه ماترفعش</th><th>📦 هييجي في "هات كل الأوردرات"</th></tr></thead><tbody>
         ${R.out.map(x => `<tr${x.unknown ? ' style="background:#fff8e6"' : ''}><td style="padding:6px 10px"><b>${esc(x.l)}</b>${x.unknown ? '<br><small style="color:#8a5a00">مصدر مش متسجل في ⚙️ — راجع رابط الـ Webhook</small>' : ''}</td><td style="padding:6px 10px"><b>${x.total}</b></td>
-          <td style="padding:6px 10px;color:#23784a;font-weight:700">${x.show}</td><td style="padding:6px 10px">${x.done}</td><td style="padding:6px 10px">${x.cancel}</td><td style="padding:6px 10px;color:${x.lost ? '#b3261e' : 'inherit'};font-weight:${x.lost ? 700 : 400}">${x.lost}</td></tr>`).join('')}
-        <tr style="background:var(--slate-l);font-weight:800"><td style="padding:6px 10px">الإجمالي</td><td style="padding:6px 10px">${T('total')}</td><td style="padding:6px 10px">${T('show')}</td><td style="padding:6px 10px">${T('done')}</td><td style="padding:6px 10px">${T('cancel')}</td><td style="padding:6px 10px">${T('lost')}</td></tr></tbody></table></div>
+          <td style="padding:6px 10px;color:#23784a;font-weight:700">${x.show}</td><td style="padding:6px 10px">${x.done}</td><td style="padding:6px 10px">${x.cancel}</td><td style="padding:6px 10px;color:${x.lost ? '#b3261e' : 'inherit'};font-weight:${x.lost ? 700 : 400}">${x.lost}</td>
+          <td style="padding:6px 10px;color:${x.old ? '#8a5a00' : 'inherit'}">${x.old || 0}${x.oldest ? `<br><small>أقدمهم: ${esc(when(x.oldest))}</small>` : ''}</td><td style="padding:6px 10px"><b>${x.unknown ? '—' : x.show + (x.old || 0)}</b></td></tr>`).join('')}
+        <tr style="background:var(--slate-l);font-weight:800"><td style="padding:6px 10px">الإجمالي</td><td style="padding:6px 10px">${T('total')}</td><td style="padding:6px 10px">${T('show')}</td><td style="padding:6px 10px">${T('done')}</td><td style="padding:6px 10px">${T('cancel')}</td><td style="padding:6px 10px">${T('lost')}</td>
+          <td style="padding:6px 10px">${R.out.reduce((s, x) => s + (x.old || 0), 0)}</td><td style="padding:6px 10px">${R.out.filter(x => !x.unknown).reduce((s, x) => s + x.show + (x.old || 0), 0)}</td></tr></tbody></table></div>
         <p style="font-size:12.5px;color:var(--muted);margin:8px 0 0">✅ هيظهر = هيجيلك لما تدوس "📦 هات كل الأوردرات". قارن "وصل" بعدد الأوردرات في EasyOrders نفسه لنفس الفترة — لو أقل يبقى الأوردرات ماوصلتش للسيستم أصلًا (رابط الـ Webhook).</p>
         ${R.lost.length ? `<div class="up-row"><button class="up-btn ok" id="xaLost">↩️ رجّع كل الضايعين (${R.lost.length}) للشيت</button></div>` : ''}`; }
     return h + '</div>';
@@ -11397,6 +11432,11 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     const per = {}; (S.rows || []).forEach(r => { const k = r.srcKey === 'squad' ? '🏆 Squad' : srcLabel(r.srcKey); per[k] = (per[k] || 0) + 1; });
     const parts = Object.entries(per).map(([k, n]) => `${k} ${n}`);
     if(parts.length) S.msg += ` (${parts.join(' · ')})`;
+    // 🕒 الأوردرات دي اتعملت إمتى: أقدم وأحدث أوردر
+    const ts = (S.rows || []).map(r => r.orderAt || r.sqAt).filter(Boolean).map(v => new Date(v)).filter(d => !isNaN(d)).sort((x, y) => x - y);
+    if(ts.length){ const f = d => d.toLocaleString('ar-EG', { weekday:'short', day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' });
+      const today = new Date(); today.setHours(0, 0, 0, 0); const oldN = ts.filter(d => d < today).length;
+      S.msg += ` — 🕒 من ${f(ts[0])} لـ ${f(ts[ts.length - 1])}${oldN ? ` (منهم ${oldN} من قبل النهارده ولسه ماترفعوش)` : ''}`; }
     draw();
   }
   async function readExcel(file){
