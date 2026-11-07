@@ -10575,8 +10575,8 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
   // 🧹 اللي بيتشال من الشيت بيتسجل إنه اتاخد على طول (مش لازم ترفع حاجة بعدها)
   async function persistTaken(){
     try{
-      if(S.src === 'squad' || S.src === 'all') await advanceSquad();
-      if(isEasy(S.src) || S.src === 'all') await advancePtr();
+      if(!S.periodMode && (S.src === 'squad' || S.src === 'all')) await advanceSquad();
+      if(!S.periodMode && (isEasy(S.src) || S.src === 'all')) await advancePtr();
       await saveDone([...(S.skipped || [])]);
     }catch(e){}
   }
@@ -11533,7 +11533,13 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
         drop.forEach(r => { r.qpFound = onQP(r, idx); if(r.srcKey === 'squad' || isEasy(r.srcKey)) S.skipped.add(skipKey(r)); });
         S.rows = S.rows.filter(r => !drop.includes(r)); S.dropped = (S.dropped || []).concat(drop);
         dupCheck(); persistTaken();
-        S.msg = (S.msg ? S.msg + ' — ' : '') + `🔁 اتشال ${drop.length} أوردر لأنهم مرفوعين بالفعل على QP (آخر ${DUP_DAYS} أيام) — مش هيرجعوا تاني.`; S.msgErr = false;
+        // الرسالة بتتكتب من جديد بالعدد الحقيقي (بعد ما شلنا المرفوع على QP)
+        const per = {}; (S.rows || []).forEach(r => { const k = r.srcKey === 'squad' ? '🏆 Squad' : srcLabel(r.srcKey); per[k] = (per[k] || 0) + 1; });
+        const ts = (S.rows || []).map(r => r.orderAt || r.sqAt).filter(Boolean).map(v => new Date(v)).filter(d => !isNaN(d)).sort((x, y) => x - y);
+        const f = d => d.toLocaleString('ar-EG', { weekday:'short', day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' });
+        S.msg = `جالك ${S.rows.length} أوردر لسه ماترفعش${Object.keys(per).length ? ' (' + Object.entries(per).map(([k, n]) => `${k} ${n}`).join(' · ') + ')' : ''}`
+          + (ts.length ? ` — 🕒 من ${f(ts[0])} لـ ${f(ts[ts.length - 1])}` : '')
+          + ` · 🔁 وشلت ${drop.length} أوردر لأنهم مرفوعين بالفعل على QP (آخر ${DUP_DAYS} أيام) ومش هيرجعوا تاني.`; S.msgErr = false;
         draw();
       }
     }
@@ -11548,7 +11554,66 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
         <td style="padding:5px 8px">${r.qpFound ? `${esc(r.qpFound.serial)} · ${esc(new Date(r.qpFound.order_date).toLocaleString('ar-EG', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }))}` : ''}</td>
         <td style="padding:5px 8px"><button class="up-btn" data-undrop="${i}" style="padding:3px 9px;font-size:12px">↩️ رجّعه</button></td></tr>`).join('')}</tbody></table></div></details>`;
   }
+  /* 📅 هات أوردرات فترة وقارنها بـ QP في نفس الفترة (للمراجعة — مش بيحرّك "آخر أوردر اتاخد") */
+  const PR = { open:false, from:'', to:'', busy:false, res:null, msg:'' };
+  (() => { const d = new Date(), f = new Date(d.getFullYear(), d.getMonth(), 1), iso = x => new Date(x - x.getTimezoneOffset() * 60000).toISOString().slice(0, 16); PR.from = iso(f); PR.to = iso(d); })();
+  async function periodCompare(){
+    const api = window.QP && window.QP.api;
+    if(!api || !api.hasCreds()){ PR.msg = '⚠️ لازم تكون عامل دخول QP من قسم 🚚 QP على الجهاز ده.'; draw(); return; }
+    PR.busy = true; PR.res = null; PR.msg = 'بيجيب أوردرات الفترة من كل المصادر...'; draw();
+    try{
+      await loadDone(); if(!SQ.loaded) await loadSquadPtr(); if(!E.srcLoaded) await loadSources();
+      const from = new Date(PR.from), to = new Date(PR.to || Date.now()), fi = from.toISOString(), ti = to.toISOString();
+      let ours = [];
+      // EasyOrders (كل المصادر)
+      let all = [], off = 0;
+      for(;;){ const r = await sbc().from('easy_orders').select('*').gte('received_at', fi).lte('received_at', ti).order('seq', { ascending:true }).range(off, off + 999);
+        if(r.error) throw r.error; all = all.concat(r.data || []); PR.msg = `بيجيب... ${all.length} أوردر من EasyOrders`; draw(); if(!r.data || r.data.length < 1000 || all.length >= 50000) break; off += 1000; }
+      all.forEach(x => { const k = x.source || 'dream', r = fromEasy(x.payload || {}, x.seq, k); r.estatus = x.status || r.estatus; r.orderAt = (x.payload && (x.payload.created_at || x.payload.createdAt)) || x.received_at; ours.push(r); });
+      // Squad
+      const sq = (await squadRows(fi)).filter(r => new Date(r.sqAt) <= to); ours = ours.concat(sq);
+      const cancelled = ours.filter(r => isCancel(r.estatus)).length; ours = ours.filter(r => !isCancel(r.estatus));
+      // QP في نفس الفترة
+      PR.msg = 'بيجيب اللي اترفع على QP في نفس الفترة...'; draw();
+      const qp = await api.fetchRange(ymd(from), ymd(to), n => { PR.msg = `بيجيب من QP... ${n} أوردر`; draw(); });
+      const qpIn = qp.filter(q => { const d = new Date(q.order_date); return !isNaN(d) && d >= new Date(from.getTime() - 3600000) && d <= new Date(to.getTime() + 86400000); });
+      const pool = {}; qpIn.forEach(q => { const k = phoneOf(q.phone || q.customer_phone); if(k) (pool[k] = pool[k] || []).push(q); });
+      Object.values(pool).forEach(L => L.sort((a, b) => new Date(a.order_date) - new Date(b.order_date)));
+      ours.sort((a, b) => new Date(a.orderAt || a.sqAt) - new Date(b.orderAt || b.sqAt));
+      ours.forEach(r => { const L = pool[phoneOf(r.phone)]; if(L && L.length){ r.qpMatch = L.shift(); } else r.qpMatch = null; });
+      const extra = Object.values(pool).flat();   // على QP ومش لاقيين ليهم أوردر في مصادرنا
+      const per = {};
+      ours.forEach(r => { const k = r.srcKey === 'squad' ? '🏆 Squad' : srcLabel(r.srcKey); const x = per[k] = per[k] || { total:0, ok:0, miss:0 }; x.total++; if(r.qpMatch) x.ok++; else x.miss++; });
+      PR.res = { ours, per, extra, cancelled, qpN:qpIn.length, from, to };
+      PR.msg = '';
+    }catch(e){ PR.msg = 'حصل خطأ: ' + e.message; }
+    PR.busy = false; draw();
+  }
+  function periodHtml(){
+    const when = v => v ? new Date(v).toLocaleString('ar-EG', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }) : '';
+    let h = `<div class="card" style="border:2px solid #6b46c1"><h3>📅 هات أوردرات فترة وقارنها باللي اترفع على QP في نفس الفترة</h3>
+      <p style="margin:0 0 10px;font-size:13px;color:var(--muted)">بيجيب <b>كل</b> أوردرات الفترة من كل المصادر (حتى اللي اترفع أو اتشال قبل كده) ويقارنها بالموبايل باللي على QP — ومش بيحرّك "آخر أوردر اتاخد" خالص.</p>
+      <div class="up-row"><label style="font-size:13.5px">من <input type="datetime-local" id="prdFrom" value="${esc(PR.from)}" style="padding:7px 9px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit"></label>
+        <label style="font-size:13.5px">لـ <input type="datetime-local" id="prdTo" value="${esc(PR.to)}" style="padding:7px 9px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit"></label>
+        <button class="up-btn pri" id="prdGo" ${PR.busy ? 'disabled' : ''}>${PR.busy ? '⏳ بيقارن...' : '🔍 هات وقارن'}</button><button class="up-btn" id="prdClose">✕ قفل</button></div>`;
+    if(PR.msg) h += `<div class="up-msg ${/خطأ|⚠️/.test(PR.msg) ? 'err' : 'ok'}">${esc(PR.msg)}</div>`;
+    const R = PR.res;
+    if(R){ const T = { total:0, ok:0, miss:0 }; Object.values(R.per).forEach(x => { T.total += x.total; T.ok += x.ok; T.miss += x.miss; });
+      const miss = R.ours.filter(r => !r.qpMatch);
+      h += `<div class="up-kpis"><div><b>${T.total}</b><span>أوردر عندنا في الفترة</span></div><div><b style="color:#23784a">${T.ok}</b><span>✅ لقيتهم على QP</span></div>
+        <div><b style="color:${T.miss ? '#b3261e' : '#23784a'}">${T.miss}</b><span>❌ مش على QP</span></div><div><b>${R.qpN}</b><span>إجمالي اللي على QP في الفترة</span></div>
+        ${R.extra.length ? `<div><b style="color:#8a5a00">${R.extra.length}</b><span>على QP ومالهمش أوردر في مصادرنا</span></div>` : ''}${R.cancelled ? `<div><b>${R.cancelled}</b><span>🚫 ملغي (اتشال من المقارنة)</span></div>` : ''}</div>
+        <div class="up-sheet"><table><thead><tr><th>المصدر</th><th>عندنا</th><th>✅ على QP</th><th>❌ مش على QP</th></tr></thead><tbody>
+        ${Object.entries(R.per).map(([k, x]) => `<tr><td style="padding:6px 10px"><b>${esc(k)}</b></td><td style="padding:6px 10px">${x.total}</td><td style="padding:6px 10px;color:#23784a;font-weight:700">${x.ok}</td><td style="padding:6px 10px;color:${x.miss ? '#b3261e' : 'inherit'};font-weight:700">${x.miss}</td></tr>`).join('')}
+        <tr style="background:var(--slate-l);font-weight:800"><td style="padding:6px 10px">الإجمالي</td><td style="padding:6px 10px">${T.total}</td><td style="padding:6px 10px">${T.ok}</td><td style="padding:6px 10px">${T.miss}</td></tr></tbody></table></div>
+        <div class="up-row" style="margin-top:10px">${miss.length ? `<button class="up-btn ok" id="prdLoad">📥 حط الـ ${miss.length} اللي مش على QP في الشيت عشان ترفعهم</button>` : '<span style="color:#23784a;font-weight:700">👌 كل أوردرات الفترة موجودة على QP</span>'}
+          ${window.XLSX ? '<button class="up-btn" id="prdX">⬇️ نزّل المقارنة Excel</button>' : ''}</div>
+        ${miss.length ? `<h4 style="margin:12px 0 6px">❌ مش على QP (${miss.length})</h4><div class="up-sheet" style="max-height:320px;overflow:auto"><table><thead><tr><th>المصدر</th><th>اتعمل إمتى</th><th>العميل</th><th>الموبايل</th><th>السعر</th></tr></thead><tbody>
+          ${miss.slice(0, 500).map(r => `<tr><td style="padding:5px 8px">${esc(r.srcKey === 'squad' ? '🏆 Squad · ' + (r.page || '') : srcLabel(r.srcKey))}</td><td style="padding:5px 8px;white-space:nowrap">${esc(when(r.orderAt || r.sqAt))}</td><td style="padding:5px 8px">${esc(r.name)}</td><td style="padding:5px 8px;direction:ltr">${esc(r.phone)}</td><td style="padding:5px 8px">${esc(r.amount)}</td></tr>`).join('')}</tbody></table></div>` : ''}`; }
+    return h + '</div>';
+  }
   function easyFinish(rows, label){
+    S.periodMode = false;
     E.hiddenOld = 0;
     const cancelled = rows.filter(r => isCancel(r.estatus));
     S.rows = rows.filter(r => !isCancel(r.estatus));
@@ -11787,8 +11852,8 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
       }catch(e){ r.upErr = e.message; fail++; }
     }
     S.sending = false; S.prog = '';
-    if(ok && (isEasy(S.src) || S.src === 'all')){ try{ await advancePtr(); }catch(e){} }
-    if(ok && (S.src === 'squad' || S.src === 'all')){ try{ await advanceSquad(); await savePageNotes(); }catch(e){} }
+    if(ok && !S.periodMode && (isEasy(S.src) || S.src === 'all')){ try{ await advancePtr(); }catch(e){} }
+    if(ok && (S.src === 'squad' || S.src === 'all')){ try{ if(!S.periodMode) await advanceSquad(); await savePageNotes(); }catch(e){} }
     if(ok && (S.src === 'squad' || S.src === 'all' || isEasy(S.src))){
       try{ await saveDone([...(S.rows || []).filter(r => r.serial && (r.srcKey === 'squad' || isEasy(r.srcKey))).map(skipKey), ...[...(S.skipped || [])]]); }catch(e){}
     }
@@ -12004,7 +12069,10 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
       <p style="margin:0 0 10px;font-size:14px">بيجيب الأوردرات الجديدة من: <b>🏆 Squad</b>، ${SOURCES.map(x => '<b>' + esc(x.label) + '</b>').join('، ')} — كلهم تحت بعض في شيت واحد، وكل أوردر بالـ notes بتاعة مصدره، وكل مصدر بيكمل من بعد آخر أوردر اتاخد منه.</p>
       <div class="up-row"><button class="up-btn pri" id="upAllFetch" ${E.loading ? 'disabled' : ''}>${E.loading ? '⏳ بيجيب...' : '📦 هات كل الأوردرات'}</button>
         ${S.rows ? '<button class="up-btn" id="upClear">🧹 ابدأ من جديد</button>' : ''}
+        <button class="up-btn" id="prdOpen" style="border-color:#6b46c1;color:#6b46c1">📅 هات أوردرات فترة وقارنها بـ QP</button>
         <button class="up-btn" id="xaOpen" style="border-color:#2b6cb0;color:#2b6cb0">🔎 افحص كل المصادر: وصل كام من وقت معيّن</button></div>
+      <p style="margin:8px 0 0;font-size:12.5px;color:var(--muted)">📦 <b>هات كل الأوردرات</b> = بيكمّل من مكان ما وقفت (العادي) · 📅 <b>فترة</b> = بيجيب كل أوردرات فترة ويقارنها بـ QP (للمراجعة)</p>
+      ${PR.open ? periodHtml() : ''}
       ${XA.open ? diagAllHtml() : ''}
       ${E.err ? `<div class="up-msg err">${esc(E.err)}</div>` : ''}</div>`;
   }
@@ -12262,6 +12330,20 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     if($('xdFrom')) $('xdFrom').onchange = e => { XD.from = e.target.value; };
     if($('xdGo')) $('xdGo').onclick = () => diagSource(S.src);
     if($('xaOpen')) $('xaOpen').onclick = () => { XA.open = !XA.open; draw(); };
+    if($('prdOpen')) $('prdOpen').onclick = () => { PR.open = !PR.open; draw(); };
+    if($('prdClose')) $('prdClose').onclick = () => { PR.open = false; draw(); };
+    if($('prdFrom')) $('prdFrom').onchange = e => { PR.from = e.target.value; };
+    if($('prdTo')) $('prdTo').onchange = e => { PR.to = e.target.value; };
+    if($('prdGo')) $('prdGo').onclick = periodCompare;
+    if($('prdLoad')) $('prdLoad').onclick = () => { const miss = PR.res.ours.filter(r => !r.qpMatch).map(r => ({ ...r, qpMatch:undefined }));
+      S.rows = miss; S.periodMode = true; S.skipped = new Set(); S.dropped = []; PR.open = false; dupCheck();
+      S.msg = `📥 اتحط ${miss.length} أوردر من الفترة مش لاقيهم على QP — راجعهم وارفعهم. (وضع الفترة: "آخر أوردر اتاخد" مش هيتحرك)`; S.msgErr = false; draw(); };
+    if($('prdX')) $('prdX').onclick = () => { const R = PR.res, f = v => v ? new Date(v).toLocaleString('en-GB') : '';
+      const ws = XLSX.utils.json_to_sheet(R.ours.map(r => ({ 'المصدر':r.srcKey === 'squad' ? 'Squad · ' + (r.page || '') : srcLabel(r.srcKey), 'اتعمل':f(r.orderAt || r.sqAt), 'العميل':r.name, 'الموبايل':r.phone, 'السعر':r.amount,
+        'على QP؟':r.qpMatch ? 'أيوه' : 'لأ', 'رقم الشحنة':r.qpMatch ? String(r.qpMatch.serial) : '', 'اترفع':r.qpMatch ? f(r.qpMatch.order_date) : '' })));
+      const ws2 = XLSX.utils.json_to_sheet(R.extra.map(q => ({ 'رقم الشحنة':String(q.serial), 'الموبايل':q.phone, 'العميل':q.full_name || '', 'اتعمل':f(q.order_date), 'notes':q.notes || '' })));
+      const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'أوردراتنا'); XLSX.utils.book_append_sheet(wb, ws2, 'على QP ومش عندنا');
+      XLSX.writeFile(wb, `مقارنة ${PR.from.slice(0, 10)} لـ ${PR.to.slice(0, 10)}.xlsx`); };
     if($('xaClose')) $('xaClose').onclick = () => { XA.open = false; draw(); };
     if($('xaGo')) $('xaGo').onclick = diagAll;
     if($('xaLost')) $('xaLost').onclick = () => { const add = XA.res.lost, k = r => skipKey(r);
