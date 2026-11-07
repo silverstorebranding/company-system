@@ -4390,12 +4390,12 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
 
   /* ---------- جلب الأوردرات على صفحات (دالة قابلة لإعادة الاستخدام) ----------
      بترجّع مصفوفة الأوردرات للمدة المطلوبة، وبتنادي onProg(count, pct) كل صفحة */
-  async function qpFetchRange(from, to, onProg){
+  async function qpFetchRange(from, to, onProg, rejected){
     const all = [];
     const fromT = new Date(from + 'T00:00:00').getTime();
     const toT   = new Date(to   + 'T23:59:59').getTime();
     for(let page = 1; page <= QP_MAX_PAGES; page++){
-      const url = QP_ORDERS_EP + '?rejected=0&printO=All&status=&order_serial=&full_name=&phone_number=&city=' +
+      const url = QP_ORDERS_EP + '?rejected=' + (rejected ? 1 : 0) + '&printO=All&status=&order_serial=&full_name=&phone_number=&city=' +
         '&order_date=' + from + '&to_date=' + to + '&page=' + page + '&page_size=' + QP_PAGE_SIZE;
       const j = await qpApiGet(url);
       const rows = j.results || [];
@@ -5134,6 +5134,10 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
     api: {
       hasCreds: () => !!creds,
       fetchRange: (from, to, onProg) => qpFetchRange(from, to, onProg),
+      // 📞 للمقارنة: كل الأوردرات حتى المرفوضة (QP بيخبّي المرفوض في الليستة العادية)
+      fetchRangeAll: async (from, to, onProg) => { const a = await qpFetchRange(from, to, onProg, false); let b = [];
+        try{ b = await qpFetchRange(from, to, n => onProg && onProg(a.length + n), true); }catch(e){}
+        const seen = new Set(); return a.concat(b).filter(o => { if(seen.has(o.serial)) return false; seen.add(o.serial); return true; }); },
       category: o => catOf(o),
       label: o => qpStatus(o.Order_Delivery_Status).label,
     },
@@ -10893,7 +10897,7 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     D.loading = true; D.msg = 'بيدوّر في QP على الأوردرات المتكررة...'; draw();
     try{
       const from = new Date(); from.setDate(from.getDate() - DUP_DAYS);
-      const list = await api.fetchRange(ymd(from), ymd(new Date()), n => { D.msg = `بيدوّر في QP... ${n} أوردر`; draw(); });
+      const list = await (api.fetchRangeAll || api.fetchRange)(ymd(from), ymd(new Date()), n => { D.msg = `بيدوّر في QP... ${n} أوردر`; draw(); });
       const idx = {};
       list.forEach(q => [q.phone, q.phone2, q.customer_phone].forEach(ph => { const k = phoneOf(ph); if(k && k.length >= 10){ (idx[k] = idx[k] || []); if(!idx[k].includes(q)) idx[k].push(q); } }));
       (S.rows || []).forEach(r => {
@@ -11516,7 +11520,7 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     const api = window.QP && window.QP.api; if(!api || !api.hasCreds()) return null;
     if(QPIDX.idx && Date.now() - QPIDX.at < 180000) return QPIDX.idx;
     const from = new Date(); from.setDate(from.getDate() - DUP_DAYS);
-    const list = await api.fetchRange(ymd(from), ymd(new Date()));
+    const list = await (api.fetchRangeAll || api.fetchRange)(ymd(from), ymd(new Date()));
     const idx = {};
     list.forEach(q => [q.phone, q.phone2, q.customer_phone].forEach(ph => { const k = phoneOf(ph); if(k && k.length >= 10){ (idx[k] = idx[k] || []); if(!idx[k].includes(q)) idx[k].push(q); } }));
     QPIDX = { at:Date.now(), idx }; return idx;
@@ -11577,15 +11581,20 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
       const cancelled = ours.filter(r => isCancel(r.estatus)).length; ours = ours.filter(r => !isCancel(r.estatus));
       // QP في نفس الفترة
       PR.msg = 'بيجيب اللي اترفع على QP في نفس الفترة...'; draw();
-      const qp = await api.fetchRange(ymd(from), ymd(to), n => { PR.msg = `بيجيب من QP... ${n} أوردر`; draw(); });
-      const qpIn = qp.filter(q => { const d = new Date(q.order_date); return !isNaN(d) && d >= new Date(from.getTime() - 3600000) && d <= new Date(to.getTime() + 86400000); });
+      const qFrom = new Date(from.getTime() - 2 * 86400000);
+      const qp = await (api.fetchRangeAll || api.fetchRange)(ymd(qFrom), ymd(new Date()), n => { PR.msg = `بيجيب من QP... ${n} أوردر`; draw(); });
+      const qpIn = qp;
       // 📞 المقارنة بالموبايل (الأساسي أو التاني في الناحيتين) — كل أوردر على QP بيتحسب لأوردر واحد بس
       const pool = {}; qpIn.forEach(q => phoneKeys(q).forEach(k => (pool[k] = pool[k] || []).push(q)));
       Object.values(pool).forEach(L => L.sort((a, b) => new Date(a.order_date) - new Date(b.order_date)));
+      // لو رقم الموبايل موجود على QP ← الأوردر مرفوع (حتى لو العميلة ليها كذا أوردر عندنا أو الأوردر متسجل في مصدرين)
       const used = new Set();
       ours.sort((a, b) => new Date(a.orderAt || a.sqAt) - new Date(b.orderAt || b.sqAt));
-      ours.forEach(r => { r.qpMatch = null; for(const k of phoneKeys(r)){ const q = (pool[k] || []).find(x => !used.has(x)); if(q){ used.add(q); r.qpMatch = q; r.qpBy = k; break; } } });
-      const extra = qpIn.filter(q => !used.has(q));   // على QP ومش لاقيين ليهم أوردر في مصادرنا
+      ours.forEach(r => { r.qpMatch = null; const t = new Date(r.orderAt || r.sqAt).getTime();
+        const cands = [...new Set(phoneKeys(r).flatMap(k => pool[k] || []))];
+        if(cands.length){ cands.sort((a, b) => Math.abs(new Date(a.order_date) - t) - Math.abs(new Date(b.order_date) - t)); r.qpMatch = cands[0]; r.qpAll = cands; r.qpBy = phoneKeys(r).find(k => pool[k]); cands.forEach(q => used.add(q)); } });
+      const extra = qpIn.filter(q => !used.has(q) && new Date(q.order_date) >= from);   // على QP في الفترة ومش لاقيين ليهم أوردر في مصادرنا
+      PR.qpPool = pool;
       const per = {};
       ours.forEach(r => { const k = r.srcKey === 'squad' ? '🏆 Squad' : srcLabel(r.srcKey); const x = per[k] = per[k] || { total:0, ok:0, miss:0 }; x.total++; if(r.qpMatch) x.ok++; else x.miss++; });
       PR.res = { ours, per, extra, cancelled, qpN:qpIn.length, from, to };
@@ -11593,10 +11602,19 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     }catch(e){ PR.msg = 'حصل خطأ: ' + e.message; }
     PR.busy = false; draw();
   }
+  // 🔎 رقم واحد: عندنا إيه وعلى QP إيه (عشان تتأكد بنفسك)
+  function phLookup(ph){
+    const k = phoneOf(ph), R = PR.res; if(!R || !k) return '';
+    const ours = R.ours.filter(r => phoneKeys(r).includes(k)), qps = (PR.qpPool || {})[k] || [], when = v => v ? new Date(v).toLocaleString('ar-EG', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }) : '';
+    const lbl = q => (window.QP && window.QP.api && window.QP.api.label) ? String(window.QP.api.label(q)).replace(/\s*#\d+$/, '') : String(q.Order_Delivery_Status ?? '');
+    return `<div class="card" style="background:var(--slate-l);margin:8px 0"><b>📞 0${esc(k)}</b>
+      <div style="margin-top:6px;font-size:13.5px"><b>عندنا (${ours.length}):</b> ${ours.map(r => `${esc(r.srcKey === 'squad' ? 'Squad · ' + (r.page || '') : srcLabel(r.srcKey))} — ${esc(when(r.orderAt || r.sqAt))} — ${esc(r.name)} — ${r.qpMatch ? '✅ اترفع' : '❌ مش على QP'}`).join('<br>') || '—'}</div>
+      <div style="margin-top:6px;font-size:13.5px"><b>على QP (${qps.length}):</b> ${qps.map(q => `${esc(q.serial)} — ${esc(when(q.order_date))} — ${esc(lbl(q))} — ${esc(q.full_name || '')}`).join('<br>') || '<span style="color:#b3261e">الرقم ده مش لاقيه في أوردرات QP اللي اتجابت (من يومين قبل الفترة لحد دلوقتي)</span>'}</div></div>`;
+  }
   function periodHtml(){
     const when = v => v ? new Date(v).toLocaleString('ar-EG', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }) : '';
     let h = `<div class="card" style="border:2px solid #6b46c1"><h3>📅 هات أوردرات فترة وقارنها باللي اترفع على QP في نفس الفترة</h3>
-      <p style="margin:0 0 10px;font-size:13px;color:var(--muted)">بيجيب <b>كل</b> أوردرات الفترة من كل المصادر (حتى اللي اترفع أو اتشال قبل كده) ويقارنها <b>📞 برقم الموبايل</b> (مش برقم الشحنة) باللي على QP — ومش بيحرّك "آخر أوردر اتاخد" خالص.</p>
+      <p style="margin:0 0 10px;font-size:13px;color:var(--muted)">بيجيب <b>كل</b> أوردرات الفترة من كل المصادر (حتى اللي اترفع أو اتشال قبل كده) ويشوف <b>📞 رقم الموبايل موجود على QP ولا لأ</b> (من يومين قبل الفترة لحد دلوقتي، بأي حالة: Pending / اتسلم / ماتسلمش / رجع...) — لو موجود يبقى اترفع. ومش بيحرّك "آخر أوردر اتاخد" خالص.</p>
       <div class="up-row"><label style="font-size:13.5px">من <input type="datetime-local" id="prdFrom" value="${esc(PR.from)}" style="padding:7px 9px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit"></label>
         <label style="font-size:13.5px">لـ <input type="datetime-local" id="prdTo" value="${esc(PR.to)}" style="padding:7px 9px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit"></label>
         <button class="up-btn pri" id="prdGo" ${PR.busy ? 'disabled' : ''}>${PR.busy ? '⏳ بيقارن...' : '🔍 هات وقارن'}</button><button class="up-btn" id="prdClose">✕ قفل</button></div>`;
@@ -11610,6 +11628,8 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
         <div class="up-sheet"><table><thead><tr><th>المصدر</th><th>عندنا</th><th>✅ على QP</th><th>❌ مش على QP</th></tr></thead><tbody>
         ${Object.entries(R.per).map(([k, x]) => `<tr><td style="padding:6px 10px"><b>${esc(k)}</b></td><td style="padding:6px 10px">${x.total}</td><td style="padding:6px 10px;color:#23784a;font-weight:700">${x.ok}</td><td style="padding:6px 10px;color:${x.miss ? '#b3261e' : 'inherit'};font-weight:700">${x.miss}</td></tr>`).join('')}
         <tr style="background:var(--slate-l);font-weight:800"><td style="padding:6px 10px">الإجمالي</td><td style="padding:6px 10px">${T.total}</td><td style="padding:6px 10px">${T.ok}</td><td style="padding:6px 10px">${T.miss}</td></tr></tbody></table></div>
+        <div class="up-row" style="margin-top:10px"><input id="prdPh" placeholder="📞 دوّر على رقم (مثلاً 01153214648)" value="${esc(PR.ph || '')}" style="padding:7px 10px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;direction:ltr;width:240px"><button class="up-btn" id="prdPhGo">🔎 شوف الرقم ده</button></div>
+        ${PR.ph ? phLookup(PR.ph) : ''}
         <div class="up-row" style="margin-top:10px">${miss.length ? `<button class="up-btn ok" id="prdLoad">📥 حط الـ ${miss.length} اللي مش على QP في الشيت عشان ترفعهم</button>` : '<span style="color:#23784a;font-weight:700">👌 كل أوردرات الفترة موجودة على QP</span>'}
           ${window.XLSX ? '<button class="up-btn" id="prdX">⬇️ نزّل المقارنة Excel</button>' : ''}</div>
         ${miss.length ? `<h4 style="margin:12px 0 6px">❌ مش على QP (${miss.length})</h4><div class="up-sheet" style="max-height:320px;overflow:auto"><table><thead><tr><th>المصدر</th><th>اتعمل إمتى</th><th>العميل</th><th>الموبايل</th><th>السعر</th></tr></thead><tbody>
@@ -12339,6 +12359,8 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     if($('prdFrom')) $('prdFrom').onchange = e => { PR.from = e.target.value; };
     if($('prdTo')) $('prdTo').onchange = e => { PR.to = e.target.value; };
     if($('prdGo')) $('prdGo').onclick = periodCompare;
+    if($('prdPhGo')) $('prdPhGo').onclick = () => { PR.ph = $('prdPh').value.trim(); draw(); };
+    if($('prdPh')) $('prdPh').onkeydown = e => { if(e.key === 'Enter'){ PR.ph = e.target.value.trim(); draw(); } };
     if($('prdLoad')) $('prdLoad').onclick = () => { const miss = PR.res.ours.filter(r => !r.qpMatch).map(r => ({ ...r, qpMatch:undefined }));
       S.rows = miss; S.periodMode = true; S.skipped = new Set(); S.dropped = []; PR.open = false; dupCheck();
       S.msg = `📥 اتحط ${miss.length} أوردر من الفترة مش لاقيهم على QP — راجعهم وارفعهم. (وضع الفترة: "آخر أوردر اتاخد" مش هيتحرك)`; S.msgErr = false; draw(); };
