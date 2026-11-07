@@ -10446,6 +10446,8 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
   const numOf = s => { const t = digits(s).replace(/[,\s]/g, '').replace(/ج|جنيه|egp|le/gi, ''); return t !== '' && !isNaN(t) ? Number(t) : null; };
   const phoneOf = s => { let t = digits(s).replace(/[^\d]/g, ''); if(t.startsWith('20') && t.length === 12) t = t.slice(2); if(t.startsWith('0')) t = t.slice(1); return t; };
   const isPhone = s => /^1[0125]\d{8}$/.test(phoneOf(s));
+  // 📞 كل أرقام الموبايل بتاعة أوردر (الأساسي والتاني) — المقارنة بـ QP بالموبايل مش برقم الشحنة
+  const phoneKeys = x => [...new Set([x.phone, x.phone2, x.customer_phone, x.customer_phone2].map(phoneOf).filter(k => k && k.length >= 10))];
   const ymd = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   // البراندات اللي قسم الأرباح بيعرفها من عمود notes
   const NOTE_SUGGEST = ['dream wa', 'dream', 'dream msg site', 'cara wa', 'cara silver', 'cara silver un', 'msg', 'fastplt', 'rs kids', 'bloom', 'socky'];
@@ -10650,7 +10652,7 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
       return `${nm}${props ? ' (' + props + ')' : ''}${q > 1 ? ' × ' + q : ''}`.trim();
     }).filter(Boolean);
     const gov = String(o.government || '').trim(), addr = String(o.address || '').trim();
-    const r = { name:o.full_name || '', phone:o.phone || '', address: gov && !addr.includes(gov) ? `${addr} - ${gov}` : addr, amount:String(o.total_cost ?? o.cost ?? ''),
+    const r = { name:o.full_name || '', phone:o.phone || '', phone2:o.phone2 || o.second_phone || o.alt_phone || o.other_phone || '', address: gov && !addr.includes(gov) ? `${addr} - ${gov}` : addr, amount:String(o.total_cost ?? o.cost ?? ''),
       agent:'', contents: items.join(' + '), source:'', size:'', note:'', city:'', easy:true, seq, srcKey:src, ref: String(o.id || '').slice(0, 8), estatus: o.status || '' };
     r.city = guessCity(gov + ' ' + addr);
     return check(r);
@@ -11520,7 +11522,7 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     QPIDX = { at:Date.now(), idx }; return idx;
   }
   function onQP(r, idx){
-    const L = idx && idx[phoneOf(r.phone)]; if(!L || !L.length) return null;
+    const L = idx && [...new Set(phoneKeys(r).flatMap(k => idx[k] || []))]; if(!L || !L.length) return null;
     const t = new Date(r.orderAt || r.sqAt || 0).getTime();
     return L.find(q => !t || isNaN(t) || new Date(q.order_date).getTime() >= t - 15 * 60000) || null;   // اترفع بعد ما الأوردر اتعمل
   }
@@ -11577,11 +11579,13 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
       PR.msg = 'بيجيب اللي اترفع على QP في نفس الفترة...'; draw();
       const qp = await api.fetchRange(ymd(from), ymd(to), n => { PR.msg = `بيجيب من QP... ${n} أوردر`; draw(); });
       const qpIn = qp.filter(q => { const d = new Date(q.order_date); return !isNaN(d) && d >= new Date(from.getTime() - 3600000) && d <= new Date(to.getTime() + 86400000); });
-      const pool = {}; qpIn.forEach(q => { const k = phoneOf(q.phone || q.customer_phone); if(k) (pool[k] = pool[k] || []).push(q); });
+      // 📞 المقارنة بالموبايل (الأساسي أو التاني في الناحيتين) — كل أوردر على QP بيتحسب لأوردر واحد بس
+      const pool = {}; qpIn.forEach(q => phoneKeys(q).forEach(k => (pool[k] = pool[k] || []).push(q)));
       Object.values(pool).forEach(L => L.sort((a, b) => new Date(a.order_date) - new Date(b.order_date)));
+      const used = new Set();
       ours.sort((a, b) => new Date(a.orderAt || a.sqAt) - new Date(b.orderAt || b.sqAt));
-      ours.forEach(r => { const L = pool[phoneOf(r.phone)]; if(L && L.length){ r.qpMatch = L.shift(); } else r.qpMatch = null; });
-      const extra = Object.values(pool).flat();   // على QP ومش لاقيين ليهم أوردر في مصادرنا
+      ours.forEach(r => { r.qpMatch = null; for(const k of phoneKeys(r)){ const q = (pool[k] || []).find(x => !used.has(x)); if(q){ used.add(q); r.qpMatch = q; r.qpBy = k; break; } } });
+      const extra = qpIn.filter(q => !used.has(q));   // على QP ومش لاقيين ليهم أوردر في مصادرنا
       const per = {};
       ours.forEach(r => { const k = r.srcKey === 'squad' ? '🏆 Squad' : srcLabel(r.srcKey); const x = per[k] = per[k] || { total:0, ok:0, miss:0 }; x.total++; if(r.qpMatch) x.ok++; else x.miss++; });
       PR.res = { ours, per, extra, cancelled, qpN:qpIn.length, from, to };
@@ -11592,7 +11596,7 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
   function periodHtml(){
     const when = v => v ? new Date(v).toLocaleString('ar-EG', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }) : '';
     let h = `<div class="card" style="border:2px solid #6b46c1"><h3>📅 هات أوردرات فترة وقارنها باللي اترفع على QP في نفس الفترة</h3>
-      <p style="margin:0 0 10px;font-size:13px;color:var(--muted)">بيجيب <b>كل</b> أوردرات الفترة من كل المصادر (حتى اللي اترفع أو اتشال قبل كده) ويقارنها بالموبايل باللي على QP — ومش بيحرّك "آخر أوردر اتاخد" خالص.</p>
+      <p style="margin:0 0 10px;font-size:13px;color:var(--muted)">بيجيب <b>كل</b> أوردرات الفترة من كل المصادر (حتى اللي اترفع أو اتشال قبل كده) ويقارنها <b>📞 برقم الموبايل</b> (مش برقم الشحنة) باللي على QP — ومش بيحرّك "آخر أوردر اتاخد" خالص.</p>
       <div class="up-row"><label style="font-size:13.5px">من <input type="datetime-local" id="prdFrom" value="${esc(PR.from)}" style="padding:7px 9px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit"></label>
         <label style="font-size:13.5px">لـ <input type="datetime-local" id="prdTo" value="${esc(PR.to)}" style="padding:7px 9px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit"></label>
         <button class="up-btn pri" id="prdGo" ${PR.busy ? 'disabled' : ''}>${PR.busy ? '⏳ بيقارن...' : '🔍 هات وقارن'}</button><button class="up-btn" id="prdClose">✕ قفل</button></div>`;
@@ -12340,7 +12344,7 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
       S.msg = `📥 اتحط ${miss.length} أوردر من الفترة مش لاقيهم على QP — راجعهم وارفعهم. (وضع الفترة: "آخر أوردر اتاخد" مش هيتحرك)`; S.msgErr = false; draw(); };
     if($('prdX')) $('prdX').onclick = () => { const R = PR.res, f = v => v ? new Date(v).toLocaleString('en-GB') : '';
       const ws = XLSX.utils.json_to_sheet(R.ours.map(r => ({ 'المصدر':r.srcKey === 'squad' ? 'Squad · ' + (r.page || '') : srcLabel(r.srcKey), 'اتعمل':f(r.orderAt || r.sqAt), 'العميل':r.name, 'الموبايل':r.phone, 'السعر':r.amount,
-        'على QP؟':r.qpMatch ? 'أيوه' : 'لأ', 'رقم الشحنة':r.qpMatch ? String(r.qpMatch.serial) : '', 'اترفع':r.qpMatch ? f(r.qpMatch.order_date) : '' })));
+        'على QP؟ (بالموبايل)':r.qpMatch ? 'أيوه' : 'لأ', 'الموبايل اللي اتطابق':r.qpBy ? '0' + r.qpBy : '', 'رقم الشحنة على QP':r.qpMatch ? String(r.qpMatch.serial) : '', 'اترفع':r.qpMatch ? f(r.qpMatch.order_date) : '' })));
       const ws2 = XLSX.utils.json_to_sheet(R.extra.map(q => ({ 'رقم الشحنة':String(q.serial), 'الموبايل':q.phone, 'العميل':q.full_name || '', 'اتعمل':f(q.order_date), 'notes':q.notes || '' })));
       const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'أوردراتنا'); XLSX.utils.book_append_sheet(wb, ws2, 'على QP ومش عندنا');
       XLSX.writeFile(wb, `مقارنة ${PR.from.slice(0, 10)} لـ ${PR.to.slice(0, 10)}.xlsx`); };
