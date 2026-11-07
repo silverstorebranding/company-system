@@ -10415,6 +10415,9 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
 .ptr-card h3{margin-bottom:8px}.ptr-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:8px}
 .ptr-it{border:1px solid var(--line);border-radius:10px;padding:8px 10px;font-size:13px;background:var(--panel)}
 .ptr-s{color:var(--muted);font-size:12.5px;margin-top:3px}.ptr-w{margin-top:6px;font-weight:700;color:#23784a}.ptr-w.on{color:#b7791f}
+.days-card{font-size:14px}.days{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.day{display:flex;flex-direction:column;align-items:center;min-width:76px;padding:6px 10px;border:1px solid var(--line);border-radius:10px;background:var(--panel)}
+.day small{font-size:11.5px;color:var(--muted)}.day b{font-size:20px}.day.tot{background:var(--slate-l)}
 .qpcmp{border-inline-start:5px solid #2f7d55;font-size:14px}.qpcmp.bad{border-inline-start-color:#b3261e;background:#fff6f5}
 .urg-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 14px;border-radius:10px;background:#fdecea;color:#7a2a1f;margin:12px 0;font-size:14px}
 .urg-tag{display:inline-block;margin-top:3px;padding:1px 7px;border-radius:8px;font-size:11px;background:#fdecea;color:#a3271a}
@@ -10642,7 +10645,9 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
       const { data: pr } = await sbc().from('profiles').select('id, username, full_name');
       (pr || []).forEach(p => SQ.names[p.id] = p.full_name || p.username || 'موظف');
     }
-    const from = fromOverride || (E.showOld ? dayStartIso() : (SQ.at || dayStartIso()));
+    await loadCutoff();
+    let from = fromOverride || (E.showOld ? dayStartIso() : (SQ.at || dayStartIso()));
+    if(!fromOverride && new Date(from) < new Date(cutIso())) from = cutIso();   // 📅 قبل "ابدأ من" مش بيتجاب
     let data = [], off = 0;
     for(;;){ const r = await sbc().from('orders').select('*').gt('created_at', from).order('created_at', { ascending:true }).range(off, off + 999);
       if(r.error) throw r.error; data = data.concat(r.data || []); if(!r.data || r.data.length < 1000 || data.length >= 20000) break; off += 1000; }
@@ -10708,7 +10713,15 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
   const isCancel = st => /cancel|ملغ|refus|رفض|return/i.test(String(st || ''));
 
   // بيجيب الأوردرات الجديدة لمصدر واحد (اللي بعد آخر أوردر اتاخد)
+  /* 📅 "ابدأ من": أي أوردر قبل التاريخ ده مش بيتجاب خالص (الافتراضي أول الشهر) */
+  const CUT_KV = 'up_cutoff';
+  const CUT = { d:null, loaded:false };
+  const firstOfMonth = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-01'; };
+  async function loadCutoff(){ if(CUT.loaded) return; try{ const { data } = await sbc().from('app_kv').select('*').eq('key', CUT_KV).maybeSingle(); CUT.d = (data && data.value && data.value.d) || null; }catch(e){} if(!CUT.d) CUT.d = firstOfMonth(); CUT.loaded = true; }
+  async function saveCutoff(d){ CUT.d = d || firstOfMonth(); QPIDX = { at:0, idx:null }; try{ await sbc().from('app_kv').upsert({ key:CUT_KV, value:{ d:CUT.d }, updated_at:new Date().toISOString(), updated_by_name: me().full_name || me().username || '' }); }catch(e){} }
+  const cutIso = () => new Date((CUT.d || firstOfMonth()) + 'T00:00:00').toISOString();
   async function sourceRows(src){
+    await loadCutoff();
     const p = P(src);
     const filt = q => src === 'dream' ? q.or('source.is.null,source.eq.dream') : q.eq('source', src);
     if(p.seq){ // 🩹 لو الرقم أكبر من آخر أوردر وصل للمصدر ده → يرجع صفر
@@ -10719,11 +10732,12 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     // ⚠️ كان فيه حد 500 أوردر — لو فيه أوردرات قديمة اترفعت ومتحدّثش العلامة، الجديد كان بيتقطع. دلوقتي بيجيب كله صفحة صفحة
     let data = [], from = 0;
     for(;;){
-      const r = await filt(sbc().from('easy_orders').select('*')).gt('seq', E.showOld ? 0 : p.seq).order('seq', { ascending:true }).range(from, from + 999);
+      const r = await filt(sbc().from('easy_orders').select('*')).gt('seq', E.showOld ? 0 : p.seq).gte('received_at', cutIso()).order('seq', { ascending:true }).range(from, from + 999);
       if(r.error) throw r.error;
       data = data.concat(r.data || []); if(!r.data || r.data.length < 1000 || data.length >= 20000) break; from += 1000;
     }
-    const rows = data.map(x => { const r = fromEasy(x.payload || {}, x.seq, src); r.estatus = x.status || r.estatus; r.orderAt = (x.payload && (x.payload.created_at || x.payload.createdAt)) || x.received_at || ''; return r; });
+    const rows = data.map(x => { const r = fromEasy(x.payload || {}, x.seq, src); r.estatus = x.status || r.estatus; r.orderAt = (x.payload && (x.payload.created_at || x.payload.createdAt)) || x.received_at || ''; return r; })
+      .filter(r => !r.orderAt || new Date(r.orderAt) >= new Date(cutIso()) || isNaN(new Date(r.orderAt)));
     // 📍 العلامة بتتقدّم لوحدها على الأوردرات المتتالية اللي اترفعت أو اتشالت أو اتلغت
     if(!E.showOld){ try{ await loadDone(); let last = 0; for(const r of rows){ if(DONE.has(skipKey(r)) || isCancel(r.estatus)) last = r.seq; else break; }
       if(last > (p.seq || 0)) await savePtr(src, 'seq', last); }catch(e){} }
@@ -11542,7 +11556,9 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
   async function qpIndex(){
     const api = window.QP && window.QP.api; if(!api || !api.hasCreds()) return null;
     if(QPIDX.idx && Date.now() - QPIDX.at < 180000) return QPIDX.idx;
-    const from = new Date(); from.setDate(from.getDate() - DUP_DAYS);
+    await loadCutoff();
+    const from = new Date(cutIso()); from.setDate(from.getDate() - 1);   // 🔁 بنقارن بكل اللي اترفع على QP من "ابدأ من"
+    const d3 = new Date(); d3.setDate(d3.getDate() - DUP_DAYS); if(d3 < from) from.setTime(d3.getTime());
     const list = await (api.fetchRangeAll || api.fetchRange)(ymd(from), ymd(new Date()));
     const idx = {};
     list.forEach(q => [q.phone, q.phone2, q.customer_phone].forEach(ph => { const k = phoneOf(ph); if(k && k.length >= 10){ (idx[k] = idx[k] || []); if(!idx[k].includes(q)) idx[k].push(q); } }));
@@ -11551,7 +11567,7 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
   function onQP(r, idx){
     const L = idx && [...new Set(phoneKeys(r).flatMap(k => idx[k] || []))]; if(!L || !L.length) return null;
     const t = new Date(r.orderAt || r.sqAt || 0).getTime();
-    return L.find(q => !t || isNaN(t) || new Date(q.order_date).getTime() >= t - 15 * 60000) || null;   // اترفع بعد ما الأوردر اتعمل
+    return L.find(q => !t || isNaN(t) || new Date(q.order_date).getTime() >= t - 24 * 3600000) || null;   // اترفع بعد ما الأوردر اتعمل (أو قبله بيوم بالكتير) — الأوردرات الأقدم لنفس العميلة مش بتتحسب
   }
   async function autoDropQP(){
     let idx = null;
@@ -11566,15 +11582,23 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
         const per = {}; (S.rows || []).forEach(r => { const k = r.srcKey === 'squad' ? '🏆 Squad' : srcLabel(r.srcKey); per[k] = (per[k] || 0) + 1; });
         const ts = (S.rows || []).map(r => r.orderAt || r.sqAt).filter(Boolean).map(v => new Date(v)).filter(d => !isNaN(d)).sort((x, y) => x - y);
         const f = d => d.toLocaleString('ar-EG', { weekday:'short', day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' });
-        S.msg = `جالك ${S.rows.length} أوردر لسه ماترفعش${Object.keys(per).length ? ' (' + Object.entries(per).map(([k, n]) => `${k} ${n}`).join(' · ') + ')' : ''}`
+        S.msg = `جالك ${S.rows.length} أوردر لسه ماترفعش على QP من ${CUT.d}${Object.keys(per).length ? ' (' + Object.entries(per).map(([k, n]) => `${k} ${n}`).join(' · ') + ')' : ''}`
           + (ts.length ? ` — 🕒 من ${f(ts[0])} لـ ${f(ts[ts.length - 1])}` : '')
-          + ` · 🔁 وشلت ${drop.length} أوردر لأنهم مرفوعين بالفعل على QP (آخر ${DUP_DAYS} أيام) ومش هيرجعوا تاني.`; S.msgErr = false;
+          + ` · 🔁 وشلت ${drop.length} أوردر لأنهم مرفوعين بالفعل على QP (من ${CUT.d}) ومش هيرجعوا تاني.`; S.msgErr = false;
         draw();
       }
     }
     dupQP();
   }
   window.__qpIndex = qpIndex; window.__onQP = onQP;
+  // 📅 اللي لسه ماترفعش لكل يوم (من "ابدأ من" لحد النهارده)
+  function daysCard(){
+    const L = (S.rows || []).filter(r => !r.serial); if(!L.length) return '';
+    const by = {}; L.forEach(r => { const v = r.orderAt || r.sqAt; const d = v ? new Date(v) : null; const k = d && !isNaN(d) ? ymd(d) : '—'; by[k] = (by[k] || 0) + 1; });
+    const keys = Object.keys(by).sort();
+    return `<div class="card days-card"><b>📅 لسه ماترفعش على QP لكل يوم:</b><div class="days">${keys.map(k => `<span class="day"><small>${k === '—' ? 'من غير تاريخ' : new Date(k + 'T12:00:00').toLocaleDateString('ar-EG', { weekday:'short', day:'numeric', month:'short' })}</small><b>${by[k]}</b></span>`).join('')}
+      <span class="day tot"><small>الإجمالي</small><b>${L.length}</b></span></div></div>`;
+  }
   function droppedCard(){
     const L = S.dropped || []; if(!L.length) return '';
     return `<details class="card qpcmp"><summary style="cursor:pointer"><b>🔁 اتشال ${L.length} أوردر لأنهم مرفوعين بالفعل على QP</b> — دوس تشوفهم</summary>
@@ -11997,7 +12021,7 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     if(S.rows && S.rows.length){ const dN = S.rows.filter(r => !r.serial && r.qpDup && r.qpDup.length && !r.dupOk).length;
       h += `<div class="card qpcmp ${dN ? 'bad' : ''}"><b>🔁 مقارنة بـ QP (آخر ${DUP_DAYS} أيام):</b> ${D.loading ? '⏳ بيقارن...' : !D.done ? 'لسه ماتقارنش — <button class="up-btn" id="qpcmpGo" style="padding:4px 10px;font-size:12.5px">🔎 قارن دلوقتي</button>'
         : dN ? `<b style="color:#b3261e">${dN} أوردر من اللي جبتهم اترفعوا قبل كده على QP</b> (من السيستم أو مانوال على السايت) <button class="up-btn" id="qpcmpDel" style="padding:5px 12px;font-size:13px;background:#b7791f;border-color:#b7791f;color:#fff">🧹 شيلهم ومايرجعوش تاني</button>` : '✅ مفيش ولا أوردر من اللي جبتهم مرفوع قبل كده على QP'}</div>`; }
-    h += droppedCard();
+    h += daysCard() + droppedCard();
     h += urgentBar() + urgPickHtml();
     h += `<div class="card"><h3>3️⃣ الشيت زي ما هيترفع على QP</h3>
       <div class="up-kpis"><div><b>${S.rows.length}</b><span>أوردر</span></div><div><b>${total.toLocaleString('ar-EG')} ج</b><span>الإجمالي</span></div>
@@ -12116,9 +12140,10 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
       <p style="margin:0 0 10px;font-size:14px">بيجيب الأوردرات الجديدة من: <b>🏆 Squad</b>، ${SOURCES.map(x => '<b>' + esc(x.label) + '</b>').join('، ')} — كلهم تحت بعض في شيت واحد، وكل أوردر بالـ notes بتاعة مصدره، وكل مصدر بيكمل من بعد آخر أوردر اتاخد منه.</p>
       <div class="up-row"><button class="up-btn pri" id="upAllFetch" ${E.loading ? 'disabled' : ''}>${E.loading ? '⏳ بيجيب...' : '📦 هات كل الأوردرات'}</button>
         ${S.rows ? '<button class="up-btn" id="upClear">🧹 ابدأ من جديد</button>' : ''}
+        <label style="font-size:13.5px;display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border:1.5px dashed var(--brass);border-radius:9px">📅 ابدأ من <input type="date" id="cutD" value="${esc(CUT.d || firstOfMonth())}" style="padding:5px 7px;border:1.5px solid var(--line);border-radius:7px;font-family:inherit"></label>
         <button class="up-btn" id="prdOpen" style="border-color:#6b46c1;color:#6b46c1">📅 هات أوردرات فترة وقارنها بـ QP</button>
         <button class="up-btn" id="xaOpen" style="border-color:#2b6cb0;color:#2b6cb0">🔎 افحص كل المصادر: وصل كام من وقت معيّن</button></div>
-      <p style="margin:8px 0 0;font-size:12.5px;color:var(--muted)">📦 <b>هات كل الأوردرات</b> = بيكمّل من مكان ما وقفت (العادي) · 📅 <b>فترة</b> = بيجيب كل أوردرات فترة ويقارنها بـ QP (للمراجعة)</p>
+      <p style="margin:8px 0 0;font-size:12.5px;color:var(--muted)">📦 <b>هات كل الأوردرات</b> = بيكمّل من مكان ما وقفت (العادي) — من غير أي أوردر قبل "ابدأ من"، وبيشيل لوحده أي رقم موبايل اترفع على QP من ساعتها · 📅 <b>فترة</b> = بيجيب كل أوردرات فترة ويقارنها بـ QP (للمراجعة)</p>
       ${PR.open ? periodHtml() : ''}
       ${XA.open ? diagAllHtml() : ''}
       ${E.err ? `<div class="up-msg err">${esc(E.err)}</div>` : ''}</div>`;
@@ -12378,6 +12403,7 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     if($('xdGo')) $('xdGo').onclick = () => diagSource(S.src);
     if($('xaOpen')) $('xaOpen').onclick = () => { XA.open = !XA.open; draw(); };
     if($('prdOpen')) $('prdOpen').onclick = () => { PR.open = !PR.open; draw(); };
+    if($('cutD')) $('cutD').onchange = async e => { await saveCutoff(e.target.value); flash(`📅 تمام — من دلوقتي "هات كل الأوردرات" مش هيجيب أي أوردر قبل ${CUT.d}، وبيقارن بكل اللي اترفع على QP من ساعتها.`); };
     if($('prdClose')) $('prdClose').onclick = () => { PR.open = false; draw(); };
     if($('prdFrom')) $('prdFrom').onchange = e => { PR.from = e.target.value; };
     if($('prdTo')) $('prdTo').onchange = e => { PR.to = e.target.value; };
@@ -12464,6 +12490,7 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     if(upRoute() === 'qp-delete' && S.src !== 'delete') switchSrc('delete');
     if(upRoute() === 'pickup'){ S.src = 'delete'; X.mode = 'pickup'; }
     if(upRoute() === 'qp-upload' && S.src !== 'delete' && S.src !== 'settings' && sbc()) loadUrgent().then(() => { if(S.rows && S.rows.some(r => r.urgentFix)){ try{ connect(); }catch(e){} } draw(); });
+    if(!CUT.loaded && sbc()) loadCutoff().then(draw);
     draw(); if(!E.srcLoaded && sbc()) loadSources().then(() => { if(!E.ptrLoaded) return loadPtr(); }).then(() => { if(!SQ.loaded) return loadSquadPtr(); }).then(draw); }
   const _render = render;
   render = function(){ _render.apply(this, arguments); if(isUP()) mount(); };
