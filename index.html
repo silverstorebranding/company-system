@@ -2241,7 +2241,8 @@ const Squad = (function(){
     const view = pendingView || 'dashboard';
     pendingView = null;
     // 👁️ لو الأدمن بيتفرج كأنه حد تاني: نستنى بوابة الدخول تحدد مين، وبعدين نجيب بياناته هو
-    if(sessionStorage.getItem('viewAs')){ for(let i = 0; i < 50 && !(window.AuthGate && window.AuthGate.me && window.AuthGate.me()); i++) await new Promise(r => setTimeout(r, 100)); }
+    // نستنى بوابة الدخول تعرف مين (عشان تابات الأدمن و"اتفرج كأنك" يظهروا صح من أول مرة)
+    for(let i = 0; i < 50 && !(window.AuthGate && window.AuthGate.me && window.AuthGate.me()); i++) await new Promise(r => setTimeout(r, 100));
     setState({ loading:false, session, profile, view, error:'' });
     loadMyOrders();
     loadLeaderboard();
@@ -2847,7 +2848,8 @@ const Squad = (function(){
     const api = qpApi();
     if(!api || !api.hasCreds()){ setSync({ err:'لازم تسجّل دخول QP الأول من قسم 🚚 QP على الجهاز ده، وبعدين ترجع هنا.', result:null }); return; }
     setSync({ loading:true, err:'', done:'', result:null, msg:'بيجيب الأوردرات اللي لسه قيد التنفيذ...' });
-    const { data: pend, error } = await sb.from('orders').select('*').or('status.is.null,status.eq.pending').order('created_at', { ascending:true });
+    // ♻️ بنراجع كمان اللي اتعلّم "اندلفرد" — ممكن العميل طلب تاني واتبعتله تاني واتسلم
+    const { data: pend, error } = await sb.from('orders').select('*').or('status.is.null,status.eq.pending,status.eq.undelivered').order('created_at', { ascending:true });
     if(error){ setSync({ loading:false, err:'مقدرناش نجيب الأوردرات: ' + error.message }); return; }
     if(!pend || !pend.length){ setSync({ loading:false, result:{ empty:true } }); return; }
 
@@ -2860,7 +2862,7 @@ const Squad = (function(){
     let qp;
     try{
       setSync({ msg:`بيجيب أوردرات QP من ${qpFrom} لـ ${to}...` });
-      qp = await api.fetchRange(qpFrom, to, n => setSync({ msg:`بيجيب أوردرات QP... ${n} أوردر` }));
+      qp = await (api.fetchRangeAll || api.fetchRange)(qpFrom, to, n => setSync({ msg:`بيجيب أوردرات QP... ${n} أوردر` }));
     }catch(e){
       setSync({ loading:false, err: /Failed to fetch|NetworkError/i.test(e.message) ? 'مش قادر يوصل لموقع QP. اتأكد من الإنترنت ومن دخول QP.' : 'خطأ من QP: ' + e.message });
       return;
@@ -2874,18 +2876,30 @@ const Squad = (function(){
     }));
     const used = new Set();
     const res = { deliver:[], undel:[], review:[], shipping:[], nomatch:[], skipped: pend.length - list.length, qpCount: qp.length, from };
+    // الأوردرات اللي لسه قيد التنفيذ الأول: لو الطلب التاني متسجّل كأوردر جديد في Squad هو اللي ياخد الشحنة المتسلمة (من غير عمولة مرتين)
+    list.sort((a, b) => ((a.status === 'undelivered') - (b.status === 'undelivered')) || (new Date(a.created_at) - new Date(b.created_at)));
     list.forEach(o => {
       const k = phoneKey(o.customer_phone);
       if(!k){ res.nomatch.push({ o, why:'رقم الموبايل مش مكتوب صح' }); return; }
-      const t0 = new Date(o.created_at).getTime();
+      const t0 = new Date(o.created_at).getTime(), wasU = o.status === 'undelivered';
       let c = (idx[k] || []).filter(q => !used.has(q.serial)).filter(q => {
         const t = new Date(q.order_date).getTime();
-        return isNaN(t) || (t >= t0 - 1.5 * DAY && t <= t0 + 20 * DAY);
+        return isNaN(t) || (t >= t0 - 1.5 * DAY && t <= t0 + 30 * DAY);
       });
-      if(!c.length){ res.nomatch.push({ o, why:'الرقم ده مش موجود في QP في الفترة دي' }); return; }
+      if(!c.length){ if(!wasU) res.nomatch.push({ o, why:'الرقم ده مش موجود في QP في الفترة دي' }); return; }
       const amt = Number(o.amount);
+      // ✅ لو أي شحنة لنفس الرقم (حتى لو اتبعتت تاني بسعر أو بوليصة تانية) اتسلمت ← الأوردر اتسلم والعمولة تتحسب
+      const D = c.filter(q => api.category(q) === 'delivered');
+      if(D.length){
+        D.sort((a, b) => (Math.abs(numVal(a.price) - amt) < 1 ? 0 : 1) - (Math.abs(numVal(b.price) - amt) < 1 ? 0 : 1) || Math.abs(new Date(a.order_date) - t0) - Math.abs(new Date(b.order_date) - t0));
+        used.add(D[0].serial); res.deliver.push({ o, q:D[0], re: wasU || D[0] !== c.slice().sort((a, b) => Math.abs(new Date(a.order_date) - t0) - Math.abs(new Date(b.order_date) - t0))[0] }); return;
+      }
+      if(wasU){ // متعلّم اندلفرد ولسه مفيش شحنة اتسلمت: لو فيه شحنة جديدة لسه في الطريق نوضّحها، غير كده يفضل زي ما هو
+        const way = c.filter(q => api.category(q) !== 'undelivered'); if(way.length) res.shipping.push({ o, q:way[0], re:true }); return; }
       if(c.length > 1 && amt > 0){ const m = c.filter(q => Math.abs(numVal(q.price) - amt) < 1); if(m.length) c = m; }
       c.sort((a, b) => Math.abs(new Date(a.order_date) - t0) - Math.abs(new Date(b.order_date) - t0));
+      // لو فيه شحنة لسه في الطريق (اتبعتت تاني) مايتعلمش اندلفرد
+      if(c.some(q => api.category(q) !== 'undelivered' && api.category(q) !== 'delivered')){ res.shipping.push({ o, q:c.find(q => api.category(q) !== 'undelivered') }); return; }
       const anyDel = c.some(q => api.category(q) === 'delivered');
       const cats = new Set(c.map(q => api.category(q)));
       if(c.length === 1 || cats.size === 1){
@@ -2978,7 +2992,7 @@ const Squad = (function(){
     </div>`;
 
     h += `<h3 class="sq-synch">✅ اتسلمت في QP — ${R.deliver.length}</h3><div class="sq-tablecard">${R.deliver.length
-      ? `<table class="sq-table">${thead(true)}<tbody>${R.deliver.map(x => `<tr>${ck(x.o)}${base(x.o)}<td data-label="في QP">${qInfo(x.q)}</td></tr>`).join('')}</tbody></table>`
+      ? `<table class="sq-table">${thead(true)}<tbody>${R.deliver.map(x => `<tr>${ck(x.o)}${base(x.o)}<td data-label="في QP">${qInfo(x.q)}${x.re ? `<br><span style="display:inline-block;margin-top:3px;padding:1px 8px;border-radius:8px;background:#e3f3e8;color:#23784a;font-size:12px;font-weight:700">♻️ ${x.o.status === 'undelivered' ? 'كان متعلّم اندلفرد — ' : ''}اتبعت تاني واتسلم</span>` : ''}</td></tr>`).join('')}</tbody></table>`
       : '<div class="sq-empty">مفيش أوردرات اتسلمت في QP من اللي لسه قيد التنفيذ.</div>'}</div>`;
 
     h += `<h3 class="sq-synch">🔴 اندلفرد في QP (هتطلع من قيد التنفيذ) — ${R.undel.length}</h3>
@@ -3029,7 +3043,7 @@ const Squad = (function(){
     let qp;
     try{
       setVerify({ msg:`بيجيب أوردرات QP من ${qpFrom} لـ النهارده...` });
-      qp = await api.fetchRange(qpFrom, localYmd(new Date()), n => setVerify({ msg:`بيجيب أوردرات QP... ${n} أوردر` }));
+      qp = await (api.fetchRangeAll || api.fetchRange)(qpFrom, localYmd(new Date()), n => setVerify({ msg:`بيجيب أوردرات QP... ${n} أوردر` }));
     }catch(e){
       setVerify({ loading:false, err: /Failed to fetch|NetworkError/i.test(e.message) ? 'مش قادر يوصل لموقع QP. اتأكد من الإنترنت ومن دخول QP.' : 'خطأ من QP: ' + e.message });
       return;
@@ -3045,9 +3059,12 @@ const Squad = (function(){
       const k = phoneKey(o.customer_phone);
       if(!k){ R.nomatch.push({ o, why:'رقم الموبايل مش مكتوب صح' }); return; }
       const t0 = new Date(o.created_at).getTime();
-      let c = (idx[k] || []).filter(q => !used.has(q.serial)).filter(q => { const t = new Date(q.order_date).getTime(); return isNaN(t) || (t >= t0 - 1.5 * DAY && t <= t0 + 20 * DAY); });
+      let c = (idx[k] || []).filter(q => !used.has(q.serial)).filter(q => { const t = new Date(q.order_date).getTime(); return isNaN(t) || (t >= t0 - 1.5 * DAY && t <= t0 + 30 * DAY); });
       if(!c.length){ R.nomatch.push({ o, why:'الرقم ده مش موجود في QP في الفترة دي' }); return; }
       const amt = Number(o.amount);
+      // ♻️ لو أي شحنة لنفس الرقم اتسلمت (حتى لو اتبعتت تاني بسعر تاني) ← التسليم صح
+      const Dv = c.filter(q => api.category(q) === 'delivered');
+      if(Dv.length){ Dv.sort((a, b) => Math.abs(new Date(a.order_date) - t0) - Math.abs(new Date(b.order_date) - t0)); used.add(Dv[0].serial); R.ok.push({ o, q:Dv[0] }); return; }
       if(c.length > 1 && amt > 0){ const m = c.filter(q => Math.abs(numVal(q.price) - amt) < 1); if(m.length) c = m; }
       c.sort((a, b) => Math.abs(new Date(a.order_date) - t0) - Math.abs(new Date(b.order_date) - t0));
       const cats = c.map(q => api.category(q));
