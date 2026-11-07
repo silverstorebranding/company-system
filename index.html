@@ -7227,7 +7227,9 @@ table.pr td.ds-pos{color:#276749;font-weight:700}
   const dsMonthOf = m => { const [y, mo] = m.split('-').map(Number); const last = new Date(y, mo, 0).getDate(); return { from:m + '-01', to:m + '-' + String(last).padStart(2, '0') }; };
   const dsCur = () => today().slice(0, 7);
   let S = { rows:null, loading:false, busy:false, err:'', msg:'', msgErr:false,
-            date: today(), kind:'sale', item:'', amount:'', from:dsMonthOf(dsCur()).from, to:dsMonthOf(dsCur()).to, q:'' };
+            date: today(), kind:'sale', item:'', amount:'', from:dsMonthOf(dsCur()).from, to:dsMonthOf(dsCur()).to, q:'', by:'', people:null };
+  async function loadPeople(){ if(S.people) return; const { data } = await sb().from('profiles').select('id, username, full_name'); S.people = (data || []).map(p => ({ id:p.id, name:p.full_name || p.username })).sort((a, b) => a.name.localeCompare(b.name, 'ar')); draw(); }
+  const byName = r => r.done_by_name || r.created_by_name || '—';
 
   /* ---------- البيانات ---------- */
   async function load(){
@@ -7288,6 +7290,7 @@ table.pr td.ds-pos{color:#276749;font-weight:700}
       <div class="ds-form">
         <div><label for="dsDate">التاريخ</label><input class="ds-in" id="dsDate" type="date" value="${esc(S.date)}"></div>
         <div><label for="dsItem">${ret ? 'الطلب اللي رجع' : 'الطلب'}</label><input class="ds-in" id="dsItem" placeholder="مثلاً: طقم سلسلة ومحبس" value="${esc(S.item)}" autocomplete="off"></div>
+        <div><label for="dsBy">تم بواسطة (خدمة العملاء)</label><select class="ds-in" id="dsBy"><option value="">— اختار —</option>${(S.people || []).map(p => `<option value="${esc(p.id)}" ${(S.by || me().id) === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></div>
         <div><label for="dsAmount">${ret ? 'المبلغ اللي رجع' : 'السعر'}</label><input class="ds-in" id="dsAmount" type="number" min="0" step="any" inputmode="decimal" placeholder="0" value="${esc(S.amount)}"></div>
         <div><button class="ds-btn pri" data-act="add" ${S.busy ? 'disabled' : ''}>${S.busy ? '⏳...' : ret ? 'سجّل المرتجع' : 'سجّل المبيعة'}</button></div>
       </div>
@@ -7330,7 +7333,7 @@ table.pr td.ds-pos{color:#276749;font-weight:700}
     const keys = Object.keys(days).sort().reverse();
     const admin = !!me().is_admin, myId = me().id;
 
-    let tb = '<tr><th>النوع</th><th>الطلب</th><th>المبلغ</th><th>بواسطة</th><th></th></tr>';
+    let tb = '<tr><th>النوع</th><th>الطلب</th><th>المبلغ</th><th>تم بواسطة</th><th></th></tr>';
     tb += `<tr class="total"><td class="lbl" colspan="2">إجمالي ${esc(rangeTitle())} — ${fmt(keys.length)} يوم</td><td class="${T.net < 0 ? 'ds-neg' : ''}">${fmt(T.net)} ج</td><td colspan="2">مبيعات ${fmt(T.s)} − مرتجعات ${fmt(T.r)}</td></tr>`;
     keys.forEach(k => {
       const d = sums(days[k]);
@@ -7343,10 +7346,13 @@ table.pr td.ds-pos{color:#276749;font-weight:700}
         tb += `<tr><td><span class="ds-tag ${isRet ? 'ret' : 'sale'}">${isRet ? '↩️ مرتجع' : '➕ مبيعة'}</span></td>
           <td class="lbl" style="font-weight:400">${esc(r.item)}</td>
           <td class="${isRet ? 'ds-neg' : ''}">${isRet ? '−' : ''}${fmt(r.amount)}</td>
-          <td>${esc(r.created_by_name || '—')}</td>
+          <td><b>${esc(byName(r))}</b>${r.done_by_name && r.created_by_name && r.created_by_name !== r.done_by_name ? `<br><small style="color:var(--muted)">سجّلها ${esc(r.created_by_name)}</small>` : ''}</td>
           <td>${canDel ? `<button class="ds-btn sm" data-del="${r.id}" title="امسح">🗑️</button>` : ''}</td></tr>`;
       });
     });
+    const per = {}; filtered().forEach(r => { const k = byName(r), x = per[k] = per[k] || { s:0, r:0, n:0 }; x.n++; if(r.kind === 'return') x.r += Number(r.amount); else x.s += Number(r.amount); });
+    if(Object.keys(per).length) h += `<div class="card"><h3>👩‍💼 لكل موظفة — ${esc(rangeTitle())}</h3><div class="tablewrap"><table class="pr"><tr><th>تم بواسطة</th><th>عمليات</th><th>مبيعات</th><th>مرتجعات</th><th>الصافي</th></tr>
+      ${Object.entries(per).sort((a, b) => (b[1].s - b[1].r) - (a[1].s - a[1].r)).map(([k, x]) => `<tr><td class="lbl">${esc(k)}</td><td>${fmt(x.n)}</td><td>${fmt(x.s)}</td><td class="${x.r ? 'ds-neg' : ''}">${x.r ? '−' + fmt(x.r) : '—'}</td><td><b>${fmt(x.s - x.r)} ج</b></td></tr>`).join('')}</table></div></div>`;
     h += `<div class="card"><h3>كل العمليات بالتاريخ</h3>
       <div class="tablewrap" style="max-height:640px;overflow-y:auto"><table class="pr">${tb}</table></div>
       <p class="none" style="margin-top:8px">دوس على أي يوم عشان تعرضه لوحده. لو سجّلت حاجة غلط امسحها وسجّلها تاني (المسح لصاحب العملية أو الأدمن).</p></div>`;
@@ -7370,7 +7376,9 @@ table.pr td.ds-pos{color:#276749;font-weight:700}
     const it = $('dsItem'); if(it){ it.oninput = () => { S.item = it.value; }; it.onkeydown = e => { if(e.key === 'Enter'){ e.preventDefault(); const a = document.getElementById('dsAmount'); if(a) a.focus(); } }; }
     const am = $('dsAmount'); if(am){ am.oninput = () => { S.amount = am.value; }; am.onkeydown = e => { if(e.key === 'Enter'){ e.preventDefault(); add(); } }; }
     const ad = root.querySelector('[data-act=add]'); if(ad) ad.onclick = add;
-    const fr = $('dsFrom'); if(fr) fr.onchange = () => { S.from = fr.value; draw(); };
+    const fr = $('dsFrom');
+    const bySel = $('dsBy'); if(bySel) bySel.onchange = () => { S.by = bySel.value; };
+    if(!S.people) loadPeople(); if(fr) fr.onchange = () => { S.from = fr.value; draw(); };
     const dm = $('dsMonth'); if(dm) dm.onchange = () => { if(dm.value){ const R = dsMonthOf(dm.value); S.from = R.from; S.to = R.to; } draw(); };
     const to = $('dsTo'); if(to) to.onchange = () => { S.to = to.value; draw(); };
     root.querySelectorAll('[data-range]').forEach(b => b.onclick = () => { setRange(b.dataset.range); draw(); });
@@ -7386,17 +7394,21 @@ table.pr td.ds-pos{color:#276749;font-weight:700}
     if(!S.date) return flash('اختار التاريخ.', true);
     if(!item) return flash('اكتب الطلب.', true);
     if(amount === null || amount <= 0) return flash('اكتب السعر (رقم أكبر من صفر).', true);
+    const byId = S.by || me().id, byP = (S.people || []).find(p => p.id === byId);
+    if(!byP) return flash('اختار مين من خدمة العملاء عمل العملية دي.', true);
     S.busy = true; draw();
-    const { error } = await sb().from('direct_sales').insert({
-      sale_date: S.date, kind: S.kind, item, amount, created_by_name: myName()
+    let { error } = await sb().from('direct_sales').insert({
+      sale_date: S.date, kind: S.kind, item, amount, created_by_name: myName(), done_by_id: byP.id, done_by_name: byP.name
     });
+    // لو خانة "تم بواسطة" لسه مش متعملة في Supabase: بنحفظ الاسم مكان "سجّلها" لحد ما SQL يتشغّل
+    if(error && /done_by/i.test(error.message)) ({ error } = await sb().from('direct_sales').insert({ sale_date: S.date, kind: S.kind, item, amount, created_by_name: byP.name }));
     S.busy = false;
     if(error) return flash('❌ مقدرناش نسجّل: ' + error.message, true);
     const wasRet = S.kind === 'return';
     // لو التاريخ برا الفترة المعروضة، اعرض الكل عشان العملية تبان
     if((S.from && S.date < S.from) || (S.to && S.date > S.to)){ S.from = S.to = ''; }
     S.item = ''; S.amount = '';
-    S.msg = `✅ اتسجّل ${wasRet ? 'مرتجع' : 'مبيعة'} "${item}" بـ ${fmt(amount)} ج يوم ${dayLabel(S.date)}.`; S.msgErr = false;
+    S.msg = `✅ اتسجّل ${wasRet ? 'مرتجع' : 'مبيعة'} "${item}" بـ ${fmt(amount)} ج يوم ${dayLabel(S.date)} — بواسطة ${byP.name}.`; S.msgErr = false;
     await load();
     const i = document.getElementById('dsItem'); if(i) i.focus();
   }
