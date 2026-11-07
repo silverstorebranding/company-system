@@ -7197,6 +7197,9 @@ th{background:#3d5553;color:#fff} td.r{text-align:right;font-weight:600} tr:nth-
 .ds-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
 .ds-bar label{font-size:13px;color:var(--muted);display:inline-flex;align-items:center;gap:6px}
 .ds-bar input[type=date]{width:auto}
+.ds-month{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border:1.5px solid var(--line);border-radius:9px}
+.ds-month select{border:none;background:transparent;font-family:inherit;font-weight:700;font-size:13.5px;color:var(--ink)}
+.ds-month.old{border-color:#e0a020;background:#fff8e6}
 .ds-msg{padding:10px 13px;border-radius:9px;margin-bottom:14px;font-size:14px;background:#e8f3ec;color:#276749}
 .ds-msg.err{background:#fdecea;color:#b3423a}
 .ds-tag{display:inline-block;padding:2px 9px;border-radius:20px;font-size:12px;font-weight:600}
@@ -7220,8 +7223,11 @@ table.pr td.ds-pos{color:#276749;font-weight:700}
   const myName = () => me().full_name || me().username || '';
   const dayLabel = k => new Date(k + 'T12:00:00').toLocaleDateString('ar-EG', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
 
+  // 📅 الافتراضي: الشهر الحالي بس — والشهور القديمة موجودة وبتختارها
+  const dsMonthOf = m => { const [y, mo] = m.split('-').map(Number); const last = new Date(y, mo, 0).getDate(); return { from:m + '-01', to:m + '-' + String(last).padStart(2, '0') }; };
+  const dsCur = () => today().slice(0, 7);
   let S = { rows:null, loading:false, busy:false, err:'', msg:'', msgErr:false,
-            date: today(), kind:'sale', item:'', amount:'', from:'', to:'', q:'' };
+            date: today(), kind:'sale', item:'', amount:'', from:dsMonthOf(dsCur()).from, to:dsMonthOf(dsCur()).to, q:'' };
 
   /* ---------- البيانات ---------- */
   async function load(){
@@ -7288,6 +7294,10 @@ table.pr td.ds-pos{color:#276749;font-weight:700}
     </div>`;
 
     h += `<div class="card"><div class="ds-bar">
+      <label class="ds-month ${S.from && S.from.slice(0, 7) !== dsCur() ? 'old' : ''}">📅 <select id="dsMonth"><option value="">— فترة مخصوصة —</option>${(() => { const L = [], d = new Date(); d.setDate(1);
+        for(let i = 0; i < 12; i++){ const m = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'), R = dsMonthOf(m);
+          L.push(`<option value="${m}" ${S.from === R.from && S.to === R.to ? 'selected' : ''}>${new Date(m + '-15').toLocaleDateString('ar-EG', { month:'long', year:'numeric' })}${i === 0 ? ' (الحالي)' : ''}</option>`); d.setMonth(d.getMonth() - 1); }
+        return L.join(''); })()}</select></label>
       <label>من <input class="ds-in" type="date" id="dsFrom" value="${esc(S.from)}"></label>
       <label>إلى <input class="ds-in" type="date" id="dsTo" value="${esc(S.to)}"></label>
       <button class="ds-btn" data-range="today">النهارده</button>
@@ -7361,6 +7371,7 @@ table.pr td.ds-pos{color:#276749;font-weight:700}
     const am = $('dsAmount'); if(am){ am.oninput = () => { S.amount = am.value; }; am.onkeydown = e => { if(e.key === 'Enter'){ e.preventDefault(); add(); } }; }
     const ad = root.querySelector('[data-act=add]'); if(ad) ad.onclick = add;
     const fr = $('dsFrom'); if(fr) fr.onchange = () => { S.from = fr.value; draw(); };
+    const dm = $('dsMonth'); if(dm) dm.onchange = () => { if(dm.value){ const R = dsMonthOf(dm.value); S.from = R.from; S.to = R.to; } draw(); };
     const to = $('dsTo'); if(to) to.onchange = () => { S.to = to.value; draw(); };
     root.querySelectorAll('[data-range]').forEach(b => b.onclick = () => { setRange(b.dataset.range); draw(); });
     const q = $('dsQ'); if(q) q.oninput = () => { S.q = q.value; draw(); };
@@ -12762,6 +12773,7 @@ a.hm-kpi:hover{box-shadow:0 6px 16px rgba(0,0,0,.07)}
 <style>
 /* 💵 الرواتب */
 .pr-bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+.pr-oldm{padding:3px 8px;border-radius:9px;background:#fff8e6;border:1.5px solid #e0a020}
 .pr-bar input,.pr-bar select{padding:8px 10px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:14px;background:var(--panel);color:var(--ink)}
 .pr-btn{padding:8px 14px;border:1.5px solid var(--line);border-radius:9px;background:var(--panel);color:var(--ink);font-family:inherit;font-size:14px;font-weight:600;cursor:pointer}
 .pr-btn.pri{background:var(--brass);border-color:var(--brass);color:#fff}
@@ -12953,7 +12965,9 @@ a.hm-kpi:hover{box-shadow:0 6px 16px rgba(0,0,0,.07)}
     if(S.missing) return h + `<div class="pr-msg err">جداول الرواتب لسه مش متعملة في Supabase.${admin ? ' شغّل الكود ده مرة واحدة في Supabase → SQL Editor:' : ' كلّم الأدمن.'}</div>${admin ? `<pre class="pr-sql">${esc(PAYROLL_SQL)}</pre>` : ''}`;
     if(S.msg) h += `<div class="pr-msg ${S.msgErr ? 'err' : ''}">${esc(S.msg)}</div>`;
     if(S.err) h += `<div class="pr-msg err">${esc(S.err)}</div>`;
-    h += `<div class="pr-bar"><label>الشهر <input type="month" id="prMonth" value="${esc(S.month)}"></label>
+    h += `<div class="pr-bar"><label class="${S.month !== ymd(new Date()).slice(0, 7) ? 'pr-oldm' : ''}">📅 الشهر <select id="prMonth">${(() => { const L = [], d = new Date(); d.setDate(1);
+        for(let i = 0; i < 12; i++){ const m = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); L.push(`<option value="${m}" ${S.month === m ? 'selected' : ''}>${esc(monthLabel(m))}${i === 0 ? ' (الحالي)' : ''}</option>`); d.setMonth(d.getMonth() - 1); }
+        return L.join(''); })()}</select></label>
       <button class="pr-btn" id="prPrev">◀ الشهر اللي فات</button>
       <button class="pr-btn pri" id="prAddEmp">➕ موظف جديد</button>
       <button class="pr-btn" id="prExport">⬇️ نزّل كشف ${esc(monthLabel(S.month))}</button>
