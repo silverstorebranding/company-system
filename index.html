@@ -10385,6 +10385,10 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
 .sp-n{font-size:20px;font-weight:800;text-align:left}.sp-n small{font-size:12px;font-weight:500;color:var(--muted)}
 .sp-bar{grid-column:1/-1;height:7px;background:var(--line);border-radius:4px;overflow:hidden}.sp-bar i{display:block;height:100%}
 .sp-sub{grid-column:1/-1;font-size:11.5px;color:var(--muted)}
+.ptr-card h3{margin-bottom:8px}.ptr-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:8px}
+.ptr-it{border:1px solid var(--line);border-radius:10px;padding:8px 10px;font-size:13px;background:var(--panel)}
+.ptr-s{color:var(--muted);font-size:12.5px;margin-top:3px}.ptr-w{margin-top:6px;font-weight:700;color:#23784a}.ptr-w.on{color:#b7791f}
+.qpcmp{border-inline-start:5px solid #2f7d55;font-size:14px}.qpcmp.bad{border-inline-start-color:#b3261e;background:#fff6f5}
 .urg-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 14px;border-radius:10px;background:#fdecea;color:#7a2a1f;margin:12px 0;font-size:14px}
 .urg-tag{display:inline-block;margin-top:3px;padding:1px 7px;border-radius:8px;font-size:11px;background:#fdecea;color:#a3271a}
 .urg-tag.done{background:#e3f3e8;color:#23784a}
@@ -10806,6 +10810,52 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
         ${R.lost.length ? `<div class="up-row"><button class="up-btn ok" id="xaLost">↩️ رجّع كل الضايعين (${R.lost.length}) للشيت</button></div>` : ''}`; }
     return h + '</div>';
   }
+  // 🏷️ البراند من الـ notes (للمحلات في الصفحة الرئيسية)
+  function brandKey(note, srcKey){
+    const n = String(note || '').toLowerCase(), k = String(srcKey || '').toLowerCase();
+    if(/^rs|rs kids|رويال|royal/.test(n)) return 'rs';
+    if(/kid|كيدز/.test(n) || /kid/.test(k)) return 'kidzzly';
+    if(/sock|سوك/.test(n) || /sock/.test(k)) return 'socky';
+    if(/bloom|بلوم/.test(n) || /bloom/.test(k)) return 'bloom';
+    return 'italy';
+  }
+  const noteFor = r => (r.srcKey === 'squad' ? (SQ.pageNotes[r.page] || '') : (srcNote(r.srcKey) || r.srcKey || ''));
+  async function pendingCounts(){
+    await loadDone(); if(!SQ.loaded) await loadSquadPtr(); if(!E.ptrLoaded) await loadPtr(); if(!E.srcLoaded && typeof loadSources === 'function') await loadSources();
+    const list = [], byBrand = { italy:0, kidzzly:0, rs:0, bloom:0, socky:0 };
+    let idx = null; try{ idx = await qpIndex(); }catch(e){}
+    let onQPn = 0;
+    const add = (label, key, rows) => { const L0 = notDone(rows).filter(r => !isCancel(r.estatus)), L = idx ? L0.filter(r => !onQP(r, idx)) : L0; onQPn += L0.length - L.length;
+      L.forEach(r => { byBrand[brandKey(noteFor(r), r.srcKey)]++; }); list.push({ key, label, n:L.length }); };
+    try{ add('🏆 Squad', 'squad', await squadRows()); }catch(e){ list.push({ key:'squad', label:'🏆 Squad', n:null }); }
+    for(const src of SOURCES){ try{ add('🌐 ' + src.label, src.key, await sourceRows(src.key)); }catch(e){ list.push({ key:src.key, label:'🌐 ' + src.label, n:null }); } }
+    return { list, byBrand, total:list.reduce((a, x) => a + (x.n || 0), 0), onQP:onQPn, qpChecked:!!idx };
+  }
+  // 📍 أنا واقف فين في كل مصدر: آخر أوردر سحبناه (وقته وبياناته) وكام مستني بعده
+  let PTR = { at:0, data:null, busy:false };
+  async function pointerInfo(force){
+    if(!force && PTR.data && Date.now() - PTR.at < 120000) return PTR.data;
+    await loadDone(); if(!SQ.loaded) await loadSquadPtr(); if(!E.srcLoaded) await loadSources(); if(!E.ptrLoaded) await loadPtr();
+    const out = [];
+    try{ const r = SQ.at ? (await sbc().from('orders').select('*').eq('created_at', SQ.at).limit(1)).data : null, o = r && r[0];
+      const waiting = notDone(await squadRows()).filter(x => !isCancel(x.estatus)).length;
+      out.push({ label:'🏆 Squad', at:SQ.at, name:o && o.customer_name, amount:o && o.amount, moved:SQ.updated, by:SQ.by, waiting, none:!SQ.at }); }catch(e){}
+    for(const src of SOURCES){ try{ const p = P(src.key);
+      const r = p.seq ? (await sbc().from('easy_orders').select('*').eq('seq', p.seq).limit(1)).data : null, x = r && r[0];
+      const at = x ? ((x.payload && (x.payload.created_at || x.payload.createdAt)) || x.received_at) : null, py = x ? (x.payload || {}) : {};
+      const waiting = notDone(await sourceRows(src.key)).filter(z => !isCancel(z.estatus)).length;
+      out.push({ label:'🌐 ' + src.label, at, name:py.full_name || py.name || (x ? fromEasy(py, x.seq, src.key).name : ''), amount:x ? fromEasy(py, x.seq, src.key).amount : '', moved:p.at, by:p.by, waiting, none:!p.seq }); }catch(e){} }
+    PTR = { at:Date.now(), data:out, busy:false }; return out;
+  }
+  window.UploadAPI = { pendingCounts, pointerInfo };
+  function ptrCard(){
+    const d = PTR.data, when = v => v ? new Date(v).toLocaleString('ar-EG', { weekday:'short', day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }) : '—';
+    if(!d){ if(!PTR.busy){ PTR.busy = true; pointerInfo().then(draw).catch(() => { PTR.busy = false; }); } return '<div class="card ptr-card"><h3>📍 أنا واقف فين في كل براند</h3><p style="color:var(--muted);margin:0">⏳ بيحمّل...</p></div>'; }
+    return `<div class="card ptr-card"><h3 style="display:flex;justify-content:space-between;align-items:center">📍 أنا واقف فين في كل براند — سحبت لحد فين <button class="up-btn" id="ptrRef" style="padding:4px 10px;font-size:12.5px">🔄</button></h3>
+      <div class="ptr-grid">${d.map(x => `<div class="ptr-it"><b>${esc(x.label)}</b>
+        ${x.none ? '<div class="ptr-s">لسه ماسحبتش منه حاجة</div>' : `<div class="ptr-s">سحبت لحد أوردر <b>${esc(when(x.at))}</b>${x.name ? ' — ' + esc(x.name) : ''}${x.amount ? ' (' + esc(x.amount) + ' ج)' : ''}</div><div class="ptr-s">آخر سحب ${esc(when(x.moved))}${x.by ? ' · ' + esc(x.by) : ''}</div>`}
+        <div class="ptr-w ${x.waiting ? 'on' : ''}">${x.waiting ? `⏳ ${x.waiting} مستني بعده` : '✔ مفيش جديد'}</div></div>`).join('')}</div></div>`;
+  }
   function diagHtml(src){
     const names = Object.fromEntries((SOURCES || []).map(x => [x.key, x.label]));
     let h = `<div class="card" style="border:2px dashed #2b6cb0"><h3>🔎 افحص ${esc(names[src] || src)}: كل اللي وصل من وقت معيّن</h3>
@@ -10832,7 +10882,7 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
   }
   /* 🔎 فحص التكرار: كل موبايل في الشيت بيتدوّر عليه في أوردرات QP آخر 10 أيام
      لو لقاه → الصف بيتلوّن أصفر ومكتوب "مرفوع في QP" برقم الشحنة والتاريخ (وإنت تقرر تمسحه ولا ترفعه) */
-  const DUP_DAYS = 10;
+  const DUP_DAYS = 3;   // 🔁 بنقارن بالمرفوع على QP في آخر 3 أيام (من السيستم أو مانوال)
   const D = { loading:false, done:false, msg:'', at:null };
   async function dupQP(){
     if(!S.rows || !S.rows.length) return;
@@ -11456,6 +11506,48 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
       <div class="up-row" style="margin-top:14px"><button class="up-btn ok" id="urgSend" ${U.sending ? 'disabled' : ''}>${U.sending ? '⏳' : '📨 ابعتهم'}</button><button class="up-btn" id="urgCancel">إلغاء</button></div></div></div>`;
   }
 
+  /* 🔁 الأوردرات اللي اترفعت بالفعل على QP (من السيستم أو مانوال على السايت) في آخر 3 أيام بتتشال لوحدها
+     بنقارن بالموبايل، وبنشيل الأوردر بس لو اللي على QP اتعمل **بعد** وقت الأوردر (يعني هو نفسه اترفع) —
+     لو العميلة ليها أوردر قديم على QP قبل الأوردر ده، يبقى ده أوردر جديد ويفضل */
+  let QPIDX = { at:0, idx:null };
+  async function qpIndex(){
+    const api = window.QP && window.QP.api; if(!api || !api.hasCreds()) return null;
+    if(QPIDX.idx && Date.now() - QPIDX.at < 180000) return QPIDX.idx;
+    const from = new Date(); from.setDate(from.getDate() - DUP_DAYS);
+    const list = await api.fetchRange(ymd(from), ymd(new Date()));
+    const idx = {};
+    list.forEach(q => [q.phone, q.phone2, q.customer_phone].forEach(ph => { const k = phoneOf(ph); if(k && k.length >= 10){ (idx[k] = idx[k] || []); if(!idx[k].includes(q)) idx[k].push(q); } }));
+    QPIDX = { at:Date.now(), idx }; return idx;
+  }
+  function onQP(r, idx){
+    const L = idx && idx[phoneOf(r.phone)]; if(!L || !L.length) return null;
+    const t = new Date(r.orderAt || r.sqAt || 0).getTime();
+    return L.find(q => !t || isNaN(t) || new Date(q.order_date).getTime() >= t - 15 * 60000) || null;   // اترفع بعد ما الأوردر اتعمل
+  }
+  async function autoDropQP(){
+    let idx = null;
+    try{ idx = await qpIndex(); }catch(e){}
+    if(idx && S.rows && S.rows.length){
+      const drop = S.rows.filter(r => !r.serial && !r.urgentFix && onQP(r, idx));
+      if(drop.length){
+        drop.forEach(r => { r.qpFound = onQP(r, idx); if(r.srcKey === 'squad' || isEasy(r.srcKey)) S.skipped.add(skipKey(r)); });
+        S.rows = S.rows.filter(r => !drop.includes(r)); S.dropped = (S.dropped || []).concat(drop);
+        dupCheck(); persistTaken();
+        S.msg = (S.msg ? S.msg + ' — ' : '') + `🔁 اتشال ${drop.length} أوردر لأنهم مرفوعين بالفعل على QP (آخر ${DUP_DAYS} أيام) — مش هيرجعوا تاني.`; S.msgErr = false;
+        draw();
+      }
+    }
+    dupQP();
+  }
+  window.__qpIndex = qpIndex; window.__onQP = onQP;
+  function droppedCard(){
+    const L = S.dropped || []; if(!L.length) return '';
+    return `<details class="card qpcmp"><summary style="cursor:pointer"><b>🔁 اتشال ${L.length} أوردر لأنهم مرفوعين بالفعل على QP</b> — دوس تشوفهم</summary>
+      <div class="up-sheet" style="max-height:300px;overflow:auto;margin-top:8px"><table><thead><tr><th>المصدر</th><th>العميل</th><th>الموبايل</th><th>السعر</th><th>على QP</th><th></th></tr></thead><tbody>
+      ${L.map((r, i) => `<tr><td style="padding:5px 8px">${esc(r.srcKey === 'squad' ? '🏆 Squad · ' + (r.page || '') : srcLabel(r.srcKey))}</td><td style="padding:5px 8px">${esc(r.name)}</td><td style="padding:5px 8px;direction:ltr">${esc(r.phone)}</td><td style="padding:5px 8px">${esc(r.amount)}</td>
+        <td style="padding:5px 8px">${r.qpFound ? `${esc(r.qpFound.serial)} · ${esc(new Date(r.qpFound.order_date).toLocaleString('ar-EG', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }))}` : ''}</td>
+        <td style="padding:5px 8px"><button class="up-btn" data-undrop="${i}" style="padding:3px 9px;font-size:12px">↩️ رجّعه</button></td></tr>`).join('')}</tbody></table></div></details>`;
+  }
   function easyFinish(rows, label){
     E.hiddenOld = 0;
     const cancelled = rows.filter(r => isCancel(r.estatus));
@@ -11467,7 +11559,7 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     S.msgErr = false;
     D.done = false; D.msg = '';
     draw();
-    dupQP();
+    autoDropQP();
     loadUrgent().then(draw);
   }
   function easyErr(e){
@@ -11748,6 +11840,7 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     if(S.src === 'delete') return h + delHtml() + '</div>';
     if(S.msg) h += `<div class="up-msg ${S.msgErr ? 'err' : 'ok'}">${esc(S.msg)}</div>`;
     h += todayUpBtn();
+    if(S.src !== 'delete' && S.src !== 'settings' && S.src !== 'restore') h += ptrCard();
     if(S.src === 'restore') h += `<div class="card"><h3>♻️ أوردرات اتمسحت ورجعت</h3><p style="margin:0;font-size:13.5px">دي أوردرات كانت اتمسحت من QP وبضاعتها جت. راجعها تحت وارفعها — الـ notes والمحتوى والسعر جايين من البوليصة القديمة. <a href="#" id="upBackScan">↩️ ارجع لـ 📷 البوالص</a></p></div>`;
     else if(isEasy(S.src)) h += easyStep1();
     else if(S.src === 'all') h += allStep1();
@@ -11788,6 +11881,11 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
 
     // 3) الشيت
     const bad = S.rows.filter(r => r.errs.length).length, total = S.rows.reduce((a, r) => a + (numOf(r.amount) || 0), 0);
+    // 🔁 مقارنة بالمرفوع على QP في آخر 3 أيام (مانوال أو من السيستم)
+    if(S.rows && S.rows.length){ const dN = S.rows.filter(r => !r.serial && r.qpDup && r.qpDup.length && !r.dupOk).length;
+      h += `<div class="card qpcmp ${dN ? 'bad' : ''}"><b>🔁 مقارنة بـ QP (آخر ${DUP_DAYS} أيام):</b> ${D.loading ? '⏳ بيقارن...' : !D.done ? 'لسه ماتقارنش — <button class="up-btn" id="qpcmpGo" style="padding:4px 10px;font-size:12.5px">🔎 قارن دلوقتي</button>'
+        : dN ? `<b style="color:#b3261e">${dN} أوردر من اللي جبتهم اترفعوا قبل كده على QP</b> (من السيستم أو مانوال على السايت) <button class="up-btn" id="qpcmpDel" style="padding:5px 12px;font-size:13px;background:#b7791f;border-color:#b7791f;color:#fff">🧹 شيلهم ومايرجعوش تاني</button>` : '✅ مفيش ولا أوردر من اللي جبتهم مرفوع قبل كده على QP'}</div>`; }
+    h += droppedCard();
     h += urgentBar() + urgPickHtml();
     h += `<div class="card"><h3>3️⃣ الشيت زي ما هيترفع على QP</h3>
       <div class="up-kpis"><div><b>${S.rows.length}</b><span>أوردر</span></div><div><b>${total.toLocaleString('ar-EG')} ج</b><span>الإجمالي</span></div>
@@ -12096,12 +12194,17 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     if($('upQdPend')) $('upQdPend').onchange = e => { QD.pendOnly = e.target.checked; };
     if($('upQdGo')) $('upQdGo').onclick = exportQPDay;
     if($('upTodaySheet')) $('upTodaySheet').onclick = todaySheet;
+    if($('ptrRef')) $('ptrRef').onclick = () => { PTR.data = null; PTR.busy = false; draw(); };
     document.querySelectorAll('[data-hist]').forEach(el => el.onclick = () => { histOpen = histOpen === el.dataset.hist ? '' : el.dataset.hist; draw(); });
     document.querySelectorAll('[data-histx]').forEach(b => b.onclick = () => {
       const all = (histShared || []).concat(S.hist); const x = all.find((h, i) => (h.id || ('l' + i)) === b.dataset.histx) || all.find(h => h.id === b.dataset.histx);
       histSheet(x);
     });
     if($('upDup')) $('upDup').onclick = dupQP;
+    if($('qpcmpGo')) $('qpcmpGo').onclick = dupQP;
+    document.querySelectorAll('[data-undrop]').forEach(b => b.onclick = () => { const r = S.dropped.splice(+b.dataset.undrop, 1)[0]; if(!r) return;
+      S.skipped.delete(skipKey(r)); r.dupOk = true; S.rows = (S.rows || []).concat(r); dupCheck(); draw(); });
+    if($('qpcmpDel')) $('qpcmpDel').onclick = () => { const b = $('upDupDel'); if(b) b.click(); };
     // 🚨 أوردرات عاجلة
     document.querySelectorAll('[data-urgone]').forEach(b => b.onclick = () => sendUrgent([S.rows[Number(b.dataset.urgone)]]));
     if($('urgAll')) $('urgAll').onclick = () => sendUrgent(S.rows.filter(r => !r.serial && !isReady(r)));
@@ -12281,6 +12384,22 @@ a.hm-kpi:hover{box-shadow:0 6px 16px rgba(0,0,0,.07)}
 .hm-bar{height:7px;background:var(--line);border-radius:4px;overflow:hidden;margin-top:4px}
 .hm-bar i{display:block;height:100%;background:var(--bc,#2f7d55)}
 .hm-wait{color:var(--muted);font-size:13.5px}
+.hm-shops .shops{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px}
+.shop{display:flex;flex-direction:column;align-items:stretch}
+.shop .bld{position:relative;background:var(--c2);border:2px solid var(--c1);border-radius:10px 10px 4px 4px;padding:0 10px 0;overflow:hidden}
+.shop .awn{height:16px;margin:0 -10px;background:repeating-linear-gradient(90deg,var(--c1) 0 14px,#fff 14px 28px);border-bottom:2px solid var(--c1);border-radius:0 0 10px 10px}
+.shop .sign{margin:8px auto 6px;width:fit-content;padding:3px 12px;border-radius:8px;background:#fff;border:2px solid var(--c1);font-weight:800;font-size:14px;color:#2b2f33;white-space:nowrap}
+.shop .front{display:flex;align-items:flex-end;justify-content:center;gap:8px;height:54px}
+.shop .win{width:30px;height:24px;margin-bottom:16px;background:#cfe6f5;border:2px solid var(--c1);border-radius:4px}
+.shop .door{position:relative;width:30px;height:44px;background:var(--c1);border-radius:6px 6px 0 0}
+.shop .door span{position:absolute;left:5px;top:22px;width:4px;height:4px;border-radius:50%;background:#f3c24a}
+.shop .queue{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:center;gap:2px;min-height:44px;padding:6px 4px;border-bottom:3px solid #d9d4c9}
+.shop .pp{width:14px;height:24px;animation:hmBob 1.6s ease-in-out infinite}
+@keyframes hmBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}
+@media (prefers-reduced-motion: reduce){.shop .pp{animation:none}}
+.shop .more{font-size:12px;font-weight:800;color:var(--c1);margin-inline-start:3px}
+.shop .empty{font-size:12px;color:var(--muted)}
+.shop .cnt{text-align:center;margin-top:6px;font-size:13px;color:var(--muted)}.shop .cnt b{font-size:22px;color:var(--c1)}
 .hm-wsplit{display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:8px;font-size:12.5px;color:var(--muted)}
 .hm-wsplit b{color:var(--ink)}
 .hm-wprof{margin-top:6px;font-size:13px;color:#2f7d55}.hm-wprof b{font-size:15px}
@@ -12324,6 +12443,14 @@ a.hm-kpi:hover{box-shadow:0 6px 16px rgba(0,0,0,.07)}
   }
   // 📤 كام أوردر مستني الرفع من كل مصدر (بعد آخر أوردر اتاخد ومن غير اللي اترفع/اتشال)
   async function loadPending(){
+    // ✅ نفس حسبة "📦 هات كل الأوردرات" بالظبط (من غير حد 1000، ومن غير اللي اترفع أو اتشال أو اتلغى)
+    if(window.UploadAPI && window.UploadAPI.pendingCounts){
+      const r = await window.UploadAPI.pendingCounts();
+      H.pend = { list:r.list, total:r.total, byBrand:r.byBrand, onQP:r.onQP, qpChecked:r.qpChecked };
+      const { data: hk } = await sb().from('app_kv').select('*').eq('key', 'up_history').maybeSingle();
+      H.last = ((hk && hk.value && hk.value.list) || [])[0] || null;
+      return;
+    }
     const { data: kv } = await sb().from('app_kv').select('*').or('key.like.easy_last_%,key.eq.squad_last_at,key.eq.easy_sources,key.eq.up_done_keys,key.eq.up_history');
     const K = {}; (kv || []).forEach(r => K[r.key] = r.value || {});
     const done = new Set(((K.up_done_keys || {}).list || []).map(String));
@@ -12371,6 +12498,21 @@ a.hm-kpi:hover{box-shadow:0 6px 16px rgba(0,0,0,.07)}
     H.loading = false; H.at = new Date(); draw();
   }
 
+  /* 🏬 المحلات: لكل براند محل صغير، وقدامه طابور العملاء اللي أوردراتهم مستنية الرفع */
+  const SHOPS = [ { k:'italy', n:'الإيطالي', e:'💍', c1:'#b08d57', c2:'#f3e6cc' }, { k:'kidzzly', n:'Kidzzly', e:'🧸', c1:'#4f8fd8', c2:'#dbe9fa' },
+    { k:'rs', n:'RS Kids', e:'👶', c1:'#a0456e', c2:'#f6dde8' }, { k:'bloom', n:'Bloom', e:'🌸', c1:'#c0628f', c2:'#fae0ec' }, { k:'socky', n:'Socky', e:'🧦', c1:'#3f9b74', c2:'#d8f0e5' } ];
+  const PEOPLE = ['#e07a3f', '#2b6cb0', '#c0628f', '#3d7a3a', '#6b46c1', '#b7791f', '#2f7d55', '#a0456e'];
+  const person = i => `<svg class="pp" viewBox="0 0 20 34" aria-hidden="true" style="animation-delay:${(i % 6) * .15}s"><circle cx="10" cy="7" r="6" fill="#e8b98f"/><path d="M3 34 V20 Q3 14 10 14 Q17 14 17 20 V34Z" fill="${PEOPLE[i % PEOPLE.length]}"/></svg>`;
+  function shopsCard(){
+    const B = H.pend && H.pend.byBrand;
+    return `<div class="card hm-shops"><h3 style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">🏬 العملاء مستنيين قدام كل براند (أوردرات لسه ماترفعتش)
+        <a class="hm-btn ok" href="#/qp-upload" data-hm-all>📦 هات الكل وارفع</a></h3>
+      <div class="shops">${SHOPS.map(sh => { const n = B ? (B[sh.k] || 0) : null, show = Math.min(n || 0, 12);
+        return `<div class="shop" style="--c1:${sh.c1};--c2:${sh.c2}">
+          <div class="bld"><div class="awn"></div><div class="sign">${sh.e} ${esc(sh.n)}</div><div class="front"><div class="win"></div><div class="door"><span></span></div><div class="win"></div></div></div>
+          <div class="queue">${n == null ? '<span class="hm-wait">⏳</span>' : n ? Array.from({ length:show }, (_, i) => person(i)).join('') + (n > show ? `<span class="more">+${fmt(n - show)}</span>` : '') : '<span class="empty">مفيش حد مستني 👌</span>'}</div>
+          <div class="cnt"><b>${n == null ? '…' : fmt(n)}</b> أوردر مستني</div></div>`; }).join('')}</div></div>`;
+  }
   function view(){
     const m = me(), now = new Date(), hr = now.getHours();
     const hi = hr < 12 ? 'صباح الخير' : hr < 18 ? 'مساء الخير' : 'مساء النور';
@@ -12382,13 +12524,15 @@ a.hm-kpi:hover{box-shadow:0 6px 16px rgba(0,0,0,.07)}
     const ib = window.Inbox && window.Inbox.count ? window.Inbox.count() : 0;
     const k = [];
     if(can('squad')) k.push(`<a class="hm-kpi" href="#/squad" style="--bc:#2f7d55"><div class="l">🧾 أوردرات النهارده</div><div class="n">${H.today ? fmt(H.today.n) : '⏳'}</div><div class="s">${H.today ? fmt(H.today.v) + ' ج' : ''}</div></a>`);
-    if(can('qp-upload')) k.push(`<a class="hm-kpi" href="#/qp-upload" data-hm-all style="--bc:#2b6cb0"><div class="l">📤 مستنية الرفع على QP</div><div class="n">${H.pend ? fmt(H.pend.total) : '⏳'}</div><div class="s">من كل المصادر — دوس ترفعهم</div></a>`);
+    if(can('qp-upload')) k.push(`<a class="hm-kpi" href="#/qp-upload" data-hm-all style="--bc:#2b6cb0"><div class="l">📤 مستنية الرفع على QP</div><div class="n">${H.pend ? fmt(H.pend.total) : '⏳'}</div><div class="s">${H.pend && H.pend.qpChecked ? (H.pend.onQP ? `من غير ${fmt(H.pend.onQP)} مرفوعين بالفعل على QP` : 'اتقارن بـ QP — دوس ترفعهم') : 'من كل المصادر — دوس ترفعهم'}</div></a>`);
     if(can('qp')) k.push(`<a class="hm-kpi" href="#/qp" style="--bc:#b08d57"><div class="l">👛 المحفظة (التحصيل)</div><div class="n">${H.qp && H.qp.wallet != null ? fmt(H.qp.wallet) + ' ج' : (H.qpErr ? '—' : '⏳')}</div><div class="s">${H.qp && H.qp.walletN != null ? fmt(H.qp.walletN) + ' أوردر اتسلم ولسه ماتحصّلش' : ''}</div>${(() => { const D = H.qp; if(!D || !D.walletBy) return '';
       const parts = WB.filter(([k]) => D.walletBy[k]).map(([k, l]) => `<span>${l} <b>${fmt(D.walletBy[k].v)}</b></span>`).join('');
       const pr = walletProfit(D);
       return `<div class="hm-wsplit">${parts}</div>${pr ? `<div class="hm-wprof">📈 ربح تقريبي ≈ <b>${fmt(pr.p)} ج</b></div>` : ''}`; })()}</a>`);
     k.push(`<a class="hm-kpi" href="#/inbox" style="--bc:${ib ? '#c0392b' : '#888'}"><div class="l">📥 الرسايل والمهام</div><div class="n">${fmt(ib)}</div><div class="s">${ib ? 'جديد مستنيك' : 'مفيش جديد'}</div></a>`);
-    h += `<div class="hm-kpis">${k.join('')}</div><div class="hm-grid">`;
+    h += `<div class="hm-kpis">${k.join('')}</div>`;
+    if(can('qp-upload')) h += shopsCard();
+    h += `<div class="hm-grid">`;
 
     // 📤 الرفع
     if(can('qp-upload')){
