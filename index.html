@@ -345,6 +345,9 @@ input.plainIn{padding:6px 10px;border:1px solid var(--line);border-radius:6px;wi
 #sq-root .sq-field .sq-pick input.sq-qty:disabled{opacity:.35}
 #sq-root .sq-commprev{font-size:13px;color:var(--muted);background:var(--slate-l);border-radius:8px;padding:8px 12px;margin:-4px 0 14px}
 #sq-root .sq-commprev b{color:var(--brass-d)}
+#sq-root .sq-month{display:inline-flex;align-items:center;gap:4px;padding:4px 8px;border:1.5px solid var(--line);border-radius:10px;background:var(--panel);font-size:13px}
+#sq-root .sq-month select{border:none;background:transparent;font-family:inherit;font-size:13.5px;font-weight:700;color:var(--ink)}
+#sq-root .sq-month.old{border-color:#e0a020;background:#fff8e6}
 #sq-root .sq-commnote{background:var(--panel);border:1px solid var(--line);border-inline-start:5px solid var(--muted);border-radius:10px;padding:12px 16px;margin-bottom:20px;font-size:14px}
 #sq-root .sq-commnote.on{border-inline-start-color:var(--ok)}
 #sq-root .sq-commnote.off{border-inline-start-color:#b3423a}
@@ -2011,7 +2014,8 @@ const Squad = (function(){
      والإجمالي بيتقسم تحت: أوردرات عمومًا / أوردرات مسلّمة / مبيعات مباشرة */
   let officeCommMap = {}, officeValMap = {}; // عمولة المكتب + قيمة مبيعات المكتب المتأكدة لكل موظفة
   async function loadOfficeComm(){
-    const { data, error } = await sb.from('office_sales').select('agent_id, amount, status').eq('status', 'bought');
+    const R = monthRange(state.month);
+    const { data, error } = await sb.from('office_sales').select('agent_id, amount, status, sale_date').eq('status', 'bought').gte('sale_date', R.fromD).lt('sale_date', R.toD);
     if(error) return;
     const m = {}, v = {};
     (data || []).forEach(r => { const a = Number(r.amount) || 0; m[r.agent_id] = (m[r.agent_id] || 0) + a * OFFICE_PCT; v[r.agent_id] = (v[r.agent_id] || 0) + a; });
@@ -2101,7 +2105,18 @@ const Squad = (function(){
     return client;
   })());
 
+  // 📅 كل حسابات Squad بالشهر: الافتراضي الشهر الحالي، والشهور اللي فاتت بتختارها من فوق
+  const sqCurMonth = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); };
+  function monthRange(m){ const [y, mo] = (m || sqCurMonth()).split('-').map(Number); const f = new Date(y, mo - 1, 1), t = new Date(y, mo, 1);
+    const d = x => x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0');
+    return { from:f.toISOString(), to:t.toISOString(), fromD:d(f), toD:d(t) }; }
+  const monthLabelSq = m => new Date(m + '-15').toLocaleDateString('ar-EG', { month:'long', year:'numeric' });
+  // بيجيب كل الصفوف (من غير حد الـ 1000 بتاع Supabase)
+  async function allPages(build){ let out = [], off = 0;
+    for(;;){ const r = await build().range(off, off + 999); if(r.error) return { data:out, error:r.error }; out = out.concat(r.data || []); if(!r.data || r.data.length < 1000 || out.length >= 50000) break; off += 1000; }
+    return { data:out, error:null }; }
   let state = {
+    month: sqCurMonth(),
     ready: false,
     view: 'login', // login | signup | dashboard | new-order | leaderboard
     session: null,
@@ -2235,9 +2250,10 @@ const Squad = (function(){
 
   /* ---------- Data ---------- */
   async function loadMyOrders(){
-    const { data, error } = await sb.from('orders').select('*')
-      .eq('agent_id', sqUid())
-      .order('created_at', { ascending:false });
+    const R = monthRange(state.month);
+    const { data, error } = await allPages(() => sb.from('orders').select('*')
+      .eq('agent_id', sqUid()).gte('created_at', R.from).lt('created_at', R.to)
+      .order('created_at', { ascending:false }));
     await loadOfficeComm();
     if(!error) setState({ myOrders: data || [] });
   }
@@ -2355,7 +2371,8 @@ const Squad = (function(){
 
   async function loadLeaderboard(){
     setState({ boardLoading:true });
-    const { data, error } = await sb.from('orders').select('agent_id, status, amount, commission, page_name, created_at');
+    const R = monthRange(state.month);
+    const { data, error } = await allPages(() => sb.from('orders').select('agent_id, status, amount, commission, page_name, created_at').gte('created_at', R.from).lt('created_at', R.to).order('created_at', { ascending:true }));
     if(error){ setState({ boardLoading:false, boardError:'مقدرناش نجيب بيانات اللوحة.' }); return; }
     const { data: profiles } = await sb.from('profiles').select('id, username, full_name');
     const nameMap = {};
@@ -2559,6 +2576,9 @@ const Squad = (function(){
     return `
       <div class="sq-bar">
         <div class="sq-tabs">${tabs.map(t => `<button class="sq-tab ${state.view===t.key?'active':''}" data-sqnav="${t.key}">${t.label}</button>`).join('')}</div>
+        <label class="sq-month ${state.month !== sqCurMonth() ? 'old' : ''}">📅 <select id="sqMonth">${(() => { const L = []; const d = new Date(); d.setDate(1);
+          for(let i = 0; i < 12; i++){ const m = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); L.push(`<option value="${m}" ${state.month === m ? 'selected' : ''}>${monthLabelSq(m)}${i === 0 ? ' (الحالي)' : ''}</option>`); d.setMonth(d.getMonth() - 1); }
+          return L.join(''); })()}</select></label>
         <div class="sq-user"><span>${esc(uname)}</span><button class="sq-logout" id="sq-logout">خروج</button></div>
       </div>`;
   }
@@ -3190,7 +3210,8 @@ const Squad = (function(){
     if(!canViewAll()) return;
     setState({ view:'agent-orders', viewAgent:{ id, name }, agentOrders:null, agentFilter:'all', agentQ:'', error:'' });
     window.scrollTo({ top:0, behavior:'smooth' });
-    const { data, error } = await sb.from('orders').select('*').eq('agent_id', id).order('created_at', { ascending:false });
+    const R = monthRange(state.month);
+    const { data, error } = await allPages(() => sb.from('orders').select('*').eq('agent_id', id).gte('created_at', R.from).lt('created_at', R.to).order('created_at', { ascending:false }));
     if(state.view !== 'agent-orders' || !state.viewAgent || state.viewAgent.id !== id) return;
     if(error){ setState({ agentOrders:[], error:'مقدرناش نجيب أوردرات الموظف: ' + error.message }); return; }
     setState({ agentOrders: data || [] });
@@ -3517,6 +3538,8 @@ grant select, insert, update, delete on public.office_sales to authenticated;`;
 
   function wireAppEvents(){
     const $ = id => document.getElementById(id);
+    const msel = document.getElementById('sqMonth');
+    if(msel) msel.onchange = () => { state.month = msel.value; setState({ myOrders:null, board:null }); loadMyOrders(); loadLeaderboard(); if(state.view === 'agent-orders' && state.viewAgent) openAgent(state.viewAgent.id, state.viewAgent.name); };
     document.querySelectorAll('[data-sqnav]').forEach(btn => {
       btn.onclick = () => {
         const v = btn.getAttribute('data-sqnav');
