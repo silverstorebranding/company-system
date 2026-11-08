@@ -321,7 +321,9 @@ input.plainIn{padding:6px 10px;border:1px solid var(--line);border-radius:6px;wi
 .bq-box{background:var(--panel);color:var(--ink);border-radius:14px;width:min(1100px,100%);max-height:92vh;display:flex;flex-direction:column;box-shadow:0 20px 50px rgba(0,0,0,.3)}
 .bq-h{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid var(--line)}.bq-h button{border:none;background:none;font-size:20px;cursor:pointer;color:var(--ink)}
 .bq-act{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 16px}.bq-t{overflow:auto;padding:0 16px 16px}
-#sq-root .sq-board-row{display:grid;grid-template-columns:36px 1fr 50px 50px 56px 50px 56px 56px 60px 50px 96px 90px 90px;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--line)}
+#sq-root .sq-board-row > *{min-width:0}
+#sq-root .sq-board-row .sq-name{overflow-wrap:anywhere}
+#sq-root .sq-board-row{display:grid;grid-template-columns:34px minmax(0,1.4fr) repeat(8,minmax(0,.55fr)) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr);align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--line)}
 #sq-root .sq-board-row:last-child{border-bottom:none}
 #sq-root .sq-board-row.head{background:var(--slate-l);font-size:12px;font-weight:600;color:var(--muted);padding:11px 18px}
 #sq-root .sq-board-row .c{text-align:center}
@@ -3417,7 +3419,7 @@ const Squad = (function(){
 
   /* 📦 لكل موظفة: كام أوردر هولد / اندلفرد / مش موجود في QP (بموبايل العميل) */
   const BQ_KEYS = ['way', 'hold', 'undel', 'miss', 'qdel', 'cancel'];
-  const BQ_LBL = { way:'⏳ تحت التسليم', hold:'✋ هولد', undel:'💔 اندلفرد', miss:'❓ مش في QP', qdel:'✔ اتسلم في QP (مستني مطابقة)', cancel:'🚫 ملغي' };
+  const BQ_LBL = { way:'⏳ تحت التسليم', hold:'✋ هولد', undel:'💔 اندلفرد', miss:'❓ مش في QP', qdel:'✔ اتسلم في QP ولسه متعلّم هنا قيد التنفيذ', cancel:'🚫 ملغي' };
   async function boardQP(force){
     const api = qpApi(); if(!api || !api.hasCreds()){ state.boardQP = { noCreds:true }; render(); return; }
     if(state.boardQPBusy && !force) return; state.boardQPBusy = true;
@@ -3472,7 +3474,9 @@ const Squad = (function(){
     const rows = state.board;
     return head('ترتيب الـSquad', 'ترتيب حسب عدد الأوردرات اللي اتسلمت.') + manualCard() + `
       <div class="sq-tablecard">
-        <div class="sq-board-row head"><div>#</div><div>الاسم</div><div class="c">إجمالي</div><div class="c">اتسلم</div><div class="c" title="Pending أو مع المندوب في QP">⏳ تحت التسليم</div><div class="c" title="من QP">✋ هولد</div><div class="c" title="من QP أو متعلّم هنا">💔 اندلفرد</div><div class="c" title="الموبايل مش لاقيه في QP">❓ مش في QP</div><div class="c" title="اتسلم في QP بس لسه متعلّم قيد التنفيذ هنا — اعمل مطابقة">✔ اتسلم في QP</div><div class="c">🚫 ملغي</div><div class="c">قيمة اللي اتسلم</div><div class="c">العمولة الإجمالية</div><div class="c">العمولة المستحقة</div></div>
+        <div class="sq-board-row head"><div>#</div><div>الاسم</div><div class="c">إجمالي</div><div class="c">اتسلم</div><div class="c" title="Pending أو مع المندوب في QP">⏳ تحت التسليم</div><div class="c" title="من QP">✋ هولد</div><div class="c" title="من QP أو متعلّم هنا">💔 اندلفرد</div><div class="c" title="الموبايل مش لاقيه في QP">❓ مش في QP</div><div class="c" title="اتسلم في QP بس لسه متعلّم قيد التنفيذ هنا — اعمل 🔄 مطابقة مع QP عشان يتحسب">✔ اتسلم في QP (محتاج مطابقة)</div><div class="c">🚫 ملغي</div><div class="c">قيمة اللي اتسلم</div><div class="c">العمولة الإجمالية</div><div class="c">العمولة المستحقة</div></div>
+        ${(() => { const Q = state.boardQP, n = Q && !Q.noCreds && !Q.err ? Object.values(Q).reduce((a, x) => a + ((x && x.qdel) || []).length, 0) : 0;
+          return n ? `<div class="sq-qpnote" style="color:#23784a">✔ فيه <b>${n}</b> أوردر <b>اتسلموا فعلاً في QP</b> بس لسه متعلّمين هنا "قيد التنفيذ"، فعمولتهم كمسلّمة لسه ماتحسبتش. ${isAdminUser() ? '<a href="#" data-sqgo="qp-sync">🔄 اعمل مطابقة مع QP</a> عشان يتعلّموا "اتسلم" وتتحسب عمولتهم.' : 'الأدمن هيعمل مطابقة مع QP عشان تتحسب.'}</div>` : ''; })()}
         ${(() => { const Q = state.boardQP; return !Q ? '<div class="sq-qpnote">⏳ بيقارن بـ QP عشان الهولد والاندلفرد...</div>' : Q.noCreds ? '<div class="sq-qpnote">الهولد والاندلفرد ومش في QP محتاجين دخول QP على الجهاز ده (من قسم 🚚 QP).</div>' : Q.err ? `<div class="sq-qpnote">مقدرتش أقارن بـ QP: ${esc(Q.err)}</div>` : ''; })()}
         ${rows.length ? rows.map((r,i) => `
           <div class="sq-board-row">
@@ -3735,6 +3739,7 @@ grant select, insert, update, delete on public.office_sales to authenticated;`;
   function wireAppEvents(){
     const $ = id => document.getElementById(id);
     document.querySelectorAll('[data-bqa]').forEach(a => a.onclick = e => { e.preventDefault(); bqModal(a.dataset.bqa, a.dataset.bqk); });
+    document.querySelectorAll('[data-sqgo]').forEach(a => a.onclick = e => { e.preventDefault(); setState({ view:a.dataset.sqgo, error:'', info:'' }); });
     document.querySelectorAll('[data-mcomm-save]').forEach(b => b.onclick = async () => {
       const id = b.dataset.mcommSave, inp = document.querySelector(`[data-mcomm="${id}"]`), v = parseFloat(inp && inp.value);
       if(!(v >= 0)) return alert('اكتب العمولة (رقم).');
