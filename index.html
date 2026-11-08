@@ -327,6 +327,25 @@ input.plainIn{padding:6px 10px;border:1px solid var(--line);border-radius:6px;wi
 #sq-root .sq-board-row:last-child{border-bottom:none}
 #sq-root .sq-board-row.head{background:var(--slate-l);font-size:12px;font-weight:600;color:var(--muted);padding:11px 18px}
 #sq-root .sq-board-row .c{text-align:center}
+/* 📊 جدول ترتيب الـSquad — كل رقم تحت عنوانه */
+#sq-root table.sq-board{width:100%;border-collapse:collapse;min-width:1100px}
+#sq-root .sq-board th,#sq-root .sq-board td{border:1px solid var(--line);padding:10px 8px;text-align:center;vertical-align:middle}
+#sq-root .sq-board thead th{background:var(--slate-l);font-size:12px;font-weight:700;color:var(--muted);line-height:1.35;position:sticky;top:0;z-index:1}
+#sq-root .sq-board thead th small{display:block;font-weight:500;font-size:10.5px}
+#sq-root .sq-board th.nm,#sq-root .sq-board td.nm{text-align:right;min-width:220px}
+#sq-root .sq-board .rk{width:44px}
+#sq-root .sq-board td.rk .sq-rank{margin:0 auto}
+#sq-root .sq-board tbody tr:nth-child(even) td{background:rgba(127,127,127,.04)}
+#sq-root .sq-board tbody tr:hover td{background:rgba(127,127,127,.09)}
+#sq-root .sq-board td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
+#sq-root .sq-board td.num small{white-space:normal}
+#sq-root .sq-board td .z{color:var(--muted);font-weight:400}
+#sq-root .sq-board tfoot td{background:var(--slate-l);font-weight:800;color:var(--ink);font-size:13.5px}
+#sq-root .sq-board .sq-metric{font-size:15px}
+@media (max-width:640px){#sq-root table.sq-board{min-width:980px}
+  #sq-root .sq-board th.nm,#sq-root .sq-board td.nm{min-width:150px;position:sticky;right:0;z-index:2;background:var(--panel);box-shadow:-2px 0 4px rgba(0,0,0,.06)}
+  #sq-root .sq-board thead th.nm,#sq-root .sq-board tfoot td.nm{background:var(--slate-l)}
+}
 @media (max-width:640px){#sq-root .sq-board-row{grid-template-columns:20px 1fr 28px 28px 28px 28px 28px 28px 28px 28px 54px 48px 48px;padding:12px 10px;gap:6px;font-size:13px}}
 #sq-root .sq-rank{width:30px;height:30px;border-radius:50%;background:var(--paper);color:var(--muted);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px}
 #sq-root .sq-rank.r1{background:#f4e3b0;color:#7a5a0e}
@@ -3472,34 +3491,50 @@ const Squad = (function(){
   function LeaderboardView(){
     if(!state.board) return head('ترتيب الـSquad', 'ترتيب حسب عدد الأوردرات اللي اتسلمت.') + `<div class="sq-loading">بنجيب النتائج...</div>`;
     const rows = state.board;
+    // 📊 جدول حقيقي (table) عشان كل رقم ييجي تحت عنوانه بالظبط
+    const Q = state.boardQP, qOk = Q && !Q.noCreds && !Q.err;
+    const qCell = (r, k, c) => { const x = qOk ? (Q[r.id] || {}) : null, n = x ? ((x[k] || []).length) : null;
+      return `<td class="num">${n == null ? '<span class="z">—</span>' : n ? `<a href="#" class="bq-n" style="color:${c}" data-bqa="${esc(r.id)}" data-bqk="${k}">${n}</a>` : '<span class="z">0</span>'}</td>`; };
+    const QCOLS = [['way', '#b7791f'], ['hold', '#2b6cb0'], ['undel', '#b3261e'], ['miss', '#8a5a00'], ['qdel', '#23784a'], ['cancel', '#6b7186']];
     return head('ترتيب الـSquad', 'ترتيب حسب عدد الأوردرات اللي اتسلمت.') + manualCard() + `
-      <div class="sq-tablecard">
-        <div class="sq-board-row head"><div>#</div><div>الاسم</div><div class="c">إجمالي</div><div class="c">اتسلم</div><div class="c" title="Pending أو مع المندوب في QP">⏳ تحت التسليم</div><div class="c" title="من QP">✋ هولد</div><div class="c" title="من QP أو متعلّم هنا">💔 اندلفرد</div><div class="c" title="الموبايل مش لاقيه في QP">❓ مش في QP</div><div class="c" title="اتسلم في QP بس لسه متعلّم قيد التنفيذ هنا — اعمل 🔄 مطابقة مع QP عشان يتحسب">✔ اتسلم في QP (محتاج مطابقة)</div><div class="c">🚫 ملغي</div><div class="c">قيمة اللي اتسلم</div><div class="c">العمولة الإجمالية</div><div class="c">العمولة المستحقة</div></div>
+      <div class="sq-tablecard sq-boardcard">
         ${(() => { const Q = state.boardQP, n = Q && !Q.noCreds && !Q.err ? Object.values(Q).reduce((a, x) => a + ((x && x.qdel) || []).length, 0) : 0;
           return n ? `<div class="sq-qpnote" style="color:#23784a">✔ فيه <b>${n}</b> أوردر <b>اتسلموا فعلاً في QP</b> بس لسه متعلّمين هنا "قيد التنفيذ"، فعمولتهم كمسلّمة لسه ماتحسبتش. ${isAdminUser() ? '<a href="#" data-sqgo="qp-sync">🔄 اعمل مطابقة مع QP</a> عشان يتعلّموا "اتسلم" وتتحسب عمولتهم.' : 'الأدمن هيعمل مطابقة مع QP عشان تتحسب.'}</div>` : ''; })()}
         ${(() => { const Q = state.boardQP; return !Q ? '<div class="sq-qpnote">⏳ بيقارن بـ QP عشان الهولد والاندلفرد...</div>' : Q.noCreds ? '<div class="sq-qpnote">الهولد والاندلفرد ومش في QP محتاجين دخول QP على الجهاز ده (من قسم 🚚 QP).</div>' : Q.err ? `<div class="sq-qpnote">مقدرتش أقارن بـ QP: ${esc(Q.err)}</div>` : ''; })()}
-        ${rows.length ? rows.map((r,i) => `
-          <div class="sq-board-row">
-            <div class="sq-rank ${i===0?'r1':i===1?'r2':i===2?'r3':''}">${i+1}</div>
-            <div class="sq-name"><bdi>${esc(r.name)}</bdi> <span class="sq-today-tag ${todayCount(r.id) ? 'on' : ''}" title="أوردرات النهارده">النهارده ${todayCount(r.id).toLocaleString('ar-EG')}</span> <small class="sq-rate">· نسبة التسليم ${rateTxt(r.delRate)}</small>
+        ${rows.length ? `<table class="sq-board">
+          <thead><tr>
+            <th class="rk">#</th><th class="nm">الاسم</th>
+            <th>إجمالي</th><th>اتسلم</th>
+            <th title="Pending أو مع المندوب في QP">⏳ تحت التسليم</th>
+            <th title="من QP">✋ هولد</th>
+            <th title="من QP أو متعلّم هنا">💔 اندلفرد</th>
+            <th title="الموبايل مش لاقيه في QP">❓ مش في QP</th>
+            <th title="اتسلم في QP بس لسه متعلّم قيد التنفيذ هنا — اعمل 🔄 مطابقة مع QP عشان يتحسب">✔ اتسلم في QP<small>محتاج مطابقة</small></th>
+            <th>🚫 ملغي</th>
+            <th>قيمة اللي اتسلم</th><th>العمولة الإجمالية</th><th>العمولة المستحقة</th>
+          </tr></thead>
+          <tbody>${rows.map((r,i) => `
+          <tr>
+            <td class="rk"><div class="sq-rank ${i===0?'r1':i===1?'r2':i===2?'r3':''}">${i+1}</div></td>
+            <td class="nm"><div class="sq-name"><bdi>${esc(r.name)}</bdi> <span class="sq-today-tag ${todayCount(r.id) ? 'on' : ''}" title="أوردرات النهارده">النهارده ${todayCount(r.id).toLocaleString('ar-EG')}</span> <small class="sq-rate">· نسبة التسليم ${rateTxt(r.delRate)}</small>
               ${sourceChips(r.sources)}
-              ${canViewAll() ? `<button type="button" class="sq-viewbtn" data-view-agent="${esc(r.id)}" data-agent-name="${esc(r.name)}">👁 عرض الأوردرات</button>` : ''}</div>
-            <div class="sq-metric c">${r.total}</div>
-            <div class="sq-metric c">${r.delivered}</div>
-            ${(() => { const Q = state.boardQP, x = Q && !Q.noCreds && !Q.err ? (Q[r.id] || {}) : null;
-              const cel = (k, c) => { const n = x ? ((x[k] || []).length) : null; return `<div class="sq-metric c">${n == null ? '—' : n ? `<a href="#" class="bq-n" style="color:${c}" data-bqa="${esc(r.id)}" data-bqk="${k}">${n}</a>` : '<span style="color:var(--muted)">0</span>'}</div>`; };
-              return cel('way', '#b7791f') + cel('hold', '#2b6cb0') + cel('undel', '#b3261e') + cel('miss', '#8a5a00') + cel('qdel', '#23784a') + cel('cancel', '#6b7186'); })()}
-            <div class="sq-metric green c">${money(r.delValue)}${valBreak(r, true)}</div>
-            <div class="sq-metric dim c">${r.totalComm} ج${commBreak(r, false, true)}</div>
-            <div class="sq-metric gold c">${r.dueComm} ج${r.active ? '' : '<small class="sq-under50">تحت 50%</small>'}${commBreak(r, true, true)}</div>
-          </div>`).join('') + (() => {
+              ${canViewAll() ? `<button type="button" class="sq-viewbtn" data-view-agent="${esc(r.id)}" data-agent-name="${esc(r.name)}">👁 عرض الأوردرات</button>` : ''}</div></td>
+            <td class="num sq-metric">${r.total}</td>
+            <td class="num sq-metric">${r.delivered}</td>
+            ${QCOLS.map(([k, c]) => qCell(r, k, c)).join('')}
+            <td class="num sq-metric green">${money(r.delValue)}${valBreak(r, true)}</td>
+            <td class="num sq-metric dim">${r.totalComm} ج${commBreak(r, false, true)}</td>
+            <td class="num sq-metric gold">${r.dueComm} ج${r.active ? '' : '<small class="sq-under50">تحت 50%</small>'}${commBreak(r, true, true)}</td>
+          </tr>`).join('')}</tbody>
+          ${(() => {
             const T = rows.reduce((a, r) => ({ total:a.total + r.total, delivered:a.delivered + r.delivered, delValue:a.delValue + (r.delValue || 0), totalComm:a.totalComm + r.totalComm, dueComm:a.dueComm + r.dueComm }), { total:0, delivered:0, delValue:0, totalComm:0, dueComm:0 });
-            return `<div class="sq-board-row head" style="font-size:13.5px;color:var(--ink)"><div></div><div><b>الإجمالي</b></div>
-              <div class="c"><b>${T.total}</b></div><div class="c"><b>${T.delivered}</b></div>
-              ${(() => { const Q = state.boardQP, ok = Q && !Q.noCreds && !Q.err, sum = k => { if(!ok) return '—'; const n = Object.values(Q).reduce((a, x) => a + ((x && x[k]) || []).length, 0); return n ? `<a href="#" class="bq-n" data-bqa="*" data-bqk="${k}">${n}</a>` : 0; };
-                return BQ_KEYS.map(k => `<div class="c"><b>${sum(k)}</b></div>`).join(''); })()}
-              <div class="c"><b>${money(T.delValue)}</b></div><div class="c"><b>${Math.round(T.totalComm * 100) / 100} ج</b></div><div class="c"><b>${Math.round(T.dueComm * 100) / 100} ج</b></div></div>`;
-          })() : `<div class="sq-empty">لسه مفيش أوردرات متسجلة من حد.</div>`}
+            const sum = k => { if(!qOk) return '—'; const n = Object.values(Q).reduce((a, x) => a + ((x && x[k]) || []).length, 0); return n ? `<a href="#" class="bq-n" data-bqa="*" data-bqk="${k}">${n}</a>` : 0; };
+            return `<tfoot><tr><td class="rk"></td><td class="nm">الإجمالي</td>
+              <td class="num">${T.total}</td><td class="num">${T.delivered}</td>
+              ${BQ_KEYS.map(k => `<td class="num">${sum(k)}</td>`).join('')}
+              <td class="num">${money(T.delValue)}</td><td class="num">${Math.round(T.totalComm * 100) / 100} ج</td><td class="num">${Math.round(T.dueComm * 100) / 100} ج</td></tr></tfoot>`;
+          })()}
+        </table>` : `<div class="sq-empty">لسه مفيش أوردرات متسجلة من حد.</div>`}
       </div>`;
   }
 
