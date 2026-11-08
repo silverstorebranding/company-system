@@ -526,6 +526,7 @@ body:has(#vaBanner){padding-top:38px}
       <a class="navlink" href="#/order-issues">🧩 مشاكل الأوردرات</a>
       <a class="navlink" href="#/order-edit">✏️ تعديل أوردر موجود</a>
       <a class="navlink" href="#/kidzzly-days">🧸 أيام Kidzzly تحت 60%</a>
+      <a class="navlink" href="#/delivery-rates">📊 نسب التسليمات</a>
       <a class="navlink" href="#/urgent">🚨 أوردرات عاجلة <span class="ib-badge" id="urgBadge"></span></a>
     </div>
     <div class="grp"><div class="grp-title">الأقسام</div>
@@ -5753,7 +5754,7 @@ async function exportToSheet(btn) {
     const { r, p } = parse(hash);
     if(me.is_admin) return true;
     if(r === 'payroll') return false; // 💵 كشف الرواتب كله للأدمن بس — الموظفة بتشوف راتبها من 💵 راتبي والمديرة فريقها من 👥 فريقي
-    if(r === 'inbox' || r === 'urgent' || r === 'team' || r === 'my-salary' || r === 'order-issues' || r === 'order-edit' || r === 'kidzzly-days') return true; // 📨 الرسايل والمهام و 🚨 الأوردرات العاجلة مفتوحين لكل الناس
+    if(r === 'inbox' || r === 'urgent' || r === 'team' || r === 'my-salary' || r === 'order-issues' || r === 'order-edit' || r === 'kidzzly-days' || r === 'delivery-rates') return true; // 📨 الرسايل والمهام و 🚨 الأوردرات العاجلة مفتوحين لكل الناس
     if(r === 'admin') return false;
     const al = allowedSet();
     if(r === 'dept') return al.has('dept:' + p);
@@ -14653,6 +14654,145 @@ table.gs tr.wk td.day{color:#c5221f}
   render = function(){ _render.apply(this, arguments); if(isKD()) mount(); };
   window.addEventListener('hashchange', () => { if(isKD()) setTimeout(mount, 0); });
   const w = setInterval(() => { if(me().id && sb()){ clearInterval(w); if(isKD()) mount(); } }, 700);
+})();
+</script>
+
+<style>
+.dr-tabs{display:flex;gap:6px;flex-wrap:wrap}
+.dr-tab{padding:8px 16px;border:1.5px solid var(--line);border-radius:10px;background:var(--panel);color:var(--ink);font-family:inherit;font-size:14px;font-weight:700;cursor:pointer}
+.dr-tab.on{background:#1f3d36;border-color:#1f3d36;color:#fff}
+.dr-wrap{overflow-x:auto;background:var(--panel);border:1px solid var(--line);border-radius:10px}
+table.dr{width:100%;border-collapse:collapse;min-width:820px;font-size:14px}
+table.dr th,table.dr td{border:1px solid var(--line);padding:9px 8px;text-align:center;vertical-align:middle;white-space:nowrap;font-variant-numeric:tabular-nums}
+table.dr thead th{background:var(--slate-l);color:var(--muted);font-size:12.5px;font-weight:700;position:sticky;top:0}
+table.dr thead th small{display:block;font-weight:500;font-size:10.5px}
+table.dr td.drd{text-align:right;font-weight:700}
+table.dr td.drd small{color:var(--muted);font-weight:500;margin-inline-start:6px}
+table.dr tbody tr:nth-child(even) td{background:rgba(127,127,127,.04)}
+table.dr tbody tr:hover td{background:rgba(127,127,127,.09)}
+table.dr tfoot td{background:var(--slate-l);font-weight:800;color:var(--ink)}
+table.dr .z{color:var(--muted);font-weight:400}
+table.dr a.dr-n{font-weight:700;text-decoration:underline dotted;cursor:pointer}
+.dr-rate{display:inline-block;min-width:58px;padding:3px 8px;border-radius:8px;font-weight:800}
+.dr-rate.g{background:#e3f3e8;color:#23784a}.dr-rate.y{background:#fdf1d8;color:#8a5a00}.dr-rate.r{background:#fbe3e1;color:#b3261e}.dr-rate.n{background:var(--slate-l);color:var(--muted)}
+.dr-bar{height:6px;background:var(--line);border-radius:4px;overflow:hidden;margin-top:4px}.dr-bar i{display:block;height:100%}
+@media (max-width:640px){table.dr td.drd,table.dr thead th.drd,table.dr tfoot td.drd{position:sticky;right:0;z-index:2;background:var(--panel);box-shadow:-2px 0 4px rgba(0,0,0,.06)}
+  table.dr thead th.drd,table.dr tfoot td.drd{background:var(--slate-l)}}
+</style>
+<script>
+/* =====================================================================
+   📊 نسب التسليمات — يوم يوم طول الشهر لبراند واحد (إيطالي / Kidzzly)
+   لكل يوم (حسب تاريخ الأوردر في QP): عدد الأوردرات، اتسلم كام ونسبته،
+   وكام لسه تحت التسليم، وكام هولد، وكام متسلمش ومرجعش، وكام رجع فعلاً
+   البراند بيتعرف من أول سطر في ملاحظة الأوردر (نفس prGetBrand بتاع تقرير الأرباح)
+   ===================================================================== */
+(function(){
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const isDR = () => (location.hash.replace('#/', '') || 'home').split('/')[0] === 'delivery-rates';
+  const ymd = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  const api = () => window.QP && window.QP.api;
+  const BR = [
+    { k:'italy',   l:'💍 إيطالي', test:b => ['dream','dream msg site','dream wa','msg','fastplt','cara silver','cara silver un','cara wa','squad','lo gel nails'].includes(b) },
+    { k:'kidzzly', l:'🧸 Kidzzly', test:b => b === 'kidzzly' },
+  ];
+  // الأعمدة: المفتاح، العنوان، اللون
+  const COLS = [
+    ['way',   '⏳ تحت التسليم', '#b7791f', 'Pending أو مع المندوب'],
+    ['hold',  '✋ هولد',        '#2b6cb0', ''],
+    ['undel', '💔 متسلمش ومرجعش', '#b3261e', 'Undelivered ولسه مالوش تاريخ إرجاع'],
+    ['ret',   '↩️ رجع',         '#6b7186', 'Undelivered وله تاريخ إرجاع'],
+  ];
+  const S = { month: ymd(new Date()).slice(0, 7), brand:'italy', all:null, allMonth:'', busy:false, err:'', prog:0 };
+  try{ const b = localStorage.getItem('dr_brand'); if(BR.some(x => x.k === b)) S.brand = b; }catch(e){}
+  const brandOf = q => (typeof prGetBrand === 'function' ? prGetBrand(q.notes || q.note || '') : null);
+  const hasRet = q => { const v = String(q.returned_Client_date ?? '').trim(); return !!v && v !== 'NaT' && v !== 'null'; };
+  const lbl = q => String(api().label(q)).replace(/\s*#\d+$/, '');
+  function kindOf(q){
+    const c = api().category(q);
+    if(c === 'delivered') return 'del';
+    if(c === 'hold') return 'hold';
+    if(c === 'undelivered') return hasRet(q) ? 'ret' : 'undel';
+    return 'way'; // pending / ofd / غير مصنّفة
+  }
+  async function load(force){
+    const A = api(); if(!A || !A.hasCreds()){ S.err = 'محتاج دخول QP على الجهاز ده (من قسم 🚚 QP).'; return draw(); }
+    if(!force && S.all && S.allMonth === S.month) return draw();
+    S.busy = true; S.err = ''; S.all = null; S.prog = 0; draw();
+    try{
+      const [y, m] = S.month.split('-').map(Number), from = S.month + '-01', to = ymd(new Date(y, m, 0));
+      const month = S.month;
+      const L = await (A.fetchRangeAll || A.fetchRange)(from, to, n => { S.prog = n; const p = document.getElementById('drProg'); if(p) p.textContent = n; });
+      if(month !== S.month) return; // المستخدم غيّر الشهر وإحنا بنجيب
+      S.all = L; S.allMonth = month;
+    }catch(e){ S.err = e.message || String(e); }
+    S.busy = false; draw();
+  }
+  function days(){
+    const b = BR.find(x => x.k === S.brand), by = {};
+    (S.all || []).forEach(q => { if(!b.test(brandOf(q))) return; const d = new Date(q.order_date); if(isNaN(d)) return; const k = ymd(d); if(k.slice(0, 7) !== S.month) return;
+      const r = by[k] = by[k] || { k, L:[], del:[], way:[], hold:[], undel:[], ret:[] }; r.L.push(q); r[kindOf(q)].push(q); });
+    return Object.values(by).sort((a, b) => a.k.localeCompare(b.k));
+  }
+  const pct = (a, n) => n ? Math.round(a / n * 1000) / 10 : null;
+  const rateCell = (d, n) => { const p = pct(d, n), c = p == null ? 'n' : p >= 60 ? 'g' : p >= 45 ? 'y' : 'r';
+    return `<span class="dr-rate ${c}">${p == null ? '—' : p + '%'}</span>`; };
+  function listModal(title, L){
+    const w = document.createElement('div'); w.className = 'bq-modal';
+    w.innerHTML = `<div class="bq-box"><div class="bq-h"><b>${esc(title)} (${L.length})</b><button class="bq-x">✕</button></div>
+      <div class="bq-act"><button class="kd-btn" data-c>📋 انسخ أرقام الشحنات</button>${window.XLSX ? '<button class="kd-btn" data-x>⬇️ Excel</button>' : ''}</div>
+      <div class="bq-t"><table class="pr" style="width:100%"><tr><th>#</th><th>رقم الشحنة</th><th>العميل</th><th>الموبايل</th><th>السعر</th><th>الحالة</th><th>الملاحظة</th><th></th></tr>
+      ${L.map((q, i) => { const ph = String(q.phone || '').replace(/\D/g, '').replace(/^0/, ''); return `<tr><td>${i + 1}</td><td style="direction:ltr"><b>${esc(q.serial)}</b></td><td>${esc(q.full_name || '')}</td><td style="direction:ltr">${esc(q.phone || '')}</td><td>${esc(q.price || q.total_amount || '')}</td><td>${esc(lbl(q))}</td><td>${esc(String(q.notes || '').split('\n')[0])}</td>
+        <td style="white-space:nowrap">${ph ? `<a class="kd-btn" style="text-decoration:none" href="tel:0${ph}">📞</a> <a class="kd-btn" style="text-decoration:none" target="_blank" rel="noopener" href="https://wa.me/20${ph}">💬</a>` : ''}</td></tr>`; }).join('')}</table></div></div>`;
+    document.body.appendChild(w);
+    w.onclick = e => { if(e.target === w || e.target.classList.contains('bq-x')) w.remove(); };
+    const c = w.querySelector('[data-c]'); if(c) c.onclick = () => navigator.clipboard.writeText(L.map(q => q.serial).join('\n')).then(() => c.textContent = '✓ اتنسخ');
+    const x = w.querySelector('[data-x]'); if(x) x.onclick = () => { const ws = XLSX.utils.json_to_sheet(L.map(q => ({ 'رقم الشحنة':String(q.serial), 'العميل':q.full_name || '', 'الموبايل':q.phone || '', 'السعر':q.price || '', 'الحالة':lbl(q) }))); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'list'); XLSX.writeFile(wb, title + '.xlsx'); };
+  }
+  let D = [];
+  function view(){
+    const b = BR.find(x => x.k === S.brand);
+    let h = `<div class="pagehead"><h1>📊 نسب التسليمات</h1><p>يوم يوم طول الشهر (حسب تاريخ الأوردر في QP): اتسلم كام ونسبته، وكام لسه تحت التسليم وهولد ومتسلمش ومرجعش. اختار البراند من فوق، ودوس على أي رقم تشوف أوردراته.</p></div>
+      <div class="card"><div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between">
+        <div class="dr-tabs">${BR.map(x => `<button class="dr-tab ${x.k === S.brand ? 'on' : ''}" data-drb="${x.k}">${x.l}</button>`).join('')}</div>
+        <div style="display:flex;gap:8px;align-items:center"><select class="kd-sel" id="drM" style="width:auto">${(() => { const L = [], d = new Date(); d.setDate(1);
+          for(let i = 0; i < 12; i++){ const m = ymd(d).slice(0, 7); L.push(`<option value="${m}" ${S.month === m ? 'selected' : ''}>${new Date(m + '-15').toLocaleDateString('ar-EG', { month:'long', year:'numeric' })}${i === 0 ? ' (الحالي)' : ''}</option>`); d.setMonth(d.getMonth() - 1); } return L.join(''); })()}</select>
+          <button class="kd-btn" id="drRe">🔄 حدّث من QP</button></div></div></div>`;
+    if(S.err) return h + `<div class="mono-note">${esc(S.err)}</div>`;
+    if(S.busy || !S.all) return h + `<p style="color:var(--muted)">⏳ بيجيب أوردرات الشهر من QP... <b id="drProg">${S.prog || ''}</b></p>`;
+    D = days();
+    if(!D.length) return h + `<p style="color:var(--muted)">مفيش أوردرات ${esc(b.l)} في الشهر ده.</p>`;
+    const T = { L:0, del:0, way:0, hold:0, undel:0, ret:0 };
+    D.forEach(d => Object.keys(T).forEach(k => T[k] += d[k].length));
+    const num = (i, k, n, c) => `<td>${n ? `<a class="dr-n" style="color:${c}" data-dri="${i}" data-drk="${k}">${n}</a>` : '<span class="z">0</span>'}</td>`;
+    h += `<div class="card" style="font-size:14px">${esc(b.l)} — الشهر: <b>${T.L}</b> أوردر · ✅ اتسلم <b>${T.del}</b> ${rateCell(T.del, T.L)} · ⏳ تحت التسليم <b>${T.way}</b> · ✋ هولد <b>${T.hold}</b> · 💔 متسلمش ومرجعش <b>${T.undel}</b> · ↩️ رجع <b>${T.ret}</b>
+      <div style="font-size:12.5px;color:var(--muted);margin-top:6px">النسبة = اللي اتسلم ÷ كل أوردرات اليوم · 🟢 60% أو أكتر · 🟡 45–60% · 🔴 أقل من 45%</div></div>
+      <div class="dr-wrap"><table class="dr"><thead><tr><th class="drd">اليوم</th><th>الأوردرات</th><th>✅ اتسلم</th><th>نسبة التسليم</th>
+        ${COLS.map(([, t, , tip]) => `<th${tip ? ` title="${esc(tip)}"` : ''}>${t}</th>`).join('')}</tr></thead><tbody>
+      ${D.map((d, i) => { const p = pct(d.del.length, d.L.length) || 0;
+        return `<tr><td class="drd">${new Date(d.k + 'T12:00:00').toLocaleDateString('ar-EG', { day:'numeric', month:'short' })}<small>${new Date(d.k + 'T12:00:00').toLocaleDateString('ar-EG', { weekday:'long' })}</small></td>
+          ${num(i, 'L', d.L.length, 'var(--ink)')}${num(i, 'del', d.del.length, '#23784a')}
+          <td>${rateCell(d.del.length, d.L.length)}<div class="dr-bar"><i style="width:${Math.min(100, p)}%;background:${p >= 60 ? '#2f7d55' : p >= 45 ? '#d69e2e' : '#c0392b'}"></i></div></td>
+          ${COLS.map(([k, , c]) => num(i, k, d[k].length, c)).join('')}</tr>`; }).join('')}</tbody>
+      <tfoot><tr><td class="drd">الإجمالي</td><td>${T.L}</td><td>${T.del}</td><td>${rateCell(T.del, T.L)}</td>${COLS.map(([k]) => `<td>${T[k]}</td>`).join('')}</tr></tfoot></table></div>`;
+    return h;
+  }
+  function draw(){
+    if(!isDR()) return;
+    const main = document.getElementById('main'); if(!main) return;
+    main.innerHTML = view();
+    const $ = id => document.getElementById(id);
+    if($('drM')) $('drM').onchange = e => { S.month = e.target.value; load(); };
+    if($('drRe')) $('drRe').onclick = () => load(true);
+    main.querySelectorAll('[data-drb]').forEach(x => x.onclick = () => { S.brand = x.dataset.drb; try{ localStorage.setItem('dr_brand', S.brand); }catch(e){} draw(); });
+    const NM = { L:'كل الأوردرات', del:'✅ اتسلم' }; COLS.forEach(([k, t]) => NM[k] = t);
+    main.querySelectorAll('[data-dri]').forEach(a => a.onclick = e => { e.preventDefault(); const d = D[+a.dataset.dri], k = a.dataset.drk; if(!d) return;
+      listModal(`${NM[k]} — ${BR.find(x => x.k === S.brand).l} — ${new Date(d.k + 'T12:00:00').toLocaleDateString('ar-EG', { weekday:'long', day:'numeric', month:'long' })}`, d[k]); });
+  }
+  function mount(){ document.querySelectorAll('#sidebar a.navlink').forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#/delivery-rates')); draw(); load(); }
+  const _render = render;
+  render = function(){ _render.apply(this, arguments); if(isDR()) mount(); };
+  window.addEventListener('hashchange', () => { if(isDR()) setTimeout(mount, 0); });
+  const w = setInterval(() => { if(api() && document.getElementById('main')){ clearInterval(w); if(isDR()) mount(); } }, 700);
 })();
 </script>
 
