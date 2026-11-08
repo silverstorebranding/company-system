@@ -5481,7 +5481,7 @@ async function exportToSheet(btn) {
   }
   const GROUPS = () => [
     { title:'المالية', items:[
-      { key:'accounts',  label:'💼 الحسابات (Italy + Kidzzly + Socky + المجمّعة)',  routes:['accounts','accounts-kidzzly','accounts-socky','accounts-all'] },
+      { key:'accounts',  label:'💼 الحسابات (Italy + Kidzzly + Socky + المجمّعة)',  routes:['accounts','accounts-kidzzly','accounts-socky','accounts-all','accounts-sheet'] },
       { key:'meta_ads', label:'📊 Ads (Meta)', routes:['meta-ads'] },
       { key:'qp_upload', label:'📤 رفع الأوردرات', routes:['qp-upload'] },
       { key:'qp_delete', label:'🗑️ مسح بوالص من QP', routes:['qp-delete'] },
@@ -9123,6 +9123,7 @@ function makeAccounts(CFG){
   /* ---------- 📊 للحسابات المجمّعة: رصيد كل خزنة + إيرادات/مصروفات فترة ---------- */
   window.AccAPI = window.AccAPI || {};
   window.AccAPI[CFG.route] = { title: CFG.title, short: CFG.short || CFG.title, icon: CFG.icon, table: CFG.table, METHODS,
+    async balanceAt(X){ const { data } = await sb().from(CFG.table).select('*').limit(10000); S.rows = data || []; return balanceAt(X); },
     async summary(from, to){
       const { data, error } = await sb().from(CFG.table).select('*').order('entry_date', { ascending:false }).order('created_at', { ascending:false }).limit(10000);
       if(error) return { err: /does not exist|relation|schema cache|Could not find/i.test(error.message) ? 'الجدول ' + CFG.table + ' مش موجود في Supabase' : error.message };
@@ -9154,7 +9155,8 @@ const ACC_BRANDS = [
   { route:'accounts-socky',   short:'Socky',   icon:'🧦', color:'#3f9b74' },
 ];
 window.accBrandBar = cur => `<div class="acb-bar">${ACC_BRANDS.map(b => `<a href="#/${b.route}" class="${cur === b.route ? 'on' : ''}" style="--bc:${b.color}">${b.icon} ${b.short}</a>`).join('')}
-  <a href="#/accounts-all" class="all ${cur === 'accounts-all' ? 'on' : ''}">📊 الحسابات المجمّعة</a></div>`;
+  <a href="#/accounts-all" class="all ${cur === 'accounts-all' ? 'on' : ''}">📊 الحسابات المجمّعة</a>
+  <a href="#/accounts-sheet" class="all ${cur === 'accounts-sheet' ? 'on' : ''}">📒 شيت الشهر</a></div>`;
 const ACC_DESC = 'سجّل الإيرادات والمصروفات بتاريخها، والسيستم بيحسب صافي كل يوم (إيرادات − مصروفات) وإجمالي أي فترة.';
 makeAccounts({ route:'accounts', table:'accounts_entries', icon:'💍', title:'حسابات Italy', short:'Italy', desc:ACC_DESC,
   linkLabel:'💼 الحسابات', navHref:'#/accounts', anchor:'#sidebar a.navlink[href="#/profits"]', before:true });
@@ -10921,23 +10923,25 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
     await loadDone(); if(!SQ.loaded) await loadSquadPtr(); if(!E.srcLoaded) await loadSources(); if(!E.ptrLoaded) await loadPtr();
     const out = [];
     try{ const r = SQ.at ? (await sbc().from('orders').select('*').eq('created_at', SQ.at).limit(1)).data : null, o = r && r[0];
-      const waiting = notDone(await squadRows()).filter(x => !isCancel(x.estatus)).length;
-      out.push({ label:'🏆 Squad', at:SQ.at, name:o && o.customer_name, amount:o && o.amount, moved:SQ.updated, by:SQ.by, waiting, none:!SQ.at }); }catch(e){}
+      const W = notDone(await squadRows()).filter(x => !isCancel(x.estatus)).sort((a, b) => new Date(a.sqAt) - new Date(b.sqAt));
+      out.push({ label:'🏆 Squad', at:SQ.at, name:o && o.customer_name, amount:o && o.amount, moved:SQ.updated, by:SQ.by, waiting:W.length, oldest:W[0] ? { at:W[0].sqAt, name:W[0].name } : null, none:!SQ.at }); }catch(e){}
     for(const src of SOURCES){ try{ const p = P(src.key);
       const r = p.seq ? (await sbc().from('easy_orders').select('*').eq('seq', p.seq).limit(1)).data : null, x = r && r[0];
       const at = x ? ((x.payload && (x.payload.created_at || x.payload.createdAt)) || x.received_at) : null, py = x ? (x.payload || {}) : {};
-      const waiting = notDone(await sourceRows(src.key)).filter(z => !isCancel(z.estatus)).length;
-      out.push({ label:'🌐 ' + src.label, at, name:py.full_name || py.name || (x ? fromEasy(py, x.seq, src.key).name : ''), amount:x ? fromEasy(py, x.seq, src.key).amount : '', moved:p.at, by:p.by, waiting, none:!p.seq }); }catch(e){} }
+      const W = notDone(await sourceRows(src.key)).filter(z => !isCancel(z.estatus)).sort((a, b) => a.seq - b.seq);
+      out.push({ label:'🌐 ' + src.label, at, name:py.full_name || py.name || (x ? fromEasy(py, x.seq, src.key).name : ''), amount:x ? fromEasy(py, x.seq, src.key).amount : '', moved:p.at, by:p.by, waiting:W.length, oldest:W[0] ? { at:W[0].orderAt, name:W[0].name } : null, none:!p.seq }); }catch(e){} }
     PTR = { at:Date.now(), data:out, busy:false }; return out;
   }
   window.UploadAPI = { pendingCounts, pointerInfo };
   function ptrCard(){
     const d = PTR.data, when = v => v ? new Date(v).toLocaleString('ar-EG', { weekday:'short', day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }) : '—';
     if(!d){ if(!PTR.busy){ PTR.busy = true; pointerInfo().then(draw).catch(() => { PTR.busy = false; }); } return '<div class="card ptr-card"><h3>📍 أنا واقف فين في كل براند</h3><p style="color:var(--muted);margin:0">⏳ بيحمّل...</p></div>'; }
-    return `<div class="card ptr-card"><h3 style="display:flex;justify-content:space-between;align-items:center">📍 أنا واقف فين في كل براند — سحبت لحد فين <button class="up-btn" id="ptrRef" style="padding:4px 10px;font-size:12.5px">🔄</button></h3>
+    return `<div class="card ptr-card"><h3 style="display:flex;justify-content:space-between;align-items:center">📍 أنا واقف فين في كل براند <button class="up-btn" id="ptrRef" style="padding:4px 10px;font-size:12.5px">🔄</button></h3>
+      <p style="margin:-4px 0 8px;font-size:12.5px;color:var(--muted)">"خلصت لحد" = كل الأوردرات اللي قبل كده اترفعت أو اتشالت. العلامة مابتعدّيش أوردر لسه مستني — فلو فيه أوردر قديم ماترفعش ولا اتشال، بتفضل واقفة قبله حتى لو اللي بعده اترفع.</p>
       <div class="ptr-grid">${d.map(x => `<div class="ptr-it"><b>${esc(x.label)}</b>
-        ${x.none ? '<div class="ptr-s">لسه ماسحبتش منه حاجة</div>' : `<div class="ptr-s">سحبت لحد أوردر <b>${esc(when(x.at))}</b>${x.name ? ' — ' + esc(x.name) : ''}${x.amount ? ' (' + esc(x.amount) + ' ج)' : ''}</div><div class="ptr-s">آخر سحب ${esc(when(x.moved))}${x.by ? ' · ' + esc(x.by) : ''}</div>`}
-        <div class="ptr-w ${x.waiting ? 'on' : ''}">${x.waiting ? `⏳ ${x.waiting} مستني بعده` : '✔ مفيش جديد'}</div></div>`).join('')}</div></div>`;
+        ${x.none ? '<div class="ptr-s">لسه ماسحبتش منه حاجة</div>' : `<div class="ptr-s">✔ خلصت لحد أوردر <b>${esc(when(x.at))}</b>${x.name ? ' — ' + esc(x.name) : ''}${x.amount ? ' (' + esc(x.amount) + ' ج)' : ''}</div><div class="ptr-s">آخر رفع ${esc(when(x.moved))}${x.by ? ' · ' + esc(x.by) : ''}</div>`}
+        ${x.oldest ? `<div class="ptr-s" style="color:#b7791f">⏳ أقدم أوردر لسه مستني: <b>${esc(when(x.oldest.at))}</b>${x.oldest.name ? ' — ' + esc(x.oldest.name) : ''}</div>` : ''}
+        <div class="ptr-w ${x.waiting ? 'on' : ''}">${x.waiting ? `⏳ ${x.waiting} مستني` : '✔ مفيش جديد'}</div></div>`).join('')}</div></div>`;
   }
   function diagHtml(src){
     const names = Object.fromEntries((SOURCES || []).map(x => [x.key, x.label]));
@@ -12582,22 +12586,11 @@ a.hm-kpi:hover{box-shadow:0 6px 16px rgba(0,0,0,.07)}
 .hm-bar{height:7px;background:var(--line);border-radius:4px;overflow:hidden;margin-top:4px}
 .hm-bar i{display:block;height:100%;background:var(--bc,#2f7d55)}
 .hm-wait{color:var(--muted);font-size:13.5px}
-.hm-shops .shops{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px}
-.shop{display:flex;flex-direction:column;align-items:stretch}
-.shop .bld{position:relative;background:var(--c2);border:2px solid var(--c1);border-radius:10px 10px 4px 4px;padding:0 10px 0;overflow:hidden}
-.shop .awn{height:16px;margin:0 -10px;background:repeating-linear-gradient(90deg,var(--c1) 0 14px,#fff 14px 28px);border-bottom:2px solid var(--c1);border-radius:0 0 10px 10px}
-.shop .sign{margin:8px auto 6px;width:fit-content;padding:3px 12px;border-radius:8px;background:#fff;border:2px solid var(--c1);font-weight:800;font-size:14px;color:#2b2f33;white-space:nowrap}
-.shop .front{display:flex;align-items:flex-end;justify-content:center;gap:8px;height:54px}
-.shop .win{width:30px;height:24px;margin-bottom:16px;background:#cfe6f5;border:2px solid var(--c1);border-radius:4px}
-.shop .door{position:relative;width:30px;height:44px;background:var(--c1);border-radius:6px 6px 0 0}
-.shop .door span{position:absolute;left:5px;top:22px;width:4px;height:4px;border-radius:50%;background:#f3c24a}
-.shop .queue{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:center;gap:2px;min-height:44px;padding:6px 4px;border-bottom:3px solid #d9d4c9}
-.shop .pp{width:14px;height:24px;animation:hmBob 1.6s ease-in-out infinite}
-@keyframes hmBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}
-@media (prefers-reduced-motion: reduce){.shop .pp{animation:none}}
-.shop .more{font-size:12px;font-weight:800;color:var(--c1);margin-inline-start:3px}
-.shop .empty{font-size:12px;color:var(--muted)}
-.shop .cnt{text-align:center;margin-top:6px;font-size:13px;color:var(--muted)}.shop .cnt b{font-size:22px;color:var(--c1)}
+.hm-shops .shops{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.shop{border:1px solid var(--line);border-inline-start:4px solid var(--c1);border-radius:10px;padding:10px 12px;background:var(--panel)}
+.shop .sh-h{display:flex;justify-content:space-between;align-items:center;font-size:14px;font-weight:600}
+.shop .sh-h b{font-size:22px;color:var(--c1)}
+.shop .sh-bar{height:5px;background:var(--line);border-radius:3px;margin-top:8px;overflow:hidden}.shop .sh-bar i{display:block;height:100%;background:var(--c1)}
 .hm-wsplit{display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:8px;font-size:12.5px;color:var(--muted)}
 .hm-wsplit b{color:var(--ink)}
 .hm-wprof{margin-top:6px;font-size:13px;color:#2f7d55}.hm-wprof b{font-size:15px}
@@ -12702,14 +12695,12 @@ a.hm-kpi:hover{box-shadow:0 6px 16px rgba(0,0,0,.07)}
   const PEOPLE = ['#e07a3f', '#2b6cb0', '#c0628f', '#3d7a3a', '#6b46c1', '#b7791f', '#2f7d55', '#a0456e'];
   const person = i => `<svg class="pp" viewBox="0 0 20 34" aria-hidden="true" style="animation-delay:${(i % 6) * .15}s"><circle cx="10" cy="7" r="6" fill="#e8b98f"/><path d="M3 34 V20 Q3 14 10 14 Q17 14 17 20 V34Z" fill="${PEOPLE[i % PEOPLE.length]}"/></svg>`;
   function shopsCard(){
-    const B = H.pend && H.pend.byBrand;
-    return `<div class="card hm-shops"><h3 style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">🏬 العملاء مستنيين قدام كل براند (أوردرات لسه ماترفعتش)
+    const B = H.pend && H.pend.byBrand, mx = B ? Math.max(1, ...SHOPS.map(sh => B[sh.k] || 0)) : 1;
+    return `<div class="card hm-shops"><h3 style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">🏬 مستني الرفع لكل براند
         <a class="hm-btn ok" href="#/qp-upload" data-hm-all>📦 هات الكل وارفع</a></h3>
-      <div class="shops">${SHOPS.map(sh => { const n = B ? (B[sh.k] || 0) : null, show = Math.min(n || 0, 12);
-        return `<div class="shop" style="--c1:${sh.c1};--c2:${sh.c2}">
-          <div class="bld"><div class="awn"></div><div class="sign">${sh.e} ${esc(sh.n)}</div><div class="front"><div class="win"></div><div class="door"><span></span></div><div class="win"></div></div></div>
-          <div class="queue">${n == null ? '<span class="hm-wait">⏳</span>' : n ? Array.from({ length:show }, (_, i) => person(i)).join('') + (n > show ? `<span class="more">+${fmt(n - show)}</span>` : '') : '<span class="empty">مفيش حد مستني 👌</span>'}</div>
-          <div class="cnt"><b>${n == null ? '…' : fmt(n)}</b> أوردر مستني</div></div>`; }).join('')}</div></div>`;
+      <div class="shops">${SHOPS.map(sh => { const n = B ? (B[sh.k] || 0) : null;
+        return `<div class="shop" style="--c1:${sh.c1}"><div class="sh-h"><span>${sh.e} ${esc(sh.n)}</span><b>${n == null ? '…' : fmt(n)}</b></div>
+          <div class="sh-bar"><i style="width:${n ? Math.max(4, n / mx * 100) : 0}%"></i></div></div>`; }).join('')}</div></div>`;
   }
   function view(){
     const m = me(), now = new Date(), hr = now.getHours();
@@ -13806,6 +13797,184 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
   render = function(){ _render.apply(this, arguments); if(isMS()) mount(); else if(S.emp !== undefined) document.querySelectorAll('a.navlink[href="#/my-salary"]').forEach(a => a.classList.toggle('mgr-hide', !S.emp)); };
   window.addEventListener('hashchange', () => { if(isMS()) setTimeout(mount, 0); });
   const w = setInterval(() => { if(me().id && sb()){ clearInterval(w); findEmp().then(() => { if(isMS()) mount(); }); } }, 700);
+})();
+</script>
+
+<style>
+/* 📒 شيت الشهر — نفس شكل جوجل شيت */
+.gs-wrap{overflow:auto;max-height:calc(100vh - 230px);border:1px solid #c9ced3;border-radius:8px;background:#fff}
+table.gs{border-collapse:collapse;font-size:13px;min-width:100%;font-family:Arial,'Readex Pro',sans-serif;color:#202124}
+table.gs th,table.gs td{border:1px solid #d7dbe0;padding:4px 8px;text-align:center;white-space:nowrap;min-width:78px}
+table.gs thead th{position:sticky;top:0;z-index:2;background:#1f3d36;color:#fff;font-weight:700;font-size:12.5px}
+table.gs thead tr:first-child th{height:32px;box-sizing:border-box}
+table.gs thead tr.tot th{top:32px;background:#d9f2e3;color:#1b4332;font-size:13.5px}
+table.gs td.day,table.gs th.day{position:sticky;right:0;z-index:1;background:#f1f3f4;font-weight:700;min-width:46px}
+table.gs thead th.day{z-index:3;background:#1f3d36}
+table.gs thead tr.tot th.day{background:#d9f2e3}
+table.gs th.inc{background:#245c45}table.gs th.own{background:#5b4a7a}table.gs th.sum{background:#7a3b2e}
+table.gs td.c{cursor:pointer}table.gs td.c:hover{background:#e8f0fe;outline:2px solid #1a73e8;outline-offset:-2px}
+table.gs td.c.has{font-weight:600}table.gs td.c.inc.has{background:#e6f4ea}
+table.gs td.exp{background:#fff7f5;font-weight:700;color:#7a3b2e}
+table.gs td.bal{font-weight:800}table.gs td.bal.neg{color:#c5221f}table.gs td.bal.pos{color:#137333}
+table.gs tr.today td{background:#fef7e0}table.gs tr.today td.day{background:#fbbc04;color:#202124}
+table.gs tr.wk td.day{color:#c5221f}
+.gs-bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+.gs-bar select,.gs-bar input{padding:7px 9px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;background:var(--panel);color:var(--ink)}
+.gs-btn{padding:7px 13px;border:1.5px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink);font-family:inherit;font-size:13.5px;font-weight:600;cursor:pointer}
+.gs-pop{position:fixed;inset:0;z-index:80;background:rgba(0,0,0,.35);display:grid;place-items:center;padding:14px}
+.gs-box{background:var(--panel);color:var(--ink);border-radius:12px;padding:16px 18px;width:min(520px,100%);max-height:90vh;overflow:auto;box-shadow:0 20px 50px rgba(0,0,0,.25)}
+.gs-box h3{margin:0 0 8px}.gs-box table{width:100%;border-collapse:collapse;font-size:13.5px}.gs-box td{padding:6px;border-bottom:1px solid var(--line)}
+.gs-box .row{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.gs-box input,.gs-box select{width:100%;padding:8px 10px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;font-size:14.5px;box-sizing:border-box;background:var(--panel);color:var(--ink)}
+.gs-box label{font-size:12.5px;color:var(--muted)}
+</style>
+<script>
+/* =====================================================================
+   📒 شيت الشهر — الحسابات بشكل جوجل شيت (اللي متعودين عليه):
+   صف لكل يوم في الشهر، وعمود لكل بند (التحصيل / المبيعات / الإعلانات / البضاعة / الشحن / المصاريف / المسحوبات...)
+   + إجمالي المصروف + الخزنة باقي — ودوس على أي خانة تشوف أو تزوّد أو تمسح
+   ===================================================================== */
+(function(){
+  const sb = () => window.AuthGate && window.AuthGate.sb;
+  const me = () => (window.AuthGate && window.AuthGate.me && window.AuthGate.me()) || {};
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const fmt = n => { const v = Math.round(Number(n) || 0); return v ? v.toLocaleString('en-US') : ''; };
+  const num = v => parseFloat(String(v ?? '').replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/[^\d.-]/g, '')) || 0;
+  const ymd = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  const isGS = () => (location.hash.replace('#/', '') || 'home').split('/')[0] === 'accounts-sheet';
+  const BR = [ { route:'accounts', table:'accounts_entries', short:'إيطالي' }, { route:'accounts-kidzzly', table:'accounts_entries_kidzzly', short:'Kidzzly' }, { route:'accounts-socky', table:'accounts_entries_socky', short:'Socky' } ];
+  const TRANSFER = 'تحويل بين الحسابات';
+  const COLS_KEY = 'gs_extra_cols';
+  const S = { month: ymd(new Date()).slice(0, 7), brand:'all', rows:null, open:0, err:'', pop:null };
+  const extra = () => { try{ return JSON.parse(localStorage.getItem(COLS_KEY) || '[]'); }catch(e){ return []; } };
+
+  async function load(){
+    S.rows = null; S.err = ''; draw();
+    const [y, m] = S.month.split('-').map(Number), from = S.month + '-01', to = ymd(new Date(y, m, 0));
+    const B = S.brand === 'all' ? BR : BR.filter(b => b.route === S.brand);
+    const out = [];
+    for(const b of B){
+      const { data, error } = await sb().from(b.table).select('*').gte('entry_date', from).lte('entry_date', to).limit(10000);
+      if(error){ S.err = (S.err ? S.err + ' — ' : '') + b.short + ': ' + error.message; continue; }
+      (data || []).forEach(r => out.push({ ...r, _b:b }));
+    }
+    // رصيد الخزنة في أول الشهر (من الحسابات نفسها)
+    let open = 0;
+    for(const b of B){ try{ const A = window.AccAPI && window.AccAPI[b.route]; if(A && A.balanceAt){ open += await A.balanceAt(from); } }catch(e){} }
+    S.rows = out; S.open = open; draw();
+  }
+  // الأعمدة: كل بند (ولو البند في أكتر من براند بيتفصل)، ومعاهم الأعمدة اللي إنت زودتها
+  function columns(){
+    const map = new Map(), rows = (S.rows || []).filter(r => r.kind !== 'opening' && r.category !== TRANSFER);
+    const multi = S.brand === 'all';
+    const key = (kind, cat, br) => kind + '|' + cat + '|' + (br || '');
+    rows.forEach(r => { const br = multi ? r._b.short : ''; const k = key(r.kind, r.category || 'أخرى', br);
+      if(!map.has(k)) map.set(k, { k, kind:r.kind, cat:r.category || 'أخرى', br, b:r._b }); });
+    extra().forEach(c => { if(S.brand !== 'all' && c.route !== S.brand) return; const br = multi ? (BR.find(b => b.route === c.route) || {}).short : ''; const k = key(c.kind, c.cat, br);
+      if(!map.has(k)) map.set(k, { k, kind:c.kind, cat:c.cat, br, b:BR.find(b => b.route === c.route) || BR[0] }); });
+    const own = c => /سحب|مسحوب|بيتر|شادي|peter|شريك/i.test(c.cat);
+    const L = [...map.values()];
+    const inc = L.filter(c => c.kind === 'income').sort((a, b) => a.cat.localeCompare(b.cat, 'ar') || a.br.localeCompare(b.br));
+    const exp = L.filter(c => c.kind === 'expense' && !own(c)).sort((a, b) => a.cat.localeCompare(b.cat, 'ar') || a.br.localeCompare(b.br));
+    const ow = L.filter(c => c.kind === 'expense' && own(c));
+    return { inc, exp, ow };
+  }
+  const cellRows = (c, d) => (S.rows || []).filter(r => r.entry_date === d && r.kind === c.kind && (r.category || 'أخرى') === c.cat && (!c.br || r._b.short === c.br));
+  const sumRows = L => L.reduce((a, r) => a + num(r.amount), 0);
+
+  function view(){
+    const mLabel = new Date(S.month + '-15').toLocaleDateString('ar-EG', { month:'long', year:'numeric' });
+    let h = (window.accBrandBar ? window.accBrandBar('accounts-sheet') : '') + `<div class="pagehead"><h1>📒 شيت ${esc(mLabel)}</h1><p>نفس شكل الشيت: كل يوم في صف، وكل بند في عمود. دوس على أي خانة تشوف اللي فيها أو تزوّد أو تمسح.</p></div>`;
+    h += `<div class="gs-bar"><select id="gsMonth">${(() => { const L = [], d = new Date(); d.setDate(1);
+        for(let i = 0; i < 12; i++){ const m = ymd(d).slice(0, 7); L.push(`<option value="${m}" ${S.month === m ? 'selected' : ''}>${new Date(m + '-15').toLocaleDateString('ar-EG', { month:'long', year:'numeric' })}${i === 0 ? ' (الحالي)' : ''}</option>`); d.setMonth(d.getMonth() - 1); }
+        return L.join(''); })()}</select>
+      <select id="gsBrand"><option value="all" ${S.brand === 'all' ? 'selected' : ''}>كل الخزن (all خزن)</option>${BR.map(b => `<option value="${b.route}" ${S.brand === b.route ? 'selected' : ''}>${b.short}</option>`).join('')}</select>
+      <button class="gs-btn" id="gsAddCol">➕ عمود جديد</button>${window.XLSX ? '<button class="gs-btn" id="gsX">⬇️ Excel</button>' : ''}<button class="gs-btn" id="gsRe">🔄</button></div>`;
+    if(S.err) h += `<div class="mono-note">${esc(S.err)}</div>`;
+    if(!S.rows) return h + '<p style="color:var(--muted)">⏳ بيحمّل...</p>';
+    const C = columns(), all = [...C.inc, ...C.exp, ...C.ow];
+    const [y, m] = S.month.split('-').map(Number), days = new Date(y, m, 0).getDate(), t = ymd(new Date());
+    const head = c => `${esc(c.cat)}${c.br ? ' ' + esc(c.br) : ''}`;
+    // صف الإجماليات (زي الصف الأول في الشيت)
+    const colTot = c => sumRows((S.rows || []).filter(r => r.kind === c.kind && (r.category || 'أخرى') === c.cat && (!c.br || r._b.short === c.br)));
+    const expTot = [...C.exp].reduce((a, c) => a + colTot(c), 0), owTot = C.ow.reduce((a, c) => a + colTot(c), 0), incTot = C.inc.reduce((a, c) => a + colTot(c), 0);
+    let bal = S.open;
+    h += `<div class="gs-wrap"><table class="gs"><thead>
+      <tr><th class="day">${esc(new Date(S.month + '-15').toLocaleDateString('en-US', { month:'short' }).toLowerCase())}</th>${C.inc.map(c => `<th class="inc">${head(c)}</th>`).join('')}${C.exp.map(c => `<th>${head(c)}</th>`).join('')}<th class="sum">إجمالي المصروف</th>${C.ow.map(c => `<th class="own">${head(c)}</th>`).join('')}<th class="sum">خزنة باقي</th></tr>
+      <tr class="tot"><th class="day">الإجمالي</th>${C.inc.map(c => `<th>${fmt(colTot(c)) || 0}</th>`).join('')}${C.exp.map(c => `<th>${fmt(colTot(c)) || 0}</th>`).join('')}<th>${fmt(expTot) || 0}</th>${C.ow.map(c => `<th>${fmt(colTot(c)) || 0}</th>`).join('')}<th>${fmt(S.open + incTot - expTot - owTot) || 0}</th></tr></thead><tbody>
+      <tr><td class="day" style="font-size:11.5px">ترحيل</td>${all.map(() => '<td></td>').join('')}<td></td><td class="bal ${S.open < 0 ? 'neg' : 'pos'}">${fmt(S.open) || 0}</td></tr>`;
+    for(let d = 1; d <= days; d++){
+      const k = S.month + '-' + String(d).padStart(2, '0'), dow = new Date(k + 'T12:00:00').getDay();
+      let dayInc = 0, dayExp = 0, dayOw = 0;
+      const cell = c => { const L = cellRows(c, k), v = sumRows(L); if(c.kind === 'income') dayInc += v; else if(C.ow.includes(c)) dayOw += v; else dayExp += v;
+        return `<td class="c ${c.kind === 'income' ? 'inc' : ''} ${v ? 'has' : ''}" data-gc="${esc(c.k)}" data-gd="${k}" title="${L.length ? L.map(r => (r.item || r.category) + ' ' + fmt(r.amount)).join(' · ') : 'دوس عشان تزوّد'}">${fmt(v)}</td>`; };
+      const inc = C.inc.map(cell).join(''), exp = C.exp.map(cell).join(''), ow = C.ow.map(cell).join('');
+      bal += dayInc - dayExp - dayOw;
+      const future = k > t;
+      h += `<tr class="${k === t ? 'today' : ''} ${dow === 5 ? 'wk' : ''}"><td class="day">${d}</td>${inc}${exp}<td class="exp">${fmt(dayExp)}</td>${ow}<td class="bal ${bal < 0 ? 'neg' : 'pos'}">${future && !dayInc && !dayExp && !dayOw ? '' : (fmt(bal) || 0)}</td></tr>`;
+    }
+    h += `</tbody></table></div><p style="font-size:12.5px;color:var(--muted);margin-top:8px">💡 "ترحيل" = اللي في الخزن أول الشهر · الأعمدة الخضرا = داخل · البنفسجي = مسحوبات (بيتر / شادي...) · "خزنة باقي" = الترحيل + الداخل − المصروف − المسحوبات لحد اليوم ده. التحويل بين الحسابات مش بيظهر هنا.</p>`;
+    if(S.pop) h += popHtml(C);
+    return h;
+  }
+  function popHtml(C){
+    const P = S.pop, all = [...C.inc, ...C.exp, ...C.ow], c = all.find(x => x.k === P.k) || P.newCol;
+    if(P.addCol) return `<div class="gs-pop" id="gsPop"><div class="gs-box"><h3>➕ عمود جديد</h3>
+      <div class="row"><div><label>اسم البند</label><input id="gcCat" placeholder="مثلاً: برامج / نقل وليد / بيتر"></div><div><label>النوع</label><select id="gcKind"><option value="expense">مصروف</option><option value="income">داخل (تحصيل / مبيعات)</option></select></div></div>
+      <div class="row"><div><label>الخزنة (البراند)</label><select id="gcBr">${BR.map(b => `<option value="${b.route}">${b.short}</option>`).join('')}</select></div><div></div></div>
+      <p style="font-size:12.5px;color:var(--muted)">لو اسمه فيه "بيتر" أو "شادي" أو "سحب" بيتحط مع المسحوبات.</p>
+      <div style="display:flex;gap:8px;margin-top:12px"><button class="gs-btn" id="gcSave" style="background:#1f3d36;color:#fff">💾 ضيف</button><button class="gs-btn" data-gsclose>إلغاء</button></div></div></div>`;
+    const L = cellRows(c, P.d), dl = new Date(P.d + 'T12:00:00').toLocaleDateString('ar-EG', { weekday:'long', day:'numeric', month:'long' });
+    const methods = (window.AccAPI && window.AccAPI[c.b.route] && window.AccAPI[c.b.route].METHODS) || ['كاش', 'فودافون كاش', 'إنستاباي', 'تحويل بنكي'];
+    return `<div class="gs-pop" id="gsPop"><div class="gs-box"><h3>${esc(c.cat)}${c.br ? ' · ' + esc(c.br) : ''} — ${esc(dl)}</h3>
+      ${L.length ? `<table>${L.map(r => `<tr><td>${esc(r.item || '—')}</td><td>${esc(r.method || '')}</td><td><b>${fmt(r.amount)}</b></td><td style="font-size:12px;color:var(--muted)">${esc(r.created_by_name || '')}</td><td><button class="gs-btn" data-gsdel="${r.id}" data-gstb="${esc(r._b.table)}" style="padding:3px 8px">🗑️</button></td></tr>`).join('')}
+        <tr><td colspan="2"><b>الإجمالي</b></td><td><b>${fmt(sumRows(L))}</b></td><td colspan="2"></td></tr></table>` : '<p style="color:var(--muted);margin:0">الخانة فاضية.</p>'}
+      <div class="row"><div><label>المبلغ</label><input id="gpAmt" inputmode="decimal" autofocus></div><div><label>طريقة الدفع / الخزنة</label><select id="gpMeth">${methods.map(m => `<option>${esc(m)}</option>`).join('')}</select></div></div>
+      <div style="margin-top:8px"><label>ملاحظة (اختياري)</label><input id="gpItem" placeholder="${esc(c.cat)}"></div>
+      <div style="display:flex;gap:8px;margin-top:12px"><button class="gs-btn" id="gpSave" style="background:#1f3d36;color:#fff">➕ ضيف</button><button class="gs-btn" data-gsclose>قفل</button></div></div></div>`;
+  }
+  async function addEntry(c, d){
+    const amt = num(document.getElementById('gpAmt').value); if(!(amt > 0)) return alert('اكتب المبلغ.');
+    const row = { entry_date:d, kind:c.kind, category:c.cat, item:(document.getElementById('gpItem').value || '').trim() || c.cat, amount:amt, method:document.getElementById('gpMeth').value, created_by_name:me().full_name || me().username || '' };
+    const { error } = await sb().from(c.b.table).insert(row);
+    if(error) return alert('ماتسجلش: ' + error.message);
+    S.pop = null; load();
+  }
+  function draw(){
+    if(!isGS()) return;
+    const main = document.getElementById('main'); if(!main) return;
+    const wrap = main.querySelector('.gs-wrap'), sx = wrap ? wrap.scrollLeft : 0, sy = wrap ? wrap.scrollTop : 0;
+    main.innerHTML = view();
+    const w2 = main.querySelector('.gs-wrap'); if(w2){ w2.scrollLeft = sx; w2.scrollTop = sy; }
+    const $ = id => document.getElementById(id);
+    if($('gsMonth')) $('gsMonth').onchange = e => { S.month = e.target.value; load(); };
+    if($('gsBrand')) $('gsBrand').onchange = e => { S.brand = e.target.value; load(); };
+    if($('gsRe')) $('gsRe').onclick = load;
+    if($('gsAddCol')) $('gsAddCol').onclick = () => { S.pop = { addCol:true }; draw(); };
+    if($('gcSave')) $('gcSave').onclick = () => { const cat = $('gcCat').value.trim(); if(!cat) return alert('اكتب اسم البند.');
+      const L = extra(); L.push({ cat, kind:$('gcKind').value, route:$('gcBr').value }); localStorage.setItem(COLS_KEY, JSON.stringify(L)); S.pop = null; draw(); };
+    document.querySelectorAll('[data-gc]').forEach(td => td.onclick = () => { S.pop = { k:td.dataset.gc, d:td.dataset.gd }; draw(); setTimeout(() => { const a = $('gpAmt'); if(a) a.focus(); }, 30); });
+    document.querySelectorAll('[data-gsclose]').forEach(b => b.onclick = () => { S.pop = null; draw(); });
+    if($('gsPop')) $('gsPop').onclick = e => { if(e.target.id === 'gsPop'){ S.pop = null; draw(); } };
+    if($('gpSave')) $('gpSave').onclick = () => { const C = columns(), c = [...C.inc, ...C.exp, ...C.ow].find(x => x.k === S.pop.k); if(c) addEntry(c, S.pop.d); };
+    if($('gpAmt')) $('gpAmt').onkeydown = e => { if(e.key === 'Enter') $('gpSave').click(); };
+    document.querySelectorAll('[data-gsdel]').forEach(b => b.onclick = async () => { if(!confirm('تمسح العملية دي؟')) return;
+      const { error } = await sb().from(b.dataset.gstb).delete().eq('id', b.dataset.gsdel); if(error) return alert('ماتمسحتش: ' + error.message); load(); });
+    if($('gsX')) $('gsX').onclick = () => {
+      const C = columns(), all = [...C.inc, ...C.exp, ...C.ow], [y, m] = S.month.split('-').map(Number), days = new Date(y, m, 0).getDate();
+      const H = ['اليوم', ...C.inc.map(c => c.cat + (c.br ? ' ' + c.br : '')), ...C.exp.map(c => c.cat + (c.br ? ' ' + c.br : '')), 'إجمالي المصروف', ...C.ow.map(c => c.cat + (c.br ? ' ' + c.br : '')), 'خزنة باقي'];
+      let bal = S.open; const aoa = [H, ['ترحيل', ...all.map(() => ''), '', bal]];
+      for(let d = 1; d <= days; d++){ const k = S.month + '-' + String(d).padStart(2, '0'); let i = 0, e = 0, o = 0;
+        const v = c => { const x = sumRows(cellRows(c, k)); if(c.kind === 'income') i += x; else if(C.ow.includes(c)) o += x; else e += x; return x || ''; };
+        const r = [d, ...C.inc.map(v), ...C.exp.map(v)]; r.push(e || ''); C.ow.forEach(c => r.push(v(c))); bal += i - e - o; r.push(bal); aoa.push(r); }
+      const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), S.month); XLSX.writeFile(wb, `شيت الحسابات ${S.month}.xlsx`);
+    };
+  }
+  function mount(){ document.querySelectorAll('#sidebar a.navlink').forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#/accounts')); draw(); load(); }
+  const _render = render;
+  render = function(){ _render.apply(this, arguments); if(isGS()) mount(); };
+  window.addEventListener('hashchange', () => { if(isGS()) setTimeout(mount, 0); });
+  const w = setInterval(() => { if(me().id && sb()){ clearInterval(w); if(isGS()) mount(); } }, 700);
 })();
 </script>
 
