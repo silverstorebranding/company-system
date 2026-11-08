@@ -1929,7 +1929,7 @@ const Squad = (function(){
      💰 العمولة
      - order     = عمولة الأوردر وهو لسه قيد التنفيذ
      - delivered = عمولة التسليم (بتحل مكان عمولة الأوردر، مش بتتجمع عليها)
-     - أي أوردر سعره أكبر من 625 ج: عمولة التسليم بتاعته = 30 ج (HIGH_PRICE / HIGH_COMM تحت)
+     - عمولة التسليم حسب السعر: 625 أو أقل = 15 · لحد 1100 = 20 · لحد 1500 = 25 · لحد 2000 = 35 · فوق 2000 = يدوي (COMM_TIERS تحت)
      - عمولة أي أوردر ماتسلمش (قيد التنفيذ / اندلفرد / ملغي): 5 ج ثابت (NOT_DELIVERED_COMM) — مستحقة بس لو نسبة التسليم عدّت 50%
      - 💰 العمولة الإجمالية = عمولة اللي اتسلم + عمولة كل الأوردرات اللي قيد التنفيذ (من غير شرط)
      - ✅ العمولة المستحقة = عمولة اللي اتسلم + عمولة قيد التنفيذ، بس لو نسبة تسليمات الموظف عدّت 50%
@@ -1948,12 +1948,17 @@ const Squad = (function(){
     'إرسال صفحة':  { order:10, delivered:30 },
   };
   const MIN_RATE = 0.5;
-  // 💰 عمولة التسليم للأوردرات الغالية: لو سعر الأوردر أكبر من 625 ج، عمولة التسليم = 30 ج
-  const HIGH_PRICE = 625, HIGH_COMM = 30;
-  // عمولة التسليم حسب المصدر والسعر (لو المصدر عمولته أعلى من 30 أصلاً بتفضل زي ما هي)
+  // 💰 عمولة الأوردر المتسلم حسب سعره (بأثر رجعي على كل الأوردرات):
+  //   625 أو أقل = 15 · من 626 لـ 1100 = 20 · من 1101 لـ 1500 = 25 · من 1501 لـ 2000 = 35
+  //   أكتر من 2000 = الأدمن بيكتب عمولته بإيده (manual_commission) — ولحد ما يكتبها = 0
+  const HIGH_PRICE = 625, MANUAL_FROM = 2000;
+  const COMM_TIERS = [ [625, 15], [1100, 20], [1500, 25], [2000, 35] ];
+  const isManualComm = o => Number(o && o.amount) > MANUAL_FROM;
   const deliveredFor = o => {
-    const base = rulesFor(o).delivered;
-    return Number(o && o.amount) > HIGH_PRICE ? Math.max(base, HIGH_COMM) : base;
+    const amt = Number(o && o.amount) || 0;
+    if(amt > MANUAL_FROM) return Number(o.manual_commission) || 0;
+    const t = COMM_TIERS.find(([mx]) => amt <= mx)[1];
+    return (o && o.page_name === 'إرسال صفحة') ? Math.max(30, t) : t;   // إرسال صفحة مالهاش أقل من 30 (زي ما كانت)
   };
 
   // النظام القديم (حسب السعر) — للأوردرات اللي قبل RULES_FROM بس
@@ -2373,7 +2378,11 @@ const Squad = (function(){
   async function loadLeaderboard(){
     setState({ boardLoading:true });
     const R = monthRange(state.month);
-    const { data, error } = await allPages(() => sb.from('orders').select('agent_id, status, amount, commission, page_name, created_at').gte('created_at', R.from).lt('created_at', R.to).order('created_at', { ascending:true }));
+    let { data, error } = await allPages(() => sb.from('orders').select('agent_id, status, amount, commission, manual_commission, page_name, created_at').gte('created_at', R.from).lt('created_at', R.to).order('created_at', { ascending:true }));
+    if(error && /manual_commission/.test(error.message || '')) ({ data, error } = await allPages(() => sb.from('orders').select('agent_id, status, amount, commission, page_name, created_at').gte('created_at', R.from).lt('created_at', R.to).order('created_at', { ascending:true })));
+    // ✍️ أوردرات اتسلمت فوق 2000 ج ومستنية عمولة يدوي (للأدمن)
+    if(isAdminUser()){ try{ const r = await sb.from('orders').select('*').eq('status', 'delivered').gt('amount', MANUAL_FROM).gte('created_at', R.from).lt('created_at', R.to);
+      state.manualList = (r.data || []).filter(o => o.manual_commission === null || o.manual_commission === undefined); state.manualMissingCol = !!(r.data && r.data[0] && !('manual_commission' in r.data[0])); }catch(e){} }
     if(error){ setState({ boardLoading:false, boardError:'مقدرناش نجيب بيانات اللوحة.' }); return; }
     const { data: profiles } = await sb.from('profiles').select('id, username, full_name');
     const nameMap = {};
@@ -2604,7 +2613,10 @@ const Squad = (function(){
   }
 
   function commCell(o, active){
-    if(o.status === 'delivered') return `<b>${deliveredCommission(o)} ج</b>`;
+    if(o.status === 'delivered' && isManualComm(o) && (o.manual_commission === null || o.manual_commission === undefined || o.manual_commission === ''))
+      return isAdminUser() ? `<span style="white-space:nowrap"><input type="number" min="0" data-mcomm="${esc(o.id)}" placeholder="✍️ اكتب" style="width:70px;padding:3px 6px;border:1.5px solid #e0a020;border-radius:6px;font-family:inherit"> <button class="sq-icon" data-mcomm-save="${esc(o.id)}" title="احفظ العمولة">💾</button></span>`
+        : `<span style="color:#b7791f;font-weight:700" title="أوردر فوق 2000 ج — الأدمن هيكتب عمولته">✍️ مستني الأدمن</span>`;
+    if(o.status === 'delivered') return `<b>${deliveredCommission(o)} ج</b>${isManualComm(o) ? ' <small style="color:var(--muted)">✍️</small>' : ''}`;
     const c = pendingCommission(o);
     if(!c) return '—';
     return active ? `${c} ج` : `<span title="مش مستحقة لحد ما نسبة التسليم تعدّي 50%" style="opacity:.55">${c} ج</span>`;
@@ -3294,10 +3306,17 @@ const Squad = (function(){
     XLSX.writeFile(wb, `أوردرات ${a.name || ''} ${localYmd(new Date())}.xlsx`);
   }
 
+  function manualCard(){
+    const L = state.manualList || []; if(!isAdminUser() || (!L.length && !state.manualMissingCol)) return '';
+    if(state.manualMissingCol) return `<div class="sq-commnote off"><b>✍️ عمولة الأوردرات فوق 2000 ج:</b> شغّل ملف orders_manual_commission.sql في Supabase الأول.</div>`;
+    return `<div class="sq-commnote off"><b>✍️ ${L.length} أوردر اتسلموا فوق 2000 ج ومستنيين تكتب عمولتهم</b> (لحد ما تكتبها عمولتهم = 0)
+      <div class="sq-tablecard" style="margin-top:8px"><table class="sq-table"><thead><tr><th>الموظفة</th><th>العميل</th><th>السعر</th><th>التاريخ</th><th>العمولة</th></tr></thead><tbody>
+      ${L.map(o => `<tr><td>${esc(profileNameMap[o.agent_id] || '—')}</td><td>${esc(o.customer_name || '')}</td><td><b>${Number(o.amount).toLocaleString('ar-EG')} ج</b></td><td>${esc(new Date(o.created_at).toLocaleDateString('ar-EG', { day:'numeric', month:'short' }))}</td><td>${commCell(o, true)}</td></tr>`).join('')}</tbody></table></div></div>`;
+  }
   function LeaderboardView(){
     if(!state.board) return head('ترتيب الـSquad', 'ترتيب حسب عدد الأوردرات اللي اتسلمت.') + `<div class="sq-loading">بنجيب النتائج...</div>`;
     const rows = state.board;
-    return head('ترتيب الـSquad', 'ترتيب حسب عدد الأوردرات اللي اتسلمت.') + `
+    return head('ترتيب الـSquad', 'ترتيب حسب عدد الأوردرات اللي اتسلمت.') + manualCard() + `
       <div class="sq-tablecard">
         <div class="sq-board-row head"><div>#</div><div>الاسم</div><div class="c">إجمالي</div><div class="c">اتسلم</div><div class="c">قيمة اللي اتسلم</div><div class="c">العمولة الإجمالية</div><div class="c">العمولة المستحقة</div></div>
         ${rows.length ? rows.map((r,i) => `
@@ -3555,6 +3574,14 @@ grant select, insert, update, delete on public.office_sales to authenticated;`;
 
   function wireAppEvents(){
     const $ = id => document.getElementById(id);
+    document.querySelectorAll('[data-mcomm-save]').forEach(b => b.onclick = async () => {
+      const id = b.dataset.mcommSave, inp = document.querySelector(`[data-mcomm="${id}"]`), v = parseFloat(inp && inp.value);
+      if(!(v >= 0)) return alert('اكتب العمولة (رقم).');
+      const { error } = await sb.from('orders').update({ manual_commission:v }).eq('id', id);
+      if(error) return alert(/manual_commission/.test(error.message) ? 'شغّل ملف orders_manual_commission.sql في Supabase الأول.' : 'ماتحفظتش: ' + error.message);
+      state.manualList = (state.manualList || []).filter(o => String(o.id) !== String(id));
+      loadLeaderboard(); loadMyOrders(); if(state.view === 'agent-orders' && state.viewAgent) openAgent(state.viewAgent.id, state.viewAgent.name);
+    });
     const msel = document.getElementById('sqMonth');
     if(msel) msel.onchange = () => { state.month = msel.value; setState({ myOrders:null, board:null }); loadMyOrders(); loadLeaderboard(); if(state.view === 'agent-orders' && state.viewAgent) openAgent(state.viewAgent.id, state.viewAgent.name); };
     document.querySelectorAll('[data-sqnav]').forEach(btn => {
