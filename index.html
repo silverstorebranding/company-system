@@ -300,11 +300,12 @@ input.plainIn{padding:6px 10px;border:1px solid var(--line);border-radius:6px;wi
   #sq-root .sq-table tbody td::before{content:attr(data-label);font-size:12px;font-weight:600;color:var(--muted);flex-shrink:0}
 }
 
-#sq-root .sq-board-row{display:grid;grid-template-columns:44px 1fr 70px 70px 120px 100px 100px;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--line)}
+#sq-root .sq-qpnote{padding:6px 18px;font-size:12.5px;color:var(--muted);background:var(--slate-l)}
+#sq-root .sq-board-row{display:grid;grid-template-columns:44px 1fr 60px 60px 60px 66px 70px 110px 100px 100px;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--line)}
 #sq-root .sq-board-row:last-child{border-bottom:none}
 #sq-root .sq-board-row.head{background:var(--slate-l);font-size:12px;font-weight:600;color:var(--muted);padding:11px 18px}
 #sq-root .sq-board-row .c{text-align:center}
-@media (max-width:640px){#sq-root .sq-board-row{grid-template-columns:24px 1fr 38px 38px 72px 58px 58px;padding:12px 10px;gap:6px;font-size:13px}}
+@media (max-width:640px){#sq-root .sq-board-row{grid-template-columns:24px 1fr 34px 34px 34px 34px 34px 64px 54px 54px;padding:12px 10px;gap:6px;font-size:13px}}
 #sq-root .sq-rank{width:30px;height:30px;border-radius:50%;background:var(--paper);color:var(--muted);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px}
 #sq-root .sq-rank.r1{background:#f4e3b0;color:#7a5a0e}
 #sq-root .sq-rank.r2{background:#e4e8ec;color:#4b5a6b}
@@ -2378,8 +2379,10 @@ const Squad = (function(){
   async function loadLeaderboard(){
     setState({ boardLoading:true });
     const R = monthRange(state.month);
-    let { data, error } = await allPages(() => sb.from('orders').select('agent_id, status, amount, commission, manual_commission, page_name, created_at').gte('created_at', R.from).lt('created_at', R.to).order('created_at', { ascending:true }));
-    if(error && /manual_commission/.test(error.message || '')) ({ data, error } = await allPages(() => sb.from('orders').select('agent_id, status, amount, commission, page_name, created_at').gte('created_at', R.from).lt('created_at', R.to).order('created_at', { ascending:true })));
+    let { data, error } = await allPages(() => sb.from('orders').select('id, agent_id, status, amount, commission, manual_commission, page_name, created_at, customer_phone').gte('created_at', R.from).lt('created_at', R.to).order('created_at', { ascending:true }));
+    if(error && /manual_commission/.test(error.message || '')) ({ data, error } = await allPages(() => sb.from('orders').select('id, agent_id, status, amount, commission, page_name, created_at, customer_phone').gte('created_at', R.from).lt('created_at', R.to).order('created_at', { ascending:true })));
+    state.boardOrders = data || []; state.boardQP = null;
+    setTimeout(boardQP, 0);
     // ✍️ أوردرات اتسلمت فوق 2000 ج ومستنية عمولة يدوي (للأدمن)
     if(isAdminUser()){ try{ const r = await sb.from('orders').select('*').eq('status', 'delivered').gt('amount', MANUAL_FROM).gte('created_at', R.from).lt('created_at', R.to);
       state.manualList = (r.data || []).filter(o => o.manual_commission === null || o.manual_commission === undefined); state.manualMissingCol = !!(r.data && r.data[0] && !('manual_commission' in r.data[0])); }catch(e){} }
@@ -3306,6 +3309,28 @@ const Squad = (function(){
     XLSX.writeFile(wb, `أوردرات ${a.name || ''} ${localYmd(new Date())}.xlsx`);
   }
 
+  /* 📦 لكل موظفة: كام أوردر هولد / اندلفرد / مش موجود في QP (بموبايل العميل) */
+  async function boardQP(force){
+    const api = qpApi(); if(!api || !api.hasCreds()){ state.boardQP = { noCreds:true }; render(); return; }
+    if(state.boardQPBusy && !force) return; state.boardQPBusy = true;
+    try{
+      const R = monthRange(state.month), qFrom = localYmd(new Date(new Date(R.from).getTime() - 2 * DAY));
+      const qp = await (api.fetchRangeAll || api.fetchRange)(qFrom, localYmd(new Date()));
+      const idx = {}; qp.forEach(q => [q.phone, q.phone2, q.customer_phone].forEach(ph => { const k = phoneKey(ph); if(!k) return; (idx[k] = idx[k] || []); if(!idx[k].includes(q)) idx[k].push(q); }));
+      const by = {};
+      (state.boardOrders || []).forEach(o => { const a = by[o.agent_id] = by[o.agent_id] || { hold:0, undel:0, miss:0, ship:0 };
+        if(o.status === 'delivered' || o.status === 'cancelled') return;
+        const t0 = new Date(o.created_at).getTime(), c = (idx[phoneKey(o.customer_phone)] || []).filter(q => { const t = new Date(q.order_date).getTime(); return isNaN(t) || (t >= t0 - 1.5 * DAY && t <= t0 + 30 * DAY); });
+        if(!c.length){ if(o.status === 'undelivered') a.undel++; else a.miss++; return; }
+        const cats = c.map(q => api.category(q));
+        if(cats.includes('delivered')) a.ship++;                          // اتسلم في QP (لسه ماتعلّمش هنا)
+        else if(c.some(q => /hold/i.test(String(api.label(q))) || String(q.Order_Delivery_Status) === '4')) a.hold++;
+        else if(cats.every(x => x === 'undelivered') || o.status === 'undelivered') a.undel++;
+        else a.ship++; });
+      state.boardQP = by;
+    }catch(e){ state.boardQP = { err:e.message }; }
+    state.boardQPBusy = false; render();
+  }
   function manualCard(){
     const L = state.manualList || []; if(!isAdminUser() || (!L.length && !state.manualMissingCol)) return '';
     if(state.manualMissingCol) return `<div class="sq-commnote off"><b>✍️ عمولة الأوردرات فوق 2000 ج:</b> شغّل ملف orders_manual_commission.sql في Supabase الأول.</div>`;
@@ -3318,7 +3343,8 @@ const Squad = (function(){
     const rows = state.board;
     return head('ترتيب الـSquad', 'ترتيب حسب عدد الأوردرات اللي اتسلمت.') + manualCard() + `
       <div class="sq-tablecard">
-        <div class="sq-board-row head"><div>#</div><div>الاسم</div><div class="c">إجمالي</div><div class="c">اتسلم</div><div class="c">قيمة اللي اتسلم</div><div class="c">العمولة الإجمالية</div><div class="c">العمولة المستحقة</div></div>
+        <div class="sq-board-row head"><div>#</div><div>الاسم</div><div class="c">إجمالي</div><div class="c">اتسلم</div><div class="c" title="من QP">✋ هولد</div><div class="c" title="من QP أو متعلّم هنا">💔 اندلفرد</div><div class="c" title="الموبايل مش لاقيه في QP">❓ مش في QP</div><div class="c">قيمة اللي اتسلم</div><div class="c">العمولة الإجمالية</div><div class="c">العمولة المستحقة</div></div>
+        ${(() => { const Q = state.boardQP; return !Q ? '<div class="sq-qpnote">⏳ بيقارن بـ QP عشان الهولد والاندلفرد...</div>' : Q.noCreds ? '<div class="sq-qpnote">الهولد والاندلفرد ومش في QP محتاجين دخول QP على الجهاز ده (من قسم 🚚 QP).</div>' : Q.err ? `<div class="sq-qpnote">مقدرتش أقارن بـ QP: ${esc(Q.err)}</div>` : ''; })()}
         ${rows.length ? rows.map((r,i) => `
           <div class="sq-board-row">
             <div class="sq-rank ${i===0?'r1':i===1?'r2':i===2?'r3':''}">${i+1}</div>
@@ -3327,6 +3353,8 @@ const Squad = (function(){
               ${canViewAll() ? `<button type="button" class="sq-viewbtn" data-view-agent="${esc(r.id)}" data-agent-name="${esc(r.name)}">👁 عرض الأوردرات</button>` : ''}</div>
             <div class="sq-metric c">${r.total}</div>
             <div class="sq-metric c">${r.delivered}</div>
+            ${(() => { const Q = state.boardQP, x = Q && !Q.noCreds && !Q.err ? (Q[r.id] || { hold:0, undel:0, miss:0 }) : null; const cel = (v, c) => `<div class="sq-metric c" style="color:${v ? c : 'var(--muted)'}">${x ? v : '—'}</div>`;
+              return cel(x && x.hold, '#2b6cb0') + cel(x && x.undel, '#b3261e') + cel(x && x.miss, '#8a5a00'); })()}
             <div class="sq-metric green c">${money(r.delValue)}${valBreak(r, true)}</div>
             <div class="sq-metric dim c">${r.totalComm} ج${commBreak(r, false, true)}</div>
             <div class="sq-metric gold c">${r.dueComm} ج${r.active ? '' : '<small class="sq-under50">تحت 50%</small>'}${commBreak(r, true, true)}</div>
@@ -3334,6 +3362,7 @@ const Squad = (function(){
             const T = rows.reduce((a, r) => ({ total:a.total + r.total, delivered:a.delivered + r.delivered, delValue:a.delValue + (r.delValue || 0), totalComm:a.totalComm + r.totalComm, dueComm:a.dueComm + r.dueComm }), { total:0, delivered:0, delValue:0, totalComm:0, dueComm:0 });
             return `<div class="sq-board-row head" style="font-size:13.5px;color:var(--ink)"><div></div><div><b>الإجمالي</b></div>
               <div class="c"><b>${T.total}</b></div><div class="c"><b>${T.delivered}</b></div>
+              ${(() => { const Q = state.boardQP, ok = Q && !Q.noCreds && !Q.err, sum = k => ok ? Object.values(Q).reduce((a, x) => a + (x[k] || 0), 0) : '—'; return `<div class="c"><b>${sum('hold')}</b></div><div class="c"><b>${sum('undel')}</b></div><div class="c"><b>${sum('miss')}</b></div>`; })()}
               <div class="c"><b>${money(T.delValue)}</b></div><div class="c"><b>${Math.round(T.totalComm * 100) / 100} ج</b></div><div class="c"><b>${Math.round(T.dueComm * 100) / 100} ج</b></div></div>`;
           })() : `<div class="sq-empty">لسه مفيش أوردرات متسجلة من حد.</div>`}
       </div>`;
