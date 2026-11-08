@@ -300,12 +300,26 @@ input.plainIn{padding:6px 10px;border:1px solid var(--line);border-radius:6px;wi
   #sq-root .sq-table tbody td::before{content:attr(data-label);font-size:12px;font-weight:600;color:var(--muted);flex-shrink:0}
 }
 
+#sq-root .sq-perf{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin-bottom:16px}
+#sq-root .pf-box{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 16px}
+#sq-root .pf-t{font-size:13px;color:var(--muted);font-weight:600}
+#sq-root .pf-n{font-size:28px;font-weight:800;margin:2px 0 6px}#sq-root .pf-n small{font-size:13px;font-weight:500;color:var(--muted)}
+#sq-root .pf-bar{position:relative;height:8px;background:var(--line);border-radius:5px;margin-bottom:8px}
+#sq-root .pf-bar i{display:block;height:100%;background:#2f7d55;border-radius:5px}
+#sq-root .pf-bar .avg{position:absolute;top:-3px;width:2px;height:14px;background:var(--ink);opacity:.5}
+#sq-root .pf-s{font-size:13px;color:var(--muted);margin-top:2px}#sq-root .pf-s b{color:var(--ink)}
+#sq-root .pf-lv{display:inline-block;margin:6px 0 4px;padding:5px 12px;border-radius:10px;font-size:15px;font-weight:700}
+#sq-root .pf-lv b{font-size:17px}
+#sq-root .pf-lv.low{background:#fdecea;color:#a3271a}#sq-root .pf-lv.mid{background:#fff3cd;color:#8a5a00}#sq-root .pf-lv.high{background:#e3f3e8;color:#23784a}
+#sq-root .pf-act{font-size:13px;font-weight:600;margin-bottom:2px}
+#sq-root .pf-act.low{color:#a3271a}#sq-root .pf-act.mid{color:#8a5a00}#sq-root .pf-act.high{color:#23784a}
+#sq-root .pf-note{margin-top:8px;font-size:13.5px;color:#2f7d55;font-weight:600}
 #sq-root .sq-qpnote{padding:6px 18px;font-size:12.5px;color:var(--muted);background:var(--slate-l)}
-#sq-root .sq-board-row{display:grid;grid-template-columns:44px 1fr 60px 60px 60px 66px 70px 110px 100px 100px;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--line)}
+#sq-root .sq-board-row{display:grid;grid-template-columns:40px 1fr 56px 56px 64px 56px 64px 64px 104px 96px 96px;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--line)}
 #sq-root .sq-board-row:last-child{border-bottom:none}
 #sq-root .sq-board-row.head{background:var(--slate-l);font-size:12px;font-weight:600;color:var(--muted);padding:11px 18px}
 #sq-root .sq-board-row .c{text-align:center}
-@media (max-width:640px){#sq-root .sq-board-row{grid-template-columns:24px 1fr 34px 34px 34px 34px 34px 64px 54px 54px;padding:12px 10px;gap:6px;font-size:13px}}
+@media (max-width:640px){#sq-root .sq-board-row{grid-template-columns:22px 1fr 30px 30px 30px 30px 30px 30px 58px 50px 50px;padding:12px 10px;gap:6px;font-size:13px}}
 #sq-root .sq-rank{width:30px;height:30px;border-radius:50%;background:var(--paper);color:var(--muted);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px}
 #sq-root .sq-rank.r1{background:#f4e3b0;color:#7a5a0e}
 #sq-root .sq-rank.r2{background:#e4e8ec;color:#4b5a6b}
@@ -2244,11 +2258,13 @@ const Squad = (function(){
       await sb.from('profiles').upsert({ id: session.user.id, username });
       profile = { id: session.user.id, username };
     }
-    const view = pendingView || 'dashboard';
+    const pv = pendingView;
     pendingView = null;
     // 👁️ لو الأدمن بيتفرج كأنه حد تاني: نستنى بوابة الدخول تحدد مين، وبعدين نجيب بياناته هو
     // نستنى بوابة الدخول تعرف مين (عشان تابات الأدمن و"اتفرج كأنك" يظهروا صح من أول مرة)
     for(let i = 0; i < 50 && !(window.AuthGate && window.AuthGate.me && window.AuthGate.me()); i++) await new Promise(r => setTimeout(r, 100));
+    // 👑 الأدمن بيفتح Squad على ترتيب الـ Squad، والموظفات على لوحتهم
+    const view = pv || (isAdminUser() ? 'leaderboard' : 'dashboard');
     setState({ loading:false, session, profile, view, error:'' });
     loadMyOrders();
     loadLeaderboard();
@@ -2628,6 +2644,49 @@ const Squad = (function(){
 
   // 💳 زرار التحويل (إنستاباي / فودافون كاش) — الشغل كله في موديول التحويلات تحت
   const trBtnHtml = o => `<button type="button" class="tr-btn" data-tr-id="${esc(o.id)}" data-tr-name="${esc(o.customer_name || '')}" data-tr-phone="${esc(o.customer_phone || '')}" data-tr-amount="${esc(o.amount || '')}" data-tr-page="${esc(o.page_name || '')}" data-tr-agent="${esc(o.agent_id || '')}" data-tr-agent-name="${esc(o.agent_name || '')}">💳 تحويل</button>`;
+  /* 📊 أداؤك مقارنة بالفريق — النهارده والشهر (هادي ومن غير مبالغة) */
+  function PerfCard(){
+    const me0 = sqUid(), T = todayOrders || [], byT = {};
+    T.forEach(o => { byT[o.agent_id] = (byT[o.agent_id] || 0) + 1; });
+    (state.board || []).forEach(r => { if(!(r.id in byT)) byT[r.id] = 0; }); if(!(me0 in byT)) byT[me0] = 0;
+    const ids = Object.keys(byT), vals = ids.map(i => byT[i]), mine = byT[me0] || 0, n = ids.length;
+    const top = Math.max(0, ...vals), avg = n ? vals.reduce((a, v) => a + v, 0) / n : 0;
+    const rank = 1 + vals.filter(v => v > mine).length;
+    const B = state.board || [], meB = B.find(r => r.id === me0);
+    const rates = B.filter(r => r.total >= 3).map(r => r.delRate || 0), teamRate = rates.length ? rates.reduce((a, v) => a + v, 0) / rates.length : null;
+    const myRate = meB ? (meB.delRate || 0) : null, mRank = meB ? 1 + B.filter(r => r.delivered > meB.delivered).length : null;
+    const pct = top ? Math.round(mine / top * 100) : 0, gap = Math.max(0, Math.ceil(avg) - mine);
+    // 🎯 مستوى الأداء النهارده مقارنة بمتوسط الفريق
+    const ratio = avg ? mine / avg : (mine ? 2 : 0);
+    const LV = !mine || ratio < 0.7 ? { t:'منخفض', c:'low', e:'🔴' } : ratio <= 1.2 ? { t:'متوسط', c:'mid', e:'🟡' } : { t:'عالي', c:'high', e:'🟢' };
+    // ⚡ النشاط: من إمتى آخر أوردر
+    const myT = T.filter(o => o.agent_id === me0).map(o => new Date(o.created_at).getTime()).sort((a, b) => b - a);
+    const mins = myT.length ? Math.round((Date.now() - myT[0]) / 60000) : null;
+    const ago = mins == null ? '' : mins < 60 ? `${mins} دقيقة` : `${Math.floor(mins / 60)} ساعة${mins % 60 >= 10 ? ' و' + (mins % 60) + ' دقيقة' : ''}`;
+    const ACT = mins == null ? { t:'مفيش نشاط النهارده', c:'low', e:'⚪' } : mins <= 60 ? { t:'نشطة', c:'high', e:'⚡' } : mins <= 180 ? { t:'هادية', c:'mid', e:'⏸️' } : { t:'متوقفة', c:'low', e:'💤' };
+    // مستوى التسليم في الشهر
+    const RL = myRate == null || teamRate == null ? null : myRate < teamRate - 0.05 ? { t:'منخفض', c:'low', e:'🔴' } : myRate <= teamRate + 0.05 ? { t:'متوسط', c:'mid', e:'🟡' } : { t:'عالي', c:'high', e:'🟢' };
+    const note = !mine ? 'لسه مفيش أوردرات النهارده — أول أوردر بيفرق 🙂'
+      : rank === 1 && mine === top ? 'إنتي في الأول النهارده 👏'
+      : mine >= avg ? 'فوق متوسط الفريق النهارده — كمّلي كده'
+      : `فاضلك ${gap} ${gap === 1 ? 'أوردر' : 'أوردرات'} وتوصلي لمتوسط الفريق النهارده`;
+    const rateNote = myRate == null || teamRate == null ? '' : myRate >= teamRate ? 'نسبة تسليمك أحسن من متوسط الفريق 👍' : 'نسبة تسليمك أقل من متوسط الفريق — المتابعة مع العملاء بتفرق';
+    return `<div class="sq-perf">
+      <div class="pf-box"><div class="pf-t">📅 أداؤك النهارده</div>
+        <div class="pf-lv ${LV.c}">${LV.e} أداؤك النهارده <b>${LV.t}</b></div>
+        <div class="pf-act ${ACT.c}">${ACT.e} ${ACT.t}${ago ? ` — آخر أوردر من ${ago}` : ''}</div>
+        <div class="pf-n">${mine}<small> أوردر</small></div>
+        <div class="pf-bar"><i style="width:${pct}%"></i><span class="avg" style="right:${top ? Math.min(100, avg / top * 100) : 0}%" title="متوسط الفريق"></span></div>
+        <div class="pf-s">ترتيبك <b>${rank}</b> من ${n} · متوسط الفريق ${avg.toFixed(1)} · الأعلى ${top}</div>
+        <div class="pf-note">${note}</div></div>
+      <div class="pf-box"><div class="pf-t">🗓️ الشهر ده</div>
+        ${RL ? `<div class="pf-lv ${RL.c}">${RL.e} مستوى التسليم <b>${RL.t}</b></div>` : ''}
+        <div class="pf-n">${meB ? meB.delivered : 0}<small> اتسلم</small></div>
+        <div class="pf-s">ترتيبك في التسليم <b>${mRank || '—'}</b> من ${B.length || '—'}</div>
+        <div class="pf-s">نسبة تسليمك <b>${myRate == null ? '—' : Math.round(myRate * 100) + '%'}</b> · متوسط الفريق ${teamRate == null ? '—' : Math.round(teamRate * 100) + '%'}</div>
+        ${rateNote ? `<div class="pf-note">${rateNote}</div>` : ''}</div>
+    </div>`;
+  }
   function DashboardView(){
     const orders = state.myOrders || [];
     const s = withOffice(commissionSummary(orders), sqUid());
@@ -2661,7 +2720,7 @@ const Squad = (function(){
     }).join('');
 
     return head(`أهلاً، ${esc(sqProf()?.full_name || sqProf()?.username || '')}`, 'ده ملخص أدائك وكل الأوردرات اللي رفعتها.') + `
-      ${HypeBanner()}
+      ${PerfCard()}
       <div class="sq-stats">
         <div class="sq-stat" style="border-top:4px solid var(--brass)"><div class="n gold">${todayCount(sqUid()).toLocaleString('ar-EG')}</div><div class="l">🧾 أوردراتك النهارده (الفريق ${(todayOrders || []).length.toLocaleString('ar-EG')})</div></div>
         <div class="sq-stat"><div class="n">${s.total}</div><div class="l">إجمالي الأوردرات (${s.pending} قيد التنفيذ)</div></div>
@@ -3318,15 +3377,15 @@ const Squad = (function(){
       const qp = await (api.fetchRangeAll || api.fetchRange)(qFrom, localYmd(new Date()));
       const idx = {}; qp.forEach(q => [q.phone, q.phone2, q.customer_phone].forEach(ph => { const k = phoneKey(ph); if(!k) return; (idx[k] = idx[k] || []); if(!idx[k].includes(q)) idx[k].push(q); }));
       const by = {};
-      (state.boardOrders || []).forEach(o => { const a = by[o.agent_id] = by[o.agent_id] || { hold:0, undel:0, miss:0, ship:0 };
+      (state.boardOrders || []).forEach(o => { const a = by[o.agent_id] = by[o.agent_id] || { hold:0, undel:0, miss:0, ship:0, way:0, qdel:0 };
         if(o.status === 'delivered' || o.status === 'cancelled') return;
         const t0 = new Date(o.created_at).getTime(), c = (idx[phoneKey(o.customer_phone)] || []).filter(q => { const t = new Date(q.order_date).getTime(); return isNaN(t) || (t >= t0 - 1.5 * DAY && t <= t0 + 30 * DAY); });
         if(!c.length){ if(o.status === 'undelivered') a.undel++; else a.miss++; return; }
         const cats = c.map(q => api.category(q));
-        if(cats.includes('delivered')) a.ship++;                          // اتسلم في QP (لسه ماتعلّمش هنا)
+        if(cats.includes('delivered')) a.qdel++;                          // اتسلم في QP (لسه ماتعلّمش هنا — اعمل مطابقة)
         else if(c.some(q => /hold/i.test(String(api.label(q))) || String(q.Order_Delivery_Status) === '4')) a.hold++;
         else if(cats.every(x => x === 'undelivered') || o.status === 'undelivered') a.undel++;
-        else a.ship++; });
+        else a.way++; });                                                  // ⏳ لسه تحت التسليم (Pending / مع المندوب)
       state.boardQP = by;
     }catch(e){ state.boardQP = { err:e.message }; }
     state.boardQPBusy = false; render();
@@ -3343,7 +3402,7 @@ const Squad = (function(){
     const rows = state.board;
     return head('ترتيب الـSquad', 'ترتيب حسب عدد الأوردرات اللي اتسلمت.') + manualCard() + `
       <div class="sq-tablecard">
-        <div class="sq-board-row head"><div>#</div><div>الاسم</div><div class="c">إجمالي</div><div class="c">اتسلم</div><div class="c" title="من QP">✋ هولد</div><div class="c" title="من QP أو متعلّم هنا">💔 اندلفرد</div><div class="c" title="الموبايل مش لاقيه في QP">❓ مش في QP</div><div class="c">قيمة اللي اتسلم</div><div class="c">العمولة الإجمالية</div><div class="c">العمولة المستحقة</div></div>
+        <div class="sq-board-row head"><div>#</div><div>الاسم</div><div class="c">إجمالي</div><div class="c">اتسلم</div><div class="c" title="Pending أو مع المندوب في QP">⏳ تحت التسليم</div><div class="c" title="من QP">✋ هولد</div><div class="c" title="من QP أو متعلّم هنا">💔 اندلفرد</div><div class="c" title="الموبايل مش لاقيه في QP">❓ مش في QP</div><div class="c">قيمة اللي اتسلم</div><div class="c">العمولة الإجمالية</div><div class="c">العمولة المستحقة</div></div>
         ${(() => { const Q = state.boardQP; return !Q ? '<div class="sq-qpnote">⏳ بيقارن بـ QP عشان الهولد والاندلفرد...</div>' : Q.noCreds ? '<div class="sq-qpnote">الهولد والاندلفرد ومش في QP محتاجين دخول QP على الجهاز ده (من قسم 🚚 QP).</div>' : Q.err ? `<div class="sq-qpnote">مقدرتش أقارن بـ QP: ${esc(Q.err)}</div>` : ''; })()}
         ${rows.length ? rows.map((r,i) => `
           <div class="sq-board-row">
@@ -3354,7 +3413,7 @@ const Squad = (function(){
             <div class="sq-metric c">${r.total}</div>
             <div class="sq-metric c">${r.delivered}</div>
             ${(() => { const Q = state.boardQP, x = Q && !Q.noCreds && !Q.err ? (Q[r.id] || { hold:0, undel:0, miss:0 }) : null; const cel = (v, c) => `<div class="sq-metric c" style="color:${v ? c : 'var(--muted)'}">${x ? v : '—'}</div>`;
-              return cel(x && x.hold, '#2b6cb0') + cel(x && x.undel, '#b3261e') + cel(x && x.miss, '#8a5a00'); })()}
+              return cel(x && x.way, '#b7791f') + cel(x && x.hold, '#2b6cb0') + cel(x && x.undel, '#b3261e') + cel(x && x.miss, '#8a5a00'); })()}
             <div class="sq-metric green c">${money(r.delValue)}${valBreak(r, true)}</div>
             <div class="sq-metric dim c">${r.totalComm} ج${commBreak(r, false, true)}</div>
             <div class="sq-metric gold c">${r.dueComm} ج${r.active ? '' : '<small class="sq-under50">تحت 50%</small>'}${commBreak(r, true, true)}</div>
@@ -3362,7 +3421,7 @@ const Squad = (function(){
             const T = rows.reduce((a, r) => ({ total:a.total + r.total, delivered:a.delivered + r.delivered, delValue:a.delValue + (r.delValue || 0), totalComm:a.totalComm + r.totalComm, dueComm:a.dueComm + r.dueComm }), { total:0, delivered:0, delValue:0, totalComm:0, dueComm:0 });
             return `<div class="sq-board-row head" style="font-size:13.5px;color:var(--ink)"><div></div><div><b>الإجمالي</b></div>
               <div class="c"><b>${T.total}</b></div><div class="c"><b>${T.delivered}</b></div>
-              ${(() => { const Q = state.boardQP, ok = Q && !Q.noCreds && !Q.err, sum = k => ok ? Object.values(Q).reduce((a, x) => a + (x[k] || 0), 0) : '—'; return `<div class="c"><b>${sum('hold')}</b></div><div class="c"><b>${sum('undel')}</b></div><div class="c"><b>${sum('miss')}</b></div>`; })()}
+              ${(() => { const Q = state.boardQP, ok = Q && !Q.noCreds && !Q.err, sum = k => ok ? Object.values(Q).reduce((a, x) => a + (x[k] || 0), 0) : '—'; return `<div class="c"><b>${sum('way')}</b></div><div class="c"><b>${sum('hold')}</b></div><div class="c"><b>${sum('undel')}</b></div><div class="c"><b>${sum('miss')}</b></div>`; })()}
               <div class="c"><b>${money(T.delValue)}</b></div><div class="c"><b>${Math.round(T.totalComm * 100) / 100} ج</b></div><div class="c"><b>${Math.round(T.dueComm * 100) / 100} ج</b></div></div>`;
           })() : `<div class="sq-empty">لسه مفيش أوردرات متسجلة من حد.</div>`}
       </div>`;
