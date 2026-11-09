@@ -525,7 +525,7 @@ body:has(#vaBanner){padding-top:38px}
       <a class="navlink mgr-hide" href="#/team">👥 فريقي ورواتبهم</a>
       <a class="navlink" href="#/order-issues">🧩 مشاكل الأوردرات</a>
       <a class="navlink" href="#/order-edit">✏️ تعديل أوردر موجود</a>
-      <a class="navlink" href="#/kidzzly-days">🧸 أيام Kidzzly تحت 60%</a>
+      <a class="navlink" href="#/kidzzly-days">🎯 أيام تحت هدف التسليم</a>
       <a class="navlink" href="#/delivery-rates">📊 نسب التسليمات</a>
       <a class="navlink" href="#/urgent">🚨 أوردرات عاجلة <span class="ib-badge" id="urgBadge"></span></a>
     </div>
@@ -2400,9 +2400,17 @@ const Squad = (function(){
     // الوقت بالظبط اللي الأوردر اتسجل بيه في السيستم (من قاعدة البيانات نفسها)
     sendOrderToGoogleSheet(payload, row && row.created_at ? new Date(row.created_at) : new Date());
     newOrderType = '';
+    // ♻️ لو ده تجديد لأوردر اندلفرد/هولد: نسجّله في سجل اليوم بتاعه ونرجع لتاب الشغل
+    const pf = prefill; prefill = null;
+    if(pf && pf.recov && window.KidDaysLog){
+      try{ await window.KidDaysLog.add({ type:'renew', ...pf.recov, order_id: row && row.id, agent_id: sqUid(), agent_name: (sqProf() && (sqProf().full_name || sqProf().username)) || '',
+        phone: payload.customer_phone, amount: payload.amount, details: payload.order_details, at: new Date().toISOString() }); }
+      catch(e){ showToast('الأوردر اتسجل بس التجديد مااتعلّمش في سجل اليوم: ' + e.message, 'error'); }
+    }
     await loadMyOrders();
     setState({ loading:false, view:'dashboard', info:'اتضاف الأوردر بنجاح.' });
-    showToast('اتسجل الأوردر بنجاح وبقى تحت اسمك 🎉', 'success');
+    showToast(pf && pf.recov ? '♻️ اتسجل التجديد تحت اسمك ومتعلّم إنه من اندلفرد يوم ' + pf.recov.day : 'اتسجل الأوردر بنجاح وبقى تحت اسمك 🎉', 'success');
+    if(pf && pf.back) setTimeout(() => go(pf.back), 900);
   }
 
   function sendOrderToGoogleSheet(payload, when){
@@ -2697,7 +2705,7 @@ const Squad = (function(){
       { key:'office', label:'🏢 عمولة المكتب' },
       { key:'go:order-edit', label:'✏️ تعديل أوردر موجود' },
       { key:'go:order-issues', label:'🧩 مشاكل الأوردرات' },
-      { key:'go:kidzzly-days', label:'🧸 Kidzzly تحت 60%' },
+      { key:'go:kidzzly-days', label:'🎯 أيام تحت الهدف' },
     ];
     if(isAdminUser()) tabs.push({ key:'qp-sync', label:'🔄 مطابقة مع QP' }, { key:'verify', label:'🛡️ تحقق من التسليمات' });
     return `
@@ -2875,6 +2883,8 @@ const Squad = (function(){
   // 👕 البراند في "أوردر جديد": اكسسوارات (المصدر/الطلب/المقاس بالليستة زي ما هي) أو RS / Bloom / Socky (الخانات دي فاضية والموظف يكتبها)
   // ⛔ RS / Bloom / Socky اتشالوا من "أوردر جديد" — البراندات دلوقتي: 💍 Dream (اكسسوارات) و 🧸 Kidzzly
   // ⚠️ Dream بيتسجل order_type = 'اكسسوارات' زي الأول عشان الشيت ورفع QP مايتلخبطوش — الاسم بس اللي اتغير في الشاشة
+  // ♻️ تجديد أوردر اندلفرد من صفحة "🎯 أيام تحت الهدف": بيانات العميل بتتملى لوحدها، وبعد التسجيل بيتعلّم إنه تجديد لليوم ده
+  let prefill = null;
   let newOrderType = ''; // '' | 'acc' (Dream) | 'kidzzly'  (كود RS / Bloom / Socky لسه موجود لو احتجناه تاني)
   const ORDER_BRANDS = { acc:'اكسسوارات', kidzzly:'Kidzzly', rs:'RS', bloom:'Bloom', socky:'Socky' };
   const isClothes = t => t === 'kidzzly' || t === 'rs' || t === 'bloom' || t === 'socky';
@@ -2883,14 +2893,15 @@ const Squad = (function(){
     return `<div class="sq-field"><label>البراند <span class="sq-hint">حدد الأول الأوردر ده تبع أنهي براند</span></label>
       <div class="sq-types" id="${prefix}-types">${b('acc', '💍 Dream')}${b('kidzzly', '🧸 Kidzzly')}</div></div>`;
   }
-  function clothesFields(prefix){
+  function clothesFields(prefix, o){
+    o = o || {};
     return `
       <div class="sq-field"><label for="${prefix}-c-page-name">المصدر</label>
         ${sourceSelect(prefix + '-c-page-name', '', !isClothes(newOrderType))}</div>
       <div class="sq-field"><label for="${prefix}-c-size">المقاس</label>
-        <input type="text" id="${prefix}-c-size" value="" placeholder="اكتب المقاس" autocomplete="off"></div>
+        <input type="text" id="${prefix}-c-size" value="${esc(o.size || '')}" placeholder="اكتب المقاس" autocomplete="off"></div>
       <div class="sq-field"><label for="${prefix}-c-order">الطلب</label>
-        <textarea id="${prefix}-c-order" placeholder="اكتب الطلب"></textarea></div>`;
+        <textarea id="${prefix}-c-order" placeholder="اكتب الطلب">${esc(o.order_details || '')}</textarea></div>`;
   }
   function setOrderType(prefix, t){
     newOrderType = t;
@@ -2927,7 +2938,7 @@ const Squad = (function(){
         <input type="text" id="${prefix}-size" value="${esc(o.size||'')}" placeholder="اكتب المقاس" autocomplete="off" ${isNew && t !== 'acc' ? 'disabled' : ''}></div>
       ${productPicker(prefix, o.order_details)}
       ${isNew ? `</div>
-      <div id="${prefix}-clothes" class="${isClothes(t) ? '' : 'sq-hide'}">${clothesFields(prefix)}</div>` : ''}`;
+      <div id="${prefix}-clothes" class="${isClothes(t) ? '' : 'sq-hide'}">${clothesFields(prefix, o)}</div>` : ''}`;
   }
   function readFields(prefix){
     const v = id => document.getElementById(`${prefix}-${id}`).value;
@@ -2981,8 +2992,9 @@ const Squad = (function(){
     return head('أوردر جديد', 'املأ بيانات الأوردر واختار الطلب من الليستة، وهيتسجل على اسمك فورًا بالتاريخ والساعة.') + `
       <div class="sq-form">
         ${state.error ? `<div class="sq-err">${esc(state.error)}</div>` : ''}
+        ${prefill && prefill.recov ? `<div class="sq-err" style="background:#e3f3e8;border-color:#a9d8b8;color:#1f5f3a">♻️ <b>تجديد ${prefill.mode === 'edit' ? 'بتعديل' : 'لنفس الطلب'}</b> — أوردر ${prefill.recov.kind === 'hold' ? 'هولد' : 'اندلفرد'} من يوم ${esc(prefill.recov.day)} (شحنة ${esc(prefill.recov.serial)}). البيانات اتملت لوحدها${prefill.mode === 'edit' ? '، عدّلي اللي محتاج يتغير' : ''}، واختاري المصدر وسجّلي. <button type="button" class="sq-btn ghost" id="sq-prefill-x" style="padding:3px 10px;margin-inline-start:6px">إلغاء التجديد</button></div>` : ''}
         <form id="sq-order-form">
-          ${orderFields('sq-new')}
+          ${orderFields('sq-new', prefill ? { customer_name:prefill.customer_name, customer_phone:prefill.customer_phone, customer_address:prefill.customer_address, amount:prefill.amount, order_details:prefill.order_details, size:prefill.size } : undefined)}
           <button type="submit" class="sq-btn block" ${state.loading?'disabled':''}>${state.loading ? 'بيتسجل...' : 'سجّل الأوردر'}</button>
         </form>
       </div>`;
@@ -3899,6 +3911,7 @@ grant select, insert, update, delete on public.office_sales to authenticated;`;
     document.querySelectorAll('#sq-new-types .sq-type').forEach(b => {
       b.onclick = () => setOrderType('sq-new', b.dataset.otype);
     });
+    if($('sq-prefill-x')) $('sq-prefill-x').onclick = () => { const b = prefill && prefill.back; prefill = null; newOrderType = ''; if(b) go(b); else render(); };
     if($('sq-order-form')) $('sq-order-form').onsubmit = e => {
       e.preventDefault();
       if(!newOrderType){ showToast('حدد الأول البراند: Dream ولا Kidzzly.', 'error'); return; }
@@ -3946,7 +3959,9 @@ grant select, insert, update, delete on public.office_sales to authenticated;`;
     if(state.session) loadLeaderboard();
   }
   // زرار "فتح نظام الطلبات" في صفحات خدمة العملاء والإجراءات
-  function openNewOrder(){
+  function openNewOrder(pf){
+    prefill = pf && pf.customer_phone ? pf : null;
+    if(prefill) newOrderType = prefill.brand || '';
     if(state.session) state.view = 'new-order';
     else pendingView = 'new-order';
     state.error = ''; state.info = '';
@@ -14601,115 +14616,212 @@ table.gs tr.wk td.day{color:#c5221f}
 .kd-btn{padding:4px 10px;border:1.5px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink);font-family:inherit;font-size:12.5px;font-weight:600;cursor:pointer}
 .kd-sel{padding:6px 8px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;width:100%;background:var(--panel);color:var(--ink)}
 .kd-mine{box-shadow:0 0 0 2px #2b6cb0 inset}
+.kd-on{background:#1f3d36!important;color:#fff!important;border-color:#1f3d36!important}
+.kd-wrow{display:flex;gap:12px;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);border-inline-start:5px solid #c0392b;border-radius:12px;padding:10px 14px;margin-bottom:8px}
+.kd-wrow.done{border-inline-start-color:#2f7d55;background:#f1f8f3}
+.kd-wact{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.kd-done{margin-top:5px;font-size:13px;font-weight:700;color:#2f7d55}
 </style>
 <script>
 /* =====================================================================
-   🧸 أيام Kidzzly اللي تسليمها أقل من 60%
-   لكل يوم: كام أوردر واتسلم كام، وناقص كام عشان نوصل 60%، والهولد والاندلفرد بتوعه عشان نتابعهم
+   🎯 أيام التسليم تحت الهدف — 🧸 Kidzzly (هدف 60%) و 💍 Dream (هدف 45%)
+   لكل يوم: كام أوردر واتسلم كام، وناقص كام عشان نوصل الهدف، والهولد والاندلفرد بتوعه
    والأيام دي بتتوزع على خدمة العملاء (أسماء ونوران وجوليا) — كل واحدة تتابع أيامها
+   🗂️ دوسة على "اندلفرد" أو "هولد" بتفتح تاب جديد فيه أوردرات اليوم ده عشان الموظفة تشتغل عليهم:
+     - 🔁 جدّدي نفس الطلب / ✏️ جدّدي بتعديل → بيفتح "أوردر جديد" في Squad متملي ببيانات العميل،
+       والأوردر بيتسجل تحت اسمها ومتعلّم إنه تجديد لاندلفرد اليوم ده
+     - ملاحظة المتابعة (اتكلمت / هتستلم / رافضة / مبتردش ...) بتتحفظ لكل شحنة
+   📒 سجل التجديدات والملاحظات: app_kv بمفتاح recov_<id الموظفة>_<YYYY-MM> (كل موظفة بتكتب في بتاعها بس)
    ===================================================================== */
 (function(){
   const sb = () => window.__sbClient || (window.AuthGate && window.AuthGate.sb);
   const me = () => (window.AuthGate && window.AuthGate.me && window.AuthGate.me()) || {};
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  const isKD = () => (location.hash.replace('#/', '') || 'home').split('/')[0] === 'kidzzly-days';
+  const route = () => (location.hash.replace('#/', '') || 'home').split('?')[0];
+  const isKD = () => route().split('/')[0] === 'kidzzly-days';
+  const isWork = () => route() === 'kidzzly-days/work';
+  const qs = () => new URLSearchParams((location.hash.split('?')[1]) || '');
   const ymd = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-  const TARGET = 0.6, KV = 'kid_days_assign';
-  const S = { month: ymd(new Date()).slice(0, 7), days:null, busy:false, err:'', assign:{}, agents:null, onlyBad:true };
+  const dayTxt = k => new Date(k + 'T12:00:00').toLocaleDateString('ar-EG', { weekday:'long', day:'numeric', month:'long' });
+  const brandOf = q => { const n = String(q.notes || q.note || ''); return typeof prGetBrand === 'function' ? prGetBrand(n) : n.toLowerCase(); };
+  // 🎯 البراندات والهدف بتاعها
+  const BR = {
+    kid:   { name:'Kidzzly', icon:'🧸', target:0.60, kv:'kid_days_assign',   squad:'kidzzly', test:q => brandOf(q) === 'kidzzly' || /كيدز/.test(String(q.notes || '')) },
+    dream: { name:'Dream',   icon:'💍', target:0.45, kv:'dream_days_assign', squad:'acc',     test:q => ['dream', 'dream msg site', 'dream wa'].includes(brandOf(q)) },
+  };
+  const NOTES = ['📞 اتكلمت معاها', '✅ هتستلم', '🔁 عايزة تجدد', '📵 مبتردش', '🚫 رافضة', '❌ رقم غلط'];
+  const S = { brand:'kid', month: ymd(new Date()).slice(0, 7), days:null, busy:false, err:'', assign:{}, agents:null, onlyBad:true,
+              w:null, log:[] };
+  const B = () => BR[S.brand] || BR.kid;
+  const pctT = () => Math.round(B().target * 100) + '%';
   const api = () => window.QP && window.QP.api;
-  const isKid = q => /kid|كيدز/i.test(String(q.notes || q.note || ''));
   const cat = q => api().category(q), lbl = q => String(api().label(q)).replace(/\s*#\d+$/, '');
   const isHold = q => /hold/i.test(lbl(q)) || String(q.Order_Delivery_Status) === '4';
+  const split = (L, target) => {
+    const del = L.filter(q => cat(q) === 'delivered'), hold = L.filter(isHold), und = L.filter(q => cat(q) === 'undelivered' && !isHold(q));
+    const rate = L.length ? del.length / L.length : 0, need = Math.max(0, Math.ceil(target * L.length) - del.length);
+    return { L, del, hold, und, way:L.length - del.length - hold.length - und.length, rate, need };
+  };
   async function loadAgents(){
-    if(S.agents) return;
-    const { data } = await sb().from('profiles').select('id, username, full_name, allowed_sections, is_admin');
-    const L = (data || []).map(p => ({ id:p.id, name:p.full_name || p.username || '' }));
-    const pick = re => L.find(p => re.test(p.name) || re.test(p.username || ''));
-    S.agents = [pick(/أسماء|اسماء|asmaa/i), pick(/نوران|nouran/i), pick(/جوليا|julia|jolia/i)].filter(Boolean);
-    if(!S.agents.length) S.agents = L.filter(p => (data.find(d => d.id === p.id) || {}).allowed_sections?.includes?.('squad')).slice(0, 3);
-    S.allPeople = L;
-    try{ const { data:kv } = await sb().from('app_kv').select('*').eq('key', KV).maybeSingle(); S.assign = (kv && kv.value && kv.value.map) || {}; }catch(e){}
+    if(!S.agents){
+      const { data } = await sb().from('profiles').select('id, username, full_name, allowed_sections, is_admin');
+      const L = (data || []).map(p => ({ id:p.id, name:p.full_name || p.username || '', username:p.username || '' }));
+      const pick = re => L.find(p => re.test(p.name) || re.test(p.username));
+      S.agents = [pick(/أسماء|اسماء|asmaa/i), pick(/نوران|nouran/i), pick(/جوليا|julia|jolia/i)].filter(Boolean);
+      if(!S.agents.length) S.agents = L.filter(p => (data.find(d => d.id === p.id) || {}).allowed_sections?.includes?.('squad')).slice(0, 3);
+      S.allPeople = L;
+    }
+    try{ const { data:kv } = await sb().from('app_kv').select('*').eq('key', B().kv).maybeSingle(); S.assign = (kv && kv.value && kv.value.map) || {}; }catch(e){ S.assign = {}; }
   }
+  const nameOf = id => ((S.allPeople || []).find(p => p.id === id) || {}).name || '';
+  // 📒 سجل التجديدات والملاحظات لكل الموظفات في شهر معيّن
+  async function loadLog(month){
+    try{ const { data } = await sb().from('app_kv').select('key, value').like('key', 'recov_%_' + month);
+      return (data || []).flatMap(r => (r.value && r.value.list) || []); }catch(e){ return []; }
+  }
+  async function addLog(entry){
+    const month = entry.day.slice(0, 7), key = 'recov_' + me().id + '_' + month;
+    const { data } = await sb().from('app_kv').select('value').eq('key', key).maybeSingle();
+    const list = (data && data.value && data.value.list) || [];
+    list.push(entry);
+    const { error } = await sb().from('app_kv').upsert({ key, value:{ list }, updated_at:new Date().toISOString(), updated_by_name: me().full_name || me().username || '' });
+    if(error) throw error;
+  }
+  window.KidDaysLog = { add: addLog }; // بيستخدمه Squad لما الأوردر المتجدد يتسجل
+
   async function load(){
     const A = api(); if(!A || !A.hasCreds()){ S.err = 'محتاج دخول QP على الجهاز ده (من قسم 🚚 QP).'; return draw(); }
     S.busy = true; S.err = ''; S.days = null; draw();
     try{
       await loadAgents();
       const [y, m] = S.month.split('-').map(Number), from = S.month + '-01', to = ymd(new Date(y, m, 0));
-      const all = (await (A.fetchRangeAll || A.fetchRange)(from, to)).filter(isKid);
-      const by = {};
-      all.forEach(q => { const d = new Date(q.order_date); if(isNaN(d)) return; const k = ymd(d); (by[k] = by[k] || []).push(q); });
-      S.days = Object.entries(by).sort((a, b) => a[0].localeCompare(b[0])).map(([k, L]) => {
-        const del = L.filter(q => cat(q) === 'delivered'), hold = L.filter(isHold), und = L.filter(q => cat(q) === 'undelivered' && !isHold(q));
-        const rate = L.length ? del.length / L.length : 0, need = Math.max(0, Math.ceil(TARGET * L.length) - del.length);
-        return { k, L, del, hold, und, way:L.length - del.length - hold.length - und.length, rate, need };
-      });
-      // التوزيع التلقائي للأيام اللي فيها مشكلة (لو لسه متوزعتش)
-      const bad = S.days.filter(d => d.rate < TARGET); let i = 0, changed = false;
+      const [all, log] = await Promise.all([(A.fetchRangeAll || A.fetchRange)(from, to), loadLog(S.month)]);
+      S.log = log;
+      const mine = all.filter(B().test), by = {};
+      mine.forEach(q => { const d = new Date(q.order_date); if(isNaN(d)) return; const k = ymd(d); (by[k] = by[k] || []).push(q); });
+      S.days = Object.entries(by).sort((a, b) => a[0].localeCompare(b[0])).map(([k, L]) => ({ k, ...split(L, B().target) }));
+      const bad = S.days.filter(d => d.rate < B().target); let i = 0, changed = false;
       bad.forEach(d => { if(!S.assign[d.k] && S.agents.length){ S.assign[d.k] = S.agents[i % S.agents.length].id; i++; changed = true; } });
       if(changed) saveAssign();
     }catch(e){ S.err = e.message; }
     S.busy = false; draw();
   }
-  async function saveAssign(){ try{ await sb().from('app_kv').upsert({ key:KV, value:{ map:S.assign }, updated_at:new Date().toISOString(), updated_by_name: me().full_name || me().username || '' }); }catch(e){} }
-  function listModal(d, kind){
-    const L = kind === 'hold' ? d.hold : d.und, title = (kind === 'hold' ? '✋ هولد' : '💔 اندلفرد') + ' — ' + new Date(d.k + 'T12:00:00').toLocaleDateString('ar-EG', { weekday:'long', day:'numeric', month:'long' });
-    const w = document.createElement('div'); w.className = 'bq-modal';
-    w.innerHTML = `<div class="bq-box"><div class="bq-h"><b>${title} (${L.length})</b><button class="bq-x">✕</button></div>
-      <div class="bq-act"><button class="kd-btn" data-c>📋 انسخ أرقام الشحنات</button>${window.XLSX ? '<button class="kd-btn" data-x>⬇️ Excel</button>' : ''}</div>
-      <div class="bq-t"><table class="pr" style="width:100%"><tr><th>#</th><th>رقم الشحنة</th><th>العميل</th><th>الموبايل</th><th>السعر</th><th>الحالة</th><th></th></tr>
-      ${L.map((q, i) => { const ph = String(q.phone || '').replace(/\D/g, '').replace(/^0/, ''); return `<tr><td>${i + 1}</td><td style="direction:ltr"><b>${esc(q.serial)}</b></td><td>${esc(q.full_name || '')}</td><td style="direction:ltr">${esc(q.phone || '')}</td><td>${esc(q.price || q.total_amount || '')}</td><td>${esc(lbl(q))}</td>
-        <td style="white-space:nowrap">${ph ? `<a class="kd-btn" style="text-decoration:none" href="tel:0${ph}">📞</a> <a class="kd-btn" style="text-decoration:none" target="_blank" rel="noopener" href="https://wa.me/20${ph}">💬</a>` : ''}</td></tr>`; }).join('')}</table></div></div>`;
-    document.body.appendChild(w);
-    w.onclick = e => { if(e.target === w || e.target.classList.contains('bq-x')) w.remove(); };
-    const c = w.querySelector('[data-c]'); if(c) c.onclick = () => navigator.clipboard.writeText(L.map(q => q.serial).join('\n')).then(() => c.textContent = '✓ اتنسخ');
-    const x = w.querySelector('[data-x]'); if(x) x.onclick = () => { const ws = XLSX.utils.json_to_sheet(L.map(q => ({ 'رقم الشحنة':String(q.serial), 'العميل':q.full_name || '', 'الموبايل':q.phone || '', 'السعر':q.price || '', 'الحالة':lbl(q) }))); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, d.k); XLSX.writeFile(wb, `Kidzzly ${kind} ${d.k}.xlsx`); };
-  }
+  async function saveAssign(){ try{ await sb().from('app_kv').upsert({ key:B().kv, value:{ map:S.assign }, updated_at:new Date().toISOString(), updated_by_name: me().full_name || me().username || '' }); }catch(e){} }
+  const renewsOf = (log, brand, day) => log.filter(x => x.type === 'renew' && x.brand === brand && x.day === day);
   async function sendTasks(){
-    const bad = (S.days || []).filter(d => d.rate < TARGET), by = {};
+    const bad = (S.days || []).filter(d => d.rate < B().target), by = {};
     bad.forEach(d => { const a = S.assign[d.k]; if(a) (by[a] = by[a] || []).push(d); });
     const nm = me().full_name || me().username || '';
     for(const [id, L] of Object.entries(by)){
-      const p = (S.allPeople || []).find(x => x.id === id);
-      const body = L.map(d => `📅 ${d.k}: ${d.L.length} أوردر · اتسلم ${d.del.length} (${Math.round(d.rate * 100)}%) · ناقص ${d.need} عشان 60%\n✋ هولد: ${d.hold.map(q => q.serial + ' ' + (q.phone || '')).join('، ') || '—'}\n💔 اندلفرد: ${d.und.map(q => q.serial + ' ' + (q.phone || '')).join('، ') || '—'}`).join('\n\n');
-      await sb().from('inbox').insert({ kind:'task', from_id:me().id, from_name:nm, to_id:id, to_name:p ? p.name : '', title:`🧸 تابعي أيام Kidzzly اللي تسليمها أقل من 60% (${L.length} يوم)`, body:body + '\n\nافتحي 🧸 أيام Kidzzly تحت 60% عشان تشوفي التفاصيل.' });
+      const body = L.map(d => `📅 ${d.k}: ${d.L.length} أوردر · اتسلم ${d.del.length} (${Math.round(d.rate * 100)}%) · ناقص ${d.need} عشان ${pctT()} · ✋ هولد ${d.hold.length} · 💔 اندلفرد ${d.und.length}`).join('\n');
+      await sb().from('inbox').insert({ kind:'task', from_id:me().id, from_name:nm, to_id:id, to_name:nameOf(id), title:`${B().icon} تابعي أيام ${B().name} اللي تسليمها أقل من ${pctT()} (${L.length} يوم)`, body:body + `\n\nافتحي 🎯 أيام التسليم تحت الهدف ← ${B().name}، ودوسي على "اندلفرد" أو "هولد" في كل يوم عشان تشتغلي عليهم.` });
     }
     alert('📨 اتبعتت المهام لـ ' + Object.keys(by).length + ' موظفة.');
   }
+  const workUrl = (day, kind) => location.href.split('#')[0] + `#/kidzzly-days/work?b=${S.brand}&d=${day}&k=${kind}`;
+
   function view(){
-    let h = `<div class="pagehead"><h1>🧸 أيام Kidzzly اللي تسليمها أقل من 60%</h1><p>لكل يوم: اتسلم كام، وناقص كام أوردر عشان نوصل 60%، والهولد والاندلفرد بتوعه عشان نتابعهم ونخليهم يستلموا — والأيام دي متوزعة على خدمة العملاء.</p></div>
-      <div class="card"><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><select class="kd-sel" id="kdM" style="width:auto">${(() => { const L = [], d = new Date(); d.setDate(1);
+    let h = `<div class="pagehead"><h1>🎯 أيام التسليم تحت الهدف</h1><p>لكل يوم: اتسلم كام، وناقص كام أوردر عشان نوصل الهدف (🧸 Kidzzly 60% · 💍 Dream 45%). دوسي على "💔 اندلفرد" أو "✋ هولد" يفتحلك تاب جديد تشتغلي فيه على أوردرات اليوم ده.</p></div>
+      <div class="card"><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        ${Object.entries(BR).map(([k, b]) => `<button class="kd-btn ${S.brand === k ? 'kd-on' : ''}" data-kdb="${k}">${b.icon} ${b.name} (${Math.round(b.target * 100)}%)</button>`).join('')}
+        <select class="kd-sel" id="kdM" style="width:auto">${(() => { const L = [], d = new Date(); d.setDate(1);
         for(let i = 0; i < 6; i++){ const m = ymd(d).slice(0, 7); L.push(`<option value="${m}" ${S.month === m ? 'selected' : ''}>${new Date(m + '-15').toLocaleDateString('ar-EG', { month:'long', year:'numeric' })}</option>`); d.setMonth(d.getMonth() - 1); } return L.join(''); })()}</select>
         <label style="font-size:13.5px"><input type="checkbox" id="kdBad" ${S.onlyBad ? 'checked' : ''}> الأيام اللي فيها مشكلة بس</label>
         <button class="kd-btn" id="kdRe">🔄 حدّث من QP</button>${me().is_admin ? '<button class="kd-btn" id="kdSend" style="background:#1f3d36;color:#fff">📨 ابعت لكل واحدة أيامها</button>' : ''}</div></div>`;
     if(S.err) return h + `<div class="mono-note">${esc(S.err)}</div>`;
-    if(!S.days) return h + '<p style="color:var(--muted)">⏳ بيجيب أوردرات Kidzzly من QP...</p>';
-    const bad = S.days.filter(d => d.rate < TARGET), myId = me().id;
+    if(!S.days) return h + `<p style="color:var(--muted)">⏳ بيجيب أوردرات ${B().name} من QP...</p>`;
+    const T = B().target, bad = S.days.filter(d => d.rate < T), myId = me().id;
     const tot = S.days.reduce((a, d) => a + d.L.length, 0), td = S.days.reduce((a, d) => a + d.del.length, 0);
-    h += `<div class="card" style="font-size:14px">الشهر: <b>${tot}</b> أوردر Kidzzly · اتسلم <b>${td}</b> (${tot ? Math.round(td / tot * 100) : 0}%) · <b style="color:#c0392b">${bad.length} يوم تحت 60%</b> · ناقص <b>${bad.reduce((a, d) => a + d.need, 0)}</b> أوردر عشان كلهم يعدّوا 60%
-      ${S.agents && S.agents.length ? `<div style="margin-top:6px">${S.agents.map(a => `<span class="kd-btn" style="cursor:default">${esc(a.name)}: ${bad.filter(d => S.assign[d.k] === a.id).length} يوم</span>`).join(' ')}</div>` : ''}</div>`;
+    const ren = S.log.filter(x => x.type === 'renew' && x.brand === S.brand);
+    h += `<div class="card" style="font-size:14px">الشهر: <b>${tot}</b> أوردر ${B().name} · اتسلم <b>${td}</b> (${tot ? Math.round(td / tot * 100) : 0}%) · <b style="color:#c0392b">${bad.length} يوم تحت ${pctT()}</b> · ناقص <b>${bad.reduce((a, d) => a + d.need, 0)}</b> أوردر عشان كلهم يعدّوا ${pctT()} · ♻️ اتجدد <b>${ren.length}</b> أوردر
+      ${S.agents && S.agents.length ? `<div style="margin-top:6px">${S.agents.map(a => `<span class="kd-btn" style="cursor:default">${esc(a.name)}: ${bad.filter(d => S.assign[d.k] === a.id).length} يوم · ♻️ ${ren.filter(x => x.agent_id === a.id).length} تجديد</span>`).join(' ')}</div>` : ''}</div>`;
     const L = S.onlyBad ? bad : S.days;
-    h += L.map(d => { const ok = d.rate >= TARGET, a = S.assign[d.k];
-      return `<div class="kd-row ${ok ? 'ok' : ''} ${a === myId ? 'kd-mine' : ''}"><div class="kd-day"><b>${new Date(d.k + 'T12:00:00').toLocaleDateString('ar-EG', { weekday:'short', day:'numeric', month:'short' })}</b><small>${ok ? '✅ فوق 60%' : '⚠️ فيه مشكلة'}</small></div>
-        <div><div class="kd-bar"><i style="width:${Math.round(d.rate * 100)}%"></i><em title="60%"></em></div>
-          <div class="kd-s"><span>${d.L.length} أوردر</span><span>✅ اتسلم <b>${d.del.length}</b> (${Math.round(d.rate * 100)}%)</span>${ok ? '' : `<span style="color:#c0392b;font-weight:700">ناقص ${d.need} أوردر عشان 60%</span>`}
-            <button class="kd-btn" data-kd="${d.k}" data-kk="hold">✋ هولد ${d.hold.length}</button><button class="kd-btn" data-kd="${d.k}" data-kk="und">💔 اندلفرد ${d.und.length}</button>${d.way ? `<span>⏳ لسه ${d.way}</span>` : ''}</div></div>
-        <div>${ok ? '' : me().is_admin ? `<select class="kd-sel" data-kda="${d.k}"><option value="">— مين تتابع؟ —</option>${(S.agents || []).concat((S.allPeople || []).filter(p => !(S.agents || []).some(x => x.id === p.id))).map(p => `<option value="${esc(p.id)}" ${a === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select>` : `<span style="font-size:13px">👤 ${esc(((S.allPeople || []).find(p => p.id === a) || {}).name || '—')}</span>`}</div></div>`; }).join('') || '<p style="color:var(--muted)">👌 مفيش أيام تحت 60%.</p>';
+    h += L.map(d => { const ok = d.rate >= T, a = S.assign[d.k], r = renewsOf(S.log, S.brand, d.k).length;
+      return `<div class="kd-row ${ok ? 'ok' : ''} ${a === myId ? 'kd-mine' : ''}"><div class="kd-day"><b>${new Date(d.k + 'T12:00:00').toLocaleDateString('ar-EG', { weekday:'short', day:'numeric', month:'short' })}</b><small>${ok ? '✅ فوق ' + pctT() : '⚠️ فيه مشكلة'}</small></div>
+        <div><div class="kd-bar"><i style="width:${Math.round(d.rate * 100)}%"></i><em style="right:${Math.round(T * 100)}%" title="${pctT()}"></em></div>
+          <div class="kd-s"><span>${d.L.length} أوردر</span><span>✅ اتسلم <b>${d.del.length}</b> (${Math.round(d.rate * 100)}%)</span>${ok ? '' : `<span style="color:#c0392b;font-weight:700">ناقص ${d.need} أوردر عشان ${pctT()}</span>`}
+            <a class="kd-btn" style="text-decoration:none" target="_blank" rel="noopener" href="${workUrl(d.k, 'hold')}">✋ هولد ${d.hold.length}</a><a class="kd-btn" style="text-decoration:none" target="_blank" rel="noopener" href="${workUrl(d.k, 'und')}">💔 اندلفرد ${d.und.length}</a>${r ? `<span style="color:#2f7d55;font-weight:700">♻️ اتجدد ${r}</span>` : ''}${d.way ? `<span>⏳ لسه ${d.way}</span>` : ''}</div></div>
+        <div>${ok ? '' : me().is_admin ? `<select class="kd-sel" data-kda="${d.k}"><option value="">— مين تتابع؟ —</option>${(S.agents || []).concat((S.allPeople || []).filter(p => !(S.agents || []).some(x => x.id === p.id))).map(p => `<option value="${esc(p.id)}" ${a === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select>` : a ? `<span class="kd-btn" style="cursor:default">${esc(nameOf(a))}</span>` : ''}</div></div>`; }).join('');
     return h;
   }
+
+  /* ---------- 🗂️ تاب الشغل على يوم واحد ---------- */
+  async function loadWork(){
+    const p = qs(), brand = BR[p.get('b')] ? p.get('b') : 'kid', day = p.get('d') || '', kind = p.get('k') === 'hold' ? 'hold' : 'und';
+    S.brand = brand;
+    S.w = { brand, day, kind, d:null, err:'', busy:true }; drawWork();
+    const A = api(); if(!A || !A.hasCreds()){ S.w.err = 'محتاج دخول QP على الجهاز ده (من قسم 🚚 QP).'; S.w.busy = false; return drawWork(); }
+    try{
+      await loadAgents();
+      const [all, log] = await Promise.all([(A.fetchRangeAll || A.fetchRange)(day, day), loadLog(day.slice(0, 7))]);
+      S.log = log;
+      S.w.d = split(all.filter(B().test).filter(q => ymd(new Date(q.order_date)) === day), B().target);
+    }catch(e){ S.w.err = e.message; }
+    S.w.busy = false; drawWork();
+  }
+  function workView(){
+    const W = S.w; if(!W) return '';
+    let h = `<div class="pagehead"><h1>${B().icon} ${B().name} — ${esc(dayTxt(W.day))}</h1><p>اشتغلي على أوردرات اليوم ده: كلّمي العميل، ولو عايزة تطلب تاني دوسي <b>🔁 جدّدي نفس الطلب</b> أو <b>✏️ جدّدي بتعديل</b> — هيفتحلك أوردر جديد في Squad متملي ببياناتها، ويتسجل تحت اسمك ومتعلّم إنه تجديد لليوم ده.</p></div>`;
+    if(W.err) return h + `<div class="mono-note">${esc(W.err)}</div>`;
+    if(W.busy || !W.d) return h + '<p style="color:var(--muted)">⏳ بيجيب أوردرات اليوم من QP...</p>';
+    const d = W.d, R = renewsOf(S.log, W.brand, W.day), ok = d.rate >= B().target;
+    h += `<div class="card" style="font-size:14.5px"><b>${d.L.length}</b> أوردر · ✅ اتسلم <b>${d.del.length}</b> (${Math.round(d.rate * 100)}%) · ${ok ? `<b style="color:#2f7d55">فوق ${pctT()} ✅</b>` : `<b style="color:#c0392b">ناقص ${d.need} أوردر عشان ${pctT()}</b>`} · ♻️ اتجدد <b>${R.length}</b>${d.need ? ` من ${d.need}` : ''}
+      <div class="kd-bar" style="margin-top:8px"><i style="width:${Math.min(100, Math.round((d.need ? R.length / d.need : 1) * 100))}%;background:#2f7d55"></i></div>
+      <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="kd-btn ${W.kind === 'und' ? 'kd-on' : ''}" data-wk="und">💔 اندلفرد (${d.und.length})</button><button class="kd-btn ${W.kind === 'hold' ? 'kd-on' : ''}" data-wk="hold">✋ هولد (${d.hold.length})</button><button class="kd-btn" id="kwRe">🔄 حدّث</button></div></div>`;
+    const L = W.kind === 'hold' ? d.hold : d.und;
+    if(!L.length) return h + '<p style="color:var(--muted)">مفيش أوردرات هنا.</p>';
+    const last = serial => { const n = S.log.filter(x => String(x.serial) === String(serial)); return { renew:n.filter(x => x.type === 'renew').pop(), note:n.filter(x => x.type === 'note').pop() }; };
+    h += L.map((q, i) => { const ph = String(q.phone || '').replace(/\D/g, '').replace(/^0/, ''), x = last(q.serial);
+      return `<div class="kd-wrow ${x.renew ? 'done' : ''}"><div><b>${i + 1}. ${esc(q.full_name || '')}</b> <span style="direction:ltr;display:inline-block">${esc(q.phone || '')}</span> · ${esc(q.total_amount ?? q.price ?? '')} ج · <span style="color:var(--muted)">شحنة ${esc(q.serial)} · ${esc(lbl(q))}</span>
+          <div style="font-size:13px;color:var(--muted);margin-top:3px">${esc(q.address || '')}${q.city ? ' — ' + esc(q.city) : ''}</div>
+          <div style="font-size:13.5px;margin-top:3px">🛍️ ${esc(q.shipment_contents || '—')}</div>
+          ${x.renew ? `<div class="kd-done">♻️ اتجدد (${x.renew.mode === 'edit' ? 'بتعديل' : 'نفس الطلب'}) — ${esc(x.renew.agent_name || '')} · ${new Date(x.renew.at).toLocaleString('ar-EG', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' })}</div>` : ''}
+          ${x.note ? `<div style="font-size:12.5px;margin-top:3px">📝 ${esc(x.note.note)} — ${esc(x.note.agent_name || '')}</div>` : ''}</div>
+        <div class="kd-wact">${ph ? `<a class="kd-btn" style="text-decoration:none" href="tel:0${ph}">📞</a><a class="kd-btn" style="text-decoration:none" target="_blank" rel="noopener" href="https://wa.me/20${ph}">💬</a>` : ''}
+          <select class="kd-sel" data-wn="${i}" style="width:auto"><option value="">📝 المتابعة...</option>${NOTES.map(n => `<option ${x.note && x.note.note === n ? 'selected' : ''}>${n}</option>`).join('')}</select>
+          ${x.renew ? '' : `<button class="kd-btn" data-wr="${i}" data-m="same" style="background:#2f7d55;color:#fff;border-color:#2f7d55">🔁 جدّدي نفس الطلب</button><button class="kd-btn" data-wr="${i}" data-m="edit">✏️ جدّدي بتعديل</button>`}</div></div>`; }).join('');
+    return h;
+  }
+  function renew(q, mode){
+    if(!window.Squad || !Squad.openNewOrder) return alert('Squad مش متاح.');
+    const W = S.w;
+    Squad.openNewOrder({
+      brand: B().squad, customer_name: q.full_name || '', customer_phone: String(q.phone || ''), customer_address: [q.address, q.city].filter(Boolean).join(' - '),
+      amount: q.total_amount ?? q.price ?? '', order_details: q.shipment_contents || '', size:'', mode,
+      recov: { serial:String(q.serial), day:W.day, brand:W.brand, kind:W.kind, mode },
+      back: location.hash,
+    });
+  }
+  async function note(q, val){
+    try{ await addLog({ type:'note', serial:String(q.serial), day:S.w.day, brand:S.w.brand, kind:S.w.kind, note:val, agent_id:me().id, agent_name:me().full_name || me().username || '', at:new Date().toISOString() });
+      S.log.push({ type:'note', serial:String(q.serial), note:val, agent_name:me().full_name || me().username || '' }); drawWork(); }
+    catch(e){ alert('الملاحظة مااتحفظتش: ' + e.message); }
+  }
+  function drawWork(){
+    if(!isWork()) return;
+    const main = document.getElementById('main'); if(!main) return;
+    main.innerHTML = workView();
+    const L = S.w && S.w.d ? (S.w.kind === 'hold' ? S.w.d.hold : S.w.d.und) : [];
+    main.querySelectorAll('[data-wk]').forEach(b => b.onclick = () => { S.w.kind = b.dataset.wk; history.replaceState(null, '', location.href.replace(/k=\w+/, 'k=' + S.w.kind)); drawWork(); });
+    const re = document.getElementById('kwRe'); if(re) re.onclick = loadWork;
+    main.querySelectorAll('[data-wr]').forEach(b => b.onclick = () => renew(L[+b.dataset.wr], b.dataset.m));
+    main.querySelectorAll('[data-wn]').forEach(s => s.onchange = () => { if(s.value) note(L[+s.dataset.wn], s.value); });
+  }
+
   function draw(){
-    if(!isKD()) return;
+    if(!isKD() || isWork()) return;
     const main = document.getElementById('main'); if(!main) return;
     main.innerHTML = view();
     const $ = id => document.getElementById(id);
+    main.querySelectorAll('[data-kdb]').forEach(b => b.onclick = () => { if(S.brand === b.dataset.kdb) return; S.brand = b.dataset.kdb; load(); });
     if($('kdM')) $('kdM').onchange = e => { S.month = e.target.value; load(); };
     if($('kdBad')) $('kdBad').onchange = e => { S.onlyBad = e.target.checked; draw(); };
     if($('kdRe')) $('kdRe').onclick = load;
     if($('kdSend')) $('kdSend').onclick = sendTasks;
-    main.querySelectorAll('[data-kd]').forEach(b => b.onclick = () => { const d = S.days.find(x => x.k === b.dataset.kd); if(d) listModal(d, b.dataset.kk); });
     main.querySelectorAll('[data-kda]').forEach(s => s.onchange = () => { S.assign[s.dataset.kda] = s.value; saveAssign(); draw(); });
   }
-  function mount(){ document.querySelectorAll('#sidebar a.navlink').forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#/kidzzly-days')); draw(); load(); }
+  function mount(){ document.querySelectorAll('#sidebar a.navlink').forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#/kidzzly-days'));
+    if(isWork()) loadWork(); else { draw(); load(); } }
   const _render = render;
   render = function(){ _render.apply(this, arguments); if(isKD()) mount(); };
   window.addEventListener('hashchange', () => { if(isKD()) setTimeout(mount, 0); });
