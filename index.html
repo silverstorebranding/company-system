@@ -771,7 +771,7 @@ const SOPS = [
 const CHANNELS = "WhatsApp, Messenger, Instagram, TikTok, Phone";
 
 /* ---------------- PROFITS DATA/LOGIC ---------------- */
-const PR_BRANDS=["dream","dream msg site","dream wa","msg","lo gel nails","fastplt","cara silver","cara silver un","cara wa","squad","ersal","rs kids","kidzzly","socky","bloom"];
+const PR_BRANDS=["dream","dream msg site","dream wa","msg","lo gel nails","fastplt","cara silver","cara silver un","cara wa","ersal","rs kids","kidzzly"];   // ⛔ SQUAD / SOCKY / BLOOM اتشالوا من الأرباح — أوردرات Squad بتتوزع على دريم / كيدزلي / إرسال صفحة
 const PR_PNL_BRANDS=PR_BRANDS.filter(b=>b!=="lo gel nails");
 const PR_SOLO="lo gel nails";
 const PR_MSG_GROUP=["msg","dream msg site","fastplt"];
@@ -784,10 +784,7 @@ const PR_COLS=[
  {type:"agg",key:"cara_group",h:"CARA مجمع",brands:["cara silver","cara silver un","cara wa"]},
  {type:"brand",key:"rs kids",h:"RS KIDS",sum:true}, // بيظهر كمان في جدول الخلاصة
  {type:"brand",key:"kidzzly",h:"KIDZZLY",sum:true}, // 🧸 براند KIDZZLY — نفس معاملة RS KIDS
- {type:"brand",key:"squad",h:"SQUAD",sum:true}, // 🏆 notes = squad — بيتحسب زي الفضة الإيطالي (اللي ملقيناش مصدره في Squad بس)
- {type:"brand",key:"ersal",h:"ERSAL",sum:true}, // 📨 إرسال صفحة — براند لوحده (أوردرات Squad بمصدر "إرسال صفحة")
- {type:"brand",key:"socky",h:"SOCKY",sum:true}, // 🧦 SOCKY
- {type:"brand",key:"bloom",h:"BLOOM",sum:true}      // 🌸 براند جديد — بيظهر كمان في جدول الخلاصة
+ {type:"brand",key:"ersal",h:"إرسال صفحة",sum:true}, // 📨 إرسال صفحة — براند لوحده (أوردرات Squad بمصدر "إرسال صفحة")
 ];
 // راتب مساعد مدير المكتب: 16000 شهريًا
 // 🏢 المصاريف الثابتة الشهرية — بتتوزع على الإيطالي و Kidzzly و RS حسب عدد الأوردرات (Bloom مالوش دعوة)
@@ -1015,7 +1012,8 @@ function prProcess(rows){
   }
   const byBrand={}; PR_BRANDS.forEach(b=>byBrand[b]=[]);
   prUnbranded=[];
-  rows.forEach(r=>{const b=prGetBrand(r[PR_notesCol-1]); if(b)byBrand[b].push(r); else prUnbranded.push(r);});
+  // 🏆 أوردرات Squad اللي ملقيناش مصدرها بتتحسب على DREAM — وأي براند مش في الأرباح (Socky / Bloom ...) مش محسوب
+  rows.forEach(r=>{let b=prGetBrand(r[PR_notesCol-1]); if(b==='squad')b='dream'; if(b&&byBrand[b])byBrand[b].push(r); else prUnbranded.push(r);});
 
   function calcOne(brand){
     const rs=byBrand[brand];
@@ -1259,9 +1257,7 @@ const PR_GUIDE_GROUPS=[
   {k:'g_italy', l:'💍💎 DREAM + CARA مع بعض', m:['dream','dream msg site','dream wa','cara silver','cara silver un','cara wa']},
   {k:'g_rs',    l:'👶 RS KIDS', m:['rs kids']},
   {k:'g_kid',   l:'🧸 KIDZZLY', m:['kidzzly']},
-  {k:'g_bloom', l:'🌸 BLOOM', m:['bloom']},
-  {k:'g_socky', l:'🧦 SOCKY', m:['socky']},
-  {k:'g_ersal', l:'📨 ERSAL (إرسال صفحة)', m:['ersal']},
+  {k:'g_ersal', l:'📨 إرسال صفحة', m:['ersal']},
 ];
 const PR_GUIDE_ROWS=[
   ['cogs','📦 تكلفة البضاعة'],['shipDel','🚚 شحن التسليمات'],['shipUndel','💔 شحن بايظ'],['shipRet','↩️ شحن المرتجعات'],
@@ -1851,8 +1847,6 @@ function viewProfits(){
       <div class="kpi"><b>🧩 تكلفة القطعة</b> (عدد القطع بيتجاب من تحليل المكونات أوتوماتيك):</div>
       <div class="kpi">🧸 Kidzzly <input class="plainIn" type="number" value="${PR_PIECE_COST.kidzzly}" oninput="prSetPiece('kidzzly',this.value)"></div>
       <div class="kpi">👶 RS <input class="plainIn" type="number" value="${PR_PIECE_COST['rs kids']}" oninput="prSetPiece('rs kids',this.value)"></div>
-      <div class="kpi">🌸 Bloom <input class="plainIn" type="number" value="${PR_PIECE_COST.bloom||''}" placeholder="0 = 45%" oninput="prSetPiece('bloom',this.value)"></div>
-      <div class="kpi">🧦 Socky <input class="plainIn" type="number" value="${PR_PIECE_COST.socky||''}" placeholder="0" oninput="prSetPiece('socky',this.value)"></div>
     </div>
     <div style="font-size:12.5px;color:var(--muted);margin-top:6px">وكمان تلقائي في التقرير: 📢 الإعلانات من جوجل شيت (DREAM / CARA / FASTPLT / KIDZZLY عمود M / RS عمود P) · 🏆 عمولة البنات من Squad لنفس الفترة · 💔 الهوالك 0.25% من المبيعات.</div>
     <div>
@@ -1866,20 +1860,17 @@ function viewProfits(){
     <div id="prStatus" style="font-size:13px;color:var(--muted);margin-top:8px"></div>
   </div>
   <div id="prResults" style="display:none">
-    <div class="card"><h3>⭐ الخلاصة — DREAM و CARA و RS KIDS و KIDZZLY و SQUAD و ERSAL و SOCKY و BLOOM</h3>
+    <div class="card"><h3>⭐ الخلاصة — DREAM و CARA و RS KIDS و KIDZZLY و إرسال صفحة</h3>
       <div class="tablewrap"><table class="sum">
-        <tr><th rowspan="2">البند</th><th colspan="2" class="grp g-dream">DREAM المجمع</th><th colspan="2" class="grp g-cara sep">CARA المجمع</th><th colspan="2" class="grp g-rs sep">RS KIDS</th><th colspan="2" class="grp g-rs sep">KIDZZLY</th><th colspan="2" class="grp g-dream sep">SQUAD</th><th colspan="2" class="grp g-cara sep">ERSAL</th><th colspan="2" class="grp g-rs sep">SOCKY</th><th colspan="2" class="grp g-bloom sep">BLOOM</th></tr>
-        <tr><th class="act">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th><th class="act sep">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th><th class="act sep">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th><th class="act sep">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th><th class="act sep">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th><th class="act sep">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th><th class="act sep">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th><th class="act sep">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th></tr>
+        <tr><th rowspan="2">البند</th><th colspan="2" class="grp g-dream">DREAM المجمع</th><th colspan="2" class="grp g-cara sep">CARA المجمع</th><th colspan="2" class="grp g-rs sep">RS KIDS</th><th colspan="2" class="grp g-rs sep">KIDZZLY</th><th colspan="2" class="grp g-cara sep">إرسال صفحة</th></tr>
+        <tr><th class="act">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th><th class="act sep">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th><th class="act sep">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th><th class="act sep">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th></tr>
         ${[['rev','📥 المبيعات',''],['cost','🔴 التكاليف',''],['prof','✅ الأرباح','big'],['pct','📊 نسبة الأرباح','big'],['ads','📢 نسبة الإعلانات','']].map(([k,l,cls])=>`
         <tr class="${cls}"><td class="lbl">${l}</td>
           <td class="act" id="S_${k}_dream_group_A">—</td><td class="exp" id="S_${k}_dream_group_F">—</td>
           <td class="act sep" id="S_${k}_cara_group_A">—</td><td class="exp" id="S_${k}_cara_group_F">—</td>
           <td class="act sep" id="S_${k}_rs kids_A">—</td><td class="exp" id="S_${k}_rs kids_F">—</td>
           <td class="act sep" id="S_${k}_kidzzly_A">—</td><td class="exp" id="S_${k}_kidzzly_F">—</td>
-          <td class="act sep" id="S_${k}_squad_A">—</td><td class="exp" id="S_${k}_squad_F">—</td>
-          <td class="act sep" id="S_${k}_ersal_A">—</td><td class="exp" id="S_${k}_ersal_F">—</td>
-          <td class="act sep" id="S_${k}_socky_A">—</td><td class="exp" id="S_${k}_socky_F">—</td>
-          <td class="act sep" id="S_${k}_bloom_A">—</td><td class="exp" id="S_${k}_bloom_F">—</td></tr>`).join('')}
+          <td class="act sep" id="S_${k}_ersal_A">—</td><td class="exp" id="S_${k}_ersal_F">—</td></tr>`).join('')}
       </table></div>
       <div class="legend">
         <span><i style="background:var(--panel)"></i>✔️ فعلي = الأوردرات اللي اتسلمت فعلًا</span>
@@ -5150,7 +5141,7 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
   const pageNote = pg => { const p = String(pg || ''); if(/إرسال|ارسال/.test(p)) return 'ersal'; if(/كيدز|kid/i.test(p)) return 'kidzzly'; if(/واتساب\s*دريم|dream\s*wa/i.test(p)) return 'dream wa'; if(/دريم|dream/i.test(p)) return 'dream'; return null; };
   const squadPageOf = o => o && sqPages ? [o.phone, o.phone2, o.customer_phone].map(phKey).map(k => k && sqPages[k]).find(x => x != null) : null;
   // للأرباح وأيام التسليم: لو notes = squad رجّع البراند الحقيقي من المصدر (أو null لو مش معروف)
-  function squadBrandOf(o){ let b = null; try{ b = prGetBrand(o && o.notes); }catch(e){} if(b !== 'squad') return null; const pg = squadPageOf(o); return pg == null ? null : pageNote(pg); }
+  function squadBrandOf(o){ let b = null; try{ b = prGetBrand(o && o.notes); }catch(e){} if(b !== 'squad') return null; const pg = squadPageOf(o); return (pg == null ? null : pageNote(pg)) || 'dream'; }   // ملقيناش المصدر = دريم
   const pageGroup = pg => { const p = String(pg || ''); if(/إرسال|ارسال/.test(p)) return 'ersal'; if(/كيدز|kid/i.test(p)) return 'kidzzly'; return 'italy'; };
   function walletGroup(note, o){
     const n = String(note || '').toLowerCase().trim();
@@ -13076,10 +13067,13 @@ a.hm-kpi:hover{box-shadow:0 6px 16px rgba(0,0,0,.07)}
   const H = { today:null, pend:null, qp:null, qpErr:'', acc:null, last:null, loading:false, at:null };
   // 💍/🧸 مبيعات المحفظة لكل قسم + الربح التقريبي (المحفظة بعد الشحن − تكلفة البضاعة)
   const WB = [['italy', '💍 إيطالي'], ['kidzzly', '🧸 كيدزلي'], ['ersal', '📨 إرسال'], ['socky', '🧦 سوكي'], ['bloom', '🌸 بلوم'], ['other', '❔ غيره']];
+  // 📈 ربح المحفظة = نسبة ثابتة من التحصيل (فلوس المحفظة بعد خصم الشحن): الإيطالي (ومعاه إرسال صفحة) 15% · كيدزلي 30%
+  const WALLET_PROFIT_PCT = { italy:0.15, ersal:0.15, kidzzly:0.30 };
+  const wGroupProfit = (k, W) => WALLET_PROFIT_PCT[k] != null && W ? Math.round(W.v * WALLET_PROFIT_PCT[k]) : null;
   function walletProfit(D){
     if(!D || !D.walletBy) return null;
-    let p = 0, known = 0, unk = 0;
-    Object.values(D.walletBy).forEach(W => { if(W.cogsN){ const share = W.cogsN / W.n; p += W.v * share - W.cogs; known += W.v * share; } unk += W.v * (1 - (W.cogsN || 0) / W.n); });
+    let p = 0, unk = 0;
+    Object.entries(D.walletBy).forEach(([k, W]) => { const x = wGroupProfit(k, W); if(x != null) p += x; else unk += W.v; });
     return { p:Math.round(p), unk:Math.round(unk) };
   }
 
@@ -13179,7 +13173,7 @@ a.hm-kpi:hover{box-shadow:0 6px 16px rgba(0,0,0,.07)}
       const parts = WB.filter(([k]) => D.walletBy[k]).map(([k, l]) => `<span>${l} <b>${fmt(D.walletBy[k].v)}</b></span>`).join('')
         + (D.walletBy.other && D.walletBy.other.names ? `<span style="flex-basis:100%;font-size:11.5px;opacity:.85">❔ غيره = ${Object.entries(D.walletBy.other.names).sort((a, b) => b[1].v - a[1].v).map(([nm, x]) => esc(nm) + ' (' + fmt(x.n) + ')').join('، ')}</span>` : '');
       const pr = walletProfit(D);
-      return `<div class="hm-wsplit">${parts}</div>${pr ? `<div class="hm-wprof">📈 ربح تقريبي ≈ <b>${fmt(pr.p)} ج</b></div>` : ''}`; })()}</a>`);
+      return `<div class="hm-wsplit">${parts}</div>${pr ? `<div class="hm-wprof">📈 الربح (15% إيطالي + 30% كيدزلي) = <b>${fmt(pr.p)} ج</b></div>` : ''}`; })()}</a>`);
     k.push(`<a class="hm-kpi" href="#/inbox" style="--bc:${ib ? '#c0392b' : '#888'}"><div class="l">📥 الرسايل والمهام</div><div class="n">${fmt(ib)}</div><div class="s">${ib ? 'جديد مستنيك' : 'مفيش جديد'}</div></a>`);
     h += `<div class="hm-kpis">${k.join('')}</div>`;
     if(can('qp-upload')) h += shopsCard();
@@ -13200,11 +13194,11 @@ a.hm-kpi:hover{box-shadow:0 6px 16px rgba(0,0,0,.07)}
       else{
         h += `<div class="hm-row"><span>👛 المحفظة (لسه ماتحصّلش)</span><b style="color:#2f7d55">${D.wallet != null ? fmt(D.wallet) + ' ج' : '—'}</b></div>`;
         if(D.walletBy) [['italy', '💍 Italy'], ['kidzzly', '🧸 Kidzzly'], ['ersal', '📨 إرسال صفحة'], ['socky', '🧦 Socky'], ['bloom', '🌸 Bloom'], ['other', '❔ غيره']].filter(([kk]) => D.walletBy[kk]).forEach(([kk, l]) => {
-          const W = D.walletBy[kk], pr = W.cogsN ? Math.round(W.v * (W.cogsN / W.n) - W.cogs) : null;
-          h += `<div class="hm-row" style="padding-inline-start:14px;font-size:13px"><span>${l}</span><span>${fmt(W.v)} ج${pr != null ? ` <small style="color:#2f7d55">· ربح ≈ ${fmt(pr)}</small>` : ''}</span></div>`; });
+          const W = D.walletBy[kk], pr = wGroupProfit(kk, W);
+          h += `<div class="hm-row" style="padding-inline-start:14px;font-size:13px"><span>${l}</span><span>${fmt(W.v)} ج${pr != null ? ` <small style="color:#2f7d55">· ربح ${fmt(pr)}</small>` : ''}</span></div>`; });
         const wp = walletProfit(D);
-        if(wp) h += `<div class="hm-row"><span>📈 ربح تقريبي من المحفظة</span><b style="color:#2f7d55">≈ ${fmt(wp.p)} ج</b></div>
-          <p class="hm-note" style="margin:0 0 6px">= فلوس المحفظة (بعد مصاريف الشحن) − تكلفة البضاعة بقواعد قسم الأرباح (الفضة بالقطعة، كيدزلي × 100، RS × 175). مش داخل فيه الإعلانات والمرتبات.${wp.unk ? ` (${fmt(wp.unk)} ج من براندات مالهاش تكلفة متسجلة مش محسوبة.)` : ''}</p>`;
+        if(wp) h += `<div class="hm-row"><span>📈 الربح من المحفظة</span><b style="color:#2f7d55">${fmt(wp.p)} ج</b></div>
+          <p class="hm-note" style="margin:0 0 6px">= 15% من تحصيل الإيطالي (ومعاه إرسال صفحة) + 30% من تحصيل كيدزلي — التحصيل = فلوس المحفظة بعد خصم الشحن.${wp.unk ? ` (${fmt(wp.unk)} ج من براندات تانية مش داخلين في الربح.)` : ''}</p>`;
         h += `<div class="hm-row"><span>💵 Collect</span><b style="font-size:14px">${esc(D.collect || '—')}</b></div>
           <div class="hm-row"><span>📅 أوردرات امبارح</span><b>${D.yesterday != null ? fmt(D.yesterday) : '—'}</b></div>
           <div class="hm-row"><span>📦 راجع لينا (Ready To Return)</span><b style="color:#b7791f">${D.returns != null ? fmt(D.returns) : '—'}</b></div>
