@@ -15466,7 +15466,7 @@ table.cs tr.cs-open td{background:#fff7dd}
    📨 إرسال فوكس — أسامي صفحات "إرسال صفحة"
    - ➕ ضيف اسم بيدج (وتقدر تمسحها)
    - لما تشغّل ريتارجت لبيدج: اختارها ودوس "🎯 شغّلت ريتارجت" → بتتعلّم إنها شغالة،
-     وبتتبعت مهمة لمديرة خدمة العملاء: البيدج دي شغالة بريتارجت ولازم تتابعها
+     وبتتبعت مهمة لمديرة خدمة العملاء: البيدج دي شغالة بريتارجت ويُرجى متابعتها
    - التخزين: app_kv بمفتاح ersal_focus = { pages:[{ name, rt, since, by, sent }], manager, log:[...] }
    ===================================================================== */
 (function(){
@@ -15486,8 +15486,8 @@ table.cs tr.cs-open td{background:#fff7dd}
     ['سوس ابيض', '1766879316716012'], ['La Rose For Accessories', '857500714452594'],
   ];
   const by = () => me().full_name || me().username || '';
-  const defMsgMany = L => L.length === 1 ? defMsg(L[0]) : `🎯 الصفحات دي اتعملها ريتارجت وشغالة دلوقتي:\n${L.map(n => '• ' + n).join('\n')}\n\nلازم تتابعيهم كويس: الرد على الرسايل بسرعة، وتسجيل كل الأوردرات اللي جاية منهم في Squad بمصدر "إرسال"، وتبلّغيني لو فيه أي مشكلة.`;
-  const defMsg = nm => `🎯 البيدج "${nm}" شغالة دلوقتي بريتارجت.\nلازم تتابعيها كويس: الرد على الرسايل بسرعة، وتسجيل كل الأوردرات اللي جاية منها في Squad بمصدر "إرسال"، وتبلّغيني لو فيه أي مشكلة.`;
+  const defMsgMany = L => L.length === 1 ? defMsg(L[0]) : `🎯 الصفحات دي اتعملها ريتارجت وشغالة دلوقتي:\n${L.map(n => '• ' + n).join('\n')}\n\nيُرجى المتابعة بأعلى دقة — الرد على الرسايل بسرعة، وتسجيل الأوردرات اللي جاية منهم في Squad بمصدر "إرسال"، ولو فيه أي مشكلة ياريت تبلّغيني.\nشكرًا 🌷`;
+  const defMsg = nm => `🎯 البيدج "${nm}" اتعملها ريتارجت وشغالة دلوقتي.\n\nيُرجى المتابعة بأعلى دقة — الرد على الرسايل بسرعة، وتسجيل الأوردرات اللي جاية منها في Squad بمصدر "إرسال"، ولو فيه أي مشكلة ياريت تبلّغيني.\nشكرًا 🌷`;
 
   async function load(){
     try{
@@ -15527,7 +15527,7 @@ table.cs tr.cs-open td{background:#fff7dd}
     const p = S.d.pages[i]; if(!p) return;
     if(!S.d.manager){ S.msg = '⚠️ اختار مديرة خدمة العملاء من فوق الأول.'; return draw(); }
     const box = document.getElementById('efMsg' + i), body = (box && box.value.trim()) || defMsg(p.name);
-    const { error } = await sb().from('inbox').insert({ kind:'task', from_id:me().id, from_name:by(), to_id:S.d.manager, to_name:mgrName(), title:`🎯 البيدج "${p.name}" شغالة بريتارجت — لازم تتابعيها`, body });
+    const { error } = await sb().from('inbox').insert({ kind:'task', from_id:me().id, from_name:by(), to_id:S.d.manager, to_name:mgrName(), title:`🎯 البيدج "${p.name}" اتعملها ريتارجت — يُرجى المتابعة بأعلى دقة`, body });
     if(error){ S.msg = '⚠️ الرسالة مااتبعتتش: ' + error.message; return draw(); }
     p.rt = true; p.since = new Date().toISOString(); p.sent = mgrName(); p.rtBy = by();
     S.d.log.unshift({ at:p.since, page:p.name, act:'on', to:mgrName(), by:by() }); S.d.log = S.d.log.slice(0, 100);
@@ -15541,7 +15541,7 @@ table.cs tr.cs-open td{background:#fff7dd}
     if(!S.d.manager){ S.msg = '⚠️ اختار مديرة خدمة العملاء من فوق الأول.'; return draw(); }
     const names = idx.map(i => S.d.pages[i].name), box = document.getElementById('efMsgMany'), body = (box && box.value.trim()) || defMsgMany(names);
     const { error } = await sb().from('inbox').insert({ kind:'task', from_id:me().id, from_name:by(), to_id:S.d.manager, to_name:mgrName(),
-      title: names.length === 1 ? `🎯 البيدج "${names[0]}" شغالة بريتارجت — لازم تتابعيها` : `🎯 ${names.length} صفحات اتعملهم ريتارجت — لازم تتابعيهم`, body });
+      title: names.length === 1 ? `🎯 البيدج "${names[0]}" اتعملها ريتارجت — يُرجى المتابعة بأعلى دقة` : `🎯 ${names.length} صفحات اتعملهم ريتارجت — يُرجى المتابعة بأعلى دقة`, body });
     if(error){ S.msg = '⚠️ الرسالة مااتبعتتش: ' + error.message; return draw(); }
     const now = new Date().toISOString();
     idx.forEach(i => { const p = S.d.pages[i]; p.rt = true; p.since = now; p.sent = mgrName(); p.rtBy = by(); });
@@ -15556,7 +15556,7 @@ table.cs tr.cs-open td{background:#fff7dd}
     if(await save()){ S.msg = '⏹️ الريتارجت على "' + p.name + '" اتقفل.'; draw(); }
   }
   function view(){
-    let h = `<div class="pagehead"><h1>📨 إرسال فوكس</h1><p>أسامي صفحات "إرسال صفحة". علّم ☑️ على الصفحات اللي اتعملها ريتارجت (واحدة أو أكتر) ودوس <b>🎯 دول اتعملهم ريتارجت</b> — بتتبعت لمديرة خدمة العملاء رسالة إن البيدج دي شغالة بريتارجت ولازم تتابعها.</p></div>`;
+    let h = `<div class="pagehead"><h1>📨 إرسال فوكس</h1><p>أسامي صفحات "إرسال صفحة". علّم ☑️ على الصفحات اللي اتعملها ريتارجت (واحدة أو أكتر) ودوس <b>🎯 دول اتعملهم ريتارجت</b> — بتتبعت لمديرة خدمة العملاء رسالة إن البيدج دي شغالة بريتارجت ويُرجى متابعتها.</p></div>`;
     if(S.msg) h += `<div class="mono-note">${esc(S.msg)}</div>`;
     if(S.err) h += `<div class="mono-note">${esc(S.err)}</div>`;
     if(!S.d) return h + '<p style="color:var(--muted)">⏳ بيحمّل...</p>';
