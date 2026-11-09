@@ -15189,6 +15189,7 @@ table.cs input{width:100%;min-width:66px;height:30px;border:0;padding:0 4px;text
 table.cs input.cs-note{min-width:160px;text-align:right}
 table.cs input:focus{outline:2px solid #2b6cb0;background:#eef5ff}
 table.cs td.cs-in{background:#eaf7ee}
+table.cs td.cs-dir{background:#e3eefb;color:#1f4f8a}
 table.cs td.cs-auto{background:#f6f3ea;font-weight:700;padding:0 6px;color:#333}
 table.cs td.cs-auto.neg{color:#c0392b}
 table.cs td.cs-auto.pos{color:#1f7a45}
@@ -15223,7 +15224,7 @@ table.cs tr.cs-open td{background:#fff7dd}
   // الأعمدة بالترتيب — t: in = داخل · out = مصروف · draw = سحب
   const COLS = [
     { k:'tahsil',   l:'التحصيل',            t:'in' },
-    { k:'office',   l:'مبيعات مكتب',         t:'in' },
+    { k:'office',   l:'مبيعات مكتب',         t:'dir' },   // 🛒 تلقائي: صافي "مبيعات مباشرة" لليوم (مبيعات − مرتجعات)
     { k:'soft',     l:'برامج',               t:'out' },
     { k:'shipIt',   l:'شحن سايت ايطالي',     t:'out' },
     { k:'shipKid',  l:'شحن سايت kidz rs',    t:'out' },
@@ -15241,21 +15242,35 @@ table.cs tr.cs-open td{background:#fff7dd}
     { k:'_bal',     l:'خزنة يالي',           t:'auto' },
     { k:'note',     l:'notes',               t:'text' },
   ];
-  const OUTS = COLS.filter(c => c.t === 'out'), INS = COLS.filter(c => c.t === 'in'), DRAWS = COLS.filter(c => c.t === 'draw');
-  const S = { m:curM(), docs:{}, loaded:{}, err:'', msg:'', dirty:{}, t:null };
+  const OUTS = COLS.filter(c => c.t === 'out'), INS = COLS.filter(c => c.t === 'in' || c.t === 'dir'), DRAWS = COLS.filter(c => c.t === 'draw');
+  const S = { m:curM(), docs:{}, loaded:{}, err:'', msg:'', dirty:{}, t:null, direct:{} };
+  // الصف زي ما هو + مبيعات المكتب من قسم 🛒 مبيعات مباشرة
+  const rowOf = (m, d) => { const r = Object.assign({}, (doc(m).days || {})[d] || {}); const v = (S.direct[m] || {})[d]; r.office = v == null ? '' : String(v); return r; };
+  const dayKeys = m => [...new Set(Object.keys(doc(m).days || {}).concat(Object.keys(S.direct[m] || {})))];
+  async function loadDirect(m){
+    try{ const last = new Date(+m.slice(0, 4), +m.slice(5, 7), 0).getDate();
+      const { data, error } = await sb().from('direct_sales').select('sale_date, kind, amount').gte('sale_date', m + '-01').lte('sale_date', m + '-' + pad(last)).limit(5000);
+      if(error) throw error; const map = {};
+      (data || []).forEach(x => { const d = String(+String(x.sale_date).slice(8, 10)); map[d] = (map[d] || 0) + (x.kind === 'return' ? -1 : 1) * num(x.amount); });
+      S.direct[m] = map; }catch(e){ S.direct[m] = S.direct[m] || {}; }
+  }
   const doc = m => S.docs[m] = S.docs[m] || { open:'', days:{} };
   const dayExp = r => OUTS.reduce((a, c) => a + num(r && r[c.k]), 0);
   const dayBal = r => INS.reduce((a, c) => a + num(r && r[c.k]), 0) - dayExp(r) - DRAWS.reduce((a, c) => a + num(r && r[c.k]), 0);
   const hasAny = r => r && COLS.some(c => c.t !== 'auto' && r[c.k] !== '' && r[c.k] != null);
   function totals(m){
     const D = doc(m), t = {}; COLS.forEach(c => t[c.k] = 0);
-    Object.values(D.days).forEach(r => { COLS.forEach(c => { if(c.t === 'in' || c.t === 'out' || c.t === 'draw') t[c.k] += num(r[c.k]); }); t._exp += dayExp(r); t._bal += dayBal(r); });
+    dayKeys(m).forEach(d => { const r = rowOf(m, d); COLS.forEach(c => { if(c.t === 'in' || c.t === 'dir' || c.t === 'out' || c.t === 'draw') t[c.k] += num(r[c.k]); }); t._exp += dayExp(r); t._bal += dayBal(r); });
     t.balance = num(D.open) + t._bal;
     return t;
   }
   async function load(m){
     try{ const { data, error } = await sb().from('app_kv').select('value').eq('key', 'cash_' + m).maybeSingle();
-      if(error) throw error; S.docs[m] = (data && data.value) || { open:'', days:{} }; S.docs[m].days = S.docs[m].days || {}; S.loaded[m] = true; S.err = ''; }
+      if(error) throw error; S.docs[m] = (data && data.value) || { open:'', days:{} }; S.docs[m].days = S.docs[m].days || {}; S.err = '';
+      // 🧹 مبيعات المكتب بقت تلقائي من "مبيعات مباشرة" — أي رقم كان مكتوب بإيده بيتمسح
+      let wiped = false; Object.entries(S.docs[m].days).forEach(([d, r]) => { if(r && r.office !== '' && r.office != null){ r.office = ''; (S.dirty[m] = S.dirty[m] || {})[d + '|office'] = ''; wiped = true; } });
+      await loadDirect(m); S.loaded[m] = true;
+      if(wiped) save(m); }
     catch(e){ S.err = 'مقدرناش نجيب الشيت: ' + e.message; }
     draw();
   }
@@ -15289,8 +15304,9 @@ table.cs tr.cs-open td{background:#fff7dd}
   function refreshAuto(){
     const m = S.m, D = doc(m), t = totals(m);
     const set = (id, v, cls) => { const e = document.getElementById(id); if(!e) return; e.textContent = v; if(cls != null) e.className = cls; };
-    Object.keys(D.days).concat(Array.from({ length:32 }, (_, i) => String(i))).forEach(d => {
-      const r = D.days[d]; if(!document.getElementById('csE' + d)) return;
+    dayKeys(m).concat(Array.from({ length:32 }, (_, i) => String(i))).forEach(d => {
+      const r = rowOf(m, d); if(!document.getElementById('csE' + d)) return;
+      set('csO' + d, r.office !== '' ? fmt(num(r.office)) : '');
       const e = dayExp(r), b = dayBal(r), any = hasAny(r);
       set('csE' + d, any && e ? fmt(e) : (any ? '0' : ''), 'cs-auto');
       set('csB' + d, any ? fmt(b) : '0', 'cs-auto ' + (b < 0 ? 'neg' : b > 0 ? 'pos' : ''));
@@ -15304,14 +15320,14 @@ table.cs tr.cs-open td{background:#fff7dd}
     const m = S.m, y = +m.slice(0, 4), mo = +m.slice(5, 7), n = new Date(y, mo, 0).getDate();
     const months = []; { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() + 1); for(let i = 0; i < 12; i++){ months.push(d.getFullYear() + '-' + pad(d.getMonth() + 1)); d.setMonth(d.getMonth() - 1); } }
     if(!months.includes(m)) months.push(m);
-    let h = `<div class="pagehead"><h1>💼 الحسابات</h1><p>شيت الخزنة يوم بيوم — اكتب في الخانات على طول وهيتحفظ لوحده. <b>اجمالى المصروف</b> و<b>خزنة اليوم</b> بيتحسبوا لوحدهم، و<b>رصيد الخزنة</b> = تقفيل الشهر اللي فات + خزنة كل الأيام.</p></div>
+    let h = `<div class="pagehead"><h1>💼 الحسابات</h1><p>شيت الخزنة يوم بيوم — اكتب في الخانات على طول وهيتحفظ لوحده. <b>مبيعات مكتب</b> بتيجي لوحدها من 🛒 مبيعات مباشرة، و<b>اجمالى المصروف</b> و<b>خزنة اليوم</b> بيتحسبوا لوحدهم، و<b>رصيد الخزنة</b> = تقفيل الشهر اللي فات + خزنة كل الأيام.</p></div>
       <div class="cs-bar"><label>الشهر <select id="csM">${months.map(x => `<option value="${x}" ${x === m ? 'selected' : ''}>${new Date(x + '-15').toLocaleDateString('ar-EG', { month:'long', year:'numeric' })}</option>`).join('')}</select></label>
         <span id="csSt" style="font-size:13px;color:var(--muted)"></span>${window.XLSX ? '<button class="mockbtn" id="csX">⬇️ Excel</button>' : ''}
         ${SEED[m] && S.loaded[m] && !(doc(m).days['0'] && doc(m).days['0'].imported) ? '<button class="mockbtn" id="csImp" style="background:#2f7d55;border-color:#2f7d55;color:#fff">📥 انقل أرقام الشهر ده من شيت new system 2026</button>' : ''}</div>`;
     if(S.err) h += `<div class="mono-note">${esc(S.err)}</div>`;
     if(!S.loaded[m]) return h + '<div class="card"><p class="none">⏳ بيحمّل الشيت...</p></div>';
     const D = doc(m), v = (d, k) => esc((D.days[d] || {})[k] ?? '');
-    h += `<div class="cs-kpis"><div class="cs-kpi"><div class="n" id="csK_in" style="color:#1f7a45">0</div><div class="l">📥 الداخل (تحصيل + مكتب)</div></div>
+    h += `<div class="cs-kpis"><div class="cs-kpi"><div class="n" id="csK_in" style="color:#1f7a45">0</div><div class="l">📥 الداخل (تحصيل + مبيعات مكتب)</div></div>
       <div class="cs-kpi"><div class="n" id="csK_out" style="color:#c0392b">0</div><div class="l">📤 اجمالى المصروف</div></div>
       <div class="cs-kpi"><div class="n" id="csK_draw">0</div><div class="l">👤 سحب بيتر + فادي</div></div>
       <div class="cs-kpi" style="border:2px solid var(--brass)"><div class="n" id="csK_bal">0</div><div class="l">🏦 رصيد الخزنة</div></div></div>`;
@@ -15326,6 +15342,7 @@ table.cs tr.cs-open td{background:#fff7dd}
       h += `<tr><td class="cs-day">${d === 0 ? 'إضافي' : d}</td>${COLS.map(c => {
         if(c.k === '_exp') return `<td class="cs-auto" id="csE${d}"></td>`;
         if(c.k === '_bal') return `<td class="cs-auto" id="csB${d}">0</td>`;
+        if(c.t === 'dir') return `<td class="cs-auto cs-dir" id="csO${d}" title="تلقائي من 🛒 مبيعات مباشرة"></td>`;
         if(c.t === 'text') return `<td><input class="cs-note" type="text" data-cs="${d}|${c.k}" value="${v(d, c.k)}"></td>`;
         return `<td${c.t === 'in' ? ' class="cs-in"' : ''}><input type="text" inputmode="decimal" data-cs="${d}|${c.k}" value="${v(d, c.k)}"></td>`; }).join('')}</tr>`;
     }
@@ -15337,11 +15354,11 @@ table.cs tr.cs-open td{background:#fff7dd}
     '0':{ peter:'8300', note:'بيتر سحب من المحفظة' },
     '1':{ tahsil:'64812', shipIt:'330', shipKid:'660', adsDream:'6000', adsKid:'11000', adsVera:'1850', goodsKid:'15015', officeEx:'325', peter:'60000', fady:'27000', note:'رصيد' },
     '2':{ tahsil:'97126', adsDream:'3000', adsKid:'5000', naql:'800', goodsKid:'55030', officeEx:'2200', note:'رصيد' },
-    '3':{ tahsil:'91280', office:'2000', shipKid:'330', adsDream:'5000', adsKid:'10000', goodsKid:'55030' },
+    '3':{ tahsil:'91280', shipKid:'330', adsDream:'5000', adsKid:'10000', goodsKid:'55030' },
     '4':{ tahsil:'53429', shipIt:'330', shipKid:'330', adsDream:'6000', adsKid:'5000', naql:'800', goodsKid:'20015', officeEx:'260', peter:'1700', fady:'1700', note:'ورق' },
     '5':{ tahsil:'65208', shipIt:'330', shipKid:'330', adsDream:'13000', adsKid:'15000', goodsKid:'40015', goodsIt:'13300', officeEx:'900', peter:'4400', note:'بتلابز' },
     '6':{ shipKid:'330', adsDream:'5000', adsKid:'5000', goodsKid:'20000', goodsIt:'600', officeEx:'3500', peter:'1000', note:'٥ كراتين ورق' },
-    '7':{ tahsil:'52205', office:'-190', soft:'1340', adsDream:'2000', adsKid:'7100', goodsKid:'30000', goodsIt:'3888', officeEx:'1145', peter:'20200', fady:'200', note:'قهاوي' },
+    '7':{ tahsil:'52205', soft:'1340', adsDream:'2000', adsKid:'7100', goodsKid:'30000', goodsIt:'3888', officeEx:'1145', peter:'20200', fady:'200', note:'قهاوي' },
     '8':{ tahsil:'67934', soft:'1000', shipKid:'630', adsDream:'8000', adsKid:'10000', adsVera:'500', goodsKid:'40000', officeEx:'400', peter:'14500' },
   } } };
   async function importSeed(){
@@ -15356,7 +15373,7 @@ table.cs tr.cs-open td{background:#fff7dd}
   function exportX(){
     const m = S.m, D = doc(m), n = new Date(+m.slice(0, 4), +m.slice(5, 7), 0).getDate(), rows = [];
     rows.push(['تقفيل', ...COLS.map(c => c.k === '_bal' ? num(D.open) : '')]);
-    for(let d = 0; d <= n; d++){ const r = D.days[d] || {}; if(d === 0 && !hasAny(r)) continue; rows.push([d || 'إضافي', ...COLS.map(c => c.k === '_exp' ? dayExp(r) : c.k === '_bal' ? dayBal(r) : c.t === 'text' ? (r[c.k] || '') : (r[c.k] === '' || r[c.k] == null ? '' : num(r[c.k])))]); }
+    for(let d = 0; d <= n; d++){ const r = rowOf(m, String(d)); if(d === 0 && !hasAny(r)) continue; rows.push([d || 'إضافي', ...COLS.map(c => c.k === '_exp' ? dayExp(r) : c.k === '_bal' ? dayBal(r) : c.t === 'text' ? (r[c.k] || '') : (r[c.k] === '' || r[c.k] == null ? '' : num(r[c.k])))]); }
     const t = totals(m); rows.push(['الإجمالي', ...COLS.map(c => c.t === 'text' ? '' : c.k === '_bal' ? t.balance : t[c.k])]);
     const ws = XLSX.utils.aoa_to_sheet([['', ...COLS.map(c => c.l)], ...rows]), wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, m); XLSX.writeFile(wb, 'الحسابات-' + m + '.xlsx');
