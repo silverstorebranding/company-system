@@ -15289,7 +15289,7 @@ table.cs tr.cs-open td{background:#fff7dd}
   function refreshAuto(){
     const m = S.m, D = doc(m), t = totals(m);
     const set = (id, v, cls) => { const e = document.getElementById(id); if(!e) return; e.textContent = v; if(cls != null) e.className = cls; };
-    Object.keys(D.days).concat(Array.from({ length:31 }, (_, i) => String(i + 1))).forEach(d => {
+    Object.keys(D.days).concat(Array.from({ length:32 }, (_, i) => String(i))).forEach(d => {
       const r = D.days[d]; if(!document.getElementById('csE' + d)) return;
       const e = dayExp(r), b = dayBal(r), any = hasAny(r);
       set('csE' + d, any && e ? fmt(e) : (any ? '0' : ''), 'cs-auto');
@@ -15306,7 +15306,8 @@ table.cs tr.cs-open td{background:#fff7dd}
     if(!months.includes(m)) months.push(m);
     let h = `<div class="pagehead"><h1>💼 الحسابات</h1><p>شيت الخزنة يوم بيوم — اكتب في الخانات على طول وهيتحفظ لوحده. <b>اجمالى المصروف</b> و<b>خزنة اليوم</b> بيتحسبوا لوحدهم، و<b>رصيد الخزنة</b> = تقفيل الشهر اللي فات + خزنة كل الأيام.</p></div>
       <div class="cs-bar"><label>الشهر <select id="csM">${months.map(x => `<option value="${x}" ${x === m ? 'selected' : ''}>${new Date(x + '-15').toLocaleDateString('ar-EG', { month:'long', year:'numeric' })}</option>`).join('')}</select></label>
-        <span id="csSt" style="font-size:13px;color:var(--muted)"></span>${window.XLSX ? '<button class="mockbtn" id="csX">⬇️ Excel</button>' : ''}</div>`;
+        <span id="csSt" style="font-size:13px;color:var(--muted)"></span>${window.XLSX ? '<button class="mockbtn" id="csX">⬇️ Excel</button>' : ''}
+        ${SEED[m] && S.loaded[m] && !(doc(m).days['0'] && doc(m).days['0'].imported) ? '<button class="mockbtn" id="csImp" style="background:#2f7d55;border-color:#2f7d55;color:#fff">📥 انقل أرقام الشهر ده من شيت new system 2026</button>' : ''}</div>`;
     if(S.err) h += `<div class="mono-note">${esc(S.err)}</div>`;
     if(!S.loaded[m]) return h + '<div class="card"><p class="none">⏳ بيحمّل الشيت...</p></div>';
     const D = doc(m), v = (d, k) => esc((D.days[d] || {})[k] ?? '');
@@ -15319,9 +15320,10 @@ table.cs tr.cs-open td{background:#fff7dd}
       ${headRow()}</thead><tbody>
       <tr class="cs-open"><td class="cs-day">تقفيل</td><td colspan="${COLS.length - 2}" style="text-align:right;padding:0 8px;font-size:12.5px;color:#7a5c00">رصيد الخزنة من الشهر اللي فات ←</td>
         <td class="cs-in"><input type="text" inputmode="decimal" data-cs="open" value="${esc(D.open ?? '')}"></td><td></td></tr>`;
-    for(let d = 1; d <= n; d++){
+    // صف إضافي من غير يوم (زي "بيتر سحب من المحفظة")
+    for(let d = 0; d <= n; d++){
       if(d > 1 && (d - 1) % 7 === 0) h += headRow().replace('<tr>', '<tr class="cs-rep">');
-      h += `<tr><td class="cs-day">${d}</td>${COLS.map(c => {
+      h += `<tr><td class="cs-day">${d === 0 ? 'إضافي' : d}</td>${COLS.map(c => {
         if(c.k === '_exp') return `<td class="cs-auto" id="csE${d}"></td>`;
         if(c.k === '_bal') return `<td class="cs-auto" id="csB${d}">0</td>`;
         if(c.t === 'text') return `<td><input class="cs-note" type="text" data-cs="${d}|${c.k}" value="${v(d, c.k)}"></td>`;
@@ -15330,10 +15332,31 @@ table.cs tr.cs-open td{background:#fff7dd}
     h += '</tbody></table></div>';
     return h;
   }
+  /* 📥 أرقام نوفمبر 2026 من شيت "new system 2026" (تاب all خزن Nov) — اتنقلت من الشيت واتراجعت على صف الإجماليات بتاعه */
+  const SEED = { '2026-11': { open:'9156', days:{
+    '0':{ peter:'8300', note:'بيتر سحب من المحفظة' },
+    '1':{ tahsil:'64812', shipIt:'330', shipKid:'660', adsDream:'6000', adsKid:'11000', adsVera:'1850', goodsKid:'15015', officeEx:'325', peter:'60000', fady:'27000', note:'رصيد' },
+    '2':{ tahsil:'97126', adsDream:'3000', adsKid:'5000', naql:'800', goodsKid:'55030', officeEx:'2200', note:'رصيد' },
+    '3':{ tahsil:'91280', office:'2000', shipKid:'330', adsDream:'5000', adsKid:'10000', goodsKid:'55030' },
+    '4':{ tahsil:'53429', shipIt:'330', shipKid:'330', adsDream:'6000', adsKid:'5000', naql:'800', goodsKid:'20015', officeEx:'260', peter:'1700', fady:'1700', note:'ورق' },
+    '5':{ tahsil:'65208', shipIt:'330', shipKid:'330', adsDream:'13000', adsKid:'15000', goodsKid:'40015', goodsIt:'13300', officeEx:'900', peter:'4400', note:'بتلابز' },
+    '6':{ shipKid:'330', adsDream:'5000', adsKid:'5000', goodsKid:'20000', goodsIt:'600', officeEx:'3500', peter:'1000', note:'٥ كراتين ورق' },
+    '7':{ tahsil:'52205', office:'-190', soft:'1340', adsDream:'2000', adsKid:'7100', goodsKid:'30000', goodsIt:'3888', officeEx:'1145', peter:'20200', fady:'200', note:'قهاوي' },
+    '8':{ tahsil:'67934', soft:'1000', shipKid:'630', adsDream:'8000', adsKid:'10000', adsVera:'500', goodsKid:'40000', officeEx:'400', peter:'14500' },
+  } } };
+  async function importSeed(){
+    const m = S.m, sd = SEED[m]; if(!sd) return;
+    if(!confirm('هتتنقل أرقام ' + m + ' من شيت new system 2026 (التقفيل + أيام 1 لـ 8 + سحب بيتر من المحفظة). أي حاجة مكتوبة في نفس الخانات هتتبدّل. تكمّل؟')) return;
+    const dirty = S.dirty[m] = S.dirty[m] || {};
+    dirty.open = sd.open; doc(m).open = sd.open;
+    Object.entries(sd.days).forEach(([d, r]) => Object.entries(r).forEach(([k, v]) => { (doc(m).days[d] = doc(m).days[d] || {})[k] = v; dirty[d + '|' + k] = v; }));
+    dirty['0|imported'] = '1'; doc(m).days['0'].imported = '1';
+    await save(m); draw();
+  }
   function exportX(){
     const m = S.m, D = doc(m), n = new Date(+m.slice(0, 4), +m.slice(5, 7), 0).getDate(), rows = [];
     rows.push(['تقفيل', ...COLS.map(c => c.k === '_bal' ? num(D.open) : '')]);
-    for(let d = 1; d <= n; d++){ const r = D.days[d] || {}; rows.push([d, ...COLS.map(c => c.k === '_exp' ? dayExp(r) : c.k === '_bal' ? dayBal(r) : c.t === 'text' ? (r[c.k] || '') : (r[c.k] === '' || r[c.k] == null ? '' : num(r[c.k])))]); }
+    for(let d = 0; d <= n; d++){ const r = D.days[d] || {}; if(d === 0 && !hasAny(r)) continue; rows.push([d || 'إضافي', ...COLS.map(c => c.k === '_exp' ? dayExp(r) : c.k === '_bal' ? dayBal(r) : c.t === 'text' ? (r[c.k] || '') : (r[c.k] === '' || r[c.k] == null ? '' : num(r[c.k])))]); }
     const t = totals(m); rows.push(['الإجمالي', ...COLS.map(c => c.t === 'text' ? '' : c.k === '_bal' ? t.balance : t[c.k])]);
     const ws = XLSX.utils.aoa_to_sheet([['', ...COLS.map(c => c.l)], ...rows]), wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, m); XLSX.writeFile(wb, 'الحسابات-' + m + '.xlsx');
@@ -15344,6 +15367,7 @@ table.cs tr.cs-open td{background:#fff7dd}
     main.innerHTML = view();
     const sel = document.getElementById('csM'); if(sel) sel.onchange = e => { S.m = e.target.value; if(!S.loaded[S.m]) load(S.m); draw(); };
     const x = document.getElementById('csX'); if(x) x.onclick = exportX;
+    const im = document.getElementById('csImp'); if(im) im.onclick = importSeed;
     main.querySelectorAll('[data-cs]').forEach(el => { el.oninput = () => onInput(el); el.onkeydown = e => {
       if(e.key !== 'Enter' && e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
       const all = [...main.querySelectorAll('[data-cs]')], [d, k] = (el.dataset.cs + '|').split('|');
