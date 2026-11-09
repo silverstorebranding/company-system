@@ -5020,6 +5020,8 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
           const v = num(o.total_amount ?? o.price) - num(o.total_fees);
           wallet += v; walletN++;
           const g = walletGroup(o.notes); const W = walletBy[g] = walletBy[g] || { v:0, n:0, days:{}, cogs:0, cogsN:0 }; W.v += v; W.n++;
+          // ❔ "غيره": بنحفظ الاسم المكتوب في notes عشان يبان إيه اللي جواه
+          if(g === 'other'){ const nm = String(o.notes || '').split('\n')[0].trim() || '(notes فاضية)'; const X = (W.names = W.names || {})[nm] = W.names[nm] || { n:0, v:0 }; X.n++; X.v += v; }
           // 📈 ربح تقريبي: الفلوس اللي في المحفظة (بعد الشحن) − تكلفة البضاعة (بنفس قواعد قسم الأرباح)
           const cg = walletCogs(o); if(cg != null){ W.cogs += cg; W.cogsN++; }
           const d = dayKey(o.order_date); if(d){ W.days[d] = (W.days[d] || 0) + 1; lastPick = !lastPick || d > lastPick ? d : lastPick; }
@@ -5086,6 +5088,9 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
     dOrders.forEach(o => { if(pickDayOf(o) !== day) return; const g = walletGroup(o.notes); const B = by[g] = by[g] || { tot:0, del:0 }; B.tot++; if(catOf(o) === 'delivered') B.del++; });
     return { day, by, days, auto: !dPickDay, total: Object.values(by).reduce((a, x) => a + x.tot, 0) };
   }
+  // ❔ أسماء الـ notes اللي في "غيره" — الأكبر فلوس الأول
+  const otherNames = W => Object.entries((W && W.names) || {}).sort((a, b) => b[1].v - a[1].v);
+  window.QPOtherNames = otherNames;
   const WALLET_COLORS = { italy:'#b08d57', kidzzly:'#4f8fd8', socky:'#3f9b74', bloom:'#c0628f', other:'#9a9a9a' };
   function walletBrandsHtml(D){
     if(!D.walletBy || !Object.keys(D.walletBy).length) return '';
@@ -5099,6 +5104,7 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
         <div class="qpw-h"><span class="qpw-ic">${ic}</span><span class="qpw-n">${esc(rest.join(' '))}</span><span class="qpw-share">${share}% من المحفظة</span></div>
         <div class="qpw-amt">${fmt(Math.round(W.v))} <small>ج</small></div>
         <div class="qpw-sub">${fmt(W.n)} أوردر اتسلم ولسه ماتحصّلش</div>
+        ${k === 'other' && W.names ? `<div class="qpw-sub" style="margin-top:6px;line-height:1.8">جواه: ${otherNames(W).map(([nm, x]) => `<b>${esc(nm)}</b> (${fmt(x.n)} أوردر · ${fmt(Math.round(x.v))} ج)`).join('، ')}</div>` : ''}
         <div class="qpw-pick">
           <div class="qpw-pl"><span>🚚 البيكب ده</span><b>${pct == null ? (LP ? '—' : '⏳') : pct + '%'}</b></div>
           <div class="qpw-bar"><i style="width:${pct || 0}%"></i></div>
@@ -5127,7 +5133,7 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
     let b = null; try{ b = prGetBrand(note); }catch(e){}
     if(b === 'rs kids' || b === 'kidzzly') return 'kidzzly';
     if(b === 'bloom') return 'bloom';
-    if(['dream', 'dream wa', 'dream msg site', 'msg', 'fastplt', 'cara silver', 'cara silver un', 'cara wa'].includes(b)) return 'italy';
+    if(['dream', 'dream wa', 'dream msg site', 'msg', 'fastplt', 'cara silver', 'cara silver un', 'cara wa', 'squad'].includes(b)) return 'italy';   // 🏆 squad = فضة إيطالي (زي قسم الأرباح)
     return 'other';
   }
 
@@ -13136,7 +13142,8 @@ a.hm-kpi:hover{box-shadow:0 6px 16px rgba(0,0,0,.07)}
     if(can('squad')) k.push(`<a class="hm-kpi" href="#/squad" style="--bc:#2f7d55"><div class="l">🧾 أوردرات النهارده</div><div class="n">${H.today ? fmt(H.today.n) : '⏳'}</div><div class="s">${H.today ? fmt(H.today.v) + ' ج' : ''}</div></a>`);
     if(can('qp-upload')) k.push(`<a class="hm-kpi" href="#/qp-upload" data-hm-all style="--bc:#2b6cb0"><div class="l">📤 مستنية الرفع على QP</div><div class="n">${H.pend ? fmt(H.pend.total) : '⏳'}</div><div class="s">${H.pend && H.pend.qpChecked ? (H.pend.onQP ? `من غير ${fmt(H.pend.onQP)} مرفوعين بالفعل على QP` : 'اتقارن بـ QP — دوس ترفعهم') : 'من كل المصادر — دوس ترفعهم'}</div></a>`);
     if(can('qp')) k.push(`<a class="hm-kpi" href="#/qp" style="--bc:#b08d57"><div class="l">👛 المحفظة (التحصيل)</div><div class="n">${H.qp && H.qp.wallet != null ? fmt(H.qp.wallet) + ' ج' : (H.qpErr ? '—' : '⏳')}</div><div class="s">${H.qp && H.qp.walletN != null ? fmt(H.qp.walletN) + ' أوردر اتسلم ولسه ماتحصّلش' : ''}</div>${(() => { const D = H.qp; if(!D || !D.walletBy) return '';
-      const parts = WB.filter(([k]) => D.walletBy[k]).map(([k, l]) => `<span>${l} <b>${fmt(D.walletBy[k].v)}</b></span>`).join('');
+      const parts = WB.filter(([k]) => D.walletBy[k]).map(([k, l]) => `<span>${l} <b>${fmt(D.walletBy[k].v)}</b></span>`).join('')
+        + (D.walletBy.other && D.walletBy.other.names ? `<span style="flex-basis:100%;font-size:11.5px;opacity:.85">❔ غيره = ${Object.entries(D.walletBy.other.names).sort((a, b) => b[1].v - a[1].v).map(([nm, x]) => esc(nm) + ' (' + fmt(x.n) + ')').join('، ')}</span>` : '');
       const pr = walletProfit(D);
       return `<div class="hm-wsplit">${parts}</div>${pr ? `<div class="hm-wprof">📈 ربح تقريبي ≈ <b>${fmt(pr.p)} ج</b></div>` : ''}`; })()}</a>`);
     k.push(`<a class="hm-kpi" href="#/inbox" style="--bc:${ib ? '#c0392b' : '#888'}"><div class="l">📥 الرسايل والمهام</div><div class="n">${fmt(ib)}</div><div class="s">${ib ? 'جديد مستنيك' : 'مفيش جديد'}</div></a>`);
