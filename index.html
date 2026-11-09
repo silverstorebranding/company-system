@@ -12259,13 +12259,14 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
     if(S.src === 'delete') return h + delHtml() + '</div>';
     if(S.msg) h += `<div class="up-msg ${S.msgErr ? 'err' : 'ok'}">${esc(S.msg)}</div>`;
     h += todayUpBtn();
-    if(S.src !== 'delete' && S.src !== 'settings' && S.src !== 'restore') h += ptrCard();
+    // 📍 "أنا واقف فين في كل براند" بقت تحت آخر الصفحة — أول حاجة "هات كل الأوردرات"
+    const ptrBottom = () => (S.src !== 'delete' && S.src !== 'settings' && S.src !== 'restore') ? ptrCard() : '';
     if(S.src === 'restore') h += `<div class="card"><h3>♻️ أوردرات اتمسحت ورجعت</h3><p style="margin:0;font-size:13.5px">دي أوردرات كانت اتمسحت من QP وبضاعتها جت. راجعها تحت وارفعها — الـ notes والمحتوى والسعر جايين من البوليصة القديمة. <a href="#" id="upBackScan">↩️ ارجع لـ 📷 البوالص</a></p></div>`;
     else if(isEasy(S.src)) h += easyStep1();
     else if(S.src === 'all') h += allStep1();
     else h += squadStep1();
-    if(!S.rows) return h + splitCard() + histHtml() + '</div>';
-    if(!S.rows.length) return h + splitCard() + histHtml() + '</div>';
+    if(!S.rows) return h + splitCard() + histHtml() + ptrBottom() + '</div>';
+    if(!S.rows.length) return h + splitCard() + histHtml() + ptrBottom() + '</div>';
     if(S.conn) h += `<div class="up-msg ok">${esc(S.conn)}</div>`;
     if(S.connErr){ const c = getCreds() || {};
       h += `<div class="up-ask"><h3>🔐 دخول QP للرفع</h3><p style="margin:0 0 8px;font-size:13.5px;color:#555">${esc(S.connErr)}</p>
@@ -12381,7 +12382,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
         <button class="up-btn" id="upExport" ${R.length ? '' : 'disabled'}>⬇️ نزّل شيت الجاهزين بس</button>
       </div>
       <p style="font-size:12.5px;color:var(--muted);margin:10px 0 0">${R.length ? 'الأوردرات بتتعمل في QP على طول وهتلاقيها في Orders List. ' : (probN ? 'صلّح الأوردرات اللي فيها مشاكل وهتطلع في الجاهزين. ' : '✅ كل الأوردرات اترفعت. ')}${!qpCities ? 'لازم الاتصال بـ QP يشتغل الأول (فوق). ' : ''}اللي يترفع بيتعلّم بالأخضر ومش بيترفع تاني.</p></div>`;
-    return h + splitCard() + histHtml() + '</div>';
+    return h + splitCard() + histHtml() + ptrBottom() + '</div>';
   }
   function easyStep1(){
     const src = srcOf(S.src) || {}, p = P(S.src), admin = !!me().is_admin;
