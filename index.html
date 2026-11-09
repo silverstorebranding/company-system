@@ -796,8 +796,11 @@ const PR_FIXED_LS='pr_fixed_costs';
 let PR_FIXED=(()=>{try{return {...PR_FIXED_DEF,...JSON.parse(localStorage.getItem(PR_FIXED_LS)||'{}')};}catch(e){return {...PR_FIXED_DEF};}})();
 const PR_FIXED_EXCLUDE=['bloom'];
 function prSetFixed(k,v){PR_FIXED[k]=prNum(v);try{localStorage.setItem(PR_FIXED_LS,JSON.stringify(PR_FIXED));}catch(e){}
-  if(document.getElementById('prFileIn')&&document.getElementById('prFileIn').files[0]&&document.getElementById('prResults').style.display==='block')prRunReport();
-  const t=document.getElementById('prFixedTotal');if(t)t.textContent=prFmt(prFixedSum());}
+  const t=document.getElementById('prFixedTotal');if(t)t.textContent=prFmt(prFixedSum());
+  // ✏️ أي تعديل في المصاريف الثابتة بيتطبق على طول على التقرير اللي تحت (سواء من QP أو من ملف)
+  clearTimeout(window.__prFixT);
+  window.__prFixT=setTimeout(()=>{const res=document.getElementById('prResults');
+    if(window.__prLastRows&&res&&res.style.display==='block')prProcess(window.__prLastRows);},350);}
 const prFixedSum=()=>['rent','salaries','software','ops','power','net','mobile'].reduce((s,k)=>s+(+PR_FIXED[k]||0),0);
 // 💔 الهوالك: 0.25% من المبيعات
 const PR_WASTE_PCT=0.0025;
@@ -994,6 +997,7 @@ function prRunReport(){
       const wb=XLSX.read(e.target.result,{type:"array",cellDates:true});
       const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,defval:""});
       rows.shift();
+      if(window.Ads&&Ads.setPrRange)Ads.setPrRange(null);
       prProcess(rows);
       status.textContent="تم بنجاح ✅ — "+rows.length+" صف اتقروا.";
     }catch(err){status.textContent="فيه خطأ: "+err.message;}
@@ -1799,6 +1803,23 @@ function viewSopDetail(id){
 
 
 
+// 📅 زراير شهور سريعة: الشهر الحالي لحد النهارده + الشهرين اللي قبله — بتحط التاريخ وتحسب على طول
+const PR_MONTH_AR=['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+function prMonthBtns(){
+  const now=new Date(),p=n=>String(n).padStart(2,'0'),out=[];
+  for(let i=0;i<3;i++){
+    const d=new Date(now.getFullYear(),now.getMonth()-i,1),y=d.getFullYear(),m=d.getMonth();
+    const from=`${y}-${p(m+1)}-01`;
+    const to=i===0?`${now.getFullYear()}-${p(now.getMonth()+1)}-${p(now.getDate())}`:`${y}-${p(m+1)}-${p(new Date(y,m+1,0).getDate())}`;
+    out.push(`<button class="mockbtn" onclick="prMonth('${from}','${to}')">📅 ${PR_MONTH_AR[m]}${i===0?' حتى النهارده':''}</button>`);
+  }
+  return out.join('');
+}
+function prMonth(from,to){
+  const f=document.getElementById('prAutoFrom'),t=document.getElementById('prAutoTo');
+  if(f)f.value=from; if(t)t.value=to;
+  if(window.QP&&QP.calcProfitsRange)QP.calcProfitsRange();
+}
 function viewProfits(){
   const today = new Date().toISOString().slice(0,10);
   return `<div class="pagehead"><h1>💰 الأرباح</h1><p>اختار المدة واحسب الأرباح تلقائيًا من QP والإعلانات، أو ارفع ملف الأوردرات يدويًا.</p></div>
@@ -1809,6 +1830,7 @@ function viewProfits(){
       <label style="display:inline-flex;align-items:center;gap:6px;font-size:13.5px">إلى <input type="date" id="prAutoTo" class="plainIn" value="${today}"></label>
       <button class="mockbtn" onclick="QP.calcProfitsRange()">⚙️ احسب الأرباح تلقائيًا</button>
     </div>
+    <div class="uploadrow" style="flex-wrap:wrap;gap:8px;margin-top:8px">${prMonthBtns()}</div>
     <div id="prAutoStatus" style="font-size:13px;color:var(--muted);margin-top:10px"></div>
   </div>
   <div class="card"><h3>🏢 المصاريف الثابتة الشهرية <span style="font-size:13px;font-weight:500;color:var(--muted)">— بتتوزع على الإيطالي و Kidzzly و RS حسب عدد الأوردرات (Bloom مالوش دعوة)، وبتتحسب على عدد أيام الشيت</span></h3>
@@ -4015,6 +4037,7 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
   let adsData = null, adsLoading = false, adsError = '', adsLoadedAt = null, adsPromise = null;
   let adsFrom = '', adsTo = '';
   let prOrdersRange = null;
+  let prForcedRange = null; // 📅 المدة اللي اتختارت في "حساب تلقائي" — الإعلانات بتتجاب ليها هي بالظبط
 
   /* ---------- helpers ---------- */
   const pad2 = n => String(n).padStart(2,'0');
@@ -4223,19 +4246,21 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
     tbl.closest('.card').insertBefore(box, tbl.parentElement);
   }
 
-  async function adsFill(){
+  async function adsFill(force){
     const st = document.getElementById('adsFillStatus') || { set textContent(v){} };
     const inputs = [...document.querySelectorAll('#prFullTable input[data-man="ads"]')];
-    if(!inputs.length){ st.textContent = 'شغّل التقرير الأول.'; return; }
+    if(!inputs.length){ st.textContent = 'شغّل التقرير الأول.'; return null; }
     st.textContent = 'بيجيب الإعلانات من الشيت...';
-    await adsLoad(true);
-    if(!adsData){ st.textContent = adsError; return; }
+    await adsLoad(force !== false);
+    if(!adsData){ st.textContent = adsError; throw new Error(adsError || 'مقدرناش نجيب شيت الإعلانات'); }
     const R = prOrdersRange || { from:'', to:'' };
     const t = adsSum(adsData.filter(r => inRange(r, R.from, R.to)));
     ADS_GROUPS.forEach(G => inputs.forEach(inp => { if(inp.dataset.brand === G.pr) inp.value = Math.round(t[G.key].spend); }));
     if(typeof prRecalc === 'function') prRecalc();
     const period = R.from ? `من ${R.from} لـ ${R.to}` : 'لكل الشيت';
-    st.textContent = `✅ اتملت ${period}: ` + ADS_GROUPS.map(G => `${G.name} ${fmt(t[G.key].spend)} ج`).join('، ');
+    const txt = ADS_GROUPS.map(G => `${G.name} ${fmt(t[G.key].spend)} ج`).join('، ');
+    st.textContent = `✅ اتملت ${period}: ` + txt;
+    return txt;
   }
 
   /* =====================================================================
@@ -4377,9 +4402,10 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
         rows.forEach(r => { const v = r[PR_dateCol-1]; if(!v) return; const d = v instanceof Date ? v : new Date(v); if(!isNaN(d)) ts.push(+d); });
         prOrdersRange = ts.length ? { from: adsKey(new Date(Math.min(...ts))), to: adsKey(new Date(Math.max(...ts))) } : null;
       }catch(e){ prOrdersRange = null; }
+      if(prForcedRange) prOrdersRange = prForcedRange;
       const out = _prProcess.apply(this, arguments);
       // 📢 الإعلانات بتتملى لوحدها من الشيت بعد كل تقرير
-      setTimeout(() => { try{ adsInjectProfitsBtn(); adsFill(); }catch(e){} }, 50);
+      setTimeout(() => { try{ adsInjectProfitsBtn(); adsFill(false).catch(() => {}); }catch(e){} }, 50);
       return out;
     };
   }
@@ -4425,6 +4451,7 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
     },
     refresh(){ adsLoad(true); },
     fill: adsFill,
+    setPrRange(f, t){ prForcedRange = f && t ? { from:f, to:t } : null; },
   };
 
   window.Compass = {
@@ -5474,13 +5501,14 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
         if(!list.length){ if(st) st.textContent = 'مفيش أوردرات في المدة دي على QP.'; return; }
         qpOrders = list; qpFrom = from; qpTo = to; qpFetchedAt = new Date(); qpDetectNames(list);
         if(st) st.textContent = '⚙️ بيحسب الأرباح من ' + list.length + ' أوردر...';
+        if(window.Ads && Ads.setPrRange) Ads.setPrRange(from, to);
         prProcess(qpToProfitRows(list));
         const res = document.getElementById('prResults'); if(res) res.style.display = 'block';
         let adsMsg = '';
         try{
           qpEnsureAdsBox();
-          if(window.Ads && typeof window.Ads.fill === 'function'){ await window.Ads.fill(); adsMsg = ' — وجِبت الإعلانات لنفس المدة (اطمن على قيمها في صف "📢 إعلانات" بالجدول).'; }
-        }catch(e){ adsMsg = ' (تعذّر جلب الإعلانات تلقائيًا — تقدر تملأها من صفحة 📢 الإعلانات)'; }
+          if(window.Ads && typeof window.Ads.fill === 'function'){ const txt = await window.Ads.fill(true); adsMsg = txt ? '<br>📢 الإعلانات اتجابت لوحدها من الشيت لنفس المدة واتحطت في الجدول: <b>' + txt + '</b>' : ''; }
+        }catch(e){ adsMsg = '<br>⚠️ مقدرناش نجيب الإعلانات من الشيت: ' + (e.message || '') + ' — دوس 🔄 "احسب" تاني أو املأها من صف "📢 إعلانات"'; }
         if(st) st.innerHTML = '✅ تم الحساب من <b>' + list.length + '</b> أوردر QP للمدة من ' + from + ' لـ ' + to + '.' + adsMsg;
         if(res && res.scrollIntoView) res.scrollIntoView({ behavior:'smooth', block:'start' });
       }catch(e){
