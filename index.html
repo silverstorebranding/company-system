@@ -15477,6 +15477,14 @@ table.cs tr.cs-open td{background:#fff7dd}
   const KV = 'ersal_focus';
   const when = v => v ? new Date(v).toLocaleString('ar-EG', { weekday:'short', day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }) : '';
   const S = { d:null, people:null, err:'', msg:'', newName:'', pick:'', sel:{}, multi:false };
+  // 📄 صفحات إرسال (من FoxMaster — Conversation Fetcher) — بتتضاف لوحدها أول مرة القسم يفتح
+  const SEED_PAGES = [
+    ['Norél Argent', '1017997951404024'], ['فضيات بخصم ٣٠٪', '109040792049956'], ['Bunny & co.', '1492583820595234'], ['Giftly', '1520579607794711'],
+    ['فضيات جوتشي', '110271508842900'], ['فضيات بأسعار الجملة', '103642002637055'], ['الصاغة', '100928018211769'], ['BabyBloom - بيبي بلووم', '1344285982094640'],
+    ['Goloria For Silver & Accessories', '106751828376606'], ['سوق الفضيات و الاكسسوارات', '218979895397518'], ['Miss Scarlett', '103221311101715'],
+    ['تخفيضات و عروض', '103380979194568'], ['Miss Scarlett For Accessories', '1985484351770763'], ['الامل', '277338699466568'],
+    ['سوس ابيض', '1766879316716012'], ['La Rose For Accessories', '857500714452594'],
+  ];
   const by = () => me().full_name || me().username || '';
   const defMsgMany = L => L.length === 1 ? defMsg(L[0]) : `🎯 الصفحات دي اتعملها ريتارجت وشغالة دلوقتي:\n${L.map(n => '• ' + n).join('\n')}\n\nلازم تتابعيهم كويس: الرد على الرسايل بسرعة، وتسجيل كل الأوردرات اللي جاية منهم في Squad بمصدر "إرسال"، وتبلّغيني لو فيه أي مشكلة.`;
   const defMsg = nm => `🎯 البيدج "${nm}" شغالة دلوقتي بريتارجت.\nلازم تتابعيها كويس: الرد على الرسايل بسرعة، وتسجيل كل الأوردرات اللي جاية منها في Squad بمصدر "إرسال"، وتبلّغيني لو فيه أي مشكلة.`;
@@ -15489,6 +15497,11 @@ table.cs tr.cs-open td{background:#fff7dd}
       ]);
       if(error) throw error;
       S.d = (data && data.value) || { pages:[], manager:'', log:[] }; S.d.pages = S.d.pages || []; S.d.log = S.d.log || [];
+      if(!S.d.seed1){
+        SEED_PAGES.forEach(([name, fb]) => { const ex = S.d.pages.find(p => p.name.toLowerCase() === name.toLowerCase() || (fb && p.fb === fb));
+          if(ex){ if(!ex.fb) ex.fb = fb; } else S.d.pages.push({ name, fb, rt:false, added:new Date().toISOString(), by:'FoxMaster' }); });
+        S.d.seed1 = true; await save();
+      }
       if(pp) S.people = pp.map(p => ({ id:p.id, name:p.full_name || p.username || '' })).sort((a, b) => a.name.localeCompare(b.name, 'ar'));
       S.err = '';
     }catch(e){ S.err = 'مقدرناش نجيب البيانات: ' + e.message; S.d = S.d || { pages:[], manager:'', log:[] }; }
@@ -15562,7 +15575,7 @@ table.cs tr.cs-open td{background:#fff7dd}
       ${S.multi && nSel ? `<div style="margin-top:8px"><label style="font-size:13px;color:var(--muted)">الرسالة اللي هتتبعت لـ <b>${esc(mgrName() || '—')}</b>:</label>
         <textarea class="ef-in" id="efMsgMany" rows="6" style="width:100%;margin-top:4px">${esc(defMsgMany(selNames))}</textarea>
         <div style="display:flex;gap:8px;margin-top:6px"><button class="ef-btn pri" id="efSendMany">📨 ابعت (${nSel} صفحة)</button><button class="ef-btn" id="efMx">إلغاء</button></div></div>` : ''}</div>`;
-    h += S.d.pages.map((p, i) => `<div class="ef-row ${p.rt ? 'on' : ''}"><input type="checkbox" data-efsel="${i}" ${S.sel[i] ? 'checked' : ''} style="width:20px;height:20px;cursor:pointer"><span class="nm">${p.rt ? '<span class="ef-tag">🎯 ريتارجت</span> ' : ''}${esc(p.name)}</span>
+    h += S.d.pages.map((p, i) => `<div class="ef-row ${p.rt ? 'on' : ''}"><input type="checkbox" data-efsel="${i}" ${S.sel[i] ? 'checked' : ''} style="width:20px;height:20px;cursor:pointer"><span class="nm">${p.rt ? '<span class="ef-tag">🎯 ريتارجت</span> ' : ''}${esc(p.name)}${p.fb ? `<small style="display:block;font-weight:500;font-size:11.5px;color:var(--muted);direction:ltr;text-align:right"><a href="https://facebook.com/${esc(p.fb)}" target="_blank" rel="noopener" style="color:inherit">${esc(p.fb)}</a></small>` : ''}</span>
       <span class="st">${p.rt ? `شغالة من ${esc(when(p.since))} · اتبعتت لـ ${esc(p.sent || '')}` : 'مش شغالة ريتارجت'}</span>
       ${p.rt ? `<button class="ef-btn" data-efoff="${i}">⏹️ وقّفت الريتارجت</button>` : `<button class="ef-btn pri" data-efpick="${i}">🎯 شغّلت ريتارجت</button>`}
       ${admin ? `<button class="ef-btn red" data-efdel="${i}" title="مسح">🗑️</button>` : ''}
