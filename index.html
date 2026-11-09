@@ -15476,8 +15476,9 @@ table.cs tr.cs-open td{background:#fff7dd}
   const isEF = () => (location.hash.replace('#/', '') || 'home').split('?')[0].split('/')[0] === 'ersal-focus';
   const KV = 'ersal_focus';
   const when = v => v ? new Date(v).toLocaleString('ar-EG', { weekday:'short', day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }) : '';
-  const S = { d:null, people:null, err:'', msg:'', newName:'', pick:'' };
+  const S = { d:null, people:null, err:'', msg:'', newName:'', pick:'', sel:{}, multi:false };
   const by = () => me().full_name || me().username || '';
+  const defMsgMany = L => L.length === 1 ? defMsg(L[0]) : `🎯 الصفحات دي اتعملها ريتارجت وشغالة دلوقتي:\n${L.map(n => '• ' + n).join('\n')}\n\nلازم تتابعيهم كويس: الرد على الرسايل بسرعة، وتسجيل كل الأوردرات اللي جاية منهم في Squad بمصدر "إرسال"، وتبلّغيني لو فيه أي مشكلة.`;
   const defMsg = nm => `🎯 البيدج "${nm}" شغالة دلوقتي بريتارجت.\nلازم تتابعيها كويس: الرد على الرسايل بسرعة، وتسجيل كل الأوردرات اللي جاية منها في Squad بمصدر "إرسال"، وتبلّغيني لو فيه أي مشكلة.`;
 
   async function load(){
@@ -15507,7 +15508,7 @@ table.cs tr.cs-open td{background:#fff7dd}
   }
   async function delPage(i){
     const p = S.d.pages[i]; if(!p || !confirm('تمسح البيدج "' + p.name + '"؟')) return;
-    S.d.pages.splice(i, 1); if(await save()){ S.msg = 'اتمسحت.'; draw(); }
+    S.d.pages.splice(i, 1); S.sel = {}; S.multi = false; if(await save()){ S.msg = 'اتمسحت.'; draw(); }
   }
   async function startRT(i){
     const p = S.d.pages[i]; if(!p) return;
@@ -15520,6 +15521,21 @@ table.cs tr.cs-open td{background:#fff7dd}
     S.pick = '';
     if(await save()){ S.msg = `✅ اتعلّمت "${p.name}" إنها شغالة ريتارجت، واتبعتت رسالة لـ ${mgrName()} في 📥 الرسايل والمهام.`; draw(); }
   }
+  // ☑️ كذا بيدج مرة واحدة: رسالة واحدة فيها كل الصفحات المختارة
+  async function startMany(){
+    const idx = Object.keys(S.sel).filter(i => S.sel[i] && S.d.pages[i]).map(Number);
+    if(!idx.length){ S.msg = '⚠️ علّم على الصفحات الأول.'; return draw(); }
+    if(!S.d.manager){ S.msg = '⚠️ اختار مديرة خدمة العملاء من فوق الأول.'; return draw(); }
+    const names = idx.map(i => S.d.pages[i].name), box = document.getElementById('efMsgMany'), body = (box && box.value.trim()) || defMsgMany(names);
+    const { error } = await sb().from('inbox').insert({ kind:'task', from_id:me().id, from_name:by(), to_id:S.d.manager, to_name:mgrName(),
+      title: names.length === 1 ? `🎯 البيدج "${names[0]}" شغالة بريتارجت — لازم تتابعيها` : `🎯 ${names.length} صفحات اتعملهم ريتارجت — لازم تتابعيهم`, body });
+    if(error){ S.msg = '⚠️ الرسالة مااتبعتتش: ' + error.message; return draw(); }
+    const now = new Date().toISOString();
+    idx.forEach(i => { const p = S.d.pages[i]; p.rt = true; p.since = now; p.sent = mgrName(); p.rtBy = by(); });
+    S.d.log.unshift({ at:now, page:names.join('، '), act:'on', to:mgrName(), by:by() }); S.d.log = S.d.log.slice(0, 100);
+    S.sel = {}; S.multi = false;
+    if(await save()){ S.msg = `✅ اتعلّمت ${names.length} صفحة إنها شغالة ريتارجت، واتبعتت رسالة واحدة لـ ${mgrName()} في 📥 الرسايل والمهام.`; draw(); }
+  }
   async function stopRT(i){
     const p = S.d.pages[i]; if(!p) return;
     p.rt = false; S.d.log.unshift({ at:new Date().toISOString(), page:p.name, act:'off', by:by() }); S.d.log = S.d.log.slice(0, 100);
@@ -15527,7 +15543,7 @@ table.cs tr.cs-open td{background:#fff7dd}
     if(await save()){ S.msg = '⏹️ الريتارجت على "' + p.name + '" اتقفل.'; draw(); }
   }
   function view(){
-    let h = `<div class="pagehead"><h1>📨 إرسال فوكس</h1><p>أسامي صفحات "إرسال صفحة". لما تشغّل ريتارجت لبيدج، اختارها ودوس <b>🎯 شغّلت ريتارجت</b> — بتتبعت لمديرة خدمة العملاء رسالة إن البيدج دي شغالة بريتارجت ولازم تتابعها.</p></div>`;
+    let h = `<div class="pagehead"><h1>📨 إرسال فوكس</h1><p>أسامي صفحات "إرسال صفحة". علّم ☑️ على الصفحات اللي اتعملها ريتارجت (واحدة أو أكتر) ودوس <b>🎯 دول اتعملهم ريتارجت</b> — بتتبعت لمديرة خدمة العملاء رسالة إن البيدج دي شغالة بريتارجت ولازم تتابعها.</p></div>`;
     if(S.msg) h += `<div class="mono-note">${esc(S.msg)}</div>`;
     if(S.err) h += `<div class="mono-note">${esc(S.err)}</div>`;
     if(!S.d) return h + '<p style="color:var(--muted)">⏳ بيحمّل...</p>';
@@ -15538,7 +15554,15 @@ table.cs tr.cs-open td{background:#fff7dd}
     const on = S.d.pages.filter(p => p.rt).length;
     h += `<div class="card" style="font-size:14px">📄 <b>${S.d.pages.length}</b> بيدج · 🎯 شغالين ريتارجت دلوقتي: <b style="color:#8a4fb0">${on}</b></div>`;
     if(!S.d.pages.length) h += '<p style="color:var(--muted)">لسه مفيش صفحات — ضيف أول اسم من فوق.</p>';
-    h += S.d.pages.map((p, i) => `<div class="ef-row ${p.rt ? 'on' : ''}"><span class="nm">${p.rt ? '<span class="ef-tag">🎯 ريتارجت</span> ' : ''}${esc(p.name)}</span>
+    const nSel = Object.values(S.sel).filter(Boolean).length, selNames = Object.keys(S.sel).filter(i => S.sel[i] && S.d.pages[i]).map(i => S.d.pages[i].name);
+    if(S.d.pages.length) h += `<div class="card" style="position:sticky;top:0;z-index:3"><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <b style="font-size:14px">☑️ علّم على الصفحات اللي اتعملها ريتارجت:</b> <span style="font-size:13.5px">${nSel ? nSel + ' مختارة' : 'لسه مفيش'}</span>
+      <button class="ef-btn" id="efAll">${nSel === S.d.pages.length ? 'شيل الكل' : 'علّم الكل'}</button>
+      <button class="ef-btn pri" id="efMany" ${nSel ? '' : 'disabled'}>🎯 دول اتعملهم ريتارجت — ابعت لمديرة خدمة العملاء</button></div>
+      ${S.multi && nSel ? `<div style="margin-top:8px"><label style="font-size:13px;color:var(--muted)">الرسالة اللي هتتبعت لـ <b>${esc(mgrName() || '—')}</b>:</label>
+        <textarea class="ef-in" id="efMsgMany" rows="6" style="width:100%;margin-top:4px">${esc(defMsgMany(selNames))}</textarea>
+        <div style="display:flex;gap:8px;margin-top:6px"><button class="ef-btn pri" id="efSendMany">📨 ابعت (${nSel} صفحة)</button><button class="ef-btn" id="efMx">إلغاء</button></div></div>` : ''}</div>`;
+    h += S.d.pages.map((p, i) => `<div class="ef-row ${p.rt ? 'on' : ''}"><input type="checkbox" data-efsel="${i}" ${S.sel[i] ? 'checked' : ''} style="width:20px;height:20px;cursor:pointer"><span class="nm">${p.rt ? '<span class="ef-tag">🎯 ريتارجت</span> ' : ''}${esc(p.name)}</span>
       <span class="st">${p.rt ? `شغالة من ${esc(when(p.since))} · اتبعتت لـ ${esc(p.sent || '')}` : 'مش شغالة ريتارجت'}</span>
       ${p.rt ? `<button class="ef-btn" data-efoff="${i}">⏹️ وقّفت الريتارجت</button>` : `<button class="ef-btn pri" data-efpick="${i}">🎯 شغّلت ريتارجت</button>`}
       ${admin ? `<button class="ef-btn red" data-efdel="${i}" title="مسح">🗑️</button>` : ''}
@@ -15561,6 +15585,11 @@ table.cs tr.cs-open td{background:#fff7dd}
     main.querySelectorAll('[data-efsend]').forEach(b => b.onclick = () => { b.disabled = true; startRT(+b.dataset.efsend); });
     main.querySelectorAll('[data-efoff]').forEach(b => b.onclick = () => stopRT(+b.dataset.efoff));
     main.querySelectorAll('[data-efdel]').forEach(b => b.onclick = () => delPage(+b.dataset.efdel));
+    main.querySelectorAll('[data-efsel]').forEach(c => c.onchange = () => { S.sel[c.dataset.efsel] = c.checked; S.msg = ''; draw(); });
+    if($('efAll')) $('efAll').onclick = () => { const all = Object.values(S.sel).filter(Boolean).length === S.d.pages.length; S.sel = {}; if(!all) S.d.pages.forEach((_, i) => S.sel[i] = true); draw(); };
+    if($('efMany')) $('efMany').onclick = () => { S.multi = true; S.pick = ''; draw(); };
+    if($('efMx')) $('efMx').onclick = () => { S.multi = false; draw(); };
+    if($('efSendMany')) $('efSendMany').onclick = e => { e.target.disabled = true; startMany(); };
   }
   function mount(){
     if(!isEF()) return;
