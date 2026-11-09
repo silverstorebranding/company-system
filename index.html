@@ -5019,7 +5019,8 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
           if(String(o.Order_Delivery_Status ?? '').trim() !== '3' || o.Order_Collect_Status === true) return;
           const v = num(o.total_amount ?? o.price) - num(o.total_fees);
           wallet += v; walletN++;
-          const g = walletGroup(o.notes, o); const W = walletBy[g] = walletBy[g] || { v:0, n:0, days:{}, cogs:0, cogsN:0 }; W.v += v; W.n++;
+          const g = walletGroup(o.notes, o); const W = walletBy[g] = walletBy[g] || { v:0, gross:0, n:0, days:{}, cogs:0, cogsN:0 }; W.v += v; W.n++;
+          W.gross += num(o.total_amount ?? o.price);   // 💰 قيمة التسليمات قبل خصم الشحن — الربح بيتحسب منها
           // ❔ "غيره": بنحفظ الاسم المكتوب في notes عشان يبان إيه اللي جواه
           if(g === 'other'){ const nm = String(o.notes || '').split('\n')[0].trim() || '(notes فاضية)'; const X = (W.names = W.names || {})[nm] = W.names[nm] || { n:0, v:0 }; X.n++; X.v += v;
             (W.orders = W.orders || []).push({ serial:o.serial, name:o.full_name || '', phone:o.phone || '', notes:nm, v:Math.round(v), date:o.order_date || '', contents:o.shipment_contents || '' }); }
@@ -13075,11 +13076,11 @@ a.hm-kpi:hover{box-shadow:0 6px 16px rgba(0,0,0,.07)}
   const H = { today:null, pend:null, qp:null, qpErr:'', acc:null, last:null, loading:false, at:null };
   // 💍/🧸 مبيعات المحفظة لكل قسم + الربح التقريبي (المحفظة بعد الشحن − تكلفة البضاعة)
   const WB = [['italy', '💍 إيطالي'], ['kidzzly', '🧸 كيدزلي'], ['ersal', '📨 إرسال'], ['socky', '🧦 سوكي'], ['bloom', '🌸 بلوم'], ['other', '❔ غيره']];
-  // 📈 ربح المحفظة = نسبة ثابتة من التحصيل (فلوس المحفظة بعد خصم الشحن): الإيطالي (ومعاه إرسال صفحة) 15% · كيدزلي 30%
+  // 📈 ربح المحفظة = نسبة من قيمة التسليمات (قبل خصم الشحن) — مش من التحصيل اللي بعد الشحن: الإيطالي 15% · كيدزلي 30% · إرسال صفحة 40%
   const WALLET_PROFIT_PCT = { italy:0.15, kidzzly:0.30, ersal:0.40 };
   const WP_LBL = [['italy', '💍 إيطالي', '15%'], ['kidzzly', '🧸 كيدزلي', '30%'], ['ersal', '📨 إرسال صفحة', '40%']];
-  const profitBreak = D => WP_LBL.filter(([k]) => D.walletBy && D.walletBy[k]).map(([k, l, pc]) => `${l} <b>${fmt(wGroupProfit(k, D.walletBy[k]))}</b> <small>(${pc})</small>`).join(' · ');
-  const wGroupProfit = (k, W) => WALLET_PROFIT_PCT[k] != null && W ? Math.round(W.v * WALLET_PROFIT_PCT[k]) : null;
+  const profitBreak = D => WP_LBL.filter(([k]) => D.walletBy && D.walletBy[k]).map(([k, l, pc]) => `${l} <b>${fmt(wGroupProfit(k, D.walletBy[k]))}</b> <small>(${pc} من تسليمات ${fmt(Math.round(D.walletBy[k].gross != null ? D.walletBy[k].gross : D.walletBy[k].v))})</small>`).join(' · ');
+  const wGroupProfit = (k, W) => WALLET_PROFIT_PCT[k] != null && W ? Math.round((W.gross != null ? W.gross : W.v) * WALLET_PROFIT_PCT[k]) : null;
   function walletProfit(D){
     if(!D || !D.walletBy) return null;
     let p = 0, unk = 0;
@@ -13253,7 +13254,7 @@ a.hm-kpi:hover{box-shadow:0 6px 16px rgba(0,0,0,.07)}
           h += `<div class="hm-row" style="padding-inline-start:14px;font-size:13px"><span>${l}${kk === 'other' && W.orders ? ` <button class="hm-btn" data-hm-other style="padding:2px 8px;font-size:12px">👀 شوف الأوردرات وحدّد براندها</button>` : ''}</span><span>${fmt(W.v)} ج${pr != null ? ` <small style="color:#2f7d55">· ربح ${fmt(pr)}</small>` : ''}</span></div>`; });
         const wp = walletProfit(D);
         if(wp) h += `<div class="hm-row"><span>📈 الربح من المحفظة</span><b style="color:#2f7d55">${fmt(wp.p)} ج</b></div>
-          <p class="hm-note" style="margin:0 0 6px">${profitBreak(D)}<br>= 15% من تحصيل الإيطالي + 30% من تحصيل كيدزلي + 40% من تحصيل إرسال صفحة — التحصيل = فلوس المحفظة بعد خصم الشحن.${wp.unk ? ` (${fmt(wp.unk)} ج من براندات تانية مش داخلين في الربح.)` : ''}</p>`;
+          <p class="hm-note" style="margin:0 0 6px">${profitBreak(D)}<br>= 15% من تسليمات الإيطالي + 30% من تسليمات كيدزلي + 40% من تسليمات إرسال صفحة — محسوبة من قيمة التسليمات اللي في المحفظة قبل خصم الشحن (المحفظة نفسها مكتوبة بعد الشحن).${wp.unk ? ` (${fmt(wp.unk)} ج من براندات تانية مش داخلين في الربح.)` : ''}</p>`;
         h += `<div class="hm-row"><span>💵 Collect</span><b style="font-size:14px">${esc(D.collect || '—')}</b></div>
           <div class="hm-row"><span>📅 أوردرات امبارح</span><b>${D.yesterday != null ? fmt(D.yesterday) : '—'}</b></div>
           <div class="hm-row"><span>📦 راجع لينا (Ready To Return)</span><b style="color:#b7791f">${D.returns != null ? fmt(D.returns) : '—'}</b></div>
