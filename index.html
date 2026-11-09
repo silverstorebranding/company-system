@@ -9544,6 +9544,7 @@ function makeAccounts(CFG){
     document.querySelectorAll('#sidebar a.navlink').forEach(a => a.classList.toggle('active', a.getAttribute('href') === (CFG.navHref || '#/' + CFG.route)));
     draw(); if(S.rows === null && !S.loading && !S.err) load();
   }
+  if(CFG.noUI) return;   // 💼 الشاشة القديمة اتقفلت — الحسابات بقت شيت الخزنة (تحت)، والداتا القديمة لسه متاحة لـ AccAPI
   const _render = render;
   render = function(){ _render.apply(this, arguments); if(isAC()) mount(); };
   window.addEventListener('hashchange', () => { if(isAC()) mount(); });
@@ -9564,9 +9565,9 @@ window.accBrandBar = cur => `<div class="acb-bar">${ACC_BRANDS.map(b => `<a href
   <a href="#/accounts-sheet" class="all ${cur === 'accounts-sheet' ? 'on' : ''}">📒 شيت الشهر</a></div>`;
 const ACC_DESC = 'سجّل الإيرادات والمصروفات بتاريخها، والسيستم بيحسب صافي كل يوم (إيرادات − مصروفات) وإجمالي أي فترة.';
 makeAccounts({ route:'accounts', table:'accounts_entries', icon:'💍', title:'حسابات Italy', short:'Italy', desc:ACC_DESC,
-  linkLabel:'💼 الحسابات', navHref:'#/accounts', anchor:'#sidebar a.navlink[href="#/profits"]', before:true });
-makeAccounts({ route:'accounts-kidzzly', table:'accounts_entries_kidzzly', icon:'🧸', title:'حسابات Kidzzly', short:'Kidzzly', desc:ACC_DESC, navHref:'#/accounts' });
-makeAccounts({ route:'accounts-socky', table:'accounts_entries_socky', icon:'🧦', title:'حسابات Socky', short:'Socky', desc:ACC_DESC, navHref:'#/accounts' });
+  linkLabel:'💼 الحسابات', navHref:'#/accounts', anchor:'#sidebar a.navlink[href="#/profits"]', before:true, noUI:true });
+makeAccounts({ route:'accounts-kidzzly', table:'accounts_entries_kidzzly', icon:'🧸', title:'حسابات Kidzzly', short:'Kidzzly', desc:ACC_DESC, navHref:'#/accounts', noUI:true });
+makeAccounts({ route:'accounts-socky', table:'accounts_entries_socky', icon:'🧦', title:'حسابات Socky', short:'Socky', desc:ACC_DESC, navHref:'#/accounts', noUI:true });
 
 /* ---------- 📊 الحسابات المجمّعة: كل الخزن مع بعض ---------- */
 (function(){
@@ -13088,6 +13089,8 @@ a.hm-kpi:hover{box-shadow:0 6px 16px rgba(0,0,0,.07)}
     try{ H.qp = await window.QP.getSummary(); H.qpErr = H.qp && H.qp.err ? H.qp.err : ''; }catch(e){ H.qpErr = e.message; }
   }
   async function loadAcc(){
+    // 🏦 رصيد شيت الخزنة الجديد (💼 الحسابات)
+    if(window.CashAPI){ try{ const b = await window.CashAPI.balance(); H.acc = [{ icon:'🏦', title:'رصيد الخزنة (' + b.month + ')', total:b.balance }]; return; }catch(e){} }
     if(!window.AccAPI) return;
     const keys = Object.keys(window.AccAPI); if(!keys.length) return;
     const res = await Promise.all(keys.map(k => window.AccAPI[k].summary(null, null).then(r => ({ k, title:window.AccAPI[k].short || window.AccAPI[k].title, icon:window.AccAPI[k].icon, ...r })).catch(() => null)));
@@ -13180,7 +13183,7 @@ a.hm-kpi:hover{box-shadow:0 6px 16px rgba(0,0,0,.07)}
     }
     // 🏦 الخزن
     if(can('accounts')){
-      h += `<div class="card hm-card"><h3>🏦 الفلوس في الخزن <a class="hm-btn" href="#/accounts-all">الحسابات</a></h3>`;
+      h += `<div class="card hm-card"><h3>🏦 الفلوس في الخزن <a class="hm-btn" href="#/accounts">الحسابات</a></h3>`;
       if(!H.acc) h += '<p class="hm-wait">⏳</p>';
       else { const tot = H.acc.reduce((a, x) => a + (x.total || 0), 0);
         h += `<div class="hm-big">${fmt(tot)} ج</div>` + H.acc.map(x => `<div class="hm-row"><span>${esc(x.icon || '')} ${esc(x.title)}</span><b>${fmt(x.total)} ج</b></div>`).join(''); }
@@ -15171,6 +15174,198 @@ table.dr a.dr-n{font-weight:700;text-decoration:underline dotted;cursor:pointer}
 })();
 </script>
 
+<style>
+/* 💼 الحسابات — شيت الخزنة الشهري */
+.cs-wrap{overflow:auto;border:1px solid #c9c2b3;border-radius:10px;background:#fff;max-height:78vh}
+table.cs{border-collapse:collapse;font-size:13px;text-align:center;min-width:1450px;width:100%}
+table.cs th,table.cs td{border:1px solid #d6d0c3;padding:0;height:30px}
+table.cs thead th{position:sticky;top:0;z-index:2}
+table.cs th.cs-h{background:#123b33;color:#fff;font-weight:700;padding:4px 6px;font-size:12.5px;white-space:nowrap}
+table.cs tr.cs-tot td{background:#d7f5e1;font-weight:800;font-size:14.5px;padding:4px 6px;color:#1c2321}
+table.cs tr.cs-tot td.cs-bal{background:#2f9e5a;color:#fff}
+table.cs tr.cs-tot td.cs-bal.neg{background:#c0392b}
+table.cs td.cs-day{background:#f4f2ec;font-weight:800;min-width:46px}
+table.cs input{width:100%;min-width:66px;height:30px;border:0;padding:0 4px;text-align:center;font-family:inherit;font-size:13px;background:transparent;color:#1c2321}
+table.cs input.cs-note{min-width:160px;text-align:right}
+table.cs input:focus{outline:2px solid #2b6cb0;background:#eef5ff}
+table.cs td.cs-in{background:#eaf7ee}
+table.cs td.cs-auto{background:#f6f3ea;font-weight:700;padding:0 6px;color:#333}
+table.cs td.cs-auto.neg{color:#c0392b}
+table.cs td.cs-auto.pos{color:#1f7a45}
+table.cs tr.cs-open td{background:#fff7dd}
+.cs-bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+.cs-bar select{padding:7px 9px;border:1px solid var(--line);border-radius:7px;font-family:inherit;font-size:14px;background:var(--panel);color:var(--ink)}
+.cs-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px}
+@media (max-width:800px){.cs-kpis{grid-template-columns:1fr 1fr}}
+.cs-kpi{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 14px}
+.cs-kpi .n{font-size:21px;font-weight:800}.cs-kpi .l{font-size:12.5px;color:var(--muted)}
+</style>
+<script>
+/* =====================================================================
+   💼 الحسابات — شيت الخزنة الشهري (نفس شكل شيت "new system 2026")
+   - صف لكل يوم: التحصيل ومبيعات المكتب (داخل) · البرامج والشحن والإعلانات والنقل والرواتب والبضاعة ومصاريف المكتب (مصروف)
+     · سحب بيتر وفادي · ملاحظات
+   - اجمالى المصروف = مجموع المصروفات · خزنة اليوم = التحصيل + مبيعات المكتب − اجمالى المصروف − بيتر − فادي
+   - رصيد الخزنة = تقفيل الشهر اللي فات + مجموع خزنة كل الأيام
+   - بيتحفظ في app_kv بمفتاح cash_<YYYY-MM> = { open, days:{ '1':{ tahsil:.., ..., note:'' } } }
+   - صفحات الحسابات القديمة (Italy / Kidzzly / Socky / المجمّعة / شيت الشهر) اتقفلت وبتحوّل هنا
+   ===================================================================== */
+(function(){
+  const sb = () => window.__sbClient || (window.AuthGate && window.AuthGate.sb);
+  const me = () => (window.AuthGate && window.AuthGate.me && window.AuthGate.me()) || {};
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const num = v => { const x = parseFloat(String(v ?? '').replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/[,\s]/g, '')); return isNaN(x) ? 0 : x; };
+  const fmt = n => Math.round(Number(n || 0)).toLocaleString('en-US');
+  const pad = n => String(n).padStart(2, '0');
+  const curM = () => { const d = new Date(); return d.getFullYear() + '-' + pad(d.getMonth() + 1); };
+  const route = () => (location.hash.replace('#/', '') || 'home').split('?')[0].split('/')[0];
+  const OLD = ['accounts-kidzzly', 'accounts-socky', 'accounts-all', 'accounts-sheet', 'accounts-italy'];
+  // الأعمدة بالترتيب — t: in = داخل · out = مصروف · draw = سحب
+  const COLS = [
+    { k:'tahsil',   l:'التحصيل',            t:'in' },
+    { k:'office',   l:'مبيعات مكتب',         t:'in' },
+    { k:'soft',     l:'برامج',               t:'out' },
+    { k:'shipIt',   l:'شحن سايت ايطالي',     t:'out' },
+    { k:'shipKid',  l:'شحن سايت kidz rs',    t:'out' },
+    { k:'adsDream', l:'اعلانات dream',       t:'out' },
+    { k:'adsKid',   l:'اعلانات kidzzly',     t:'out' },
+    { k:'adsVera',  l:'ads vera',            t:'out' },
+    { k:'naql',     l:'نقل وليد',            t:'out' },
+    { k:'salary',   l:'رواتب',               t:'out' },
+    { k:'goodsKid', l:'بضاعة اطفال',         t:'out' },
+    { k:'goodsIt',  l:'بضاعة ايطالي',        t:'out' },
+    { k:'officeEx', l:'مصاريف مكتب',         t:'out' },
+    { k:'_exp',     l:'اجمالى المصروف',      t:'auto' },
+    { k:'peter',    l:'بيتر',                t:'draw' },
+    { k:'fady',     l:'فادي',                t:'draw' },
+    { k:'_bal',     l:'خزنة يالي',           t:'auto' },
+    { k:'note',     l:'notes',               t:'text' },
+  ];
+  const OUTS = COLS.filter(c => c.t === 'out'), INS = COLS.filter(c => c.t === 'in'), DRAWS = COLS.filter(c => c.t === 'draw');
+  const S = { m:curM(), docs:{}, loaded:{}, err:'', msg:'', dirty:{}, t:null };
+  const doc = m => S.docs[m] = S.docs[m] || { open:'', days:{} };
+  const dayExp = r => OUTS.reduce((a, c) => a + num(r && r[c.k]), 0);
+  const dayBal = r => INS.reduce((a, c) => a + num(r && r[c.k]), 0) - dayExp(r) - DRAWS.reduce((a, c) => a + num(r && r[c.k]), 0);
+  const hasAny = r => r && COLS.some(c => c.t !== 'auto' && r[c.k] !== '' && r[c.k] != null);
+  function totals(m){
+    const D = doc(m), t = {}; COLS.forEach(c => t[c.k] = 0);
+    Object.values(D.days).forEach(r => { COLS.forEach(c => { if(c.t === 'in' || c.t === 'out' || c.t === 'draw') t[c.k] += num(r[c.k]); }); t._exp += dayExp(r); t._bal += dayBal(r); });
+    t.balance = num(D.open) + t._bal;
+    return t;
+  }
+  async function load(m){
+    try{ const { data, error } = await sb().from('app_kv').select('value').eq('key', 'cash_' + m).maybeSingle();
+      if(error) throw error; S.docs[m] = (data && data.value) || { open:'', days:{} }; S.docs[m].days = S.docs[m].days || {}; S.loaded[m] = true; S.err = ''; }
+    catch(e){ S.err = 'مقدرناش نجيب الشيت: ' + e.message; }
+    draw();
+  }
+  // 💾 الحفظ: بنقرا آخر نسخة ونحط عليها الخانات اللي اتغيرت بس (عشان لو اتنين بيكتبوا في نفس الوقت)
+  async function save(m){
+    const dirty = S.dirty[m]; if(!dirty || !Object.keys(dirty).length) return;
+    S.dirty[m] = {};
+    const st = document.getElementById('csSt'); if(st) st.textContent = '⏳ بيتحفظ...';
+    try{
+      const { data } = await sb().from('app_kv').select('value').eq('key', 'cash_' + m).maybeSingle();
+      const cur = (data && data.value) || { open:'', days:{} }; cur.days = cur.days || {};
+      Object.entries(dirty).forEach(([path, v]) => { if(path === 'open') cur.open = v; else { const [d, k] = path.split('|'); (cur.days[d] = cur.days[d] || {})[k] = v; } });
+      Object.keys(cur.days).forEach(d => { if(!hasAny(cur.days[d])) delete cur.days[d]; });
+      const { error } = await sb().from('app_kv').upsert({ key:'cash_' + m, value:cur, updated_at:new Date().toISOString(), updated_by_name: me().full_name || me().username || '' });
+      if(error) throw error;
+      // نحدّث اللي عندنا بالنسخة المدموجة من غير ما نمسح اللي لسه بيتكتب
+      const local = doc(m); const pend = S.dirty[m] || {};
+      S.docs[m] = cur; Object.entries(pend).forEach(([path, v]) => { if(path === 'open') cur.open = v; else { const [d, k] = path.split('|'); (cur.days[d] = cur.days[d] || {})[k] = v; } });
+      if(st) st.textContent = '✅ اتحفظ ' + new Date().toLocaleTimeString('ar-EG', { hour:'2-digit', minute:'2-digit' });
+      refreshAuto();
+    }catch(e){ S.dirty[m] = Object.assign(dirty, S.dirty[m] || {}); if(st) st.textContent = '⚠️ مااتحفظش: ' + e.message; }
+  }
+  function onInput(el){
+    const m = S.m, path = el.dataset.cs, v = el.value;
+    if(path === 'open') doc(m).open = v; else { const [d, k] = path.split('|'); (doc(m).days[d] = doc(m).days[d] || {})[k] = v; }
+    (S.dirty[m] = S.dirty[m] || {})[path] = v;
+    refreshAuto();
+    const st = document.getElementById('csSt'); if(st) st.textContent = '✏️ ...';
+    clearTimeout(S.t); S.t = setTimeout(() => save(m), 800);
+  }
+  function refreshAuto(){
+    const m = S.m, D = doc(m), t = totals(m);
+    const set = (id, v, cls) => { const e = document.getElementById(id); if(!e) return; e.textContent = v; if(cls != null) e.className = cls; };
+    Object.keys(D.days).concat(Array.from({ length:31 }, (_, i) => String(i + 1))).forEach(d => {
+      const r = D.days[d]; if(!document.getElementById('csE' + d)) return;
+      const e = dayExp(r), b = dayBal(r), any = hasAny(r);
+      set('csE' + d, any && e ? fmt(e) : (any ? '0' : ''), 'cs-auto');
+      set('csB' + d, any ? fmt(b) : '0', 'cs-auto ' + (b < 0 ? 'neg' : b > 0 ? 'pos' : ''));
+    });
+    COLS.forEach(c => { if(c.t === 'text') return; set('csT_' + c.k, c.k === '_bal' ? fmt(t.balance) : fmt(t[c.k]), c.k === '_bal' ? 'cs-bal' + (t.balance < 0 ? ' neg' : '') : null); });
+    set('csK_in', fmt(INS.reduce((a, c) => a + t[c.k], 0))); set('csK_out', fmt(t._exp)); set('csK_draw', fmt(DRAWS.reduce((a, c) => a + t[c.k], 0)));
+    set('csK_bal', fmt(t.balance));
+  }
+  const headRow = () => `<tr>${['', ...COLS.map(c => c.l)].map(l => `<th class="cs-h">${esc(l)}</th>`).join('')}</tr>`;
+  function view(){
+    const m = S.m, y = +m.slice(0, 4), mo = +m.slice(5, 7), n = new Date(y, mo, 0).getDate();
+    const months = []; { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() + 1); for(let i = 0; i < 12; i++){ months.push(d.getFullYear() + '-' + pad(d.getMonth() + 1)); d.setMonth(d.getMonth() - 1); } }
+    if(!months.includes(m)) months.push(m);
+    let h = `<div class="pagehead"><h1>💼 الحسابات</h1><p>شيت الخزنة يوم بيوم — اكتب في الخانات على طول وهيتحفظ لوحده. <b>اجمالى المصروف</b> و<b>خزنة اليوم</b> بيتحسبوا لوحدهم، و<b>رصيد الخزنة</b> = تقفيل الشهر اللي فات + خزنة كل الأيام.</p></div>
+      <div class="cs-bar"><label>الشهر <select id="csM">${months.map(x => `<option value="${x}" ${x === m ? 'selected' : ''}>${new Date(x + '-15').toLocaleDateString('ar-EG', { month:'long', year:'numeric' })}</option>`).join('')}</select></label>
+        <span id="csSt" style="font-size:13px;color:var(--muted)"></span>${window.XLSX ? '<button class="mockbtn" id="csX">⬇️ Excel</button>' : ''}</div>`;
+    if(S.err) h += `<div class="mono-note">${esc(S.err)}</div>`;
+    if(!S.loaded[m]) return h + '<div class="card"><p class="none">⏳ بيحمّل الشيت...</p></div>';
+    const D = doc(m), v = (d, k) => esc((D.days[d] || {})[k] ?? '');
+    h += `<div class="cs-kpis"><div class="cs-kpi"><div class="n" id="csK_in" style="color:#1f7a45">0</div><div class="l">📥 الداخل (تحصيل + مكتب)</div></div>
+      <div class="cs-kpi"><div class="n" id="csK_out" style="color:#c0392b">0</div><div class="l">📤 اجمالى المصروف</div></div>
+      <div class="cs-kpi"><div class="n" id="csK_draw">0</div><div class="l">👤 سحب بيتر + فادي</div></div>
+      <div class="cs-kpi" style="border:2px solid var(--brass)"><div class="n" id="csK_bal">0</div><div class="l">🏦 رصيد الخزنة</div></div></div>`;
+    h += `<div class="cs-wrap"><table class="cs" dir="rtl"><thead>
+      <tr class="cs-tot"><td>${esc(new Date(m + '-15').toLocaleDateString('en-US', { month:'short' }).toLowerCase())}</td>${COLS.map(c => c.t === 'text' ? '<td></td>' : `<td id="csT_${c.k}"${c.k === '_bal' ? ' class="cs-bal"' : ''}>0</td>`).join('')}</tr>
+      ${headRow()}</thead><tbody>
+      <tr class="cs-open"><td class="cs-day">تقفيل</td><td colspan="${COLS.length - 2}" style="text-align:right;padding:0 8px;font-size:12.5px;color:#7a5c00">رصيد الخزنة من الشهر اللي فات ←</td>
+        <td class="cs-in"><input type="text" inputmode="decimal" data-cs="open" value="${esc(D.open ?? '')}"></td><td></td></tr>`;
+    for(let d = 1; d <= n; d++){
+      if(d > 1 && (d - 1) % 7 === 0) h += headRow().replace('<tr>', '<tr class="cs-rep">');
+      h += `<tr><td class="cs-day">${d}</td>${COLS.map(c => {
+        if(c.k === '_exp') return `<td class="cs-auto" id="csE${d}"></td>`;
+        if(c.k === '_bal') return `<td class="cs-auto" id="csB${d}">0</td>`;
+        if(c.t === 'text') return `<td><input class="cs-note" type="text" data-cs="${d}|${c.k}" value="${v(d, c.k)}"></td>`;
+        return `<td${c.t === 'in' ? ' class="cs-in"' : ''}><input type="text" inputmode="decimal" data-cs="${d}|${c.k}" value="${v(d, c.k)}"></td>`; }).join('')}</tr>`;
+    }
+    h += '</tbody></table></div>';
+    return h;
+  }
+  function exportX(){
+    const m = S.m, D = doc(m), n = new Date(+m.slice(0, 4), +m.slice(5, 7), 0).getDate(), rows = [];
+    rows.push(['تقفيل', ...COLS.map(c => c.k === '_bal' ? num(D.open) : '')]);
+    for(let d = 1; d <= n; d++){ const r = D.days[d] || {}; rows.push([d, ...COLS.map(c => c.k === '_exp' ? dayExp(r) : c.k === '_bal' ? dayBal(r) : c.t === 'text' ? (r[c.k] || '') : (r[c.k] === '' || r[c.k] == null ? '' : num(r[c.k])))]); }
+    const t = totals(m); rows.push(['الإجمالي', ...COLS.map(c => c.t === 'text' ? '' : c.k === '_bal' ? t.balance : t[c.k])]);
+    const ws = XLSX.utils.aoa_to_sheet([['', ...COLS.map(c => c.l)], ...rows]), wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, m); XLSX.writeFile(wb, 'الحسابات-' + m + '.xlsx');
+  }
+  function draw(){
+    if(route() !== 'accounts') return;
+    const main = document.getElementById('main'); if(!main) return;
+    main.innerHTML = view();
+    const sel = document.getElementById('csM'); if(sel) sel.onchange = e => { S.m = e.target.value; if(!S.loaded[S.m]) load(S.m); draw(); };
+    const x = document.getElementById('csX'); if(x) x.onclick = exportX;
+    main.querySelectorAll('[data-cs]').forEach(el => { el.oninput = () => onInput(el); el.onkeydown = e => {
+      if(e.key !== 'Enter' && e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+      const all = [...main.querySelectorAll('[data-cs]')], [d, k] = (el.dataset.cs + '|').split('|');
+      const col = all.filter(z => z.dataset.cs.split('|')[1] === k || (k === '' && z.dataset.cs === 'open'));
+      const i = col.indexOf(el), nx = col[i + (e.key === 'ArrowUp' ? -1 : 1)];
+      if(nx){ e.preventDefault(); nx.focus(); nx.select && nx.select(); } }; });
+    refreshAuto();
+  }
+  function mount(){
+    if(OLD.includes(route())){ location.replace('#/accounts'); return; }
+    if(route() !== 'accounts') return;
+    document.querySelectorAll('#sidebar a.navlink').forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#/accounts'));
+    draw(); if(!S.loaded[S.m] && sb()) load(S.m);
+  }
+  // 🏠 للصفحة الرئيسية: رصيد الخزنة للشهر الحالي
+  window.CashAPI = { async balance(){ const m = curM(); if(!S.loaded[m]) await load(m); return { month:m, ...totals(m) }; } };
+  const _render = render;
+  render = function(){ _render.apply(this, arguments); mount(); };
+  window.addEventListener('hashchange', () => setTimeout(mount, 0));
+  const w = setInterval(() => { if(sb() && me().id){ clearInterval(w); mount(); } }, 700);
+})();
+</script>
 <style>
 /* 📂 أقسام فرعية — قسم واحد بيتفتح ويتقفل وجواه الأقسام اللي مش بتستخدم كتير */
 #sidebar details.subgrp{margin-top:18px;background:rgba(0,0,0,.12);border-radius:10px;padding:4px 6px}
