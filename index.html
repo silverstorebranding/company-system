@@ -5136,7 +5136,9 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
   const phKey = v => String(v || '').replace(/\D/g, '').slice(-10);
   async function loadSquadPages(){
     if(sqPages && Date.now() - sqPagesAt < 10 * 60 * 1000) return;
-    const c = window.__sbClient || (window.AuthGate && window.AuthGate.sb); if(!c) return;
+    // ⏳ نستنى الاتصال بقاعدة البيانات (على الموبايل بيتأخر) — من غيره أوردرات Squad كلها بتتحسب إيطالي والربح بيطلع مختلف
+    let c = null; for(let i = 0; i < 40 && !(c = window.__sbClient || (window.AuthGate && window.AuthGate.sb)); i++) await new Promise(r => setTimeout(r, 250));
+    if(!c) return;
     try{ const since = new Date(Date.now() - 183 * 86400000).toISOString(), map = {}; let off = 0;
       for(;;){ const { data, error } = await c.from('orders').select('customer_phone, page_name, created_at').gte('created_at', since).order('created_at', { ascending:true }).range(off, off + 999);
         if(error) throw error; (data || []).forEach(r => { const k = phKey(r.customer_phone); if(k) map[k] = r.page_name || ''; });
@@ -15714,6 +15716,30 @@ table.cs tr.cs-open td{background:#fff7dd}
   }
   gather();
   new MutationObserver(() => gather()).observe(bar, { childList:true, subtree:true, attributes:true, attributeFilter:['class'] });
+})();
+</script>
+<style>
+#appUpd{position:fixed;top:0;left:0;right:0;z-index:200;background:#1f3d36;color:#fff;padding:10px 14px;text-align:center;font-size:14.5px;font-weight:700;box-shadow:0 2px 10px rgba(0,0,0,.25);display:none}
+#appUpd button{margin-inline-start:10px;padding:5px 14px;border:0;border-radius:8px;background:#f3ede0;color:#1f3d36;font-family:inherit;font-weight:800;font-size:14px;cursor:pointer}
+</style>
+<div id="appUpd">🔄 فيه نسخة جديدة من النظام — الأرقام اللي قدامك ممكن تكون محسوبة بالطريقة القديمة <button type="button" onclick="location.reload()">حدّث دلوقتي</button></div>
+<script>
+/* 🔄 لو المتصفح (خصوصًا الموبايل) فاتح نسخة قديمة من الصفحة، بنقارن تاريخ آخر تعديل للنسخة اللي على السيرفر
+   بتاريخ النسخة المفتوحة، ولو فيه أحدث بيظهر شريط "حدّث دلوقتي" — بيتشيك عند الفتح وكل 10 دقايق ولما ترجع للصفحة */
+(function(){
+  const loaded = Date.parse(document.lastModified) || 0;
+  async function check(){
+    try{
+      const url = location.href.split('#')[0].split('?')[0] + '?v=' + Date.now();
+      const r = await fetch(url, { method:'HEAD', cache:'no-store' });
+      const lm = Date.parse(r.headers.get('last-modified') || '');
+      if(lm && loaded && lm > loaded + 2000) document.getElementById('appUpd').style.display = 'block';
+    }catch(e){}
+  }
+  if(location.protocol.startsWith('http')){
+    setTimeout(check, 3000); setInterval(check, 10 * 60 * 1000);
+    document.addEventListener('visibilitychange', () => { if(document.visibilityState === 'visible') check(); });
+  }
 })();
 </script>
 </body>
