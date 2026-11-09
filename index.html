@@ -4019,7 +4019,21 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
 (function(){
   /* ---------- إعدادات الشيت ---------- */
   const ADS_SHEET_ID = '1ZLQLKF-aNBXXeF_0ltB2RH_K7eH1tfCyKmtRri44DWw';
-  const ADS_GID      = '1578295146';           // رقم التاب (من اللينك بعد gid=)
+  // 📑 الشيت بقى تاب لكل شهر، وكل تاب ترتيب أعمدته مختلف — A=0, B=1, C=2 ...
+  //   gid = رقم التاب (من اللينك بعد gid=) — لما تعمل تاب لشهر جديد أو تأرشف شهر ضيفه هنا
+  //   لو نفس اليوم موجود في أكتر من تاب بيتاخد من أول تاب في الليستة
+  const ADS_TABS = [
+    { gid:'1578295146', name:'Orginal Ads (نوفمبر)', cols:{
+      dream:{ spend:[1], orders:[2], msgs:[3] }, kidzzly:{ spend:[5], orders:[6], msgs:[7] } } },
+    { gid:'1936203255', name:'oct ads', cols:{
+      dream:{ spend:[1], orders:[2], msgs:[3] }, cara:{ spend:[5], orders:[6], msgs:[7] }, fastplt:{ spend:[9], orders:[10] },
+      kidzzly:{ spend:[12], orders:[13] }, rs:{ spend:[15], orders:[16] }, socky:{ spend:[18], orders:[19] } } },
+    { gid:'1525198880', name:'Orginal Ads sep', cols:{
+      dream:{ spend:[1], orders:[2], msgs:[3] }, cara:{ spend:[5], orders:[6], msgs:[7] }, fastplt:{ spend:[9], orders:[10] },
+      msg:{ spend:[12], orders:[13] }, rs:{ spend:[15], orders:[16] } } },
+    { gid:'0', name:'Orginal Ads aug', cols:{
+      dream:{ spend:[1,4], orders:[2,5], msgs:[6] }, msg:{ spend:[11], orders:[12] } } },  // tiktok dream + dream site · (logy site مش متحسوب)
+  ];
   const ADS_YEAR     = new Date().getFullYear(); // الشيت مكتوب فيه اليوم والشهر بس
   // أرقام الأعمدة: A=0, B=1, C=2 ... — لو ضفت براند جديد في الشيت ضيفه هنا
   // pr = اسم العمود اللي الإعلانات بتتحط فيه في جدول الأرباح
@@ -4027,10 +4041,11 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
     { key:'dream',   name:'DREAM',   color:'#5b3f7a', spend:1, orders:2,  msgs:3,    pr:'dream',       prBrands:['dream','dream msg site','dream wa'] },
     { key:'cara',    name:'CARA',    color:'#2f5f73', spend:5, orders:6,  msgs:7,    pr:'cara silver', prBrands:['cara silver','cara silver un','cara wa'] },
     { key:'fastplt', name:'FASTPLT', color:'#8a6d3b', spend:9, orders:10, msgs:null, pr:'fastplt',     prBrands:['fastplt'] },
-    // 👶 RS KIDS: صرف الإعلانات في العمود P (رقم 15) — من غير عمود أوردرات، فمش داخل في حسبة البوصلة
+    // (أرقام الأعمدة الفعلية بقت في ADS_TABS فوق — اللي هنا اسم ولون وعمود الأرباح بس)
     { key:'rs',      name:'RS KIDS', color:'#a0456e', spend:15, orders:null, msgs:null, pr:'rs kids',   prBrands:['rs kids'] },
-    // 🧸 KIDZZLY: صرف الإعلانات في العمود M (رقم 12)
     { key:'kidzzly', name:'KIDZZLY', color:'#4f8fd8', spend:12, orders:null, msgs:null, pr:'kidzzly',   prBrands:['kidzzly'] },
+    { key:'msg',     name:'MSG',     color:'#6b7a3a', spend:null, orders:null, msgs:null, pr:'msg',     prBrands:['msg'] },
+    { key:'socky',   name:'SOCKY',   color:'#7a5c3a', spend:null, orders:null, msgs:null, pr:'socky',   prBrands:['socky'] },
   ];
   const MONTHS = ['january','february','march','april','may','june','july','august','september','october','november','december'];
 
@@ -4067,7 +4082,7 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
 
   function adsJsonp(base){
     return new Promise((resolve, reject) => {
-      const cb = '__adsCb' + Date.now();
+      const cb = '__adsCb' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
       const s = document.createElement('script');
       const timer = setTimeout(() => { cleanup(); reject(new Error('timeout')); }, 12000);
       function cleanup(){ clearTimeout(timer); try{ delete window[cb]; }catch(e){} s.remove(); }
@@ -4082,8 +4097,8 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
     });
   }
 
-  async function adsFetchRows(){
-    const base = `https://docs.google.com/spreadsheets/d/${ADS_SHEET_ID}/gviz/tq?gid=${ADS_GID}&headers=0`;
+  async function adsFetchRows(gid){
+    const base = `https://docs.google.com/spreadsheets/d/${ADS_SHEET_ID}/gviz/tq?gid=${gid}&headers=0`;
     try{
       const res = await fetch(base + '&tqx=out:csv&_=' + Date.now());
       if(!res.ok) throw new Error('HTTP ' + res.status);
@@ -4096,8 +4111,9 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
   }
 
   // بياخد الصفوف اللي أولها تاريخ زي "9September" ويتجاهل صفوف العناوين والإجماليات
-  function adsParse(rows){
+  function adsParse(rows, cols){
     const out = [];
+    const sum = (r, idx) => (idx || []).reduce((s, i) => s + adsNum(r[i]), 0);
     rows.forEach(r => {
       const m = String(r[0] ?? '').trim().match(/^(\d{1,2})\s*([A-Za-z]+)/);
       if(!m) return;
@@ -4105,10 +4121,19 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
       const d = new Date(ADS_YEAR, mon, +m[1]);
       const g = {};
       ADS_GROUPS.forEach(G => {
-        g[G.key] = { spend: adsNum(r[G.spend]), orders: adsNum(r[G.orders]), msgs: G.msgs == null ? 0 : adsNum(r[G.msgs]) };
+        const c = cols[G.key] || {};
+        g[G.key] = { spend: sum(r, c.spend), orders: sum(r, c.orders), msgs: sum(r, c.msgs) };
       });
       out.push({ key: adsKey(d), date: d, g });
     });
+    return out;
+  }
+  // بيقرا كل التابات (شهر شهر) ويجمعهم في ليستة أيام واحدة
+  async function adsFetchAll(){
+    const res = await Promise.allSettled(ADS_TABS.map(T => adsFetchRows(T.gid).then(rows => adsParse(rows, T.cols))));
+    const seen = new Set(), out = [];
+    res.forEach(x => { if(x.status !== 'fulfilled') return; x.value.forEach(r => { if(seen.has(r.key)) return; seen.add(r.key); out.push(r); }); });
+    if(!out.length && res.some(x => x.status === 'rejected')) throw res.find(x => x.status === 'rejected').reason;
     return out.sort((a,b) => a.date - b.date);
   }
 
@@ -4118,7 +4143,7 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
     adsLoading = true; adsError = ''; adsRerender();
     adsPromise = (async () => {
       try{
-        const parsed = adsParse(await adsFetchRows());
+        const parsed = await adsFetchAll();
         if(!parsed.length) throw new Error('empty');
         adsData = parsed; adsLoadedAt = new Date();
       }catch(e){
@@ -4258,7 +4283,9 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
     ADS_GROUPS.forEach(G => inputs.forEach(inp => { if(inp.dataset.brand === G.pr) inp.value = Math.round(t[G.key].spend); }));
     if(typeof prRecalc === 'function') prRecalc();
     const period = R.from ? `من ${R.from} لـ ${R.to}` : 'لكل الشيت';
-    const txt = ADS_GROUPS.map(G => `${G.name} ${fmt(t[G.key].spend)} ج`).join('، ');
+    const withSpend = ADS_GROUPS.filter(G => t[G.key].spend > 0);
+    const txt = withSpend.length ? withSpend.map(G => `${G.name} ${fmt(t[G.key].spend)} ج`).join('، ')
+      : `⚠️ مفيش ولا صرف مكتوب في شيت الإعلانات ${R.from ? 'من ' + R.from + ' لـ ' + R.to : ''} — اتأكد إن الأرقام اتكتبت في الشيت`;
     st.textContent = `✅ اتملت ${period}: ` + txt;
     return txt;
   }
