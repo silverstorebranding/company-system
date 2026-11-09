@@ -958,7 +958,10 @@ const prMan=(id,b)=>(prManualVals[id]&&prManualVals[id][b])||0;
 let prBrandCalc={}, prPendingTotal=0, prRealCols=[], prExpCols=[], prUnbranded=[];
 
 function prGetBrand(note){
-  const n=String(note||"").toLowerCase().trim().split("\n")[0].trim().replace(/\s+/g," "); // المسافات الزيادة بتتوحّد لمسافة واحدة
+  const n=String(note||"").toLowerCase().trim().split("\n")[0].trim().replace(/\s+/g," "); // المسافات الزيادة بتتوحّد لمسافة واح
+  // 📌 notes اتحددلها براند بإيدك من "❔ غيره" (app_kv: wallet_note_map) — 'none' = مش محسوب
+  if(window.__noteMap&&window.__noteMap[n]){const m=window.__noteMap[n]; return m==='none'?null:m;}
+  if(/^(suq|squ|sqd|sqau)/.test(n))return"squad"; // 🏆 أخطاء إملائية لـ squad (suqud ...)دة
   if(n.startsWith("bloom"))return"bloom"; // 🌸 براند BLOOM
   if(n.startsWith("squad"))return"squad"; // 🏆 SQUAD
   if(n.startsWith("ersal")||n.startsWith("إرسال")||n.startsWith("ارسال"))return"ersal"; // 📨 إرسال صفحة
@@ -966,6 +969,7 @@ function prGetBrand(note){
   if(n.startsWith("kidzzly")||n.startsWith("kidzly")||n.startsWith("kidz"))return"kidzzly"; // 🧸 براند KIDZZLY (kidzzly / kidzzly msg ...)
   if(n.startsWith("rs kids")||n.startsWith("rskids")||n.startsWith("rs-kids")||n.startsWith("rs_kids"))return"rs kids"; // براند RS KIDS
   if(/^rs(\s|$|[^a-z])/.test(n))return"rs kids"; // ملاحظة "rs" لوحدها = براند RS
+  if(/kid|كيدز/.test(n))return"kidzzly"; // 🧸 أي notes فيها kid (kidzly / kidz wa ...) = Kidzzly
   if(n.startsWith("dream msg site"))return"dream msg site";
   if(n.startsWith("drew wa"))return"dream wa"; // خطأ إملائي شائع لـ dream wa
   if(n.startsWith("dream wa"))return"dream wa";
@@ -5017,7 +5021,8 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
           wallet += v; walletN++;
           const g = walletGroup(o.notes, o); const W = walletBy[g] = walletBy[g] || { v:0, n:0, days:{}, cogs:0, cogsN:0 }; W.v += v; W.n++;
           // ❔ "غيره": بنحفظ الاسم المكتوب في notes عشان يبان إيه اللي جواه
-          if(g === 'other'){ const nm = String(o.notes || '').split('\n')[0].trim() || '(notes فاضية)'; const X = (W.names = W.names || {})[nm] = W.names[nm] || { n:0, v:0 }; X.n++; X.v += v; }
+          if(g === 'other'){ const nm = String(o.notes || '').split('\n')[0].trim() || '(notes فاضية)'; const X = (W.names = W.names || {})[nm] = W.names[nm] || { n:0, v:0 }; X.n++; X.v += v;
+            (W.orders = W.orders || []).push({ serial:o.serial, name:o.full_name || '', phone:o.phone || '', notes:nm, v:Math.round(v), date:o.order_date || '', contents:o.shipment_contents || '' }); }
           // 📈 ربح تقريبي: الفلوس اللي في المحفظة (بعد الشحن) − تكلفة البضاعة (بنفس قواعد قسم الأرباح)
           const cg = walletCogs(o); if(cg != null){ W.cogs += cg; W.cogsN++; }
           const d = dayKey(o.order_date); if(d){ W.days[d] = (W.days[d] || 0) + 1; lastPick = !lastPick || d > lastPick ? d : lastPick; }
@@ -5136,6 +5141,7 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
         if(error) throw error; (data || []).forEach(r => { const k = phKey(r.customer_phone); if(k) map[k] = r.page_name || ''; });
         if(!data || data.length < 1000) break; off += 1000; }
       sqPages = map; sqPagesAt = Date.now(); }catch(e){ sqPages = sqPages || {}; }
+    try{ const { data } = await c.from('app_kv').select('value').eq('key', 'wallet_note_map').maybeSingle(); window.__noteMap = (data && data.value && data.value.map) || {}; }catch(e){}
   }
   // 📒 الـ notes اللي أوردر Squad يتحسب بيها في الأرباح وأيام التسليم حسب مصدره
   const pageNote = pg => { const p = String(pg || ''); if(/إرسال|ارسال/.test(p)) return 'ersal'; if(/كيدز|kid/i.test(p)) return 'kidzzly'; if(/واتساب\s*دريم|dream\s*wa/i.test(p)) return 'dream wa'; if(/دريم|dream/i.test(p)) return 'dream'; return null; };
@@ -5145,6 +5151,8 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
   const pageGroup = pg => { const p = String(pg || ''); if(/إرسال|ارسال/.test(p)) return 'ersal'; if(/كيدز|kid/i.test(p)) return 'kidzzly'; return 'italy'; };
   function walletGroup(note, o){
     const n = String(note || '').toLowerCase().trim();
+    const nm = n.split('\n')[0].trim().replace(/\s+/g, ' ');
+    if(window.__noteMap && window.__noteMap[nm]){ const m = window.__noteMap[nm]; return m === 'none' ? 'other' : m === 'kidzzly' || m === 'rs kids' ? 'kidzzly' : m === 'ersal' ? 'ersal' : m === 'socky' ? 'socky' : m === 'bloom' ? 'bloom' : 'italy'; }
     if(/^(sock|سوك|شراب)/.test(n)) return 'socky';
     let b = null; try{ b = prGetBrand(note); }catch(e){}
     if(b === 'squad'){
@@ -13068,7 +13076,9 @@ a.hm-kpi:hover{box-shadow:0 6px 16px rgba(0,0,0,.07)}
   // 💍/🧸 مبيعات المحفظة لكل قسم + الربح التقريبي (المحفظة بعد الشحن − تكلفة البضاعة)
   const WB = [['italy', '💍 إيطالي'], ['kidzzly', '🧸 كيدزلي'], ['ersal', '📨 إرسال'], ['socky', '🧦 سوكي'], ['bloom', '🌸 بلوم'], ['other', '❔ غيره']];
   // 📈 ربح المحفظة = نسبة ثابتة من التحصيل (فلوس المحفظة بعد خصم الشحن): الإيطالي (ومعاه إرسال صفحة) 15% · كيدزلي 30%
-  const WALLET_PROFIT_PCT = { italy:0.15, ersal:0.15, kidzzly:0.30 };
+  const WALLET_PROFIT_PCT = { italy:0.15, kidzzly:0.30, ersal:0.40 };
+  const WP_LBL = [['italy', '💍 إيطالي', '15%'], ['kidzzly', '🧸 كيدزلي', '30%'], ['ersal', '📨 إرسال صفحة', '40%']];
+  const profitBreak = D => WP_LBL.filter(([k]) => D.walletBy && D.walletBy[k]).map(([k, l, pc]) => `${l} <b>${fmt(wGroupProfit(k, D.walletBy[k]))}</b> <small>(${pc})</small>`).join(' · ');
   const wGroupProfit = (k, W) => WALLET_PROFIT_PCT[k] != null && W ? Math.round(W.v * WALLET_PROFIT_PCT[k]) : null;
   function walletProfit(D){
     if(!D || !D.walletBy) return null;
@@ -13121,6 +13131,47 @@ a.hm-kpi:hover{box-shadow:0 6px 16px rgba(0,0,0,.07)}
     if(!window.QP || !window.QP.getSummary){ H.qpErr = ''; return; }
     if(!window.QP.api.hasCreds()){ H.qpErr = 'سجّل دخول QP من قسم 🚚 QP على الجهاز ده عشان تشوف أرقامه هنا.'; return; }
     try{ H.qp = await window.QP.getSummary(); H.qpErr = H.qp && H.qp.err ? H.qp.err : ''; }catch(e){ H.qpErr = e.message; }
+    try{ await trackWallet(); }catch(e){}
+  }
+  /* 💸 متابعة تحويلات QP: QP بتحوّل فلوس المحفظة وبتصفّرها — فبنفتكر أعلى رقم من آخر تحويل،
+     ولو المحفظة نزلت فجأة (أقل من 40% منه) يبقى QP حوّلت الرقم ده → بيتسجل في payouts (app_kv: qp_wallet_track) */
+  async function trackWallet(){
+    const D = H.qp; if(!D || D.wallet == null || !sb()) return;
+    const { data } = await sb().from('app_kv').select('value').eq('key', 'qp_wallet_track').maybeSingle();
+    const T = (data && data.value) || { peak:null, payouts:[] }; T.payouts = T.payouts || [];
+    const now = new Date().toISOString(), W = Number(D.wallet) || 0, wp = walletProfit(D), P = wp ? wp.p : 0;
+    let changed = false;
+    if(T.peak && T.peak.v > 0 && W < T.peak.v * 0.4 && T.peak.v - W > 1000){
+      T.payouts.unshift({ v:T.peak.v, p:T.peak.p || 0, at:now, peakAt:T.peak.at }); T.payouts = T.payouts.slice(0, 50);
+      T.peak = { v:W, p:P, at:now }; changed = true;
+    } else if(!T.peak || W > T.peak.v){ T.peak = { v:W, p:P, at:now }; changed = true; }
+    H.qpTrack = T;
+    if(changed) await sb().from('app_kv').upsert({ key:'qp_wallet_track', value:T, updated_at:now, updated_by_name: me().full_name || me().username || '' });
+  }
+  // ❔ أوردرات "غيره" — تشوفها وتحدد كل notes تتحسب على أنهي براند (بيتحفظ ويتطبق دايمًا في المحفظة والأرباح)
+  function otherModal(){
+    const W = H.qp && H.qp.walletBy && H.qp.walletBy.other; if(!W || !W.orders) return;
+    const by = {}; W.orders.forEach(o => (by[o.notes] = by[o.notes] || []).push(o));
+    const OPTS = [['', '— اختار —'], ['dream', '💍 Dream (إيطالي)'], ['cara silver', '💎 Cara (إيطالي)'], ['kidzzly', '🧸 Kidzzly'], ['ersal', '📨 إرسال صفحة'], ['none', '🚫 مش محسوب']];
+    const w = document.createElement('div'); w.className = 'bq-modal';
+    w.innerHTML = `<div class="bq-box" style="max-width:860px;width:100%"><div class="bq-h"><b>❔ أوردرات "غيره" — ${fmt(W.orders.length)} أوردر · ${fmt(W.v)} ج</b><button class="bq-x">✕</button></div>
+      <p style="font-size:13px;color:var(--muted);margin:6px 0 10px">دي أوردرات الـ notes بتاعتها مش متعرّفة. اختار لكل اسم يتحسب على أنهي براند — بيتحفظ ويتطبق على طول في المحفظة والأرباح.</p>
+      <div style="max-height:65vh;overflow:auto">${Object.entries(by).sort((a, b) => b[1].length - a[1].length).map(([nm, L]) => `<div class="card" style="margin:0 0 10px">
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><b>notes: "${esc(nm)}"</b> <span style="color:var(--muted);font-size:13px">${L.length} أوردر · ${fmt(L.reduce((a, o) => a + o.v, 0))} ج</span>
+          <select class="ef-in" data-nm="${esc(nm)}" style="margin-inline-start:auto">${OPTS.map(([v, l]) => `<option value="${v}" ${(window.__noteMap || {})[nm.toLowerCase().replace(/\s+/g, ' ')] === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+        <table class="pr" style="width:100%;margin-top:6px;font-size:12.5px"><tr><th>الشحنة</th><th>العميل</th><th>الموبايل</th><th>الطلب</th><th>التحصيل</th></tr>
+        ${L.map(o => `<tr><td style="direction:ltr">${esc(o.serial)}</td><td>${esc(o.name)}</td><td style="direction:ltr">${esc(o.phone)}</td><td style="text-align:right">${esc(o.contents)}</td><td>${fmt(o.v)}</td></tr>`).join('')}</table></div>`).join('')}</div>
+      <p id="hmOthSt" style="font-size:13px;margin:8px 0 0"></p></div>`;
+    document.body.appendChild(w);
+    w.onclick = e => { if(e.target === w || e.target.classList.contains('bq-x')) w.remove(); };
+    w.querySelectorAll('[data-nm]').forEach(sel => sel.onchange = async () => {
+      const key = sel.dataset.nm.toLowerCase().replace(/\s+/g, ' '), st = w.querySelector('#hmOthSt');
+      const { data } = await sb().from('app_kv').select('value').eq('key', 'wallet_note_map').maybeSingle();
+      const map = (data && data.value && data.value.map) || {}; if(sel.value) map[key] = sel.value; else delete map[key];
+      const { error } = await sb().from('app_kv').upsert({ key:'wallet_note_map', value:{ map }, updated_at:new Date().toISOString(), updated_by_name: me().full_name || me().username || '' });
+      window.__noteMap = map;
+      st.textContent = error ? '⚠️ مااتحفظش: ' + error.message : '✅ اتحفظ — "' + sel.dataset.nm + '" هيتحسب على طول على البراند ده. حدّث الصفحة عشان الأرقام تتحسب من جديد.';
+    });
   }
   async function loadAcc(){
     // 🏦 رصيد شيت الخزنة الجديد (💼 الحسابات)
@@ -13173,7 +13224,7 @@ a.hm-kpi:hover{box-shadow:0 6px 16px rgba(0,0,0,.07)}
       const parts = WB.filter(([k]) => D.walletBy[k]).map(([k, l]) => `<span>${l} <b>${fmt(D.walletBy[k].v)}</b></span>`).join('')
         + (D.walletBy.other && D.walletBy.other.names ? `<span style="flex-basis:100%;font-size:11.5px;opacity:.85">❔ غيره = ${Object.entries(D.walletBy.other.names).sort((a, b) => b[1].v - a[1].v).map(([nm, x]) => esc(nm) + ' (' + fmt(x.n) + ')').join('، ')}</span>` : '');
       const pr = walletProfit(D);
-      return `<div class="hm-wsplit">${parts}</div>${pr ? `<div class="hm-wprof">📈 الربح (15% إيطالي + 30% كيدزلي) = <b>${fmt(pr.p)} ج</b></div>` : ''}`; })()}</a>`);
+      return `<div class="hm-wsplit">${parts}</div>${pr ? `<div class="hm-wprof">📈 الربح: ${profitBreak(D)} = <b>${fmt(pr.p)} ج</b></div>` : ''}${H.qpTrack && H.qpTrack.payouts && H.qpTrack.payouts[0] && !D.wallet ? `<div class="hm-wprof" style="color:#2b5a8a">💸 آخر تحويل من QP: <b>${fmt(H.qpTrack.payouts[0].v)} ج</b></div>` : ''}`; })()}</a>`);
     k.push(`<a class="hm-kpi" href="#/inbox" style="--bc:${ib ? '#c0392b' : '#888'}"><div class="l">📥 الرسايل والمهام</div><div class="n">${fmt(ib)}</div><div class="s">${ib ? 'جديد مستنيك' : 'مفيش جديد'}</div></a>`);
     h += `<div class="hm-kpis">${k.join('')}</div>`;
     if(can('qp-upload')) h += shopsCard();
@@ -13193,12 +13244,16 @@ a.hm-kpi:hover{box-shadow:0 6px 16px rgba(0,0,0,.07)}
       else if(!H.qp) h += '<p class="hm-wait">⏳ بيجيب أرقام QP...</p>';
       else{
         h += `<div class="hm-row"><span>👛 المحفظة (لسه ماتحصّلش)</span><b style="color:#2f7d55">${D.wallet != null ? fmt(D.wallet) + ' ج' : '—'}</b></div>`;
+        // 💸 QP بتحوّل الفلوس وبتصفّر المحفظة — بنفتكر آخر رقم كبير
+        const T = H.qpTrack;
+        if(D.wallet) h += `<div class="hm-row" style="font-size:13px"><span>💸 اللي QP هتحوّله (لو حوّلت النهارده)</span><b>${fmt(D.wallet)} ج</b></div>`;
+        if(T && T.payouts && T.payouts[0]) h += `<div class="hm-row" style="font-size:13px;background:#eef4fb"><span>💸 آخر تحويل من QP (المحفظة اتصفرت)</span><b style="color:#2b5a8a">${fmt(T.payouts[0].v)} ج <small style="font-weight:500">· ${new Date(T.payouts[0].at).toLocaleDateString('ar-EG', { weekday:'short', day:'numeric', month:'short' })}${T.payouts[0].p ? ' · ربح ' + fmt(T.payouts[0].p) : ''}</small></b></div>`;
         if(D.walletBy) [['italy', '💍 Italy'], ['kidzzly', '🧸 Kidzzly'], ['ersal', '📨 إرسال صفحة'], ['socky', '🧦 Socky'], ['bloom', '🌸 Bloom'], ['other', '❔ غيره']].filter(([kk]) => D.walletBy[kk]).forEach(([kk, l]) => {
           const W = D.walletBy[kk], pr = wGroupProfit(kk, W);
-          h += `<div class="hm-row" style="padding-inline-start:14px;font-size:13px"><span>${l}</span><span>${fmt(W.v)} ج${pr != null ? ` <small style="color:#2f7d55">· ربح ${fmt(pr)}</small>` : ''}</span></div>`; });
+          h += `<div class="hm-row" style="padding-inline-start:14px;font-size:13px"><span>${l}${kk === 'other' && W.orders ? ` <button class="hm-btn" data-hm-other style="padding:2px 8px;font-size:12px">👀 شوف الأوردرات وحدّد براندها</button>` : ''}</span><span>${fmt(W.v)} ج${pr != null ? ` <small style="color:#2f7d55">· ربح ${fmt(pr)}</small>` : ''}</span></div>`; });
         const wp = walletProfit(D);
         if(wp) h += `<div class="hm-row"><span>📈 الربح من المحفظة</span><b style="color:#2f7d55">${fmt(wp.p)} ج</b></div>
-          <p class="hm-note" style="margin:0 0 6px">= 15% من تحصيل الإيطالي (ومعاه إرسال صفحة) + 30% من تحصيل كيدزلي — التحصيل = فلوس المحفظة بعد خصم الشحن.${wp.unk ? ` (${fmt(wp.unk)} ج من براندات تانية مش داخلين في الربح.)` : ''}</p>`;
+          <p class="hm-note" style="margin:0 0 6px">${profitBreak(D)}<br>= 15% من تحصيل الإيطالي + 30% من تحصيل كيدزلي + 40% من تحصيل إرسال صفحة — التحصيل = فلوس المحفظة بعد خصم الشحن.${wp.unk ? ` (${fmt(wp.unk)} ج من براندات تانية مش داخلين في الربح.)` : ''}</p>`;
         h += `<div class="hm-row"><span>💵 Collect</span><b style="font-size:14px">${esc(D.collect || '—')}</b></div>
           <div class="hm-row"><span>📅 أوردرات امبارح</span><b>${D.yesterday != null ? fmt(D.yesterday) : '—'}</b></div>
           <div class="hm-row"><span>📦 راجع لينا (Ready To Return)</span><b style="color:#b7791f">${D.returns != null ? fmt(D.returns) : '—'}</b></div>
@@ -13235,6 +13290,7 @@ a.hm-kpi:hover{box-shadow:0 6px 16px rgba(0,0,0,.07)}
     const r = document.getElementById('hmRefresh'); if(r) r.onclick = loadAll;
     // "هات الكل وارفع" بيفتح رفع الأوردرات على 📦 الكل ويجيب على طول
     document.querySelectorAll('[data-hm-all]').forEach(a => a.onclick = () => { try{ sessionStorage.setItem('upAutoAll', '1'); }catch(e){} });
+    document.querySelectorAll('[data-hm-other]').forEach(b => b.onclick = e => { e.preventDefault(); otherModal(); });
   }
   function mount(){ draw(); if(!H.loading && (!H.at || Date.now() - H.at > 60000)) loadAll(); }
   let lastIb = -1;
