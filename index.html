@@ -771,7 +771,7 @@ const SOPS = [
 const CHANNELS = "WhatsApp, Messenger, Instagram, TikTok, Phone";
 
 /* ---------------- PROFITS DATA/LOGIC ---------------- */
-const PR_BRANDS=["dream","dream msg site","dream wa","msg","lo gel nails","fastplt","cara silver","cara silver un","cara wa","squad","rs kids","kidzzly","socky","bloom"];
+const PR_BRANDS=["dream","dream msg site","dream wa","msg","lo gel nails","fastplt","cara silver","cara silver un","cara wa","squad","ersal","rs kids","kidzzly","socky","bloom"];
 const PR_PNL_BRANDS=PR_BRANDS.filter(b=>b!=="lo gel nails");
 const PR_SOLO="lo gel nails";
 const PR_MSG_GROUP=["msg","dream msg site","fastplt"];
@@ -784,7 +784,8 @@ const PR_COLS=[
  {type:"agg",key:"cara_group",h:"CARA مجمع",brands:["cara silver","cara silver un","cara wa"]},
  {type:"brand",key:"rs kids",h:"RS KIDS",sum:true}, // بيظهر كمان في جدول الخلاصة
  {type:"brand",key:"kidzzly",h:"KIDZZLY",sum:true}, // 🧸 براند KIDZZLY — نفس معاملة RS KIDS
- {type:"brand",key:"squad",h:"SQUAD",sum:true}, // 🏆 notes = squad — بيتحسب زي الفضة الإيطالي
+ {type:"brand",key:"squad",h:"SQUAD",sum:true}, // 🏆 notes = squad — بيتحسب زي الفضة الإيطالي (اللي ملقيناش مصدره في Squad بس)
+ {type:"brand",key:"ersal",h:"ERSAL",sum:true}, // 📨 إرسال صفحة — براند لوحده (أوردرات Squad بمصدر "إرسال صفحة")
  {type:"brand",key:"socky",h:"SOCKY",sum:true}, // 🧦 SOCKY
  {type:"brand",key:"bloom",h:"BLOOM",sum:true}      // 🌸 براند جديد — بيظهر كمان في جدول الخلاصة
 ];
@@ -963,6 +964,7 @@ function prGetBrand(note){
   const n=String(note||"").toLowerCase().trim().split("\n")[0].trim().replace(/\s+/g," "); // المسافات الزيادة بتتوحّد لمسافة واحدة
   if(n.startsWith("bloom"))return"bloom"; // 🌸 براند BLOOM
   if(n.startsWith("squad"))return"squad"; // 🏆 SQUAD
+  if(n.startsWith("ersal")||n.startsWith("إرسال")||n.startsWith("ارسال"))return"ersal"; // 📨 إرسال صفحة
   if(n.startsWith("sock")||n.startsWith("سوك"))return"socky"; // 🧦 SOCKY
   if(n.startsWith("kidzzly")||n.startsWith("kidzly")||n.startsWith("kidz"))return"kidzzly"; // 🧸 براند KIDZZLY (kidzzly / kidzzly msg ...)
   if(n.startsWith("rs kids")||n.startsWith("rskids")||n.startsWith("rs-kids")||n.startsWith("rs_kids"))return"rs kids"; // براند RS KIDS
@@ -1259,6 +1261,7 @@ const PR_GUIDE_GROUPS=[
   {k:'g_kid',   l:'🧸 KIDZZLY', m:['kidzzly']},
   {k:'g_bloom', l:'🌸 BLOOM', m:['bloom']},
   {k:'g_socky', l:'🧦 SOCKY', m:['socky']},
+  {k:'g_ersal', l:'📨 ERSAL (إرسال صفحة)', m:['ersal']},
 ];
 const PR_GUIDE_ROWS=[
   ['cogs','📦 تكلفة البضاعة'],['shipDel','🚚 شحن التسليمات'],['shipUndel','💔 شحن بايظ'],['shipRet','↩️ شحن المرتجعات'],
@@ -1863,10 +1866,10 @@ function viewProfits(){
     <div id="prStatus" style="font-size:13px;color:var(--muted);margin-top:8px"></div>
   </div>
   <div id="prResults" style="display:none">
-    <div class="card"><h3>⭐ الخلاصة — DREAM و CARA و RS KIDS و KIDZZLY و SQUAD و SOCKY و BLOOM</h3>
+    <div class="card"><h3>⭐ الخلاصة — DREAM و CARA و RS KIDS و KIDZZLY و SQUAD و ERSAL و SOCKY و BLOOM</h3>
       <div class="tablewrap"><table class="sum">
-        <tr><th rowspan="2">البند</th><th colspan="2" class="grp g-dream">DREAM المجمع</th><th colspan="2" class="grp g-cara sep">CARA المجمع</th><th colspan="2" class="grp g-rs sep">RS KIDS</th><th colspan="2" class="grp g-rs sep">KIDZZLY</th><th colspan="2" class="grp g-dream sep">SQUAD</th><th colspan="2" class="grp g-rs sep">SOCKY</th><th colspan="2" class="grp g-bloom sep">BLOOM</th></tr>
-        <tr><th class="act">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th><th class="act sep">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th><th class="act sep">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th><th class="act sep">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th><th class="act sep">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th><th class="act sep">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th><th class="act sep">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th></tr>
+        <tr><th rowspan="2">البند</th><th colspan="2" class="grp g-dream">DREAM المجمع</th><th colspan="2" class="grp g-cara sep">CARA المجمع</th><th colspan="2" class="grp g-rs sep">RS KIDS</th><th colspan="2" class="grp g-rs sep">KIDZZLY</th><th colspan="2" class="grp g-dream sep">SQUAD</th><th colspan="2" class="grp g-cara sep">ERSAL</th><th colspan="2" class="grp g-rs sep">SOCKY</th><th colspan="2" class="grp g-bloom sep">BLOOM</th></tr>
+        <tr><th class="act">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th><th class="act sep">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th><th class="act sep">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th><th class="act sep">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th><th class="act sep">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th><th class="act sep">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th><th class="act sep">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th><th class="act sep">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th></tr>
         ${[['rev','📥 المبيعات',''],['cost','🔴 التكاليف',''],['prof','✅ الأرباح','big'],['pct','📊 نسبة الأرباح','big'],['ads','📢 نسبة الإعلانات','']].map(([k,l,cls])=>`
         <tr class="${cls}"><td class="lbl">${l}</td>
           <td class="act" id="S_${k}_dream_group_A">—</td><td class="exp" id="S_${k}_dream_group_F">—</td>
@@ -1874,6 +1877,7 @@ function viewProfits(){
           <td class="act sep" id="S_${k}_rs kids_A">—</td><td class="exp" id="S_${k}_rs kids_F">—</td>
           <td class="act sep" id="S_${k}_kidzzly_A">—</td><td class="exp" id="S_${k}_kidzzly_F">—</td>
           <td class="act sep" id="S_${k}_squad_A">—</td><td class="exp" id="S_${k}_squad_F">—</td>
+          <td class="act sep" id="S_${k}_ersal_A">—</td><td class="exp" id="S_${k}_ersal_F">—</td>
           <td class="act sep" id="S_${k}_socky_A">—</td><td class="exp" id="S_${k}_socky_F">—</td>
           <td class="act sep" id="S_${k}_bloom_A">—</td><td class="exp" id="S_${k}_bloom_F">—</td></tr>`).join('')}
       </table></div>
@@ -5142,6 +5146,11 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
         if(!data || data.length < 1000) break; off += 1000; }
       sqPages = map; sqPagesAt = Date.now(); }catch(e){ sqPages = sqPages || {}; }
   }
+  // 📒 الـ notes اللي أوردر Squad يتحسب بيها في الأرباح وأيام التسليم حسب مصدره
+  const pageNote = pg => { const p = String(pg || ''); if(/إرسال|ارسال/.test(p)) return 'ersal'; if(/كيدز|kid/i.test(p)) return 'kidzzly'; if(/واتساب\s*دريم|dream\s*wa/i.test(p)) return 'dream wa'; if(/دريم|dream/i.test(p)) return 'dream'; return null; };
+  const squadPageOf = o => o && sqPages ? [o.phone, o.phone2, o.customer_phone].map(phKey).map(k => k && sqPages[k]).find(x => x != null) : null;
+  // للأرباح وأيام التسليم: لو notes = squad رجّع البراند الحقيقي من المصدر (أو null لو مش معروف)
+  function squadBrandOf(o){ let b = null; try{ b = prGetBrand(o && o.notes); }catch(e){} if(b !== 'squad') return null; const pg = squadPageOf(o); return pg == null ? null : pageNote(pg); }
   const pageGroup = pg => { const p = String(pg || ''); if(/إرسال|ارسال/.test(p)) return 'ersal'; if(/كيدز|kid/i.test(p)) return 'kidzzly'; return 'italy'; };
   function walletGroup(note, o){
     const n = String(note || '').toLowerCase().trim();
@@ -5153,6 +5162,7 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
     }
     if(b === 'rs kids' || b === 'kidzzly') return 'kidzzly';
     if(b === 'bloom') return 'bloom';
+    if(b === 'ersal') return 'ersal';
     if(['dream', 'dream wa', 'dream msg site', 'msg', 'fastplt', 'cara silver', 'cara silver un', 'cara wa'].includes(b)) return 'italy';
     return 'other';
   }
@@ -5547,7 +5557,7 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
       r[4]  = num(o.price);                 // E
       r[5]  = num(o.total_fees);            // F
       r[8]  = o.returned_Client_date || ''; // I
-      r[9]  = o.notes || '';                // J
+      r[9]  = squadBrandOf(o) || o.notes || '';   // J — أوردرات Squad بتتقسم حسب مصدرها (دريم / كيدزلي / إرسال)
       r[10] = new Date(o.order_date);       // K
       r[11] = o.shipment_contents || '';    // L
       r[14] = (QP_CATS[catOf(o)] || { pr:'Pending' }).pr; // O
@@ -5610,6 +5620,8 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
         const seen = new Set(); return a.concat(b).filter(o => { if(seen.has(o.serial)) return false; seen.add(o.serial); return true; }); },
       category: o => catOf(o),
       label: o => qpStatus(o.Order_Delivery_Status).label,
+      loadSquadPages: () => loadSquadPages(),
+      squadBrandOf: o => squadBrandOf(o),
     },
     login(){ qpDoLogin(document.getElementById('qpU').value, document.getElementById('qpP').value); },
     logout: qpLogout,
@@ -5668,6 +5680,7 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
         const list = await qpFetchRange(from, to, n => { if(st) st.textContent = '⏳ بيجيب أوردرات QP... ' + n + ' أوردر'; });
         if(!list.length){ if(st) st.textContent = 'مفيش أوردرات في المدة دي على QP.'; return; }
         qpOrders = list; qpFrom = from; qpTo = to; qpFetchedAt = new Date(); qpDetectNames(list);
+        await loadSquadPages();
         if(st) st.textContent = '⚙️ بيحسب الأرباح من ' + list.length + ' أوردر...';
         if(window.Ads && Ads.setPrRange) Ads.setPrRange(from, to);
         prProcess(qpToProfitRows(list));
@@ -14781,7 +14794,9 @@ table.gs tr.wk td.day{color:#c5221f}
   const ymd = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   const fmt = n => Math.round(Number(n || 0)).toLocaleString('ar-EG');
   const dayTxt = k => new Date(k + 'T12:00:00').toLocaleDateString('ar-EG', { weekday:'long', day:'numeric', month:'long' });
-  const brandOf = q => { const n = String(q.notes || q.note || ''); return typeof prGetBrand === 'function' ? prGetBrand(n) : n.toLowerCase(); };
+  const brandOf = q => { const n = String(q.notes || q.note || ''); const b = typeof prGetBrand === 'function' ? prGetBrand(n) : n.toLowerCase();
+    if(b === 'squad'){ const A = window.QP && window.QP.api; const r = A && A.squadBrandOf ? A.squadBrandOf(q) : null; return r || 'squad'; }   // 🏆 Squad حسب المصدر
+    return b; };
   const phoneKey = v => String(v || '').replace(/\D/g, '').slice(-10);
   // 🎯 البراندات والهدف بتاعها
   const BR = {
@@ -14884,7 +14899,7 @@ table.gs tr.wk td.day{color:#c5221f}
       await loadAgents();
       const [y, m] = S.month.split('-').map(Number), from = S.month + '-01', end = new Date(y, m, 0); end.setDate(end.getDate() + 25);
       const to = ymd(new Date(Math.min(end.getTime(), Date.now())));   // لحد 25 يوم بعد آخر الشهر عشان نشوف التجديدات اتسلمت ولا لأ
-      const [all, log] = await Promise.all([(A.fetchRangeAll || A.fetchRange)(from, to), loadLog(S.month)]);
+      const [all, log] = await Promise.all([(A.fetchRangeAll || A.fetchRange)(from, to), loadLog(S.month), A.loadSquadPages ? A.loadSquadPages() : null]);
       S.all = all; S.log = log; markRenewals(all, log);
       // التوزيع التلقائي للأيام اللي فيها مشكلة (لو لسه متوزعتش) — للبراندين
       for(const brand of Object.keys(BR)){
@@ -14984,7 +14999,7 @@ table.gs tr.wk td.day{color:#c5221f}
       await loadAgents();
       const end = new Date(day + 'T12:00:00'); end.setDate(end.getDate() + 30);
       const to = ymd(new Date(Math.min(end.getTime(), Date.now())));
-      const [all, log] = await Promise.all([(A.fetchRangeAll || A.fetchRange)(day, to < day ? day : to), loadLog(day.slice(0, 7))]);
+      const [all, log] = await Promise.all([(A.fetchRangeAll || A.fetchRange)(day, to < day ? day : to), loadLog(day.slice(0, 7)), A.loadSquadPages ? A.loadSquadPages() : null]);
       S.log = log; markRenewals(all, log);
       S.w.d = split(all.filter(B().test).filter(q => ymd(new Date(q.order_date)) === day), B().target);
     }catch(e){ S.w.err = e.message; }
@@ -15570,6 +15585,11 @@ table.cs tr.cs-open td{background:#fff7dd}
 #sidebar details.subgrp[open]>summary::after{transform:rotate(-90deg)}
 #sidebar details.subgrp .grp{margin-top:10px}
 #sidebar details.subgrp .sub-loose{margin-top:6px}
+/* 📋 كل الأقسام تحت بعض في ليستة واحدة — من غير عناوين (الأساسي / المالية / العمل ...) */
+#sidebar .grp-title{display:none}
+#sidebar .grp,#sidebar .grp.fav{margin-top:2px;background:none;padding:0;border-radius:0}
+#sidebar details.subgrp .grp{margin-top:2px}
+#sidebar details.subgrp{margin-top:12px}
 </style>
 <script>
 /* =====================================================================
