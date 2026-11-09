@@ -12424,10 +12424,9 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
       <p style="margin:0 0 10px;font-size:14px">بيجيب الأوردرات الجديدة من: <b>🏆 Squad</b>، ${SOURCES.map(x => '<b>' + esc(x.label) + '</b>').join('، ')} — كلهم تحت بعض في شيت واحد، وكل أوردر بالـ notes بتاعة مصدره، وكل مصدر بيكمل من بعد آخر أوردر اتاخد منه.</p>
       <div class="up-row"><button class="up-btn pri" id="upAllFetch" ${E.loading ? 'disabled' : ''}>${E.loading ? '⏳ بيجيب...' : '📦 هات كل الأوردرات'}</button>
         ${S.rows ? '<button class="up-btn" id="upClear">🧹 ابدأ من جديد</button>' : ''}
-        <label style="font-size:13.5px;display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border:1.5px dashed var(--brass);border-radius:9px">📅 ابدأ من <input type="date" id="cutD" value="${esc(CUT.d || firstOfMonth())}" style="padding:5px 7px;border:1.5px solid var(--line);border-radius:7px;font-family:inherit"></label>
         <button class="up-btn" id="prdOpen" style="border-color:#6b46c1;color:#6b46c1">📅 هات أوردرات فترة وقارنها بـ QP</button>
         <button class="up-btn" id="xaOpen" style="border-color:#2b6cb0;color:#2b6cb0">🔎 افحص كل المصادر: وصل كام من وقت معيّن</button></div>
-      <p style="margin:8px 0 0;font-size:12.5px;color:var(--muted)">📦 <b>هات كل الأوردرات</b> = بيكمّل من مكان ما وقفت (العادي) — من غير أي أوردر قبل "ابدأ من"، وبيشيل لوحده أي رقم موبايل اترفع على QP من ساعتها · 📅 <b>فترة</b> = بيجيب كل أوردرات فترة ويقارنها بـ QP (للمراجعة)</p>
+      <p style="margin:8px 0 0;font-size:12.5px;color:var(--muted)">📦 <b>هات كل الأوردرات</b> = بيكمّل من مكان ما وقفت (العادي) — وبيشيل لوحده أي رقم موبايل اترفع على QP · 📅 <b>فترة</b> = بيجيب كل أوردرات فترة ويقارنها بـ QP (للمراجعة)</p>
       ${PR.open ? periodHtml() : ''}
       ${XA.open ? diagAllHtml() : ''}
       ${E.err ? `<div class="up-msg err">${esc(E.err)}</div>` : ''}</div>`;
