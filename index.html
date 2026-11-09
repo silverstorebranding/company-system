@@ -4244,10 +4244,8 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
     return `<div class="ads-toolbar" style="margin-bottom:10px"><button class="${adsTab === 'report' ? 'mockbtn' : 'linkbtn'}" onclick="Ads.tab('report')">📊 التقرير</button>
       <button class="${adsTab === 'sheet' ? 'mockbtn' : 'linkbtn'}" onclick="Ads.tab('sheet')">📝 سجّل الصرف (Dream و Kidzzly)</button></div>`;
   }
-  function viewAds(){
-    if(adsTab === 'sheet') return viewAdsSheet();
-    return viewAdsReport().replace('<div class="ads-toolbar">', adsTabs() + '<div class="ads-toolbar">');
-  }
+  // 📢 صفحة الإعلانات = شيت التسجيل بس (التقرير اتشال — الأرقام لسه بتروح للأرباح والبوصلة)
+  function viewAds(){ return viewAdsSheet(); }
   // 📝 الشيت: نفس شكل جوجل شيت — صف لكل يوم، ولكل براند spend / order / wa-msg / cpo
   function viewAdsSheet(){
     const m = adsSheetM, y = +m.slice(0, 4), mo = +m.slice(5, 7), n = new Date(y, mo, 0).getDate(), D = adsManual[m] || {};
@@ -4255,7 +4253,7 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
     const months = []; { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() + 1); for(let i = 0; i < 8; i++){ months.push(d.getFullYear() + '-' + pad2(d.getMonth() + 1)); d.setMonth(d.getMonth() - 1); } }
     if(!months.includes(m)) months.push(m);
     const v = (d, b, f) => { const x = D[d] && D[d][b]; return x && x[f] != null ? x[f] : ''; };
-    let h = `<div class="pagehead"><h1>📢 الإعلانات</h1><p>سجّل صرف الإعلانات يوم بيوم لـ Dream و Kidzzly — بيتحفظ لوحده، وبيدخل على طول في تقرير الإعلانات والأرباح والبوصلة (وبياخد مكان رقم جوجل شيت لنفس اليوم).</p></div>` + adsTabs() + `
+    let h = `<div class="pagehead"><h1>📢 الإعلانات</h1><p>سجّل صرف الإعلانات يوم بيوم لـ Dream و Kidzzly — بيتحفظ لوحده، وبيدخل على طول في الأرباح والبوصلة (وبياخد مكان رقم جوجل شيت لنفس اليوم).</p></div>` + `
       <div class="ads-toolbar"><label>الشهر <select onchange="Ads.sheetMonth(this.value)">${months.map(x => `<option value="${x}" ${x === m ? 'selected' : ''}>${new Date(x + '-15').toLocaleDateString('ar-EG', { month:'long', year:'numeric' })}</option>`).join('')}</select></label>
         <span class="ads-upd" id="adsSaveSt">${adsSaveMsg}</span></div>`;
     if(!adsManLoaded){ adsManualLoad().then(() => adsRerender()); return h + '<div class="card"><p class="none">⏳ بيحمّل...</p></div>'; }
