@@ -2377,7 +2377,7 @@ const Squad = (function(){
     if(error){ setState({ loading:false, error:'مقدرناش نضيف الأوردر: ' + error.message }); return; }
     // الوقت بالظبط اللي الأوردر اتسجل بيه في السيستم (من قاعدة البيانات نفسها)
     sendOrderToGoogleSheet(payload, row && row.created_at ? new Date(row.created_at) : new Date());
-    newOrderType = 'acc';
+    newOrderType = '';
     await loadMyOrders();
     setState({ loading:false, view:'dashboard', info:'اتضاف الأوردر بنجاح.' });
     showToast('اتسجل الأوردر بنجاح وبقى تحت اسمك 🎉', 'success');
@@ -2851,14 +2851,15 @@ const Squad = (function(){
   }
 
   // 👕 البراند في "أوردر جديد": اكسسوارات (المصدر/الطلب/المقاس بالليستة زي ما هي) أو RS / Bloom / Socky (الخانات دي فاضية والموظف يكتبها)
-  // ⛔ RS / Bloom / Socky اتشالوا من "أوردر جديد" — فاضل اكسسوارات بس ومختارة على طول
-  let newOrderType = 'acc'; // 'acc' (كود RS / Bloom / Socky لسه موجود تحت لو احتجناه تاني)
-  const ORDER_BRANDS = { acc:'اكسسوارات', rs:'RS', bloom:'Bloom', socky:'Socky' };
-  const isClothes = t => t === 'rs' || t === 'bloom' || t === 'socky';
+  // ⛔ RS / Bloom / Socky اتشالوا من "أوردر جديد" — البراندات دلوقتي: 💍 Dream (اكسسوارات) و 🧸 Kidzzly
+  // ⚠️ Dream بيتسجل order_type = 'اكسسوارات' زي الأول عشان الشيت ورفع QP مايتلخبطوش — الاسم بس اللي اتغير في الشاشة
+  let newOrderType = ''; // '' | 'acc' (Dream) | 'kidzzly'  (كود RS / Bloom / Socky لسه موجود لو احتجناه تاني)
+  const ORDER_BRANDS = { acc:'اكسسوارات', kidzzly:'Kidzzly', rs:'RS', bloom:'Bloom', socky:'Socky' };
+  const isClothes = t => t === 'kidzzly' || t === 'rs' || t === 'bloom' || t === 'socky';
   function typePicker(prefix){
     const b = (k, l) => `<button type="button" class="sq-type ${newOrderType === k ? 'on' : ''}" data-otype="${k}">${l}</button>`;
     return `<div class="sq-field"><label>البراند <span class="sq-hint">حدد الأول الأوردر ده تبع أنهي براند</span></label>
-      <div class="sq-types" id="${prefix}-types">${b('acc', '💍 اكسسوارات')}</div></div>`;
+      <div class="sq-types" id="${prefix}-types">${b('acc', '💍 Dream')}${b('kidzzly', '🧸 Kidzzly')}</div></div>`;
   }
   function clothesFields(prefix){
     return `
@@ -3878,7 +3879,7 @@ grant select, insert, update, delete on public.office_sales to authenticated;`;
     });
     if($('sq-order-form')) $('sq-order-form').onsubmit = e => {
       e.preventDefault();
-      if(!newOrderType){ showToast('حدد الأول البراند.', 'error'); return; }
+      if(!newOrderType){ showToast('حدد الأول البراند: Dream ولا Kidzzly.', 'error'); return; }
       const p = readFields('sq-new');
       if(!ORDER_SOURCES.includes(p.page_name)){ showToast('اختار المصدر من الليستة الأول.', 'error'); return; }
       if(newOrderType === 'acc' && !p.order_details){ showToast('اختار الطلب من الليستة الأول.', 'error'); return; }
