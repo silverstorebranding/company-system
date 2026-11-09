@@ -15173,5 +15173,47 @@ table.dr a.dr-n{font-weight:700;text-decoration:underline dotted;cursor:pointer}
 })();
 </script>
 
+<style>
+/* 📂 أقسام فرعية — قسم واحد بيتفتح ويتقفل وجواه الأقسام اللي مش بتستخدم كتير */
+#sidebar details.subgrp{margin-top:18px;background:rgba(0,0,0,.12);border-radius:10px;padding:4px 6px}
+#sidebar details.subgrp>summary{cursor:pointer;list-style:none;padding:9px 8px;font-size:14px;font-weight:700;opacity:.9;display:flex;align-items:center;gap:6px;user-select:none}
+#sidebar details.subgrp>summary::-webkit-details-marker{display:none}
+#sidebar details.subgrp>summary::after{content:'◂';margin-inline-start:auto;font-size:12px;transition:transform .15s}
+#sidebar details.subgrp[open]>summary::after{transform:rotate(-90deg)}
+#sidebar details.subgrp .grp{margin-top:10px}
+#sidebar details.subgrp .sub-loose{margin-top:6px}
+</style>
+<script>
+/* =====================================================================
+   📂 أقسام فرعية — بيلم الأقسام دي كلها في قسم واحد في آخر السايدبار:
+   🧭 البوصلة · 🏷️ Brands · الأقسام · الرئيسية · الشركة · المعرفة · الإدارة
+   (بعض اللينكات بتتضاف بعدين — زي البوصلة والإدارة بعد الدخول — فبنراقب السايدبار وننقلها أول ما تظهر)
+   ===================================================================== */
+(function(){
+  const bar = document.getElementById('sidebar'); if(!bar) return;
+  const LS = 'sub_sections_open';
+  const d = document.createElement('details'); d.className = 'subgrp'; d.id = 'subGrp';
+  d.innerHTML = '<summary>📂 أقسام فرعية</summary><div class="sub-loose" id="subLoose"></div>';
+  try{ if(localStorage.getItem(LS) === '1') d.open = true; }catch(e){}
+  d.addEventListener('toggle', () => { try{ localStorage.setItem(LS, d.open ? '1' : '0'); }catch(e){} });
+  bar.appendChild(d);
+  const loose = d.querySelector('#subLoose');
+  const LINKS = ['#/compass', '#/brands'];
+  const GROUPS = ['الأقسام', 'الرئيسية', 'الشركة', 'المعرفة', 'الإدارة'];
+  let busy = false;
+  function gather(){
+    if(busy) return; busy = true;
+    try{
+      LINKS.forEach(h => { const a = bar.querySelector(`a.navlink[href="${h}"]`); if(a && !d.contains(a)) loose.appendChild(a); });
+      bar.querySelectorAll(':scope > .grp').forEach(g => { const t = g.querySelector(':scope > .grp-title'); if(t && GROUPS.includes(t.textContent.trim())) d.appendChild(g); });
+      if(d.parentNode === bar && bar.lastElementChild !== d) bar.appendChild(d);   // يفضل آخر حاجة
+      // لو الصفحة المفتوحة جوه القسم، افتحه
+      if(!d.open && d.querySelector('a.navlink.active')) d.open = true;
+    }finally{ busy = false; }
+  }
+  gather();
+  new MutationObserver(() => gather()).observe(bar, { childList:true, subtree:true, attributes:true, attributeFilter:['class'] });
+})();
+</script>
 </body>
 </html>
