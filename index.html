@@ -2086,13 +2086,28 @@ const Squad = (function(){
   // 📏 لو عمود المقاس لسه مش متضاف في Supabase، الأوردر بيتسجل من غيره بدل ما يفشل خالص
   const missingSizeCol = e => !!e && /size/i.test(e.message || '') && /column|schema/i.test(e.message || '');
   const SIZE_SQL_MSG = 'المقاس مااتحفظش في قاعدة البيانات — لازم سطر الـ SQL بتاع عمود المقاس يتشغّل في Supabase. (المقاس اتبعت للشيت عادي)';
+  /* 🔁 العملاء المتكررين: نفس رقم الموبايل اتسجل أكتر من مرة عند نفس الموظفة (زي تجديد اندلفرد)
+     - الأوردرات بتتعد عادي في الإجمالي والتسليم، بس العمولة مابتتحسبش مرتين:
+       أي محاولة ماتسلمتش وبعدها محاولة تانية لنفس العميل → عمولتها (الـ 5 ج) مش بتتحسب، والعمولة بتتحسب على المحاولة الأخيرة
+     - لو المحاولتين اتسلموا = بيعتين حقيقيتين، الاتنين بيتحسبوا */
+  const custKey = o => String((o && o.customer_phone) || '').replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/\D/g, '').slice(-10);
+  function repeatInfo(orders){
+    const by = {};
+    (orders || []).forEach(o => { const k = custKey(o); if(k.length === 10) (by[k] = by[k] || []).push(o); });
+    const groups = Object.values(by).filter(g => g.length > 1).map(g => g.slice().sort((a, b) => new Date(a.created_at) - new Date(b.created_at)));
+    const skip = new Set();
+    groups.forEach(g => g.forEach((o, i) => { if(i < g.length - 1 && o.status !== 'delivered') skip.add(String(o.id)); }));
+    groups.sort((a, b) => new Date(b[b.length - 1].created_at) - new Date(a[a.length - 1].created_at));
+    return { groups, skip };
+  }
   function commissionSummary(orders){
     let delivered = 0, cancelled = 0, undelivered = 0, pending = 0, delComm = 0, pendComm = 0, delValue = 0;
+    const rep = repeatInfo(orders), pc = o => rep.skip.has(String(o.id)) ? 0 : pendingCommission(o);
     (orders || []).forEach(o => {
       if(o.status === 'delivered'){ delivered++; delComm += deliveredCommission(o); delValue += Number(o.amount) || 0; }
-      else if(o.status === 'cancelled'){ cancelled++; pendComm += pendingCommission(o); }
-      else if(o.status === 'undelivered'){ undelivered++; pendComm += pendingCommission(o); }
-      else { pending++; pendComm += pendingCommission(o); }
+      else if(o.status === 'cancelled'){ cancelled++; pendComm += pc(o); }
+      else if(o.status === 'undelivered'){ undelivered++; pendComm += pc(o); }
+      else { pending++; pendComm += pc(o); }
     });
     const decided = delivered + cancelled + undelivered;
     const rate = decided ? delivered / decided : null;
@@ -2101,7 +2116,7 @@ const Squad = (function(){
     const delRate = totalN ? delivered / totalN : null; // ✅ نسبة التسليم الصح = اتسلم ÷ إجمالي الأوردرات
     // ✅ عمولة الأوردرات بتدخل المستحقة بس لو نسبة التسليم الظاهرة (اتسلم ÷ الإجمالي) عدّت 50%
     const active = delRate !== null && delRate > MIN_RATE;
-    return { total:totalN, delivered, cancelled, undelivered, pending, rate, delRate, active, delValue:r2(delValue),
+    return { total:totalN, delivered, cancelled, undelivered, pending, rate, delRate, active, delValue:r2(delValue), repeats:rep.groups, repSkip:rep.skip,
       delComm:r2(delComm), pendComm:r2(pendComm),
       totalComm:r2(delComm + pendComm),                 // 💰 العمولة الإجمالية
       dueComm:r2(delComm + (active ? pendComm : 0)),     // ✅ العمولة المستحقة
@@ -2743,7 +2758,8 @@ const Squad = (function(){
       <div class="s">${rankText}${gap > 0 ? ` — قدامك ${gap} أوردر بس عشان توصله` : ''}</div></div></div>`;
   }
 
-  function commCell(o, active){
+  function commCell(o, active, s){
+    if(s && s.repSkip && s.repSkip.has(String(o.id))) return `<span style="color:var(--muted)" title="العميل ده اتسجل تاني بعد كده — العمولة بتتحسب على المحاولة الأخيرة بس">🔁 مكرر — 0 ج</span>`;
     if(o.status === 'delivered' && isManualComm(o) && (o.manual_commission === null || o.manual_commission === undefined || o.manual_commission === ''))
       return isAdminUser() ? `<span style="white-space:nowrap"><input type="number" min="0" data-mcomm="${esc(o.id)}" placeholder="✍️ اكتب" style="width:70px;padding:3px 6px;border:1.5px solid #e0a020;border-radius:6px;font-family:inherit"> <button class="sq-icon" data-mcomm-save="${esc(o.id)}" title="احفظ العمولة">💾</button></span>`
         : `<span style="color:#b7791f;font-weight:700" title="أوردر فوق 2000 ج — الأدمن هيكتب عمولته">✍️ مستني الأدمن</span>`;
@@ -2799,6 +2815,20 @@ const Squad = (function(){
         ${rateNote ? `<div class="pf-note">${rateNote}</div>` : ''}</div>
     </div>`;
   }
+  // 🔁 كارت العملاء المتكررين: كل محاولة بتاريخها وحالتها، والعمولة اتحسبت على أنهي واحدة
+  function RepeatsCard(s, who){
+    const G = (s && s.repeats) || []; if(!G.length) return '';
+    const n = G.reduce((a, g) => a + g.length, 0);
+    const att = (o, i) => { const st = statusLabel(o.status), sk = s.repSkip.has(String(o.id));
+      return `<div style="white-space:nowrap"><small class="mut">المرة ${['الأولى', 'التانية', 'التالتة', 'الرابعة'][i] || (i + 1)}:</small> ${fmtDate(o.created_at)} <span class="sq-badge ${st.cls}">${st.text}</span>${/تجديد/.test(o.page_name || '') ? ' <small>♻️</small>' : ''} <small class="mut">${sk ? '· عمولة 0' : '· العمولة هنا'}</small></div>`; };
+    return `<details class="sq-tablecard" style="padding:12px 14px" ${G.length <= 5 ? 'open' : ''}><summary style="cursor:pointer;font-weight:700">🔁 ${esc(who)} ${s.total} أوردر — فيهم <b>${G.length}</b> عميل متكرر (${n} أوردر)</summary>
+      <p class="mut" style="margin:6px 0 10px;font-size:13px">نفس رقم الموبايل اتسجل أكتر من مرة (زي تجديد اندلفرد). الأوردرات بتتعد عادي، بس العمولة مش بتتحسب مرتين: المحاولة اللي ماتسلمتش وجه بعدها أوردر تاني لنفس العميل عمولتها 0، والعمولة على آخر محاولة. لو المرتين اتسلموا الاتنين بيتحسبوا.</p>
+      <table class="sq-table"><thead><tr><th>العميل</th><th>الموبايل</th><th>المحاولات</th><th>اتسلم في الآخر؟</th></tr></thead><tbody>
+      ${G.map(g => { const last = g[g.length - 1], ok = g.some(o => o.status === 'delivered');
+        return `<tr><td data-label="العميل">${esc(last.customer_name || '—')}</td><td class="mut" data-label="الموبايل">${esc(last.customer_phone || '—')}</td>
+          <td data-label="المحاولات">${g.map(att).join('')}</td><td data-label="اتسلم؟">${ok ? '<b style="color:#2f7d55">✅ أيوه</b>' : last.status === 'pending' ? '⏳ لسه' : '<b style="color:#c0392b">❌ لأ</b>'}</td></tr>`; }).join('')}
+      </tbody></table></details>`;
+  }
   function DashboardView(){
     const orders = state.myOrders || [];
     const s = withOffice(commissionSummary(orders), sqUid());
@@ -2812,7 +2842,7 @@ const Squad = (function(){
         <td data-label="المقاس">${esc(o.size || '—')}</td>
         <td class="mut" data-label="المصدر">${esc(o.page_name || '—')}</td>
         <td class="amount" data-label="القيمة">${o.amount ? esc(o.amount) + ' ج' : '—'}</td>
-        <td class="mut" data-label="العمولة">${commCell(o, s.active)}</td>
+        <td class="mut" data-label="العمولة">${commCell(o, s.active, s)}</td>
         <td data-label="الحالة"><span class="sq-badge ${st.cls}">${st.text}</span></td>
         <td class="mut" data-label="التاريخ">${fmtDate(o.created_at)}</td>
         <td data-label="اتشحن؟">${shipCell(o)}</td>
@@ -2844,6 +2874,7 @@ const Squad = (function(){
         <div class="sq-stat"><div class="n">${s.totalComm} ج</div><div class="l">💰 العمولة الإجمالية</div>${commBreak(s, false)}</div>
         <div class="sq-stat"><div class="n gold">${s.dueComm} ج</div><div class="l">✅ العمولة المستحقة${s.active ? '' : ' (النسبة لسه تحت 50%)'}</div>${commBreak(s, true)}</div>
       </div>
+      ${RepeatsCard(s, 'خدتي')}
       <div class="sq-tablecard">
         ${orders.length ? `<table class="sq-table">
           <thead><tr><th>العميل</th><th>الموبايل</th><th>الطلب</th><th>المقاس</th><th>المصدر</th><th>القيمة</th><th>العمولة</th><th>الحالة</th><th>التاريخ</th><th>🚚 اتشحن على QP؟</th><th>تحديث الحالة</th><th>إجراءات</th></tr></thead>
@@ -3447,6 +3478,7 @@ const Squad = (function(){
         <div class="sq-stat"><div class="n gold">${s.dueComm} ج</div><div class="l">✅ العمولة المستحقة${s.active ? '' : ' (النسبة لسه تحت 50%)'}</div>${commBreak(s, true)}</div>
       </div>
       <div class="sq-agentsrc"><span>مصادر الأوردرات:</span>${sourceChips(sourceCounts(all)) || '<span class="sq-src">—</span>'}</div>
+      ${RepeatsCard(s, (a.name || '') + ' خدت')}
       <div class="sq-agentbar">
         ${chip('all', 'الكل', s.total)}${chip('pending', 'قيد التنفيذ', s.pending)}${chip('delivered', 'اتسلم', s.delivered)}${chip('cancelled', 'اتلغى', s.cancelled)}${chip('undelivered', 'اندلفرد', s.undelivered)}
         <input type="search" id="sq-agent-q" class="sq-agentq" placeholder="🔍 بحث بالاسم أو الموبايل أو الطلب..." value="${esc(state.agentQ)}">
@@ -3463,7 +3495,7 @@ const Squad = (function(){
             <td data-label="المقاس">${esc(o.size || '—')}</td>
             <td class="mut" data-label="المصدر">${esc(o.page_name || '—')}</td>
             <td class="amount" data-label="القيمة">${o.amount ? esc(o.amount) + ' ج' : '—'}</td>
-            <td class="mut" data-label="العمولة">${commCell(o, s.active)}</td>
+            <td class="mut" data-label="العمولة">${commCell(o, s.active, s)}</td>
             <td data-label="الحالة"><span class="sq-badge ${st.cls}">${st.text}</span></td>
             <td class="mut" data-label="التاريخ">${fmtDate(o.created_at)}</td>
             <td data-label="إجراءات"><div class="sq-actions">${trBtnHtml(o)}${isAdminUser() ? `<button class="sq-icon danger" title="مسح الأوردر" aria-label="مسح الأوردر" data-delete-id="${esc(o.id)}">🗑️</button>` : ''}</div></td></tr>`; }).join('')}</tbody></table>`
