@@ -14916,7 +14916,8 @@ table.gs tr.wk td.day{color:#c5221f}
   // 💰 قواعد الحافز والخصم
   const KD_RULES = { perDay:30, goodPct:0.8, goodBonus:200, badPct:0.5, perMissing:5, maxDeduct:300 };
   const KD_TAG = '🎯 أيام التسليم';
-  const NOTES = ['📞 اتكلمت معاها', '✅ هتستلم', '🔁 عايزة تجدد', '📵 مبتردش', '🚫 رافضة', '❌ رقم غلط'];
+  const RECV = '📦 استلم خلاص';   // العميل قال إنه استلم فعلاً (قبل ما QP يحدّث) — بيتحسب متسلم
+  const NOTES = [RECV, '📞 اتكلمت معاها', '✅ هتستلم', '🔁 عايزة تجدد', '📵 مبتردش', '🚫 رافضة', '❌ رقم غلط'];
   const S = { brand:'kid', month: ymd(new Date()).slice(0, 7), all:null, days:null, busy:false, err:'', assignAll:{}, assign:{}, agents:null, onlyBad:true,
               w:null, log:[], scores:null, msg:'' };
   const B = () => BR[S.brand] || BR.kid;
@@ -14974,28 +14975,52 @@ table.gs tr.wk td.day{color:#c5221f}
   const renewsOf = (log, brand, day) => log.filter(x => x.type === 'renew' && x.brand === brand && x.day === day);
   /* ♻️ مؤشر متابعة اليوم: كان محتاج كام يتسلم تاني، جددوا كام من الاندلفرد/الهولد، اتسلم كام منهم، وباقي كام للهدف */
   function recovMeter(d){
-    const need = d.need, ren = d.ren || 0, del = d.renDel || 0, ship = d.renShip || 0, wait = Math.max(0, ren - del - ship), left = Math.max(0, need - del);
+    const F = d.fol || { delBefore:0, holdBefore:0, holdGot:0, undGot:0, csOnly:0, delAfter:0 };
+    const need = d.need, ren = d.ren || 0, del = d.renDel || 0, ship = d.renShip || 0, wait = Math.max(0, ren - del - ship);
+    const got = F.holdGot + F.undGot + del, left = Math.max(0, need - got);
     const pc = n => need ? Math.min(100, Math.round(n / need * 100)) : 100;
+    const fol = (F.holdGot || F.undGot) ? `<div class="kd-rm-s" style="margin-top:6px;padding-top:6px;border-top:1px dashed var(--line)">
+        <span>📊 قبل المتابعة: <b>${F.delBefore}</b> مستلم · <b>${F.holdBefore}</b> هولد</span>
+        <span style="color:#2f7d55">← دلوقتي: <b>${F.delAfter}</b> مستلم</span>
+        ${F.holdGot ? `<span style="color:#2f7d55">✋ اتسلم <b>${F.holdGot}</b> من الـ ${F.holdBefore} هولد</span>` : ''}
+        ${F.undGot ? `<span style="color:#2f7d55">💔 طلع مستلم <b>${F.undGot}</b> من الاندلفرد</span>` : ''}
+        ${F.csOnly ? `<span style="color:var(--muted);font-size:12.5px">(منهم ${F.csOnly} بكلام العميل — لسه QP ماحدّثش)</span>` : ''}</div>` : '';
     return `<div class="kd-rm"><div class="kd-rm-s">
         <span>🎯 محتاجين <b>${need}</b> يتسلموا</span>
+        ${F.holdGot || F.undGot ? `<span style="color:#2f7d55">📦 بالمتابعة <b>${F.holdGot + F.undGot}</b></span>` : ''}
         <span>♻️ جددوا <b>${ren}</b></span>
         <span style="color:#2f7d55">✅ اتسلم منهم <b>${del}</b></span>
         ${ship ? `<span style="color:#8a5a00">🚚 في الطريق <b>${ship}</b></span>` : ''}
         ${wait ? `<span style="color:var(--muted)">⏳ لسه مااتشحنش <b>${wait}</b></span>` : ''}
         <span style="color:${left ? '#c0392b' : '#2f7d55'};font-weight:700">${left ? `باقي <b>${left}</b> من ${need}` : '✅ وصلنا الهدف'}</span></div>
-      <div class="kd-rm-bar" title="الأخضر = اتسلم · الأصفر = في الطريق"><i style="width:${pc(del)}%"></i><u style="width:${Math.min(pc(ship), 100 - pc(del))}%"></u></div></div>`;
+      <div class="kd-rm-bar" title="الأخضر = اتسلم (بالمتابعة أو التجديد) · الأصفر = تجديد في الطريق"><i style="width:${pc(got)}%"></i><u style="width:${Math.min(pc(ship), 100 - pc(got))}%"></u></div>${fol}</div>`;
   }
   function daysFor(brand, month){
     const b = BR[brand], [y, m] = month.split('-').map(Number), from = month + '-01', to = ymd(new Date(y, m, 0)), by = {};
     // ♻️ الأوردر المتجدد بيتحسب لليوم الأصلي بس (في مؤشر التجديد) — مش كأوردر جديد في يوم التجديد
     const renSer = new Set((S.log || []).filter(x => x.type === 'renew' && x.qp).map(x => String(x.qp.serial)));
     (S.all || []).filter(b.test).filter(q => !renSer.has(String(q.serial))).forEach(q => { const d = new Date(q.order_date); if(isNaN(d)) return; const k = ymd(d); if(k < from || k > to) return; (by[k] = by[k] || []).push(q); });
-    return Object.entries(by).sort((a, c) => a[0].localeCompare(c[0])).map(([k, L]) => {
-      const d = { k, ...split(L, b.target) }, R = renewsOf(S.log, brand, k);
-      d.ren = R.length; d.renDel = R.filter(x => x.delivered).length; d.renShip = R.filter(x => x.shipped && !x.delivered).length;
-      d.have = d.del.length + d.renDel; d.closed = d.have >= d.goal; d.missing = Math.max(0, d.goal - d.have);
-      return d;
-    });
+    return Object.entries(by).sort((a, c) => a[0].localeCompare(c[0])).map(([k, L]) => enrich({ k, ...split(L, b.target) }, brand, k));
+  }
+  /* 📊 تأثير خدمة العملاء على اليوم:
+     - "📦 استلم خلاص" على أوردر هولد/اندلفرد = بيتحسب متسلم على طول (لحد ما QP يحدّث)
+     - أوردر كان هولد واتابع (عليه ملاحظة وهو هولد) وبعدين QP قال اتسلم = برضه من شغل المتابعة
+     - "قبل" = الأرقام قبل المتابعة، و"بعد" = دلوقتي */
+  function enrich(d, brand, day){
+    const R = renewsOf(S.log, brand, day), N = (S.log || []).filter(x => x.type === 'note' && x.brand === brand && x.day === day);
+    const lastNote = {}; N.forEach(x => { lastNote[String(x.serial)] = x; });
+    const touched = kind => new Set(N.filter(x => x.kind === kind).map(x => String(x.serial)));
+    const recv = q => (lastNote[String(q.serial)] || {}).note === RECV;
+    const hT = touched('hold'), uT = touched('und');
+    const holdQP = d.del.filter(q => hT.has(String(q.serial))), undQP = d.del.filter(q => uT.has(String(q.serial)) && !hT.has(String(q.serial)));
+    const holdCS = d.hold.filter(recv), undCS = d.und.filter(recv);
+    const delBefore = d.del.length - holdQP.length - undQP.length;
+    d.fol = { delBefore, holdBefore: d.hold.length + holdQP.length, holdGot: holdQP.length + holdCS.length, undGot: undQP.length + undCS.length,
+      csOnly: holdCS.length + undCS.length, delAfter: d.del.length + holdCS.length + undCS.length };
+    d.ren = R.length; d.renDel = R.filter(x => x.delivered).length; d.renShip = R.filter(x => x.shipped && !x.delivered).length;
+    d.need = Math.max(0, d.goal - delBefore);   // كان محتاج كام قبل المتابعة
+    d.have = d.fol.delAfter + d.renDel; d.closed = d.have >= d.goal; d.missing = Math.max(0, d.goal - d.have);
+    return d;
   }
   // 💰 حسبة الحافز والخصم لكل موظفة في الشهر (البراندين مع بعض)
   function computeScores(){
@@ -15171,20 +15196,20 @@ table.gs tr.wk td.day{color:#c5221f}
     let h = `<div class="pagehead"><h1>${B().icon} ${B().name} — ${esc(dayTxt(W.day))}</h1><p>اشتغلي على أوردرات اليوم ده: كلّمي العميل، ولو عايزة تطلب تاني دوسي <b>🔁 جدّدي نفس الطلب</b> أو <b>✏️ جدّدي بتعديل</b> — هيفتحلك أوردر جديد في Squad متملي ببياناتها، ويتسجل تحت اسمك ومتعلّم إنه تجديد لليوم ده. التجديد بيتحسبلك لما يتسلم.</p></div>`;
     if(W.err) return h + `<div class="mono-note">${esc(W.err)}</div>`;
     if(W.busy || !W.d) return h + '<p style="color:var(--muted)">⏳ بيجيب أوردرات اليوم من QP...</p>';
-    const d = W.d, R = renewsOf(S.log, W.brand, W.day), rd = R.filter(x => x.delivered).length, have = d.del.length + rd, closed = have >= d.goal, missing = Math.max(0, d.goal - have);
-    h += `<div class="card" style="font-size:14.5px"><b>${d.L.length}</b> أوردر · الهدف <b>${d.goal}</b> يتسلم · ✅ اتسلم <b>${d.del.length}</b> + ♻️ تجديد اتسلم <b>${rd}</b> · ${closed ? `<b style="color:#2f7d55">✅ اليوم اتقفل (+${KD_RULES.perDay} ج)</b>` : `<b style="color:#c0392b">ناقص ${missing} أوردر يتسلم عشان ${pctT()}</b>`} · ♻️ اتجدد <b>${R.length}</b>
-      ${recovMeter({ need:d.need, ren:R.length, renDel:rd, renShip:R.filter(x => x.shipped && !x.delivered).length })}
+    const d = enrich({ ...W.d }, W.brand, W.day), rd = d.renDel, closed = d.closed, missing = d.missing;
+    h += `<div class="card" style="font-size:14.5px"><b>${d.L.length}</b> أوردر · الهدف <b>${d.goal}</b> يتسلم · ✅ اتسلم <b>${d.fol.delAfter}</b> + ♻️ تجديد اتسلم <b>${rd}</b> · ${closed ? `<b style="color:#2f7d55">✅ اليوم اتقفل (+${KD_RULES.perDay} ج)</b>` : `<b style="color:#c0392b">ناقص ${missing} أوردر يتسلم عشان ${pctT()}</b>`} · ♻️ اتجدد <b>${d.ren}</b>
+      ${recovMeter(d)}
       <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="kd-btn ${W.kind === 'und' ? 'kd-on' : ''}" data-wk="und">💔 اندلفرد (${d.und.length})</button><button class="kd-btn ${W.kind === 'hold' ? 'kd-on' : ''}" data-wk="hold">✋ هولد (${d.hold.length})</button><button class="kd-btn" id="kwRe">🔄 حدّث</button></div></div>`;
     const L = W.kind === 'hold' ? d.hold : d.und;
     if(!L.length) return h + '<p style="color:var(--muted)">مفيش أوردرات هنا.</p>';
     const last = serial => { const n = S.log.filter(x => String(x.serial) === String(serial)); return { renew:n.filter(x => x.type === 'renew').pop(), note:n.filter(x => x.type === 'note').pop() }; };
     h += L.map((q, i) => { const ph = String(q.phone || '').replace(/\D/g, '').replace(/^0/, ''), x = last(q.serial);
       const rs = x.renew ? (x.renew.delivered ? '✅ التجديد اتسلم' : x.renew.shipped ? '🚚 التجديد اتشحن (' + esc(lbl(x.renew.qp)) + ')' : '⏳ التجديد لسه مااتشحنش') : '';
-      return `<div class="kd-wrow ${x.renew ? 'done' : ''}"><div><b>${i + 1}. ${esc(q.full_name || '')}</b> <span style="direction:ltr;display:inline-block">${esc(q.phone || '')}</span> · ${esc(q.total_amount ?? q.price ?? '')} ج · <span style="color:var(--muted)">شحنة ${esc(q.serial)} · ${esc(lbl(q))}</span>
+      return `<div class="kd-wrow ${x.renew || (x.note && x.note.note === RECV) ? 'done' : ''}"><div><b>${i + 1}. ${esc(q.full_name || '')}</b> <span style="direction:ltr;display:inline-block">${esc(q.phone || '')}</span> · ${esc(q.total_amount ?? q.price ?? '')} ج · <span style="color:var(--muted)">شحنة ${esc(q.serial)} · ${esc(lbl(q))}</span>
           <div style="font-size:13px;color:var(--muted);margin-top:3px">${esc(q.address || '')}${q.city ? ' — ' + esc(q.city) : ''}</div>
           <div style="font-size:13.5px;margin-top:3px">🛍️ ${esc(q.shipment_contents || '—')}</div>
           ${x.renew ? `<div class="kd-done">♻️ اتجدد (${x.renew.mode === 'edit' ? 'بتعديل' : 'نفس الطلب'}) — ${esc(x.renew.agent_name || '')} · ${new Date(x.renew.at).toLocaleString('ar-EG', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' })} · ${rs}</div>` : ''}
-          ${x.note ? `<div style="font-size:12.5px;margin-top:3px">📝 ${esc(x.note.note)} — ${esc(x.note.agent_name || '')}</div>` : ''}</div>
+          ${x.note ? (x.note.note === RECV ? `<div class="kd-done">📦 استلم خلاص (بكلام العميل) — ${esc(x.note.agent_name || '')} · بيتحسب متسلم لحد ما QP يحدّث</div>` : `<div style="font-size:12.5px;margin-top:3px">📝 ${esc(x.note.note)} — ${esc(x.note.agent_name || '')}</div>`) : ''}</div>
         <div class="kd-wact">${ph ? `<a class="kd-btn" style="text-decoration:none" href="tel:0${ph}">📞</a><a class="kd-btn" style="text-decoration:none" target="_blank" rel="noopener" href="https://wa.me/20${ph}">💬</a>` : ''}
           <select class="kd-sel" data-wn="${i}" style="width:auto"><option value="">📝 المتابعة...</option>${NOTES.map(n => `<option ${x.note && x.note.note === n ? 'selected' : ''}>${n}</option>`).join('')}</select>
           ${x.renew ? '' : `<button class="kd-btn" data-wr="${i}" data-m="same" style="background:#2f7d55;color:#fff;border-color:#2f7d55">🔁 جدّدي نفس الطلب</button><button class="kd-btn" data-wr="${i}" data-m="edit">✏️ جدّدي بتعديل</button>`}</div></div>`; }).join('');
@@ -15201,8 +15226,8 @@ table.gs tr.wk td.day{color:#c5221f}
     });
   }
   async function note(q, val){
-    try{ await addLog({ type:'note', serial:String(q.serial), day:S.w.day, brand:S.w.brand, kind:S.w.kind, note:val, agent_id:me().id, agent_name:me().full_name || me().username || '', at:new Date().toISOString() });
-      S.log.push({ type:'note', serial:String(q.serial), note:val, agent_name:me().full_name || me().username || '' }); drawWork(); }
+    const e = { type:'note', serial:String(q.serial), day:S.w.day, brand:S.w.brand, kind:S.w.kind, note:val, agent_id:me().id, agent_name:me().full_name || me().username || '', at:new Date().toISOString() };
+    try{ await addLog(e); S.log.push(e); drawWork(); }
     catch(e){ alert('الملاحظة مااتحفظتش: ' + e.message); }
   }
   function drawWork(){
