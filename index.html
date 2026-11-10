@@ -14880,7 +14880,7 @@ table.gs tr.wk td.day{color:#c5221f}
 /* =====================================================================
    🎯 أيام التسليم تحت الهدف — 🧸 Kidzzly (هدف 60%) و 💍 Dream (هدف 45%)
    لكل يوم: كام أوردر واتسلم كام، وناقص كام عشان نوصل الهدف، والهولد والاندلفرد بتوعه
-   والأيام دي بتتوزع على خدمة العملاء (أسماء ونوران وجوليا) — كل واحدة تتابع أيامها
+   والأيام دي بتتوزع على خدمة العملاء (أسماء ونوران ورنا — جوليا اتنقلت للتجهيزات) — كل واحدة تتابع أيامها
    🗂️ دوسة على "اندلفرد" أو "هولد" بتفتح تاب جديد فيه أوردرات اليوم ده عشان الموظفة تشتغل عليهم:
      - 🔁 جدّدي نفس الطلب / ✏️ جدّدي بتعديل → بيفتح "أوردر جديد" في Squad متملي ببيانات العميل،
        والأوردر بيتسجل تحت اسمها ومتعلّم إنه تجديد لاندلفرد اليوم ده
@@ -14934,7 +14934,8 @@ table.gs tr.wk td.day{color:#c5221f}
       const { data } = await sb().from('profiles').select('id, username, full_name, allowed_sections, is_admin');
       const L = (data || []).map(p => ({ id:p.id, name:p.full_name || p.username || '', username:p.username || '' }));
       const pick = re => L.find(p => re.test(p.name) || re.test(p.username));
-      S.agents = [pick(/أسماء|اسماء|asmaa/i), pick(/نوران|nouran/i), pick(/جوليا|julia|jolia/i)].filter(Boolean);
+      S.agents = [pick(/أسماء|اسماء|asmaa/i), pick(/نوران|nouran/i), pick(/(^|\s)رنا(\s|$)|^rana\b/i)].filter(Boolean);
+      S.former = L.filter(p => /جوليا|julia|jolia/i.test(p.name) || /جوليا|julia|jolia/i.test(p.username));   // 🔁 جوليا اتنقلت للتجهيزات — أيامها المفتوحة بتروح لرنا
       if(!S.agents.length) S.agents = L.filter(p => (data.find(d => d.id === p.id) || {}).allowed_sections?.includes?.('squad')).slice(0, 3);
       S.allPeople = L;
     }
@@ -15030,6 +15031,7 @@ table.gs tr.wk td.day{color:#c5221f}
       // ⚖️ التوزيع التلقائي للأيام اللي فيها مشكلة — بالتساوي في "الناقص" (البراندين مع بعض)
       // الشهر الحالي بيتعاد توزيعه مرة واحدة بالطريقة الجديدة (بدل يوم ورا يوم بالترتيب)
       const cur = S.month === ymd(new Date()).slice(0, 7);
+      if(me().is_admin && cur) await handOver();
       await balanceDays(me().is_admin && cur && !(S.balanced || []).includes(S.month));
       build(); computeScores(); if(me().is_admin) saveSnapshot();
     }catch(e){ S.err = e.message; }
@@ -15039,6 +15041,17 @@ table.gs tr.wk td.day{color:#c5221f}
      - كل يوم لواحدة بس (محدش يدخل في أيام التانية)
      - بنرتّب الأيام من الأكبر ناقص للأصغر، وكل يوم يروح للي مجموع ناقصها لحد دلوقتي الأقل (البراندين مع بعض)
      - force = نعيد توزيع كل أيام الشهر، وإلا بنوزّع الأيام الجديدة بس ونسيب القديمة زي ما هي */
+  // 🔁 أيام الشهر الحالي اللي على حد خرج من خدمة العملاء (جوليا) ولسه ماتقفلتش → رنا (اللي جت مكانها)
+  //    الأيام اللي اتقفلت فعلاً بتفضل باسمها عشان حافزها
+  async function handOver(){
+    const ids = new Set((S.former || []).map(p => p.id)), rana = S.agents.find(a => /(^|\s)رنا(\s|$)|^rana\b/i.test(a.name) || /^rana\b/i.test(a.username));
+    if(!ids.size || !rana) return;
+    for(const brand of Object.keys(BR)){
+      const asg = S.assignAll[brand] = S.assignAll[brand] || {}; let n = 0;
+      daysFor(brand, S.month).filter(d => d.rate < BR[brand].target && !d.closed && ids.has(asg[d.k])).forEach(d => { asg[d.k] = rana.id; n++; });
+      if(n) await saveAssign(brand);
+    }
+  }
   async function balanceDays(force){
     if(!S.agents || !S.agents.length) return;
     const ids = S.agents.map(a => a.id), load = {}, cnt = {}; ids.forEach(id => { load[id] = 0; cnt[id] = 0; });
