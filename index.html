@@ -10972,7 +10972,11 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
   const isUP = () => upRoute() === 'qp-upload' || upRoute() === 'qp-delete' || upRoute() === 'pickup';
   const digits = s => String(s ?? '').replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d));
   const numOf = s => { const t = digits(s).replace(/[,\s]/g, '').replace(/ج|جنيه|egp|le/gi, ''); return t !== '' && !isNaN(t) ? Number(t) : null; };
-  const phoneOf = s => { let t = digits(s).replace(/[^\d]/g, ''); if(t.startsWith('20') && t.length === 12) t = t.slice(2); if(t.startsWith('0')) t = t.slice(1); return t; };
+  // 📞 بيفهم: 01142362584 · +201142362584 · +2001142362584 · 00201142362584 · وأرقام عربي · ولو فيه رقمين في نفس الخانة بياخد الأول
+  const phoneNorm = t => { t = String(t || '').replace(/[^\d]/g, ''); if(t.startsWith('00')) t = t.slice(2); if(t.startsWith('20') && (t.length === 12 || t.length === 13)) t = t.slice(2); return t.replace(/^0+/, ''); };
+  const phoneOf = s => { const raw = digits(s), t = phoneNorm(raw); if(/^1[0125]\d{8}$/.test(t)) return t;
+    const one = raw.split(/[\/,;|\n،]|\s{2,}|\s[-–]\s|\sو\s?/).map(phoneNorm).find(x => /^1[0125]\d{8}$/.test(x));
+    const m = one ? null : raw.match(/(?:^|\D)0?(1[0125]\d{8})(?!\d)/); return one || (m && m[1]) || t; };
   const isPhone = s => /^1[0125]\d{8}$/.test(phoneOf(s));
   // 📞 كل أرقام الموبايل بتاعة أوردر (الأساسي والتاني) — المقارنة بـ QP بالموبايل مش برقم الشحنة
   const phoneKeys = x => [...new Set([x.phone, x.phone2, x.customer_phone, x.customer_phone2].map(phoneOf).filter(k => k && k.length >= 10))];
@@ -12304,7 +12308,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
   function check(r){
     const e = [];
     if(!String(r.name).trim()) e.push('الاسم فاضي');
-    if(!/^1[0125]\d{8}$/.test(phoneOf(r.phone))) e.push('الموبايل غلط');
+    if(!/^1[0125]\d{8}$/.test(phoneOf(r.phone))) e.push(String(r.phone || '').trim() ? `الموبايل غلط (اتقرى: ${phoneOf(r.phone) || '—'} — لازم 11 رقم يبدأ بـ 010/011/012/015)` : 'الموبايل فاضي');
     if(!String(r.address).trim()) e.push('العنوان فاضي');
     if(!(numOf(r.amount) > 0)) e.push('السعر غلط');
     r.errs = e;
