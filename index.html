@@ -14878,7 +14878,7 @@ table.gs tr.wk td.day{color:#c5221f}
 </style>
 <script>
 /* =====================================================================
-   🎯 أيام التسليم تحت الهدف — 🧸 Kidzzly (هدف 60%) و 💍 Dream (هدف 45%)
+   🎯 أيام التسليم تحت الهدف — 🧸 Kidzzly (هدف 60%) و 💍 Dream (هدف 40%) — الحوافز بتبدأ من بعد الهدف بس
    لكل يوم: كام أوردر واتسلم كام، وناقص كام عشان نوصل الهدف، والهولد والاندلفرد بتوعه
    والأيام دي بتتوزع على خدمة العملاء (أسماء ونوران ورنا — جوليا اتنقلت للتجهيزات) — كل واحدة تتابع أيامها
    🗂️ دوسة على "اندلفرد" أو "هولد" بتفتح تاب جديد فيه أوردرات اليوم ده عشان الموظفة تشتغل عليهم:
@@ -14911,7 +14911,7 @@ table.gs tr.wk td.day{color:#c5221f}
   // 🎯 البراندات والهدف بتاعها
   const BR = {
     kid:   { name:'Kidzzly', icon:'🧸', target:0.60, kv:'kid_days_assign',   squad:'kidzzly', test:q => brandOf(q) === 'kidzzly' || /كيدز/.test(String(q.notes || '')) },
-    dream: { name:'Dream',   icon:'💍', target:0.45, kv:'dream_days_assign', squad:'acc',     test:q => ['dream', 'dream msg site', 'dream wa'].includes(brandOf(q)) },
+    dream: { name:'Dream',   icon:'💍', target:0.40, kv:'dream_days_assign', squad:'acc',     test:q => ['dream', 'dream msg site', 'dream wa'].includes(brandOf(q)) },
   };
   // 💰 قواعد الحافز والخصم
   const KD_RULES = { perDay:30, goodPct:0.8, goodBonus:200, badPct:0.5, perMissing:5, maxDeduct:300 };
@@ -15149,7 +15149,7 @@ table.gs tr.wk td.day{color:#c5221f}
   }
 
   function view(){
-    let h = `<div class="pagehead"><h1>🎯 أيام التسليم تحت الهدف</h1><p>لكل يوم: اتسلم كام، وناقص كام أوردر عشان نوصل الهدف (🧸 Kidzzly 60% · 💍 Dream 45%). دوسي على "💔 اندلفرد" أو "✋ هولد" يفتحلك تاب جديد تشتغلي فيه على أوردرات اليوم ده.</p></div>
+    let h = `<div class="pagehead"><h1>🎯 أيام التسليم تحت الهدف</h1><p>لكل يوم: اتسلم كام، وناقص كام أوردر عشان نوصل الهدف (🧸 Kidzzly 60% · 💍 Dream 40%). دوسي على "💔 اندلفرد" أو "✋ هولد" يفتحلك تاب جديد تشتغلي فيه على أوردرات اليوم ده.</p></div>
       <div class="card"><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         ${Object.entries(BR).map(([k, b]) => `<button class="kd-btn ${S.brand === k ? 'kd-on' : ''}" data-kdb="${k}">${b.icon} ${b.name} (${Math.round(b.target * 100)}%)</button>`).join('')}
         <select class="kd-sel" id="kdM" style="width:auto">${(() => { const L = [], d = new Date(); d.setDate(1);
