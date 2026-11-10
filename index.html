@@ -14890,7 +14890,8 @@ table.gs tr.wk td.day{color:#c5221f}
       S.allPeople = L;
     }
     try{ const { data:kv } = await sb().from('app_kv').select('key, value').in('key', Object.values(BR).map(b => b.kv));
-      Object.entries(BR).forEach(([k, b]) => { const r = (kv || []).find(x => x.key === b.kv); S.assignAll[k] = (r && r.value && r.value.map) || {}; }); }catch(e){}
+      Object.entries(BR).forEach(([k, b]) => { const r = (kv || []).find(x => x.key === b.kv); S.assignAll[k] = (r && r.value && r.value.map) || {};
+        if(r && r.value && Array.isArray(r.value.balanced)) S.balanced = [...new Set((S.balanced || []).concat(r.value.balanced))]; }); }catch(e){}
     S.assign = S.assignAll[S.brand] || {};
   }
   const nameOf = id => ((S.allPeople || []).find(p => p.id === id) || {}).name || '';
@@ -14962,18 +14963,40 @@ table.gs tr.wk td.day{color:#c5221f}
       const to = ymd(new Date(Math.min(end.getTime(), Date.now())));   // لحد 25 يوم بعد آخر الشهر عشان نشوف التجديدات اتسلمت ولا لأ
       const [all, log] = await Promise.all([(A.fetchRangeAll || A.fetchRange)(from, to), loadLog(S.month), A.loadSquadPages ? A.loadSquadPages() : null]);
       S.all = all; S.log = log; markRenewals(all, log);
-      // التوزيع التلقائي للأيام اللي فيها مشكلة (لو لسه متوزعتش) — للبراندين
-      for(const brand of Object.keys(BR)){
-        const asg = S.assignAll[brand] = S.assignAll[brand] || {}; let i = 0, changed = false;
-        daysFor(brand, S.month).filter(d => d.rate < BR[brand].target).forEach(d => { if(!asg[d.k] && S.agents.length){ asg[d.k] = S.agents[i % S.agents.length].id; i++; changed = true; } });
-        if(changed) await saveAssign(brand);
-      }
+      // ⚖️ التوزيع التلقائي للأيام اللي فيها مشكلة — بالتساوي في "الناقص" (البراندين مع بعض)
+      // الشهر الحالي بيتعاد توزيعه مرة واحدة بالطريقة الجديدة (بدل يوم ورا يوم بالترتيب)
+      const cur = S.month === ymd(new Date()).slice(0, 7);
+      await balanceDays(me().is_admin && cur && !(S.balanced || []).includes(S.month));
       build(); computeScores(); if(me().is_admin) saveSnapshot();
     }catch(e){ S.err = e.message; }
     S.busy = false; draw();
   }
+  /* ⚖️ توزيع الأيام اللي تحت الهدف على البنات بحيث مجموع "الناقص" عند كل واحدة يبقى قريب من التانية
+     - كل يوم لواحدة بس (محدش يدخل في أيام التانية)
+     - بنرتّب الأيام من الأكبر ناقص للأصغر، وكل يوم يروح للي مجموع ناقصها لحد دلوقتي الأقل (البراندين مع بعض)
+     - force = نعيد توزيع كل أيام الشهر، وإلا بنوزّع الأيام الجديدة بس ونسيب القديمة زي ما هي */
+  async function balanceDays(force){
+    if(!S.agents || !S.agents.length) return;
+    const ids = S.agents.map(a => a.id), load = {}, cnt = {}; ids.forEach(id => { load[id] = 0; cnt[id] = 0; });
+    const todo = [], changed = new Set();
+    Object.keys(BR).forEach(brand => {
+      const asg = S.assignAll[brand] = S.assignAll[brand] || {};
+      daysFor(brand, S.month).filter(d => d.rate < BR[brand].target).forEach(d => {
+        if(force && asg[d.k]){ delete asg[d.k]; changed.add(brand); }
+        if(asg[d.k]){ if(load[asg[d.k]] != null){ load[asg[d.k]] += d.need; cnt[asg[d.k]]++; } }
+        else todo.push({ brand, k:d.k, need:d.need });
+      });
+    });
+    todo.sort((a, b) => b.need - a.need || a.k.localeCompare(b.k)).forEach(t => {
+      const id = ids.slice().sort((a, b) => load[a] - load[b] || cnt[a] - cnt[b])[0];
+      S.assignAll[t.brand][t.k] = id; load[id] += t.need; cnt[id]++; changed.add(t.brand);
+    });
+    if(force){ S.balanced = [...new Set((S.balanced || []).concat(S.month))]; ['kid', 'dream'].forEach(b => changed.add(b)); }
+    for(const brand of changed) await saveAssign(brand);
+    S.assign = S.assignAll[S.brand] || {};
+  }
   function build(){ S.assign = S.assignAll[S.brand] || {}; S.days = S.all ? daysFor(S.brand, S.month) : null; }
-  async function saveAssign(brand){ brand = brand || S.brand; try{ await sb().from('app_kv').upsert({ key:BR[brand].kv, value:{ map:S.assignAll[brand] || {} }, updated_at:new Date().toISOString(), updated_by_name: me().full_name || me().username || '' }); }catch(e){} }
+  async function saveAssign(brand){ brand = brand || S.brand; try{ await sb().from('app_kv').upsert({ key:BR[brand].kv, value:{ map:S.assignAll[brand] || {}, balanced:S.balanced || [] }, updated_at:new Date().toISOString(), updated_by_name: me().full_name || me().username || '' }); }catch(e){} }
   async function sendTasks(){
     const bad = (S.days || []).filter(d => d.rate < B().target), by = {};
     bad.forEach(d => { const a = S.assign[d.k]; if(a) (by[a] = by[a] || []).push(d); });
@@ -15030,7 +15053,7 @@ table.gs tr.wk td.day{color:#c5221f}
         <select class="kd-sel" id="kdM" style="width:auto">${(() => { const L = [], d = new Date(); d.setDate(1);
         for(let i = 0; i < 6; i++){ const m = ymd(d).slice(0, 7); L.push(`<option value="${m}" ${S.month === m ? 'selected' : ''}>${new Date(m + '-15').toLocaleDateString('ar-EG', { month:'long', year:'numeric' })}</option>`); d.setMonth(d.getMonth() - 1); } return L.join(''); })()}</select>
         <label style="font-size:13.5px"><input type="checkbox" id="kdBad" ${S.onlyBad ? 'checked' : ''}> الأيام اللي فيها مشكلة بس</label>
-        <button class="kd-btn" id="kdRe">🔄 حدّث من QP</button>${me().is_admin ? '<button class="kd-btn" id="kdSend" style="background:#1f3d36;color:#fff">📨 ابعت لكل واحدة أيامها</button>' : ''}</div></div>`;
+        <button class="kd-btn" id="kdRe">🔄 حدّث من QP</button>${me().is_admin ? '<button class="kd-btn" id="kdBal" title="يعيد توزيع أيام الشهر ده بحيث الناقص عند كل واحدة يبقى قريب">⚖️ وزّع بالتساوي</button><button class="kd-btn" id="kdSend" style="background:#1f3d36;color:#fff">📨 ابعت لكل واحدة أيامها</button>' : ''}</div></div>`;
     if(S.msg) h += `<div class="mono-note">${esc(S.msg)}</div>`;
     if(S.err) return h + `<div class="mono-note">${esc(S.err)}</div>`;
     if(!S.days) return h + `<p style="color:var(--muted)">⏳ بيجيب أوردرات الشهر من QP...</p>`;
@@ -15039,7 +15062,7 @@ table.gs tr.wk td.day{color:#c5221f}
     const ren = S.log.filter(x => x.type === 'renew' && x.brand === S.brand);
     h += scoreCard();
     h += `<div class="card" style="font-size:14px">${B().icon} <b>${B().name}</b> — الشهر: <b>${tot}</b> أوردر · اتسلم <b>${td}</b> (${tot ? Math.round(td / tot * 100) : 0}%) · <b style="color:#c0392b">${bad.length} يوم تحت ${pctT()}</b> · منهم <b style="color:#2f7d55">${bad.filter(d => d.closed).length} اتقفل</b> · ♻️ اتجدد <b>${ren.length}</b> (✅ اتسلم ${ren.filter(x => x.delivered).length})
-      ${S.agents && S.agents.length ? `<div style="margin-top:6px">${S.agents.map(a => `<span class="kd-btn" style="cursor:default">${esc(a.name)}: ${bad.filter(d => S.assign[d.k] === a.id).length} يوم · ♻️ ${ren.filter(x => x.agent_id === a.id).length} تجديد</span>`).join(' ')}</div>` : ''}</div>`;
+      ${S.agents && S.agents.length ? `<div style="margin-top:6px">${S.agents.map(a => `<span class="kd-btn" style="cursor:default">${esc(a.name)}: ${bad.filter(d => S.assign[d.k] === a.id).length} يوم · ناقص ${bad.filter(d => S.assign[d.k] === a.id).reduce((x, d) => x + d.need, 0)} · ♻️ ${ren.filter(x => x.agent_id === a.id).length} تجديد</span>`).join(' ')}</div>` : ''}</div>`;
     const L = S.onlyBad ? bad : S.days;
     h += L.map(d => { const ok = d.rate >= T, a = S.assign[d.k];
       return `<div class="kd-row ${ok || d.closed ? 'ok' : ''} ${a === myId ? 'kd-mine' : ''}"><div class="kd-day"><b>${new Date(d.k + 'T12:00:00').toLocaleDateString('ar-EG', { weekday:'short', day:'numeric', month:'short' })}</b><small>${ok ? '✅ فوق ' + pctT() : d.closed ? '✅ اتقفل بالتجديدات' : '⚠️ فيه مشكلة'}</small></div>
@@ -15126,6 +15149,8 @@ table.gs tr.wk td.day{color:#c5221f}
     if($('kdBad')) $('kdBad').onchange = e => { S.onlyBad = e.target.checked; draw(); };
     if($('kdRe')) $('kdRe').onclick = () => { S.msg = ''; load(); };
     if($('kdSend')) $('kdSend').onclick = sendTasks;
+    if($('kdBal')) $('kdBal').onclick = async () => { if(!S.all) return; if(!confirm('هيتعاد توزيع كل أيام ' + S.month + ' اللي تحت الهدف (البراندين) بحيث الناقص عند كل واحدة يبقى قريب من التانية. تكمّل؟')) return;
+      await balanceDays(true); build(); computeScores(); draw(); };
     if($('kdPay')) $('kdPay').onclick = toPayroll;
     main.querySelectorAll('[data-kda]').forEach(s => s.onchange = () => { S.assignAll[S.brand] = S.assign; S.assign[s.dataset.kda] = s.value; saveAssign(); computeScores(); draw(); });
   }
