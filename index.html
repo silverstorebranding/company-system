@@ -12208,6 +12208,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
   async function fetchAllSources(){
     E.loading = true; E.err = ''; draw();
     try{ await connect(); }catch(e){}
+    try{ if(!E.srcLoaded) await loadSources(); }catch(e){}
     if(!E.ptrLoaded) await loadPtr();
     let rows = [], errs = [];
     await loadDone();
@@ -12265,7 +12266,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
   const slug = t => String(t || '').toLowerCase().replace(/easy/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || ('src' + Date.now().toString(36));
   const hookUrl = k => ((sbc() && sbc().supabaseUrl) || 'https://vjpunudivnsanxjiwvnu.supabase.co') + '/functions/v1/easyorders-webhook?src=' + encodeURIComponent(k);
 
-  const S = { src:'squad', store:{ squad:{ raw:'', rows:null, note:'' } }, skipped:new Set(), allNotes:{},
+  const S = { src:'all', store:{ squad:{ raw:'', rows:null, note:'' } }, skipped:new Set(), allNotes:{},
     raw:'', rows:null, note:'', msg:'', msgErr:false, conn:'', connErr:'', sending:false, prog:'', hist: (() => { try{ return JSON.parse(localStorage.getItem(HIST_KEY) || '[]'); }catch(e){ return []; } })() };
 
   /* ---------- التحليل ---------- */
@@ -12462,9 +12463,9 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
       return `<div class="pagehead"><h1>📷 البوالص</h1><p>صوّر باركود البوالص: يا تمسحها من QP، يا تعمل منها شيت ببياناتها.</p></div><div class="up-wrap">` + delHtml() + '</div>';
     }
     let h = `<div class="pagehead"><h1>📤 رفع الأوردرات</h1><p>هات الأوردرات من Squad أو EasyOrders، راجعها في شيت QP، اتأكد من الـ notes، ووافق عشان تترفع على QP مباشرة وتظهر في Orders List.</p></div><div class="up-wrap">`;
-    h += `<div class="up-tabs"><button class="${S.src === 'squad' ? 'on' : ''}" style="--bc:#8a6a3a" data-upsrc="squad">🏆 Squad</button>
+    h += `<div class="up-tabs"><button class="${S.src === 'all' ? 'on' : ''}" style="--bc:#2f7d55" data-upsrc="all">📦 الكل</button>
+      <button class="${S.src === 'squad' ? 'on' : ''}" style="--bc:#8a6a3a" data-upsrc="squad">🏆 Squad</button>
       ${SOURCES.map(x => `<button class="${S.src === x.key ? 'on' : ''}" style="--bc:${esc(x.color || '#2b6cb0')}" data-upsrc="${esc(x.key)}">🌐 ${esc(x.label)}</button>`).join('')}
-      <button class="${S.src === 'all' ? 'on' : ''}" style="--bc:#2f7d55" data-upsrc="all">📦 الكل</button>
       ${S.src === 'restore' || (S.store.restore && S.store.restore.rows && S.store.restore.rows.length) ? `<button class="${S.src === 'restore' ? 'on' : ''}" style="--bc:#2f7d55" data-upsrc="restore">♻️ اتمسحت</button>` : ''}
       ${canScan() ? `<button class="${S.src === 'delete' ? 'on' : ''}" style="--bc:#b3261e" data-upsrc="delete">📷 بوالص</button>` : ''}
       ${me().is_admin ? `<button class="${S.src === 'settings' ? 'on' : ''}" style="--bc:#555" data-upsrc="settings" title="إدارة المصادر">⚙️</button>` : ''}</div>`;
@@ -12473,7 +12474,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
     if(S.msg) h += `<div class="up-msg ${S.msgErr ? 'err' : 'ok'}">${esc(S.msg)}</div>`;
     h += todayUpBtn();
     // 📍 "أنا واقف فين في كل براند" بقت تحت آخر الصفحة — أول حاجة "هات كل الأوردرات"
-    const ptrBottom = () => (S.src !== 'delete' && S.src !== 'settings' && S.src !== 'restore') ? ptrCard() : '';
+    const ptrBottom = () => (S.src === 'all' ? allTools() : '') + ((S.src !== 'delete' && S.src !== 'settings' && S.src !== 'restore') ? ptrCard() : '');
     if(S.src === 'restore') h += `<div class="card"><h3>♻️ أوردرات اتمسحت ورجعت</h3><p style="margin:0;font-size:13.5px">دي أوردرات كانت اتمسحت من QP وبضاعتها جت. راجعها تحت وارفعها — الـ notes والمحتوى والسعر جايين من البوليصة القديمة. <a href="#" id="upBackScan">↩️ ارجع لـ 📷 البوالص</a></p></div>`;
     else if(isEasy(S.src)) h += easyStep1();
     else if(S.src === 'all') h += allStep1();
@@ -12635,14 +12636,19 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
   function allStep1(){
     return `<div class="card"><h3>1️⃣ 📦 هات أوردرات كل المصادر مرة واحدة</h3>
       <p style="margin:0 0 10px;font-size:14px">بيجيب الأوردرات الجديدة من: <b>🏆 Squad</b>، ${SOURCES.map(x => '<b>' + esc(x.label) + '</b>').join('، ')} — كلهم تحت بعض في شيت واحد، وكل أوردر بالـ notes بتاعة مصدره، وكل مصدر بيكمل من بعد آخر أوردر اتاخد منه.</p>
-      <div class="up-row"><button class="up-btn pri" id="upAllFetch" ${E.loading ? 'disabled' : ''}>${E.loading ? '⏳ بيجيب...' : '📦 هات كل الأوردرات'}</button>
-        ${S.rows ? '<button class="up-btn" id="upClear">🧹 ابدأ من جديد</button>' : ''}
+      <div class="up-row"><button class="up-btn pri" id="upAllFetch" ${E.loading ? 'disabled' : ''}>${E.loading ? '⏳ بيجيب...' : '📦 هات كل الأوردرات'}</button></div>
+      <p style="margin:8px 0 0;font-size:12.5px;color:var(--muted)">📦 <b>هات كل الأوردرات</b> = بيكمّل من مكان ما وقفت — وبيشيل لوحده أي رقم موبايل اترفع على QP. (ابدأ من جديد / المقارنة / الفحص تحت في 🧰 أدوات تانية)</p>
+      ${E.err ? `<div class="up-msg err">${esc(E.err)}</div>` : ''}</div>`;
+  }
+  // 🧰 أدوات تانية (ابدأ من جديد / فترة وقارنها بـ QP / افحص المصادر) — تحت لوحدها عشان فوق يبقى "هات كل الأوردرات" بس
+  function allTools(){
+    return `<div class="card" style="border-inline-start:5px solid #6b46c1"><h3>🧰 أدوات تانية</h3>
+      <div class="up-row">${S.rows ? '<button class="up-btn" id="upClear">🧹 ابدأ من جديد</button>' : ''}
         <button class="up-btn" id="prdOpen" style="border-color:#6b46c1;color:#6b46c1">📅 هات أوردرات فترة وقارنها بـ QP</button>
         <button class="up-btn" id="xaOpen" style="border-color:#2b6cb0;color:#2b6cb0">🔎 افحص كل المصادر: وصل كام من وقت معيّن</button></div>
-      <p style="margin:8px 0 0;font-size:12.5px;color:var(--muted)">📦 <b>هات كل الأوردرات</b> = بيكمّل من مكان ما وقفت (العادي) — وبيشيل لوحده أي رقم موبايل اترفع على QP · 📅 <b>فترة</b> = بيجيب كل أوردرات فترة ويقارنها بـ QP (للمراجعة)</p>
+      <p style="margin:8px 0 0;font-size:12.5px;color:var(--muted)">📅 <b>فترة</b> = بيجيب كل أوردرات فترة ويقارنها بـ QP (للمراجعة)</p>
       ${PR.open ? periodHtml() : ''}
-      ${XA.open ? diagAllHtml() : ''}
-      ${E.err ? `<div class="up-msg err">${esc(E.err)}</div>` : ''}</div>`;
+      ${XA.open ? diagAllHtml() : ''}</div>`;
   }
   function settingsHtml(){
     const D = E.srcDraft || [];
@@ -12981,7 +12987,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
   window.addEventListener('hashchange', () => { if(!isUP() && (X.native || X.scanner)) stopScan(); });
   function mount(){
     // 🏠 جاي من "هات الكل وارفع" في الصفحة الرئيسية
-    try{ if(sessionStorage.getItem('upAutoAll') && upRoute() === 'qp-upload'){ sessionStorage.removeItem('upAutoAll'); if(S.src !== 'all') switchSrc('all'); setTimeout(() => fetchAllSources(), 50); } }catch(e){}
+    try{ if(sessionStorage.getItem('upAutoAll') && upRoute() === 'qp-upload'){ sessionStorage.removeItem('upAutoAll'); S.autoFetched = true; if(S.src !== 'all') switchSrc('all'); setTimeout(() => fetchAllSources(), 50); } }catch(e){}
     // 🗑️ الأيقونة اللي في القايمة بتفتح تاب مسح البوالص على طول
     if(upRoute() === 'qp-delete' && S.src !== 'delete') switchSrc('delete');
     if(upRoute() === 'pickup'){ S.src = 'delete'; X.mode = 'pickup'; }
@@ -12996,7 +13002,9 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
         flash(bad ? `⚠️ الأوردر اللي اتصلّح (${r.name}) لسه فيه مشكلة: ${r.errs.join('، ')}` : `✅ الأوردر اللي اتصلّح (${r.name}) موجود في الجاهزين للرفع — متعلّم بالأزرق.`, !!bad);
         setTimeout(() => { const tr = document.querySelector(`tr[data-urg="${id}"]`); if(tr){ tr.classList.add('urg-focus'); tr.scrollIntoView({ behavior:'smooth', block:'center' }); } }, 300); } });
     if(!CUT.loaded && sbc()) loadCutoff().then(draw);
-    draw(); if(!E.srcLoaded && sbc()) loadSources().then(() => { if(!E.ptrLoaded) return loadPtr(); }).then(() => { if(!SQ.loaded) return loadSquadPtr(); }).then(draw); }
+    // 📦 أول ما تفتح الصفحة على "الكل": هات كل الأوردرات على طول (مرة واحدة في الجلسة)
+    const autoAll = () => { if(upRoute() === 'qp-upload' && S.src === 'all' && !S.rows && !E.loading && !S.autoFetched && sbc()){ S.autoFetched = true; fetchAllSources(); } };
+    draw(); if(!E.srcLoaded && sbc()) loadSources().then(() => { if(!E.ptrLoaded) return loadPtr(); }).then(() => { if(!SQ.loaded) return loadSquadPtr(); }).then(() => { draw(); autoAll(); }); else autoAll(); }
   const _render = render;
   render = function(){ _render.apply(this, arguments); if(isUP()) mount(); };
   window.addEventListener('hashchange', () => { if(isUP()) setTimeout(mount, 0); });
