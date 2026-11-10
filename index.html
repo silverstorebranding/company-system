@@ -2707,7 +2707,7 @@ const Squad = (function(){
       { key:'go:order-edit', label:'✏️ تعديل أوردر موجود' },
       { key:'go:order-issues', label:'🧩 مشاكل الأوردرات' },
       { key:'go:kidzzly-days', label:'🎯 أيام تحت الهدف' },
-    ];
+    ].filter(t => t.key !== 'go:kidzzly-days' || !window.AuthGate || !window.AuthGate.canSee || window.AuthGate.canSee('#/kidzzly-days'));
     if(isAdminUser()) tabs.push({ key:'qp-sync', label:'🔄 مطابقة مع QP' }, { key:'verify', label:'🛡️ تحقق من التسليمات' });
     return `
       <div class="sq-bar">
@@ -5945,7 +5945,8 @@ async function exportToSheet(btn) {
       { key:'squad',    label:'🏆 Squad',        routes:['squad'] },
       { key:'eod',      label:'📝 EOD',          routes:['eod'] },
       { key:'breakdown', label:'🧩 تحليل مكونات الطلبات', routes:['breakdown'] },
-      { key:'ersal_focus', label:'📨 إرسال فوكس', routes:['ersal-focus'] } ]},
+      { key:'ersal_focus', label:'📨 إرسال فوكس', routes:['ersal-focus'] },
+      { key:'kidzzly_days', label:'🎯 أيام تحت هدف التسليم', routes:['kidzzly-days'] } ]},
     { title:'الرئيسية', items:[
       { key:'home',       label:'🏠 الرئيسية',             routes:['home'] },
       { key:'whatnow',    label:'❓ أعمل إيه دلوقتي؟',     routes:['whatnow'] },
@@ -5971,7 +5972,7 @@ async function exportToSheet(btn) {
     const { r, p } = parse(hash);
     if(me.is_admin) return true;
     if(r === 'payroll') return false; // 💵 كشف الرواتب كله للأدمن بس — الموظفة بتشوف راتبها من 💵 راتبي والمديرة فريقها من 👥 فريقي
-    if(r === 'inbox' || r === 'urgent' || r === 'team' || r === 'my-salary' || r === 'order-issues' || r === 'order-edit' || r === 'kidzzly-days' || r === 'delivery-rates') return true; // 📨 الرسايل والمهام و 🚨 الأوردرات العاجلة مفتوحين لكل الناس
+    if(r === 'inbox' || r === 'urgent' || r === 'team' || r === 'my-salary' || r === 'order-issues' || r === 'order-edit' || r === 'delivery-rates') return true; // 📨 الرسايل والمهام و 🚨 الأوردرات العاجلة مفتوحين لكل الناس
     if(r === 'admin') return false;
     const al = allowedSet();
     if(r === 'dept') return al.has('dept:' + p);
