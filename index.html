@@ -2008,10 +2008,15 @@ const Squad = (function(){
   // ⚠️ "إرسال صفحة" اسمها متسجل كده في الأوردرات وعمولتها أعلى، فبتفضل بنفس القيمة وبتظهر "إرسال"
   const ORDER_SOURCES = ['واتساب دريم', 'بيدج دريم', 'واتساب كيدزلي', 'بيدج كيدزلي', 'إرسال صفحة'];
   const SOURCE_LABEL = { 'إرسال صفحة':'إرسال' };
+  // ♻️ مصدر الأوردرات المتجددة من "🎯 أيام تحت الهدف" — بيتحط لوحده لما تدوسي "جدّدي" (البراند في الاسم عشان الـ notes في الرفع)
+  const RENEW_SOURCES = { acc:'تجديد من اندلفرد - دريم', kidzzly:'تجديد من اندلفرد - كيدزلي' };
+  const isRenewSrc = x => Object.values(RENEW_SOURCES).includes(x);
+  const isSource = x => ORDER_SOURCES.includes(x) || isRenewSrc(x);
   function sourceSelect(id, val, disabled){
+    const L = isRenewSrc(val) ? [val] : ORDER_SOURCES;   // التجديد مصدره ثابت
     return `<select id="${id}" required ${disabled ? 'disabled' : ''}>
-          <option value="" disabled ${ORDER_SOURCES.includes(val) ? '' : 'selected'}>اختار المصدر اللي جه منه الأوردر</option>
-          ${ORDER_SOURCES.map(x => `<option value="${esc(x)}" ${val === x ? 'selected' : ''}>${esc(SOURCE_LABEL[x] || x)}</option>`).join('')}
+          <option value="" disabled ${isSource(val) ? '' : 'selected'}>اختار المصدر اللي جه منه الأوردر</option>
+          ${L.map(x => `<option value="${esc(x)}" ${val === x ? 'selected' : ''}>${esc(isRenewSrc(x) ? '♻️ ' + x : (SOURCE_LABEL[x] || x))}</option>`).join('')}
         </select>`;
   }
 
@@ -2899,7 +2904,7 @@ const Squad = (function(){
     o = o || {};
     return `
       <div class="sq-field"><label for="${prefix}-c-page-name">المصدر</label>
-        ${sourceSelect(prefix + '-c-page-name', '', !isClothes(newOrderType))}</div>
+        ${sourceSelect(prefix + '-c-page-name', o.page_name || '', !isClothes(newOrderType))}</div>
       <div class="sq-field"><label for="${prefix}-c-size">المقاس</label>
         <input type="text" id="${prefix}-c-size" value="${esc(o.size || '')}" placeholder="اكتب المقاس" autocomplete="off"></div>
       <div class="sq-field"><label for="${prefix}-c-order">الطلب</label>
@@ -2996,7 +3001,8 @@ const Squad = (function(){
         ${state.error ? `<div class="sq-err">${esc(state.error)}</div>` : ''}
         ${prefill && prefill.recov ? `<div class="sq-err" style="background:#e3f3e8;border-color:#a9d8b8;color:#1f5f3a">♻️ <b>تجديد ${prefill.mode === 'edit' ? 'بتعديل' : 'لنفس الطلب'}</b> — أوردر ${prefill.recov.kind === 'hold' ? 'هولد' : 'اندلفرد'} من يوم ${esc(prefill.recov.day)} (شحنة ${esc(prefill.recov.serial)}). البيانات اتملت لوحدها${prefill.mode === 'edit' ? '، عدّلي اللي محتاج يتغير' : ''}، واختاري المصدر وسجّلي. <button type="button" class="sq-btn ghost" id="sq-prefill-x" style="padding:3px 10px;margin-inline-start:6px">إلغاء التجديد</button></div>` : ''}
         <form id="sq-order-form">
-          ${orderFields('sq-new', prefill ? { customer_name:prefill.customer_name, customer_phone:prefill.customer_phone, customer_address:prefill.customer_address, amount:prefill.amount, order_details:prefill.order_details, size:prefill.size } : undefined)}
+          ${orderFields('sq-new', prefill ? { customer_name:prefill.customer_name, customer_phone:prefill.customer_phone, customer_address:prefill.customer_address, amount:prefill.amount, order_details:prefill.order_details, size:prefill.size,
+            page_name: prefill.recov ? (RENEW_SOURCES[prefill.brand] || '') : (prefill.page_name || '') } : undefined)}
           <button type="submit" class="sq-btn block" ${state.loading?'disabled':''}>${state.loading ? 'بيتسجل...' : 'سجّل الأوردر'}</button>
         </form>
       </div>`;
@@ -3918,7 +3924,7 @@ grant select, insert, update, delete on public.office_sales to authenticated;`;
       e.preventDefault();
       if(!newOrderType){ showToast('حدد الأول البراند: Dream ولا Kidzzly.', 'error'); return; }
       const p = readFields('sq-new');
-      if(!ORDER_SOURCES.includes(p.page_name)){ showToast('اختار المصدر من الليستة الأول.', 'error'); return; }
+      if(!isSource(p.page_name)){ showToast('اختار المصدر من الليستة الأول.', 'error'); return; }
       if(newOrderType === 'acc' && !p.order_details){ showToast('اختار الطلب من الليستة الأول.', 'error'); return; }
       createOrder(p);
     };
@@ -3938,7 +3944,7 @@ grant select, insert, update, delete on public.office_sales to authenticated;`;
     if($('sq-edit-form')) $('sq-edit-form').onsubmit = e => {
       e.preventDefault();
       const p = readFields('sq-edit');
-      if(!ORDER_SOURCES.includes(p.page_name)){ showToast('اختار المصدر من الليستة الأول.', 'error'); return; }
+      if(!isSource(p.page_name)){ showToast('اختار المصدر من الليستة الأول.', 'error'); return; }
       if(!p.order_details){ showToast('اختار الطلب من الليستة الأول.', 'error'); return; }
       submitEditOrder(state.editingOrder, p);
     };
@@ -14827,6 +14833,11 @@ table.gs tr.wk td.day{color:#c5221f}
 .kd-wrow.done{border-inline-start-color:#2f7d55;background:#f1f8f3}
 .kd-wact{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
 .kd-done{margin-top:5px;font-size:13px;font-weight:700;color:#2f7d55}
+.kd-rm{margin-top:8px;background:var(--slate-l,#f3f5f4);border:1px solid var(--line);border-radius:10px;padding:8px 10px}
+.kd-rm-s{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:13.5px;align-items:center}
+.kd-rm-s b{font-size:15px}
+.kd-rm-bar{height:8px;border-radius:6px;background:#e6e9e8;overflow:hidden;margin-top:6px;display:flex}
+.kd-rm-bar i{display:block;height:100%;background:#2f7d55}.kd-rm-bar u{display:block;height:100%;background:#e0b04a}
 </style>
 <script>
 /* =====================================================================
@@ -14923,12 +14934,27 @@ table.gs tr.wk td.day{color:#c5221f}
     });
   }
   const renewsOf = (log, brand, day) => log.filter(x => x.type === 'renew' && x.brand === brand && x.day === day);
+  /* ♻️ مؤشر متابعة اليوم: كان محتاج كام يتسلم تاني، جددوا كام من الاندلفرد/الهولد، اتسلم كام منهم، وباقي كام للهدف */
+  function recovMeter(d){
+    const need = d.need, ren = d.ren || 0, del = d.renDel || 0, ship = d.renShip || 0, wait = Math.max(0, ren - del - ship), left = Math.max(0, need - del);
+    const pc = n => need ? Math.min(100, Math.round(n / need * 100)) : 100;
+    return `<div class="kd-rm"><div class="kd-rm-s">
+        <span>🎯 محتاجين <b>${need}</b> يتسلموا</span>
+        <span>♻️ جددوا <b>${ren}</b></span>
+        <span style="color:#2f7d55">✅ اتسلم منهم <b>${del}</b></span>
+        ${ship ? `<span style="color:#8a5a00">🚚 في الطريق <b>${ship}</b></span>` : ''}
+        ${wait ? `<span style="color:var(--muted)">⏳ لسه مااتشحنش <b>${wait}</b></span>` : ''}
+        <span style="color:${left ? '#c0392b' : '#2f7d55'};font-weight:700">${left ? `باقي <b>${left}</b> من ${need}` : '✅ وصلنا الهدف'}</span></div>
+      <div class="kd-rm-bar" title="الأخضر = اتسلم · الأصفر = في الطريق"><i style="width:${pc(del)}%"></i><u style="width:${Math.min(pc(ship), 100 - pc(del))}%"></u></div></div>`;
+  }
   function daysFor(brand, month){
     const b = BR[brand], [y, m] = month.split('-').map(Number), from = month + '-01', to = ymd(new Date(y, m, 0)), by = {};
-    (S.all || []).filter(b.test).forEach(q => { const d = new Date(q.order_date); if(isNaN(d)) return; const k = ymd(d); if(k < from || k > to) return; (by[k] = by[k] || []).push(q); });
+    // ♻️ الأوردر المتجدد بيتحسب لليوم الأصلي بس (في مؤشر التجديد) — مش كأوردر جديد في يوم التجديد
+    const renSer = new Set((S.log || []).filter(x => x.type === 'renew' && x.qp).map(x => String(x.qp.serial)));
+    (S.all || []).filter(b.test).filter(q => !renSer.has(String(q.serial))).forEach(q => { const d = new Date(q.order_date); if(isNaN(d)) return; const k = ymd(d); if(k < from || k > to) return; (by[k] = by[k] || []).push(q); });
     return Object.entries(by).sort((a, c) => a[0].localeCompare(c[0])).map(([k, L]) => {
       const d = { k, ...split(L, b.target) }, R = renewsOf(S.log, brand, k);
-      d.ren = R.length; d.renDel = R.filter(x => x.delivered).length;
+      d.ren = R.length; d.renDel = R.filter(x => x.delivered).length; d.renShip = R.filter(x => x.shipped && !x.delivered).length;
       d.have = d.del.length + d.renDel; d.closed = d.have >= d.goal; d.missing = Math.max(0, d.goal - d.have);
       return d;
     });
@@ -15069,7 +15095,7 @@ table.gs tr.wk td.day{color:#c5221f}
       return `<div class="kd-row ${ok || d.closed ? 'ok' : ''} ${a === myId ? 'kd-mine' : ''}"><div class="kd-day"><b>${new Date(d.k + 'T12:00:00').toLocaleDateString('ar-EG', { weekday:'short', day:'numeric', month:'short' })}</b><small>${ok ? '✅ فوق ' + pctT() : d.closed ? '✅ اتقفل بالتجديدات' : '⚠️ فيه مشكلة'}</small></div>
         <div><div class="kd-bar"><i style="width:${Math.round(d.rate * 100)}%"></i><em style="right:${Math.round(T * 100)}%" title="${pctT()}"></em></div>
           <div class="kd-s"><span>${d.L.length} أوردر</span><span>✅ اتسلم <b>${d.del.length}</b> (${Math.round(d.rate * 100)}%)</span>${ok ? '' : `<span style="color:${d.closed ? '#2f7d55' : '#c0392b'};font-weight:700">${d.closed ? 'اتقفل' : `ناقص ${d.missing} أوردر عشان ${pctT()}`}</span>`}
-            <a class="kd-btn" style="text-decoration:none" target="_blank" rel="noopener" href="${workUrl(d.k, 'hold')}">✋ هولد ${d.hold.length}</a><a class="kd-btn" style="text-decoration:none" target="_blank" rel="noopener" href="${workUrl(d.k, 'und')}">💔 اندلفرد ${d.und.length}</a>${d.ren ? `<span style="color:#2f7d55;font-weight:700">♻️ اتجدد ${d.ren} (✅ ${d.renDel})</span>` : ''}${d.way ? `<span>⏳ لسه ${d.way}</span>` : ''}</div></div>
+            <a class="kd-btn" style="text-decoration:none" target="_blank" rel="noopener" href="${workUrl(d.k, 'hold')}">✋ هولد ${d.hold.length}</a><a class="kd-btn" style="text-decoration:none" target="_blank" rel="noopener" href="${workUrl(d.k, 'und')}">💔 اندلفرد ${d.und.length}</a>${d.way ? `<span>⏳ لسه ${d.way}</span>` : ''}</div>${ok ? '' : recovMeter(d)}</div>
         <div>${ok ? '' : me().is_admin ? `<select class="kd-sel" data-kda="${d.k}"><option value="">— مين تتابع؟ —</option>${(S.agents || []).concat((S.allPeople || []).filter(p => !(S.agents || []).some(x => x.id === p.id))).map(p => `<option value="${esc(p.id)}" ${a === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select>` : a ? `<span class="kd-btn" style="cursor:default">${esc(nameOf(a))}</span>` : ''}</div></div>`; }).join('');
     return h;
   }
@@ -15097,7 +15123,7 @@ table.gs tr.wk td.day{color:#c5221f}
     if(W.busy || !W.d) return h + '<p style="color:var(--muted)">⏳ بيجيب أوردرات اليوم من QP...</p>';
     const d = W.d, R = renewsOf(S.log, W.brand, W.day), rd = R.filter(x => x.delivered).length, have = d.del.length + rd, closed = have >= d.goal, missing = Math.max(0, d.goal - have);
     h += `<div class="card" style="font-size:14.5px"><b>${d.L.length}</b> أوردر · الهدف <b>${d.goal}</b> يتسلم · ✅ اتسلم <b>${d.del.length}</b> + ♻️ تجديد اتسلم <b>${rd}</b> · ${closed ? `<b style="color:#2f7d55">✅ اليوم اتقفل (+${KD_RULES.perDay} ج)</b>` : `<b style="color:#c0392b">ناقص ${missing} أوردر يتسلم عشان ${pctT()}</b>`} · ♻️ اتجدد <b>${R.length}</b>
-      <div class="kd-bar" style="margin-top:8px"><i style="width:${Math.min(100, Math.round((d.goal ? have / d.goal : 1) * 100))}%;background:#2f7d55"></i></div>
+      ${recovMeter({ need:d.need, ren:R.length, renDel:rd, renShip:R.filter(x => x.shipped && !x.delivered).length })}
       <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="kd-btn ${W.kind === 'und' ? 'kd-on' : ''}" data-wk="und">💔 اندلفرد (${d.und.length})</button><button class="kd-btn ${W.kind === 'hold' ? 'kd-on' : ''}" data-wk="hold">✋ هولد (${d.hold.length})</button><button class="kd-btn" id="kwRe">🔄 حدّث</button></div></div>`;
     const L = W.kind === 'hold' ? d.hold : d.und;
     if(!L.length) return h + '<p style="color:var(--muted)">مفيش أوردرات هنا.</p>';
