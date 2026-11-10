@@ -11008,7 +11008,8 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
   const phoneNorm = t => { t = String(t || '').replace(/[^\d]/g, ''); if(t.startsWith('00')) t = t.slice(2); if(t.startsWith('20') && (t.length === 12 || t.length === 13)) t = t.slice(2); return t.replace(/^0+/, ''); };
   const phoneOf = s => { const raw = digits(s), t = phoneNorm(raw); if(/^1[0125]\d{8}$/.test(t)) return t;
     const one = raw.split(/[\/,;|\n،]|\s{2,}|\s[-–]\s|\sو\s?/).map(phoneNorm).find(x => /^1[0125]\d{8}$/.test(x));
-    const m = one ? null : raw.match(/(?:^|\D)0?(1[0125]\d{8})(?!\d)/); return one || (m && m[1]) || t; };
+    const m = one ? null : raw.match(/(?:^|\D)0?(1[0125]\d{8})(?!\d)/); const tail = t.slice(-10);   // آخر حل: لو آخر 10 أرقام موبايل سليم (قبله 2 أو 20 أو أي بادئة) نعتبره تمام
+    return one || (m && m[1]) || (t.length > 10 && /^1[0125]\d{8}$/.test(tail) ? tail : t); };
   const isPhone = s => /^1[0125]\d{8}$/.test(phoneOf(s));
   // 📞 كل أرقام الموبايل بتاعة أوردر (الأساسي والتاني) — المقارنة بـ QP بالموبايل مش برقم الشحنة
   const phoneKeys = x => [...new Set([x.phone, x.phone2, x.customer_phone, x.customer_phone2].map(phoneOf).filter(k => k && k.length >= 10))];
