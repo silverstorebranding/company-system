@@ -15205,6 +15205,11 @@ table.gs tr.wk td.day{color:#c5221f}
       <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="kd-btn ${W.kind === 'und' ? 'kd-on' : ''}" data-wk="und">💔 اندلفرد (${d.und.length})</button><button class="kd-btn ${W.kind === 'hold' ? 'kd-on' : ''}" data-wk="hold">✋ هولد (${d.hold.length})</button><button class="kd-btn" id="kwRe">🔄 حدّث</button></div></div>`;
     const L = W.kind === 'hold' ? d.hold : d.und;
     if(!L.length) return h + '<p style="color:var(--muted)">مفيش أوردرات هنا.</p>';
+    if(W.kind === 'hold'){ const sent = W.gSent || (W.gSent = new Set()), nx = L.findIndex(q => !sent.has(String(q.serial)));
+      h += `<div class="card" style="font-size:14px"><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button class="kd-btn" id="kwGrp" style="background:#25d366;color:#fff;border-color:#25d366">📣 ابعت الهولد لجروب الواتساب (${L.length})</button>${W.gOpen ? `<span style="color:var(--muted)">اتبعت ${L.filter(q => sent.has(String(q.serial))).length} من ${L.length}</span>` : ''}</div>
+        ${W.gOpen ? `<p style="margin:8px 0;color:var(--muted);font-size:13px">كل أوردر في رسالة لوحده: دوسي <b>💬 ابعت</b> (أو <b>▶️ ابعت اللي بعده</b>) — هيفتح واتساب والرسالة جاهزة، اختاري الجروب ودوسي إرسال، وارجعي هنا للي بعده.</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">${nx >= 0 ? `<button class="kd-btn" data-gs="${nx}" style="background:#2f7d55;color:#fff;border-color:#2f7d55">▶️ ابعت اللي بعده (${nx + 1})</button>` : '<b style="color:#2f7d55">✅ كل الأوردرات اتبعتت</b>'}<button class="kd-btn" id="kwGrpRst">↺ من الأول</button></div>
+        ${L.map((q, i) => `<div style="display:flex;gap:8px;align-items:center;justify-content:space-between;padding:6px 0;border-top:1px dashed var(--line)"><span style="white-space:pre-line">${sent.has(String(q.serial)) ? '✅ ' : ''}${esc(grpMsg(q))}</span><span style="white-space:nowrap"><button class="kd-btn" data-gs="${i}">💬 ابعت</button> <button class="kd-btn" data-gc="${i}" title="انسخ الرسالة">📋</button></span></div>`).join('')}` : ''}</div>`; }
     const last = serial => { const n = S.log.filter(x => String(x.serial) === String(serial)); return { renew:n.filter(x => x.type === 'renew').pop(), note:n.filter(x => x.type === 'note').pop() }; };
     h += L.map((q, i) => { const ph = String(q.phone || '').replace(/\D/g, '').replace(/^0/, ''), x = last(q.serial);
       const rs = x.renew ? (x.renew.delivered ? '✅ التجديد اتسلم' : x.renew.shipped ? '🚚 التجديد اتشحن (' + esc(lbl(x.renew.qp)) + ')' : '⏳ التجديد لسه مااتشحنش') : '';
@@ -15217,6 +15222,12 @@ table.gs tr.wk td.day{color:#c5221f}
           <select class="kd-sel" data-wn="${i}" style="width:auto"><option value="">📝 المتابعة...</option>${NOTES.map(n => `<option ${x.note && x.note.note === n ? 'selected' : ''}>${n}</option>`).join('')}</select>
           ${x.renew ? '' : `<button class="kd-btn" data-wr="${i}" data-m="same" style="background:#2f7d55;color:#fff;border-color:#2f7d55">🔁 جدّدي نفس الطلب</button><button class="kd-btn" data-wr="${i}" data-m="edit">✏️ جدّدي بتعديل</button>`}</div></div>`; }).join('');
     return h;
+  }
+  /* 📣 رسالة الأوردر الهولد لجروب المناديب على الواتساب (كل أوردر في رسالة لوحده) */
+  const grpMsg = q => `📦 شحنة ${q.serial}\nالعميل بيستعجل الاستلام، ممكن المندوب يكلمه وينسق معاه ويكلمه واتساب`;
+  function grpSend(q){
+    window.open('https://wa.me/?text=' + encodeURIComponent(grpMsg(q)), '_blank', 'noopener');
+    S.w.gSent.add(String(q.serial)); drawWork();
   }
   function renew(q, mode){
     if(!window.Squad || !Squad.openNewOrder) return alert('Squad مش متاح.');
@@ -15242,6 +15253,10 @@ table.gs tr.wk td.day{color:#c5221f}
     const re = document.getElementById('kwRe'); if(re) re.onclick = loadWork;
     main.querySelectorAll('[data-wr]').forEach(b => b.onclick = () => renew(L[+b.dataset.wr], b.dataset.m));
     main.querySelectorAll('[data-wn]').forEach(s => s.onchange = () => { if(s.value) note(L[+s.dataset.wn], s.value); });
+    const g = document.getElementById('kwGrp'); if(g) g.onclick = () => { S.w.gOpen = !S.w.gOpen; drawWork(); };
+    const gr = document.getElementById('kwGrpRst'); if(gr) gr.onclick = () => { S.w.gSent = new Set(); drawWork(); };
+    main.querySelectorAll('[data-gs]').forEach(b => b.onclick = () => grpSend(L[+b.dataset.gs]));
+    main.querySelectorAll('[data-gc]').forEach(b => b.onclick = async () => { try{ await navigator.clipboard.writeText(grpMsg(L[+b.dataset.gc])); b.textContent = '✔'; }catch(e){ alert('مقدرتش أنسخ: ' + e.message); } });
   }
 
   function draw(){
