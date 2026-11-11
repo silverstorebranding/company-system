@@ -2727,6 +2727,7 @@ const Squad = (function(){
       { key:'go:order-edit', label:'✏️ تعديل أوردر موجود' },
       { key:'go:order-issues', label:'🧩 مشاكل الأوردرات' },
       { key:'go:kidzzly-days', label:'🎯 أيام تحت الهدف' },
+      { key:'ersal', label:'📨 إرسال فوكس' },
     ].filter(t => t.key !== 'go:kidzzly-days' || !window.AuthGate || !window.AuthGate.canSee || window.AuthGate.canSee('#/kidzzly-days'));
     if(isAdminUser()) tabs.push({ key:'qp-sync', label:'🔄 مطابقة مع QP' }, { key:'verify', label:'🛡️ تحقق من التسليمات' });
     return `
@@ -3830,9 +3831,11 @@ grant select, insert, update, delete on public.office_sales to authenticated;`;
     else if(state.view === 'qp-sync') body = SyncView();
     else if(state.view === 'verify') body = VerifyView();
     else if(state.view === 'office') body = OfficeView();
+    else if(state.view === 'ersal') body = '<div id="ef-cs"><div class="sq-loading">بنجيب الصفحات...</div></div>';
     else body = DashboardView();
     root.innerHTML = Bar() + body;
     wireAppEvents();
+    if(state.view === 'ersal' && window.ErsalFocus) window.ErsalFocus.mountCS();
   }
 
   function wireAuthEvents(){
@@ -15647,6 +15650,10 @@ table.cs tr.cs-open td{background:#fff7dd}
 .ef-btn.pri{background:#8a4fb0;border-color:#8a4fb0;color:#fff}
 .ef-btn.red{color:#b3261e;border-color:#e6b4ad}
 .ef-in{padding:8px 10px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;background:var(--panel);color:var(--ink)}
+.ef-cs{display:inline-block;margin-top:4px;padding:2px 9px;border-radius:20px;font-size:12px;font-weight:700}
+.ef-cs.wait{background:#fdf1dc;color:#8a5a00}
+.ef-cs.ack{background:#e3edfb;color:#1d4f91}
+.ef-cs.done{background:#dff3e6;color:#1e6b3c}
 .ef-tag{display:inline-block;padding:2px 9px;border-radius:20px;font-size:12px;font-weight:700;background:#8a4fb0;color:#fff}
 </style>
 <script>
@@ -15655,7 +15662,8 @@ table.cs tr.cs-open td{background:#fff7dd}
    - ➕ ضيف اسم بيدج (وتقدر تمسحها)
    - لما تشغّل ريتارجت لبيدج: اختارها ودوس "🎯 شغّلت ريتارجت" → بتتعلّم إنها شغالة،
      وبتتبعت مهمة لمديرة خدمة العملاء: البيدج دي شغالة بريتارجت ويُرجى متابعتها
-   - التخزين: app_kv بمفتاح ersal_focus = { pages:[{ name, rt, since, by, sent }], manager, log:[...] }
+   - خدمة العملاء بتعلّم من Squad ← 📨 إرسال فوكس: 📥 استلمت / ✅ خلصت المتابعة — وبتظهر هنا قدام كل بيدج
+   - التخزين: app_kv بمفتاح ersal_focus = { pages:[{ name, rt, since, by, sent, ack:{at,by}, done:{at,by} }], manager, log:[...] }
    ===================================================================== */
 (function(){
   const sb = () => window.__sbClient || (window.AuthGate && window.AuthGate.sb);
@@ -15717,7 +15725,7 @@ table.cs tr.cs-open td{background:#fff7dd}
     const box = document.getElementById('efMsg' + i), body = (box && box.value.trim()) || defMsg(p.name);
     const { error } = await sb().from('inbox').insert({ kind:'task', from_id:me().id, from_name:by(), to_id:S.d.manager, to_name:mgrName(), title:`🎯 البيدج "${p.name}" اتعملها ريتارجت — يُرجى المتابعة بأعلى دقة`, body });
     if(error){ S.msg = '⚠️ الرسالة مااتبعتتش: ' + error.message; return draw(); }
-    p.rt = true; p.since = new Date().toISOString(); p.sent = mgrName(); p.rtBy = by();
+    p.rt = true; p.since = new Date().toISOString(); p.sent = mgrName(); p.rtBy = by(); p.rtById = me().id; p.ack = null; p.done = null;
     S.d.log.unshift({ at:p.since, page:p.name, act:'on', to:mgrName(), by:by() }); S.d.log = S.d.log.slice(0, 100);
     S.pick = '';
     if(await save()){ S.msg = `✅ اتعلّمت "${p.name}" إنها شغالة ريتارجت، واتبعتت رسالة لـ ${mgrName()} في 📥 الرسايل والمهام.`; draw(); }
@@ -15732,7 +15740,7 @@ table.cs tr.cs-open td{background:#fff7dd}
       title: names.length === 1 ? `🎯 البيدج "${names[0]}" اتعملها ريتارجت — يُرجى المتابعة بأعلى دقة` : `🎯 ${names.length} صفحات اتعملهم ريتارجت — يُرجى المتابعة بأعلى دقة`, body });
     if(error){ S.msg = '⚠️ الرسالة مااتبعتتش: ' + error.message; return draw(); }
     const now = new Date().toISOString();
-    idx.forEach(i => { const p = S.d.pages[i]; p.rt = true; p.since = now; p.sent = mgrName(); p.rtBy = by(); });
+    idx.forEach(i => { const p = S.d.pages[i]; p.rt = true; p.since = now; p.sent = mgrName(); p.rtBy = by(); p.rtById = me().id; p.ack = null; p.done = null; });
     S.d.log.unshift({ at:now, page:names.join('، '), act:'on', to:mgrName(), by:by() }); S.d.log = S.d.log.slice(0, 100);
     S.sel = {}; S.multi = false;
     if(await save()){ S.msg = `✅ اتعلّمت ${names.length} صفحة إنها شغالة ريتارجت، واتبعتت رسالة واحدة لـ ${mgrName()} في 📥 الرسايل والمهام.`; draw(); }
@@ -15744,7 +15752,7 @@ table.cs tr.cs-open td{background:#fff7dd}
     if(await save()){ S.msg = '⏹️ الريتارجت على "' + p.name + '" اتقفل.'; draw(); }
   }
   function view(){
-    let h = `<div class="pagehead"><h1>📨 إرسال فوكس</h1><p>أسامي صفحات "إرسال صفحة". علّم ☑️ على الصفحات اللي اتعملها ريتارجت (واحدة أو أكتر) ودوس <b>🎯 دول اتعملهم ريتارجت</b> — بتتبعت لمديرة خدمة العملاء رسالة إن البيدج دي شغالة بريتارجت ويُرجى متابعتها.</p></div>`;
+    let h = `<div class="pagehead"><h1>📨 إرسال فوكس</h1><p>أسامي صفحات "إرسال صفحة". علّم ☑️ على الصفحات اللي اتعملها ريتارجت (واحدة أو أكتر) ودوس <b>🎯 دول اتعملهم ريتارجت</b> — بتتبعت لمديرة خدمة العملاء رسالة إن البيدج دي شغالة بريتارجت ويُرجى متابعتها. وخدمة العملاء بتعلّم من <b>Squad ← 📨 إرسال فوكس</b> إنها استلمت / خلصت المتابعة، والعلامة بتظهر هنا قدام كل بيدج.</p></div>`;
     if(S.msg) h += `<div class="mono-note">${esc(S.msg)}</div>`;
     if(S.err) h += `<div class="mono-note">${esc(S.err)}</div>`;
     if(!S.d) return h + '<p style="color:var(--muted)">⏳ بيحمّل...</p>';
@@ -15753,7 +15761,8 @@ table.cs tr.cs-open td{background:#fff7dd}
       <input class="ef-in" id="efNew" placeholder="اسم البيدج" value="${esc(S.newName)}" style="flex:1;min-width:200px"><button class="ef-btn pri" id="efAdd">➕ ضيف اسم بيدج</button>
       <label style="font-size:13.5px;display:inline-flex;gap:6px;align-items:center">👩‍💼 مديرة خدمة العملاء: <select class="ef-in" id="efMgr"><option value="">— اختار —</option>${(S.people || []).map(p => `<option value="${esc(p.id)}" ${S.d.manager === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></label></div></div>`;
     const on = S.d.pages.filter(p => p.rt).length;
-    h += `<div class="card" style="font-size:14px">📄 <b>${S.d.pages.length}</b> بيدج · 🎯 شغالين ريتارجت دلوقتي: <b style="color:#8a4fb0">${on}</b></div>`;
+    const nAck = S.d.pages.filter(p => p.rt && p.ack && !p.done).length, nDone = S.d.pages.filter(p => p.rt && p.done).length;
+    h += `<div class="card" style="font-size:14px">📄 <b>${S.d.pages.length}</b> بيدج · 🎯 شغالين ريتارجت دلوقتي: <b style="color:#8a4fb0">${on}</b>${on ? ` · خدمة العملاء: ✅ خلصوا <b>${nDone}</b> · 📥 استلموا <b>${nAck}</b> · ⏳ لسه <b>${on - nAck - nDone}</b>` : ''}</div>`;
     if(!S.d.pages.length) h += '<p style="color:var(--muted)">لسه مفيش صفحات — ضيف أول اسم من فوق.</p>';
     const nSel = Object.values(S.sel).filter(Boolean).length, selNames = Object.keys(S.sel).filter(i => S.sel[i] && S.d.pages[i]).map(i => S.d.pages[i].name);
     if(S.d.pages.length) h += `<div class="card" style="position:sticky;top:0;z-index:3"><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
@@ -15764,15 +15773,66 @@ table.cs tr.cs-open td{background:#fff7dd}
         <textarea class="ef-in" id="efMsgMany" rows="6" style="width:100%;margin-top:4px">${esc(defMsgMany(selNames))}</textarea>
         <div style="display:flex;gap:8px;margin-top:6px"><button class="ef-btn pri" id="efSendMany">📨 ابعت (${nSel} صفحة)</button><button class="ef-btn" id="efMx">إلغاء</button></div></div>` : ''}</div>`;
     h += S.d.pages.map((p, i) => `<div class="ef-row ${p.rt ? 'on' : ''}"><input type="checkbox" data-efsel="${i}" ${S.sel[i] ? 'checked' : ''} style="width:20px;height:20px;cursor:pointer"><span class="nm">${p.rt ? '<span class="ef-tag">🎯 ريتارجت</span> ' : ''}${esc(p.name)}${p.fb ? `<small style="display:block;font-weight:500;font-size:11.5px;color:var(--muted);direction:ltr;text-align:right"><a href="https://facebook.com/${esc(p.fb)}" target="_blank" rel="noopener" style="color:inherit">${esc(p.fb)}</a></small>` : ''}</span>
-      <span class="st">${p.rt ? `شغالة من ${esc(when(p.since))} · اتبعتت لـ ${esc(p.sent || '')}` : 'مش شغالة ريتارجت'}</span>
+      <span class="st">${p.rt ? `شغالة من ${esc(when(p.since))} · اتبعتت لـ ${esc(p.sent || '')}` : 'مش شغالة ريتارجت'}${p.rt ? '<br>' + csBadge(p) : ''}</span>
       ${p.rt ? `<button class="ef-btn" data-efoff="${i}">⏹️ وقّفت الريتارجت</button>` : `<button class="ef-btn pri" data-efpick="${i}">🎯 شغّلت ريتارجت</button>`}
       ${admin ? `<button class="ef-btn red" data-efdel="${i}" title="مسح">🗑️</button>` : ''}
       ${S.pick === String(i) ? `<div style="flex-basis:100%"><label style="font-size:13px;color:var(--muted)">الرسالة اللي هتتبعت لـ <b>${esc(mgrName() || '—')}</b>:</label>
         <textarea class="ef-in" id="efMsg${i}" rows="4" style="width:100%;margin-top:4px">${esc(defMsg(p.name))}</textarea>
         <div style="display:flex;gap:8px;margin-top:6px"><button class="ef-btn pri" data-efsend="${i}">📨 ابعت لمديرة خدمة العملاء</button><button class="ef-btn" data-efx>إلغاء</button></div></div>` : ''}</div>`).join('');
-    if(S.d.log.length) h += `<div class="card"><h3>🕘 السجل</h3>${S.d.log.slice(0, 20).map(x => `<div style="font-size:13px;padding:3px 0">${x.act === 'on' ? '🎯 شغّل ريتارجت' : '⏹️ وقّف'} — <b>${esc(x.page)}</b> · ${esc(when(x.at))} · ${esc(x.by || '')}${x.to ? ' ← ' + esc(x.to) : ''}</div>`).join('')}</div>`;
+    if(S.d.log.length) h += `<div class="card"><h3>🕘 السجل</h3>${S.d.log.slice(0, 20).map(x => `<div style="font-size:13px;padding:3px 0">${({ on:'🎯 شغّل ريتارجت', off:'⏹️ وقّف', ack:'📥 خدمة العملاء استلمت', done:'✅ خدمة العملاء خلصت المتابعة', undo:'↩️ خدمة العملاء رجّعت العلامة' })[x.act] || x.act} — <b>${esc(x.page)}</b> · ${esc(when(x.at))} · ${esc(x.by || '')}${x.to ? ' ← ' + esc(x.to) : ''}</div>`).join('')}</div>`;
     return h;
   }
+  // 👩‍💼 حالة المتابعة من خدمة العملاء (بتتعلّم من Squad ← 📨 إرسال فوكس)
+  function csBadge(p){
+    if(p.done) return `<span class="ef-cs done">✅ خدمة العملاء خلصت المتابعة — ${esc(p.done.by || '')} · ${esc(when(p.done.at))}</span>`;
+    if(p.ack) return `<span class="ef-cs ack">📥 خدمة العملاء استلمت — ${esc(p.ack.by || '')} · ${esc(when(p.ack.at))} (لسه بتتابع)</span>`;
+    return `<span class="ef-cs wait">⏳ خدمة العملاء لسه ماستلمتش</span>`;
+  }
+  // بنجيب آخر نسخة قبل الحفظ عشان مانمسحش تعديل حد تاني
+  async function fresh(){
+    const { data, error } = await sb().from('app_kv').select('value').eq('key', KV).maybeSingle();
+    if(error) throw error;
+    S.d = (data && data.value) || S.d || { pages:[], manager:'', log:[] }; S.d.pages = S.d.pages || []; S.d.log = S.d.log || [];
+  }
+  async function csMark(name, act){
+    const C = S.cs;
+    try{
+      await fresh();
+      const p = S.d.pages.find(x => x.name === name); if(!p || !p.rt){ C.msg = '⚠️ البيدج دي مبقتش شغالة ريتارجت.'; return drawCS(); }
+      const stamp = { at:new Date().toISOString(), by:by() };
+      if(act === 'ack'){ p.ack = stamp; p.done = null; }
+      else if(act === 'done'){ if(!p.ack) p.ack = stamp; p.done = stamp; }
+      else if(act === 'undo'){ if(p.done) p.done = null; else p.ack = null; }
+      S.d.log.unshift({ at:stamp.at, page:p.name, act, by:stamp.by }); S.d.log = S.d.log.slice(0, 100);
+      if(!(await save())){ C.msg = S.msg; return drawCS(); }
+      if(p.rtById && act !== 'undo') sb().from('inbox').insert({ kind:'message', from_id:me().id, from_name:by(), to_id:p.rtById, to_name:p.rtBy || '',
+        body: act === 'ack' ? `📥 استلمت البيدج "${p.name}" (ريتارجت) وبتابعها.` : `✅ خلصت متابعة البيدج "${p.name}" (ريتارجت).` }).then(() => {}, () => {});
+      C.msg = act === 'ack' ? `📥 اتعلّمت "${p.name}" إنك استلمتيها.` : act === 'done' ? `✅ اتعلّمت "${p.name}" إن المتابعة خلصت.` : `↩️ اترجّعت العلامة على "${p.name}".`;
+    }catch(e){ C.msg = '⚠️ مااتحفظش: ' + e.message; }
+    drawCS();
+  }
+  function csView(){
+    const C = S.cs;
+    let h = `<div class="card"><h3 style="margin-top:0">📨 إرسال فوكس — الصفحات اللي اتعملها ريتارجت</h3>
+      <p style="font-size:13.5px;color:var(--muted);margin:0">علّمي <b>📥 استلمت</b> أول ما تستلمي البيدج، و<b>✅ خلصت المتابعة</b> لما تخلصيها — صاحب الريتارجت بيشوف العلامة عنده في قسم 📨 إرسال فوكس.</p></div>`;
+    if(C.msg) h += `<div class="mono-note">${esc(C.msg)}</div>`;
+    if(!S.d) return h + `<div class="sq-loading">${S.err ? esc(S.err) : 'بنجيب الصفحات...'}</div>`;
+    const L = S.d.pages.filter(p => p.rt).sort((a, b) => (!!a.done - !!b.done) || (!!a.ack - !!b.ack) || String(b.since || '').localeCompare(String(a.since || '')));
+    if(!L.length) return h + '<p style="color:var(--muted)">مفيش صفحات شغالة ريتارجت دلوقتي.</p>';
+    return h + L.map(p => `<div class="ef-row on"><span class="nm">${esc(p.name)}${p.fb ? `<small style="display:block;font-weight:500;font-size:11.5px;color:var(--muted);direction:ltr;text-align:right"><a href="https://facebook.com/${esc(p.fb)}" target="_blank" rel="noopener" style="color:inherit">${esc(p.fb)}</a></small>` : ''}</span>
+      <span class="st">🎯 شغالة من ${esc(when(p.since))}${p.rtBy ? ' · من ' + esc(p.rtBy) : ''}<br>${csBadge(p)}</span>
+      ${!p.ack ? `<button class="ef-btn pri" data-csmk="ack" data-csnm="${esc(p.name)}">📥 استلمت</button>` : ''}
+      ${!p.done ? `<button class="ef-btn" style="background:#2e7d4f;border-color:#2e7d4f;color:#fff" data-csmk="done" data-csnm="${esc(p.name)}">✅ خلصت المتابعة</button>` : ''}
+      ${p.ack ? `<button class="ef-btn" data-csmk="undo" data-csnm="${esc(p.name)}" title="رجّع آخر علامة">↩️</button>` : ''}</div>`).join('');
+  }
+  function drawCS(){
+    const box = document.getElementById('ef-cs'); if(!box) return;
+    box.innerHTML = csView();
+    box.querySelectorAll('[data-csmk]').forEach(b => b.onclick = () => { box.querySelectorAll('[data-csmk]').forEach(x => x.disabled = true); csMark(b.dataset.csnm, b.dataset.csmk); });
+  }
+  S.cs = { msg:'' };
+  // بيتنده من Squad لما تبويب 📨 إرسال فوكس يتفتح
+  window.ErsalFocus = { mountCS(){ if(!document.getElementById('ef-cs')) return; drawCS(); if(sb()) fresh().then(() => { S.err = ''; drawCS(); }, e => { S.err = 'مقدرناش نجيب البيانات: ' + e.message; drawCS(); }); } };
   function draw(){
     if(!isEF()) return;
     const main = document.getElementById('main'); if(!main) return;
@@ -15795,7 +15855,7 @@ table.cs tr.cs-open td{background:#fff7dd}
   function mount(){
     if(!isEF()) return;
     document.querySelectorAll('#sidebar a.navlink').forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#/ersal-focus'));
-    draw(); if(!S.d && sb()) load();
+    draw(); if(sb()) load();   // كل مرة القسم يتفتح بنجيب آخر علامات خدمة العملاء
   }
   // لينك في السايدبار تحت "أيام تحت هدف التسليم"
   const anc = document.querySelector('#sidebar a.navlink[href="#/kidzzly-days"]');
