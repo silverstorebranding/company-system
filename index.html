@@ -12862,13 +12862,30 @@ create policy "sheets: upload" on storage.objects for insert to authenticated wi
     const { data } = sbc().storage.from('sheets').getPublicUrl(path, { download:f.name });
     SD.url = data && data.publicUrl; return SD.url;
   }
-  const sdWaUrl = () => 'https://wa.me/?text=' + encodeURIComponent(sdText(SD.res) + (SD.url ? `\n\n📄 الشيت: ${SD.url}` : ''));
   // 💬 بيفتح واتساب والرسالة جاهزة فيها لينك الشيت — تختار الجروب وتبعت
+  // 📎 نسخة CSV من نفس الشيت (بتفتح في Excel): Chrome بيسمح يشارك CSV لواتساب لكن مش xlsx
+  function sdCsv(list, name){
+    const q = v => '"' + String(v ?? '').replace(/"/g, '""') + '"', t = v => '"=""' + String(v ?? '').replace(/"/g, '') + '"""'; // t: يفضل نص (الصفر اللي في أول الموبايل)
+    const H = ['serial', 'full name', 'phone', 'address', 'total amount', 'notes', 'shipment contents', 'weight', 'city', 'المصدر', 'رفعه', 'وقت الرفع'];
+    const rows = list.map(o => [t(o.serial), q(o.name), t(o.phone), q(o.address), q(o.amount), q(o.notes), q(o.contents), q(1), q(o.city || ''), q(o.src || ''), q(o.by || ''), q(new Date(o.at).toLocaleTimeString('ar-EG', { hour:'2-digit', minute:'2-digit' }))].join(','));
+    return new File(['﻿' + [H.map(q).join(',')].concat(rows).join('\r\n')], name.replace(/\.xlsx$/, '.csv'), { type:'text/csv' });
+  }
+  // 📎 بيبعت ملف الشيت نفسه: شاشة المشاركة ← واتساب ← تختار الجروب
+  //   xlsx لو الجهاز بيسمح (آيفون / ماك)، وإلا CSV بيفتح في Excel (ويندوز: محتاج برنامج WhatsApp متسطب)
   function sdShare(){
     if(!SD.res) return;
-    if(!SD.url){ sdDownload(); SD.msg = '⬇️ الشيت اتنزّل لأن رفعه على السيستم مااشتغلش — اسحبه في الجروب بعد ما تبعت الرسالة.'; SD.msgErr = true; }
-    else { SD.msg = '✅ اتفتح واتساب والرسالة جاهزة فيها لينك الشيت — اختار جروب البيكب ودوس إرسال.'; SD.msgErr = false; }
-    window.open(sdWaUrl(), '_blank', 'noopener'); draw();
+    const ok = f => { try{ return !!(f && navigator.canShare && navigator.canShare({ files:[f] })); }catch(e){ return false; } };
+    const f = ok(SD.file) ? SD.file : ok(SD.csv) ? SD.csv : null;
+    if(!f) return sdWeb(true);
+    navigator.share({ files:[f], title:f.name }).then(() => { SD.msg = `✅ اتبعت ملف ${f.name}.`; SD.msgErr = false; draw(); })
+      .catch(e => { SD.msg = e && e.name === 'AbortError' ? 'اتقفلت شاشة المشاركة. لو واتساب مش ظاهر فيها (مش متسطب على الجهاز)، دوس 🌐 واتساب ويب.' : 'المشاركة مااشتغلتش: ' + ((e && e.message) || e) + ' — دوس 🌐 واتساب ويب.'; SD.msgErr = true; draw(); });
+  }
+  // 🌐 واتساب ويب: الشيت xlsx بينزل وواتساب ويب بيتفتح بالرسالة — تختار الجروب وتسحب الملف من شريط التحميلات جوه الشات
+  function sdWeb(auto){
+    if(!SD.res) return;
+    sdDownload();
+    window.open('https://web.whatsapp.com/send?text=' + encodeURIComponent(sdText(SD.res) + (SD.url ? `\n\n📄 الشيت: ${SD.url}` : '')), '_blank', 'noopener');
+    SD.msg = (auto ? 'الجهاز ده مش بيسمح يبعت الملف من شاشة المشاركة، فـ' : '') + `الشيت (${SD.file.name}) اتنزّل واتفتح واتساب ويب بالرسالة: اختار جروب البيكب، واسحب الشيت من التحميلات (فوق على اليمين في Chrome) لجوه الشات، وابعت.`; SD.msgErr = false; draw();
   }
   async function sdGo(){
     if(SD.busy || !window.XLSX) return;
@@ -12904,14 +12921,14 @@ create policy "sheets: upload" on storage.objects for insert to authenticated wi
     const name = `شيت البيكب ${ymd(new Date())} (${c.keep.length}).xlsx`;
     const buf = XLSX.write(sdWb(c.keep), { bookType:'xlsx', type:'array' });
     SD.file = new File([buf], name, { type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    SD.csv = sdCsv(c.keep, name);
     SD.res = { n:c.keep.length, total:c.L.length, defer:c.defer.map(x => x.serial), late:c.late.map(x => x.serial) };
     SD.url = null; SD.upErr = '';
-    const t0 = Date.now(); SD.busy = true; SD.msg = '⏳ بيجهّز الشيت...'; draw();
+    SD.busy = true; SD.msg = '⏳ بيجهّز الشيت...'; draw();
     try{ await sdUpload(); }catch(e){ SD.upErr = (e && e.message) || String(e); }
     SD.busy = false; SD.step = 'done'; SD.msgErr = false;
     SD.msg = done.length ? `🗑️ اتمسح ${done.length} أوردر من QP واتحفظوا في ♻️ رجّع اللي اتمسح.` : '';
-    // لو لسه في خلال ثواني من الضغطة: نفتح واتساب على طول (بعد كده المتصفح بيمنع فتح تاب لوحده)
-    if(SD.url && Date.now() - t0 < 4000) sdShare(); else draw();
+    draw();
   }
   function sendHtml(){
     if(histShared === null){ loadHist().then(draw).catch(() => { histShared = []; draw(); }); return '<div class="card"><p class="up-empty">⏳ بيجيب الأوردرات اللي اترفعت النهارده...</p></div>'; }
@@ -12961,15 +12978,15 @@ create policy "sheets: upload" on storage.objects for insert to authenticated wi
         ${c.late.length ? `<p style="font-size:13px;margin:4px 0 0">⏰ لسه على QP: <span style="direction:ltr;display:inline-block">${c.late.map(x => esc(x.serial)).join(' · ')}</span></p>` : ''}
         ${msg}
         <div class="up-row" style="margin-top:12px"><button class="up-btn" id="sdBack">↩️ ارجع</button>
-          <button class="up-btn" id="sdGo" style="background:#25d366;border-color:#25d366;color:#fff" ${SD.busy || !c.keep.length ? 'disabled' : ''}>${SD.busy ? '⏳ ...' : `📤 جهّز الشيت (${c.keep.length}) وافتح واتساب`}</button></div></div>`;
+          <button class="up-btn" id="sdGo" style="background:#25d366;border-color:#25d366;color:#fff" ${SD.busy || !c.keep.length ? 'disabled' : ''}>${SD.busy ? '⏳ ...' : `📤 جهّز الشيت (${c.keep.length}) عشان يتبعت`}</button></div></div>`;
     }
     // ✅ done
     const r = SD.res || { n:0, defer:[], late:[] };
     return `<div class="card"><h3>✅ الشيت جاهز — ${r.n} أوردر</h3>
       <p style="white-space:pre-line;font-size:13.5px;background:var(--soft, #f6f3ec);padding:10px;border-radius:9px;margin:0 0 10px">${esc(sdText(r))}${SD.url ? `\n\n📄 الشيت: <a href="${esc(SD.url)}" target="_blank" rel="noopener" style="direction:ltr;display:inline-block;word-break:break-all">${esc(SD.url)}</a>` : ''}</p>
-      ${SD.upErr ? `<div class="up-msg err">مقدرتش أرفع الشيت على السيستم (${esc(SD.upErr)}) — فهينزل على الجهاز وتسحبه في الجروب بإيدك.${me().is_admin ? ' عشان يتبعت كلينك على طول، شغّل الكود ده مرة واحدة في Supabase → SQL Editor:' : ' كلّم الأدمن.'}</div>${me().is_admin ? `<pre style="direction:ltr;text-align:left;font-size:12px;background:#f4f4f4;padding:10px;border-radius:8px;white-space:pre-wrap">${esc(SHEETS_SQL)}</pre>` : ''}` : ''}
+      ${SD.upErr && me().is_admin ? `<details style="font-size:12.5px;color:var(--muted);margin:0 0 8px"><summary>ℹ️ لينك الشيت مش بيتضاف للرسالة (${esc(SD.upErr)}) — اختياري</summary>عشان رسالة واتساب ويب يبقى فيها لينك للشيت كمان، شغّل الكود ده مرة واحدة في Supabase → SQL Editor:<pre style="direction:ltr;text-align:left;font-size:12px;background:#f4f4f4;padding:10px;border-radius:8px;white-space:pre-wrap">${esc(SHEETS_SQL)}</pre></details>` : ''}
       ${msg}
-      <div class="up-row"><button class="up-btn" id="sdShare" style="background:#25d366;border-color:#25d366;color:#fff">💬 افتح واتساب واختار الجروب</button><button class="up-btn" id="sdDl">⬇️ نزّل الشيت</button>
+      <div class="up-row"><button class="up-btn" id="sdShare" style="background:#25d366;border-color:#25d366;color:#fff">📎 ابعت ملف الشيت على واتساب</button><button class="up-btn" id="sdWeb" style="border-color:#25d366;color:#1a8f47">🌐 واتساب ويب (نزّل الشيت واسحبه)</button><button class="up-btn" id="sdDl">⬇️ نزّل الشيت</button>
         <button class="up-btn" id="sdCopy">📋 انسخ الرسالة</button><button class="up-btn" id="sdClose">✖️ اقفل التاب</button></div></div>`;
   }
   function sdWire(){
@@ -12985,6 +13002,7 @@ create policy "sheets: upload" on storage.objects for insert to authenticated wi
     document.querySelectorAll('[data-sdx]').forEach(b => b.onclick = () => { SD.list.splice(+b.dataset.sdx, 1); draw(); });
     if($('sdGo')) $('sdGo').onclick = sdGo;
     if($('sdShare')) $('sdShare').onclick = sdShare;
+    if($('sdWeb')) $('sdWeb').onclick = () => sdWeb(false);
     if($('sdDl')) $('sdDl').onclick = sdDownload;
     if($('sdCopy')) $('sdCopy').onclick = async () => { try{ await navigator.clipboard.writeText(sdText(SD.res) + (SD.url ? `\n\n📄 الشيت: ${SD.url}` : '')); $('sdCopy').textContent = '✔ اتنسخت'; }catch(e){ alert('مقدرتش أنسخ: ' + e.message); } };
     if($('sdClose')) $('sdClose').onclick = () => { window.close(); };
