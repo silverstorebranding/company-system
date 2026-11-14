@@ -12875,10 +12875,16 @@ create policy "sheets: upload" on storage.objects for insert to authenticated wi
   function sdShare(){
     if(!SD.res) return;
     const ok = f => { try{ return !!(f && navigator.canShare && navigator.canShare({ files:[f] })); }catch(e){ return false; } };
-    const f = ok(SD.file) ? SD.file : ok(SD.csv) ? SD.csv : null;
+    // xlsx بس على آيفون/آيباد أو Safari على الماك — Chrome (أندرويد وويندوز) بيرفضه بـ "Permission denied" حتى لو canShare قال ماشي
+    const ua = navigator.userAgent, xOk = isIOS() || (/Macintosh/.test(ua) && /Safari/.test(ua) && !/Chrome|Chromium|Edg|OPR/.test(ua));
+    const f = !SD.forceCsv && xOk && ok(SD.file) ? SD.file : ok(SD.csv) ? SD.csv : null;
     if(!f) return sdWeb(true);
-    navigator.share({ files:[f], title:f.name }).then(() => { SD.msg = `✅ اتبعت ملف ${f.name}.`; SD.msgErr = false; draw(); })
-      .catch(e => { SD.msg = e && e.name === 'AbortError' ? 'اتقفلت شاشة المشاركة. لو واتساب مش ظاهر فيها (مش متسطب على الجهاز)، دوس 🌐 واتساب ويب.' : 'المشاركة مااشتغلتش: ' + ((e && e.message) || e) + ' — دوس 🌐 واتساب ويب.'; SD.msgErr = true; draw(); });
+    navigator.share({ files:[f] }).then(() => { SD.msg = `✅ اتبعت ملف ${f.name}.`; SD.msgErr = false; draw(); })
+      .catch(e => {
+        if(e && e.name === 'AbortError'){ SD.msg = 'اتقفلت شاشة المشاركة. لو واتساب مش ظاهر فيها، دوس 🌐 واتساب ويب.'; }
+        else if(f === SD.file){ SD.forceCsv = true; SD.msg = 'الجهاز رفض ملف الـ Excel — دوس 📎 تاني وهيتبعت نسخة CSV (بتفتح في Excel).'; }
+        else SD.msg = 'الجهاز رفض يشارك الملف (' + ((e && e.message) || e) + ') — دوس 🌐 واتساب ويب.';
+        SD.msgErr = true; draw(); });
   }
   // 🌐 واتساب ويب: الشيت xlsx بينزل وواتساب ويب بيتفتح بالرسالة — تختار الجروب وتسحب الملف من شريط التحميلات جوه الشات
   function sdWeb(auto){
