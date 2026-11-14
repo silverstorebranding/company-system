@@ -12848,15 +12848,27 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
     return `📦 شيت البيكب — ${new Date().toLocaleDateString('ar-EG', { weekday:'long', day:'numeric', month:'long' })}\n✅ ${r.n} أوردر جاهزين${r.defer.length ? `\n⏭️ ${r.defer.length} اتشالوا من QP واترحّلوا لبكرة` : ''}${r.late.length ? `\n⏰ ${r.late.length} لسه ماجهزوش (Late pickup): ${r.late.join(' · ')}` : ''}`;
   }
   function sdDownload(){ const f = SD.file; if(!f) return; const a = document.createElement('a'); a.href = URL.createObjectURL(f); a.download = f.name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); }
-  async function sdShare(){
-    const f = SD.file, text = sdText(SD.res); if(!f) return;
-    try{
-      if(navigator.canShare && navigator.canShare({ files:[f] })){ await navigator.share({ files:[f], text }); SD.msg = '✅ اتبعت — اختار جروب البيكب من واتساب.'; SD.msgErr = false; draw(); return; }
-    }catch(e){ if(e && e.name === 'AbortError'){ SD.msg = 'اتلغت المشاركة — دوس 📤 ابعت تاني.'; SD.msgErr = true; draw(); return; } }
-    // الجهاز مش بيشارك ملفات Excel: ننزّل الشيت ونفتح واتساب بالرسالة، تختار الجروب وتسحب الشيت فيه
-    sdDownload();
-    window.open('https://wa.me/?text=' + encodeURIComponent(text), '_blank', 'noopener');
-    SD.msg = `⬇️ الشيت اتنزّل (${f.name}) واتفتح واتساب بالرسالة — اختار جروب البيكب، ابعت الرسالة، واسحب الشيت (أو 📎 ← مستند) في نفس الجروب.`; SD.msgErr = false; draw();
+  // ☁️ الشيت بيترفع على Supabase Storage (bucket: sheets) ويتبعت لينكه في رسالة الواتساب
+  const SHEETS_SQL = `-- 📤 شيتات البيكب — شغّله مرة واحدة في Supabase → SQL Editor
+insert into storage.buckets (id, name, public) values ('sheets', 'sheets', true)
+  on conflict (id) do update set public = true;
+drop policy if exists "sheets: upload" on storage.objects;
+create policy "sheets: upload" on storage.objects for insert to authenticated with check (bucket_id = 'sheets');`;
+  async function sdUpload(){
+    const f = SD.file; if(!f || SD.url) return SD.url;
+    const d = new Date(), path = `pickup/${ymd(d)}/${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}${String(d.getSeconds()).padStart(2, '0')}-${SD.res.n}.xlsx`;
+    const { error } = await sbc().storage.from('sheets').upload(path, f, { contentType:f.type, upsert:true });
+    if(error) throw error;
+    const { data } = sbc().storage.from('sheets').getPublicUrl(path, { download:f.name });
+    SD.url = data && data.publicUrl; return SD.url;
+  }
+  const sdWaUrl = () => 'https://wa.me/?text=' + encodeURIComponent(sdText(SD.res) + (SD.url ? `\n\n📄 الشيت: ${SD.url}` : ''));
+  // 💬 بيفتح واتساب والرسالة جاهزة فيها لينك الشيت — تختار الجروب وتبعت
+  function sdShare(){
+    if(!SD.res) return;
+    if(!SD.url){ sdDownload(); SD.msg = '⬇️ الشيت اتنزّل لأن رفعه على السيستم مااشتغلش — اسحبه في الجروب بعد ما تبعت الرسالة.'; SD.msgErr = true; }
+    else { SD.msg = '✅ اتفتح واتساب والرسالة جاهزة فيها لينك الشيت — اختار جروب البيكب ودوس إرسال.'; SD.msgErr = false; }
+    window.open(sdWaUrl(), '_blank', 'noopener'); draw();
   }
   async function sdGo(){
     if(SD.busy || !window.XLSX) return;
@@ -12893,7 +12905,13 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
     const buf = XLSX.write(sdWb(c.keep), { bookType:'xlsx', type:'array' });
     SD.file = new File([buf], name, { type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     SD.res = { n:c.keep.length, total:c.L.length, defer:c.defer.map(x => x.serial), late:c.late.map(x => x.serial) };
-    SD.step = 'done'; SD.msg = done.length ? `🗑️ اتمسح ${done.length} أوردر من QP واتحفظوا في ♻️ رجّع اللي اتمسح.` : ''; SD.msgErr = false; draw();
+    SD.url = null; SD.upErr = '';
+    const t0 = Date.now(); SD.busy = true; SD.msg = '⏳ بيجهّز الشيت...'; draw();
+    try{ await sdUpload(); }catch(e){ SD.upErr = (e && e.message) || String(e); }
+    SD.busy = false; SD.step = 'done'; SD.msgErr = false;
+    SD.msg = done.length ? `🗑️ اتمسح ${done.length} أوردر من QP واتحفظوا في ♻️ رجّع اللي اتمسح.` : '';
+    // لو لسه في خلال ثواني من الضغطة: نفتح واتساب على طول (بعد كده المتصفح بيمنع فتح تاب لوحده)
+    if(SD.url && Date.now() - t0 < 4000) sdShare(); else draw();
   }
   function sendHtml(){
     if(histShared === null){ loadHist().then(draw).catch(() => { histShared = []; draw(); }); return '<div class="card"><p class="up-empty">⏳ بيجيب الأوردرات اللي اترفعت النهارده...</p></div>'; }
@@ -12943,14 +12961,15 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
         ${c.late.length ? `<p style="font-size:13px;margin:4px 0 0">⏰ لسه على QP: <span style="direction:ltr;display:inline-block">${c.late.map(x => esc(x.serial)).join(' · ')}</span></p>` : ''}
         ${msg}
         <div class="up-row" style="margin-top:12px"><button class="up-btn" id="sdBack">↩️ ارجع</button>
-          <button class="up-btn" id="sdGo" style="background:#25d366;border-color:#25d366;color:#fff" ${SD.busy || !c.keep.length ? 'disabled' : ''}>${SD.busy ? '⏳ ...' : `📤 جهّز الشيت (${c.keep.length}) وابعته لجروب الواتساب`}</button></div></div>`;
+          <button class="up-btn" id="sdGo" style="background:#25d366;border-color:#25d366;color:#fff" ${SD.busy || !c.keep.length ? 'disabled' : ''}>${SD.busy ? '⏳ ...' : `📤 جهّز الشيت (${c.keep.length}) وافتح واتساب`}</button></div></div>`;
     }
     // ✅ done
     const r = SD.res || { n:0, defer:[], late:[] };
     return `<div class="card"><h3>✅ الشيت جاهز — ${r.n} أوردر</h3>
-      <p style="white-space:pre-line;font-size:13.5px;background:var(--soft, #f6f3ec);padding:10px;border-radius:9px;margin:0 0 10px">${esc(sdText(r))}</p>
+      <p style="white-space:pre-line;font-size:13.5px;background:var(--soft, #f6f3ec);padding:10px;border-radius:9px;margin:0 0 10px">${esc(sdText(r))}${SD.url ? `\n\n📄 الشيت: <a href="${esc(SD.url)}" target="_blank" rel="noopener" style="direction:ltr;display:inline-block;word-break:break-all">${esc(SD.url)}</a>` : ''}</p>
+      ${SD.upErr ? `<div class="up-msg err">مقدرتش أرفع الشيت على السيستم (${esc(SD.upErr)}) — فهينزل على الجهاز وتسحبه في الجروب بإيدك.${me().is_admin ? ' عشان يتبعت كلينك على طول، شغّل الكود ده مرة واحدة في Supabase → SQL Editor:' : ' كلّم الأدمن.'}</div>${me().is_admin ? `<pre style="direction:ltr;text-align:left;font-size:12px;background:#f4f4f4;padding:10px;border-radius:8px;white-space:pre-wrap">${esc(SHEETS_SQL)}</pre>` : ''}` : ''}
       ${msg}
-      <div class="up-row"><button class="up-btn" id="sdShare" style="background:#25d366;border-color:#25d366;color:#fff">📤 ابعته لجروب الواتساب</button><button class="up-btn" id="sdDl">⬇️ نزّل الشيت</button>
+      <div class="up-row"><button class="up-btn" id="sdShare" style="background:#25d366;border-color:#25d366;color:#fff">💬 افتح واتساب واختار الجروب</button><button class="up-btn" id="sdDl">⬇️ نزّل الشيت</button>
         <button class="up-btn" id="sdCopy">📋 انسخ الرسالة</button><button class="up-btn" id="sdClose">✖️ اقفل التاب</button></div></div>`;
   }
   function sdWire(){
@@ -12967,7 +12986,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
     if($('sdGo')) $('sdGo').onclick = sdGo;
     if($('sdShare')) $('sdShare').onclick = sdShare;
     if($('sdDl')) $('sdDl').onclick = sdDownload;
-    if($('sdCopy')) $('sdCopy').onclick = async () => { try{ await navigator.clipboard.writeText(sdText(SD.res)); $('sdCopy').textContent = '✔ اتنسخت'; }catch(e){ alert('مقدرتش أنسخ: ' + e.message); } };
+    if($('sdCopy')) $('sdCopy').onclick = async () => { try{ await navigator.clipboard.writeText(sdText(SD.res) + (SD.url ? `\n\n📄 الشيت: ${SD.url}` : '')); $('sdCopy').textContent = '✔ اتنسخت'; }catch(e){ alert('مقدرتش أنسخ: ' + e.message); } };
     if($('sdClose')) $('sdClose').onclick = () => { window.close(); };
   }
   function histOnly(){
