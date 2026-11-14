@@ -2524,8 +2524,10 @@ const Squad = (function(){
     state.boardOrders = data || []; state.boardQP = null;
     setTimeout(boardQP, 0);
     // ✍️ أوردرات اتسلمت فوق 2000 ج ومستنية عمولة يدوي (للأدمن)
-    if(isAdminUser()){ try{ const r = await sb.from('orders').select('*').eq('status', 'delivered').gt('amount', MANUAL_FROM).gte('created_at', R.from).lt('created_at', R.to);
-      state.manualList = (r.data || []).filter(o => o.manual_commission === null || o.manual_commission === undefined); state.manualMissingCol = !!(r.data && r.data[0] && !('manual_commission' in r.data[0])); }catch(e){} }
+    // (بيجيب كل الأوردرات الكبيرة مش بس اللي اتسلمت، وفي الجدول خانة "اتسلم؟" توضّح حالته)
+    if(isAdminUser()){ try{ const r = await sb.from('orders').select('*').gt('amount', MANUAL_FROM).gte('created_at', R.from).lt('created_at', R.to);
+      state.manualList = (r.data || []).filter(o => o.status !== 'cancelled' && (o.manual_commission === null || o.manual_commission === undefined))
+        .sort((a, b) => (b.status === 'delivered') - (a.status === 'delivered') || new Date(a.created_at) - new Date(b.created_at)); state.manualMissingCol = !!(r.data && r.data[0] && !('manual_commission' in r.data[0])); }catch(e){} }
     if(error){ setState({ boardLoading:false, boardError:'مقدرناش نجيب بيانات اللوحة.' }); return; }
     const { data: profiles } = await sb.from('profiles').select('id, username, full_name');
     const nameMap = {};
@@ -3560,12 +3562,26 @@ const Squad = (function(){
         const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'الأوردرات'); XLSX.writeFile(wb, `${BQ_LBL[key].replace(/^\S+\s/, '')} - ${name}.xlsx`); }
     });
   }
+  // ✅ اتسلم؟ — من Squad، ولو لسه مش متعلّم اتسلم: حالته في QP (من المقارنة اللي بتحصل للترتيب)
+  function manualDel(o){
+    if(o.status === 'delivered') return '<b style="color:#23784a">✅ اتسلم</b>';
+    const Q = state.boardQP, api = qpApi();
+    if(Q && !Q.noCreds && !Q.err){
+      const x = Q[o.agent_id] || {};
+      for(const k of ['qdel', 'way', 'hold', 'undel', 'miss']){
+        const hit = (x[k] || []).find(y => String(y.o.id) === String(o.id));
+        if(hit) return `<span style="color:${({ qdel:'#23784a', way:'#b7791f', hold:'#2b6cb0', undel:'#b3261e', miss:'#8a5a00' })[k]};font-weight:700">${k === 'qdel' ? '✅ اتسلم في QP' : BQ_LBL[k]}</span>${k === 'qdel' ? '<br><small style="color:var(--muted)">محتاج 🔄 مطابقة عشان تكتب عمولته</small>' : ''}${hit.q ? `<br><small style="color:var(--muted);direction:ltr;display:inline-block">${esc(hit.q.serial)}${api && k !== 'qdel' ? ' · ' + esc(String(api.label(hit.q)).replace(/\s*#\d+$/, '')) : ''}</small>` : ''}`;
+      }
+    }
+    return o.status === 'undelivered' ? '<b style="color:#b3261e">💔 اندلفرد</b>' : `<span style="color:#b7791f;font-weight:700">⏳ لسه</span>${!Q ? '<br><small style="color:var(--muted)">بيقارن بـ QP...</small>' : ''}`;
+  }
   function manualCard(){
     const L = state.manualList || []; if(!isAdminUser() || (!L.length && !state.manualMissingCol)) return '';
     if(state.manualMissingCol) return `<div class="sq-commnote off"><b>✍️ عمولة الأوردرات فوق 2000 ج:</b> شغّل ملف orders_manual_commission.sql في Supabase الأول.</div>`;
-    return `<div class="sq-commnote off"><b>✍️ ${L.length} أوردر اتسلموا فوق 2000 ج ومستنيين تكتب عمولتهم</b> (لحد ما تكتبها عمولتهم = 0)
-      <div class="sq-tablecard" style="margin-top:8px"><table class="sq-table"><thead><tr><th>الموظفة</th><th>العميل</th><th>السعر</th><th>التاريخ</th><th>العمولة</th></tr></thead><tbody>
-      ${L.map(o => `<tr><td>${esc(profileNameMap[o.agent_id] || '—')}</td><td>${esc(o.customer_name || '')}</td><td><b>${Number(o.amount).toLocaleString('ar-EG')} ج</b></td><td>${esc(new Date(o.created_at).toLocaleDateString('ar-EG', { day:'numeric', month:'short' }))}</td><td>${commCell(o, true)}</td></tr>`).join('')}</tbody></table></div></div>`;
+    const nDel = L.filter(o => o.status === 'delivered').length;
+    return `<div class="sq-commnote off"><b>✍️ ${L.length} أوردر فوق 2000 ج مستنيين تكتب عمولتهم</b> — ✅ اتسلم منهم <b>${nDel}</b>${L.length - nDel ? ` · ⏳ لسه <b>${L.length - nDel}</b>` : ''} (لحد ما تكتبها عمولتهم = 0)
+      <div class="sq-tablecard" style="margin-top:8px"><table class="sq-table"><thead><tr><th>الموظفة</th><th>العميل</th><th>السعر</th><th>التاريخ</th><th>اتسلم؟</th><th>العمولة</th></tr></thead><tbody>
+      ${L.map(o => `<tr><td>${esc(profileNameMap[o.agent_id] || '—')}</td><td>${esc(o.customer_name || '')}</td><td><b>${Number(o.amount).toLocaleString('ar-EG')} ج</b></td><td>${esc(new Date(o.created_at).toLocaleDateString('ar-EG', { day:'numeric', month:'short' }))}</td><td>${manualDel(o)}</td><td>${o.status === 'delivered' ? commCell(o, true) : '<span style="color:var(--muted)">لما يتسلم</span>'}</td></tr>`).join('')}</tbody></table></div></div>`;
   }
   function LeaderboardView(){
     if(!state.board) return head('ترتيب الـSquad', 'ترتيب حسب عدد الأوردرات اللي اتسلمت.') + `<div class="sq-loading">بنجيب النتائج...</div>`;
