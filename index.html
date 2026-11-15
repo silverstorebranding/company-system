@@ -15197,6 +15197,7 @@ table.gs tr.wk td.day{color:#c5221f}
   const KD_TAG = '🎯 أيام التسليم';
   const RECV = '📦 استلم خلاص';   // العميل قال إنه استلم فعلاً (قبل ما QP يحدّث) — بيتحسب متسلم
   const NOTES = [RECV, '📞 اتكلمت معاها', '✅ هتستلم', '🔁 عايزة تجدد', '📵 مبتردش', '🚫 رافضة', '❌ رقم غلط'];
+  const NO_REPLY = ['📵 مبتردش', '❌ رقم غلط'];   // غير كده (أو جدّدت) = العميل ردّ
   const S = { brand:'kid', month: ymd(new Date()).slice(0, 7), all:null, days:null, busy:false, err:'', assignAll:{}, assign:{}, agents:null, onlyBad:true,
               w:null, log:[], scores:null, msg:'' };
   const B = () => BR[S.brand] || BR.kid;
@@ -15272,7 +15273,13 @@ table.gs tr.wk td.day{color:#c5221f}
         ${ship ? `<span style="color:#8a5a00">🚚 في الطريق <b>${ship}</b></span>` : ''}
         ${wait ? `<span style="color:var(--muted)">⏳ لسه مااتشحنش <b>${wait}</b></span>` : ''}
         <span style="color:${left ? '#c0392b' : '#2f7d55'};font-weight:700">${left ? `باقي <b>${left}</b> من ${need}` : '✅ وصلنا الهدف'}</span></div>
-      <div class="kd-rm-bar" title="الأخضر = اتسلم (بالمتابعة أو التجديد) · الأصفر = تجديد في الطريق"><i style="width:${pc(got)}%"></i><u style="width:${Math.min(pc(ship), 100 - pc(got))}%"></u></div>${fol}</div>`;
+      <div class="kd-rm-bar" title="الأخضر = اتسلم (بالمتابعة أو التجديد) · الأصفر = تجديد في الطريق"><i style="width:${pc(got)}%"></i><u style="width:${Math.min(pc(ship), 100 - pc(got))}%"></u></div>${fol}${fuLine(d)}</div>`;
+  }
+  /* 📞 سطر المتابعة: اتابعت كام من الاندلفرد والهولد وكام منهم ردّ */
+  function fuLine(d){
+    const U = d.fu && d.fu.und, H = d.fu && d.fu.hold; if(!U || !H || (!U.base && !H.base)) return '';
+    const part = (ic, nm, x) => !x.base && !x.fol ? '' : `<span>${ic} ${nm}: اتابعت <b>${x.fol}</b> من ${x.base}${x.fol ? ` · <b style="color:#2f7d55">ردّ ${x.rep}</b>${x.noRep ? ` · <b style="color:#c0392b">مردّش ${x.noRep}</b>` : ''}${x.grp ? ` · 📣 للجروب ${x.grp}` : ''}` : ''}${x.base > x.fol ? ` · <span style="color:var(--muted)">لسه ${x.base - x.fol}</span>` : ''}</span>`;
+    return `<div class="kd-rm-s" style="margin-top:6px;padding-top:6px;border-top:1px dashed var(--line)"><span style="font-weight:700">📞 المتابعة</span>${part('💔', 'اندلفرد', U)}${part('✋', 'هولد', H)}</div>`;
   }
   function daysFor(brand, month){
     const b = BR[brand], [y, m] = month.split('-').map(Number), from = month + '-01', to = ymd(new Date(y, m, 0)), by = {};
@@ -15296,6 +15303,14 @@ table.gs tr.wk td.day{color:#c5221f}
     const delBefore = d.del.length - holdQP.length - undQP.length;
     d.fol = { delBefore, holdBefore: d.hold.length + holdQP.length, holdGot: holdQP.length + holdCS.length, undGot: undQP.length + undCS.length,
       csOnly: holdCS.length + undCS.length, delAfter: d.del.length + holdCS.length + undCS.length };
+    // 📞 المتابعة: اتابع كام (عليه ملاحظة / تجديد / اتبعت للجروب) وكام ردّ
+    const L = (S.log || []).filter(x => x.brand === brand && x.day === day && x.serial), act = {};
+    L.forEach(x => { const k = x.kind + ':' + x.serial, a = act[k] = act[k] || { kind:x.kind, note:'', ren:false, grp:false };
+      if(x.type === 'note') a.note = x.note; else if(x.type === 'renew') a.ren = true; else if(x.type === 'grp') a.grp = true; });
+    const fs = kind => { const A = Object.values(act).filter(a => a.kind === kind), rep = A.filter(a => a.ren || (a.note && !NO_REPLY.includes(a.note)));
+      return { base: kind === 'hold' ? d.hold.length + holdQP.length : d.und.length + undQP.length, fol:A.length, rep:rep.length,
+        noRep:A.filter(a => !a.ren && NO_REPLY.includes(a.note)).length, grp:A.filter(a => a.grp).length }; };
+    d.fu = { und:fs('und'), hold:fs('hold') };
     d.ren = R.length; d.renDel = R.filter(x => x.delivered).length; d.renShip = R.filter(x => x.shipped && !x.delivered).length;
     d.need = Math.max(0, d.goal - delBefore);   // كان محتاج كام قبل المتابعة
     d.have = d.fol.delAfter + d.renDel; d.closed = d.have >= d.goal; d.missing = Math.max(0, d.goal - d.have);
