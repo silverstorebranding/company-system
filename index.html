@@ -2100,9 +2100,29 @@ const Squad = (function(){
     groups.sort((a, b) => new Date(b[b.length - 1].created_at) - new Date(a[a.length - 1].created_at));
     return { groups, skip };
   }
+  /* ♻️ تجديد الاندلفرد: الأوردر الأصلي اللي ماتسلمش (عند أي موظفة) واتجدد بعد كده بأوردر "تجديد من اندلفرد"
+     → عمولته بتتلغي، والعمولة بتتحسب مرة واحدة بس على أوردر التجديد (لآخر واحدة جدّدت) */
+  let renewMoved = new Map();   // id الأوردر الأصلي → { by: agent_id اللي جدّدت, at }
+  async function loadRenewMoved(fromISO, toISO){
+    try{
+      const { data:ren, error } = await allPages(() => sb.from('orders').select('id, agent_id, customer_phone, created_at').in('page_name', Object.values(RENEW_SOURCES)).gte('created_at', fromISO));
+      if(error) return;
+      const byK = {}; (ren || []).forEach(r => { const k = custKey(r); if(k.length === 10) (byK[k] = byK[k] || []).push(r); });
+      const m = new Map();
+      if(Object.keys(byK).length){
+        const { data:old } = await allPages(() => sb.from('orders').select('id, customer_phone, created_at, status').neq('status', 'delivered').gte('created_at', fromISO).lt('created_at', toISO));
+        (old || []).forEach(o => { const L = byK[custKey(o)]; if(!L) return;
+          const nx = L.filter(r => String(r.id) !== String(o.id) && new Date(r.created_at) > new Date(o.created_at)).sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
+          if(nx) m.set(String(o.id), { by:nx.agent_id, at:nx.created_at }); });
+      }
+      renewMoved = m;
+    }catch(e){}
+  }
   function commissionSummary(orders){
-    let delivered = 0, cancelled = 0, undelivered = 0, pending = 0, delComm = 0, pendComm = 0, delValue = 0;
-    const rep = repeatInfo(orders), pc = o => rep.skip.has(String(o.id)) ? 0 : pendingCommission(o);
+    let delivered = 0, cancelled = 0, undelivered = 0, pending = 0, delComm = 0, pendComm = 0, delValue = 0, renewals = 0, renewedAway = 0;
+    const rep = repeatInfo(orders);
+    (orders || []).forEach(o => { if(o.status !== 'delivered' && renewMoved.has(String(o.id))){ rep.skip.add(String(o.id)); renewedAway++; } if(isRenewSrc(o.page_name)) renewals++; });
+    const pc = o => rep.skip.has(String(o.id)) ? 0 : pendingCommission(o);
     (orders || []).forEach(o => {
       if(o.status === 'delivered'){ delivered++; delComm += deliveredCommission(o); delValue += Number(o.amount) || 0; }
       else if(o.status === 'cancelled'){ cancelled++; pendComm += pc(o); }
@@ -2116,7 +2136,7 @@ const Squad = (function(){
     const delRate = totalN ? delivered / totalN : null; // ✅ نسبة التسليم الصح = اتسلم ÷ إجمالي الأوردرات
     // ✅ عمولة الأوردرات بتدخل المستحقة بس لو نسبة التسليم الظاهرة (اتسلم ÷ الإجمالي) عدّت 50%
     const active = delRate !== null && delRate > MIN_RATE;
-    return { total:totalN, delivered, cancelled, undelivered, pending, rate, delRate, active, delValue:r2(delValue), repeats:rep.groups, repSkip:rep.skip,
+    return { total:totalN, delivered, cancelled, undelivered, pending, rate, delRate, active, delValue:r2(delValue), repeats:rep.groups, repSkip:rep.skip, renewals, renewedAway,
       delComm:r2(delComm), pendComm:r2(pendComm),
       totalComm:r2(delComm + pendComm),                 // 💰 العمولة الإجمالية
       dueComm:r2(delComm + (active ? pendComm : 0)),     // ✅ العمولة المستحقة
@@ -2148,6 +2168,7 @@ const Squad = (function(){
         sb.from('office_sales').select('amount, status, sale_date').eq('status', 'bought').gte('sale_date', ymd(f)).lte('sale_date', ymd(t)),
       ]);
       if(o.error) throw o.error;
+      await loadRenewMoved(f.toISOString(), new Date(t.getTime() + 1).toISOString());
       const by = {}; (o.data || []).forEach(x => (by[x.agent_id] = by[x.agent_id] || []).push(x));
       const ordersComm = Object.values(by).reduce((s, L) => s + commissionSummary(L).dueComm, 0);
       const offComm = (off.data || []).reduce((s, r) => s + (Number(r.amount) || 0), 0) * OFFICE_PCT;
@@ -2160,6 +2181,7 @@ const Squad = (function(){
         sb.from('office_sales').select('amount, status, sale_date, agent_id').eq('agent_id', agentId).eq('status', 'bought').gte('sale_date', month + '-01').lt('sale_date', `${to.getFullYear()}-${String(to.getMonth() + 1).padStart(2, '0')}-01`),
       ]);
       if(o.error) throw o.error;
+      await loadRenewMoved(from.toISOString(), to.toISOString());
       const sm = commissionSummary(o.data || []);
       const offComm = Math.round(((off.data || []).reduce((a, r) => a + (Number(r.amount) || 0), 0)) * OFFICE_PCT * 100) / 100;
       return { orders:(o.data || []).length, delivered:sm.delivered, delRate:sm.delRate, active:sm.active, pend:sm.pendComm, del:sm.delComm, off:offComm,
@@ -2391,7 +2413,7 @@ const Squad = (function(){
     const { data, error } = await allPages(() => sb.from('orders').select('*')
       .eq('agent_id', sqUid()).gte('created_at', R.from).lt('created_at', R.to)
       .order('created_at', { ascending:false }));
-    await loadOfficeComm();
+    await Promise.all([loadOfficeComm(), loadRenewMoved(R.from, R.to)]);
     try{ const { data:kd } = await sb.from('app_kv').select('value').eq('key', 'kd_score_' + (state.month || sqCurMonth())).maybeSingle();
       state.kdScore = kd && kd.value && kd.value.map ? kd.value.map[sqUid()] || null : null; }catch(e){ state.kdScore = null; }
     if(!error){ setState({ myOrders: data || [] }); loadShipMap(data || []); }
@@ -2533,14 +2555,14 @@ const Squad = (function(){
     const nameMap = {};
     (profiles||[]).forEach(p => nameMap[p.id] = p.full_name || p.username || 'موظف');
     profileNameMap = nameMap;
-    await loadOfficeComm();
+    await Promise.all([loadOfficeComm(), loadRenewMoved(R.from, R.to)]);
 
     const byAgent = {};
     (data||[]).forEach(o => (byAgent[o.agent_id] = byAgent[o.agent_id] || []).push(o));
     const rows = Object.keys(byAgent).map(id => {
       const s = withOffice(commissionSummary(byAgent[id]), id);
       return { id, name: nameMap[id] || 'موظف', total: s.total, delivered: s.delivered, delValue: s.delValue, ordersDelValue: s.ordersDelValue, offValue: s.offValue, rate: s.rate, delRate: s.delRate, active: s.active, totalComm: s.totalComm, dueComm: s.dueComm, commission: s.commission,
-        delComm: s.delComm, pendComm: s.pendComm, offComm: s.offComm, sources: sourceCounts(byAgent[id]) };
+        delComm: s.delComm, pendComm: s.pendComm, offComm: s.offComm, renewals: s.renewals, renewedAway: s.renewedAway, sources: sourceCounts(byAgent[id]) };
     }).sort((a,b) => b.delivered - a.delivered || b.total - a.total);
     setState({ boardLoading:false, board: rows });
   }
@@ -2762,6 +2784,8 @@ const Squad = (function(){
   }
 
   function commCell(o, active, s){
+    if(o.status !== 'delivered' && renewMoved.has(String(o.id))){ const x = renewMoved.get(String(o.id)), who = profileNameMap[x.by] || 'موظفة';
+      return `<span style="color:var(--muted)" title="الأوردر ده اتجدد بعد الاندلفرد — العمولة بتتحسب مرة واحدة على أوردر التجديد">♻️ اتجدد (${esc(who)}) — 0 ج</span>`; }
     if(s && s.repSkip && s.repSkip.has(String(o.id))) return `<span style="color:var(--muted)" title="العميل ده اتسجل تاني بعد كده — العمولة بتتحسب على المحاولة الأخيرة بس">🔁 مكرر — 0 ج</span>`;
     if(o.status === 'delivered' && isManualComm(o) && (o.manual_commission === null || o.manual_commission === undefined || o.manual_commission === ''))
       return isAdminUser() ? `<span style="white-space:nowrap"><input type="number" min="0" data-mcomm="${esc(o.id)}" placeholder="✍️ اكتب" style="width:70px;padding:3px 6px;border:1.5px solid #e0a020;border-radius:6px;font-family:inherit"> <button class="sq-icon" data-mcomm-save="${esc(o.id)}" title="احفظ العمولة">💾</button></span>`
@@ -2870,7 +2894,7 @@ const Squad = (function(){
       ${state.kdScore ? (k => `<div class="sq-err" style="background:${k.net < 0 ? '#fdecea' : '#e3f3e8'};border-color:${k.net < 0 ? '#f1b8b0' : '#a9d8b8'};color:${k.net < 0 ? '#a3271a' : '#1f5f3a'}">🎯 <b>أيام التسليم الشهر ده:</b> قفلتي ${k.closed} من ${k.days} يوم · ♻️ ${k.ren} تجديد (✅ اتسلم ${k.renDel}) · حافز الأيام ${k.dayBonus} ج${k.monthBonus ? ' + مكافأة ' + k.monthBonus + ' ج' : ''}${k.deduct ? ' − خصم ' + k.deduct + ' ج' : ''} = <b>${k.net} ج</b> <a href="#/kidzzly-days" style="margin-inline-start:6px">التفاصيل ←</a></div>`)(state.kdScore) : ''}
       <div class="sq-stats">
         <div class="sq-stat" style="border-top:4px solid var(--brass)"><div class="n gold">${todayCount(sqUid()).toLocaleString('ar-EG')}</div><div class="l">🧾 أوردراتك النهارده (الفريق ${(todayOrders || []).length.toLocaleString('ar-EG')})</div></div>
-        <div class="sq-stat"><div class="n">${s.total}</div><div class="l">إجمالي الأوردرات (${s.pending} قيد التنفيذ)</div></div>
+        <div class="sq-stat"><div class="n">${s.total}</div><div class="l">إجمالي الأوردرات (${s.pending} قيد التنفيذ)</div>${s.renewals || s.renewedAway ? `<div class="l" style="margin-top:4px;color:#2f7d55">♻️ فيهم <b>${s.renewals}</b> تجديد بعد اندلفرد${s.renewedAway ? ` · <b>${s.renewedAway}</b> اتجددوا (عمولتهم 0)` : ''}</div>` : ''}</div>
         <div class="sq-stat"><div class="n green">${s.delivered}</div><div class="l">أوردر اتسلم</div></div>
         <div class="sq-stat"><div class="n green">${money(s.delValue)}</div><div class="l">💰 قيمة اللي اتسلم (أوردرات + مكتب)</div>${valBreak(s)}</div>
         <div class="sq-stat"><div class="n">${rateTxt(s.delRate)}</div><div class="l">نسبة التسليم</div></div>
@@ -3453,6 +3477,7 @@ const Squad = (function(){
     const { data, error } = await allPages(() => sb.from('orders').select('*').eq('agent_id', id).gte('created_at', R.from).lt('created_at', R.to).order('created_at', { ascending:false }));
     if(state.view !== 'agent-orders' || !state.viewAgent || state.viewAgent.id !== id) return;
     if(error){ setState({ agentOrders:[], error:'مقدرناش نجيب أوردرات الموظف: ' + error.message }); return; }
+    await loadRenewMoved(R.from, R.to);
     setState({ agentOrders: data || [] });
   }
 
@@ -3473,7 +3498,7 @@ const Squad = (function(){
     const all = state.agentOrders, s = withOffice(commissionSummary(all), a.id), list = agentFiltered();
     const chip = (k, l, n) => `<button type="button" class="sq-fchip ${state.agentFilter === k ? 'on' : ''}" data-afilter="${k}">${l} <b>${n}</b></button>`;
     h += `<div class="sq-stats">
-        <div class="sq-stat"><div class="n">${s.total}</div><div class="l">إجمالي الأوردرات</div></div>
+        <div class="sq-stat"><div class="n">${s.total}</div><div class="l">إجمالي الأوردرات</div>${s.renewals || s.renewedAway ? `<div class="l" style="margin-top:4px;color:#2f7d55">♻️ فيهم <b>${s.renewals}</b> تجديد بعد اندلفرد${s.renewedAway ? ` · <b>${s.renewedAway}</b> اتجددوا (عمولتهم 0)` : ''}</div>` : ''}</div>
         <div class="sq-stat"><div class="n green">${s.delivered}</div><div class="l">أوردر اتسلم</div></div>
         <div class="sq-stat"><div class="n green">${money(s.delValue)}</div><div class="l">💰 قيمة اللي اتسلم (أوردرات + مكتب)</div>${valBreak(s)}</div>
         <div class="sq-stat"><div class="n">${rateTxt(s.delRate)}</div><div class="l">نسبة التسليم</div></div>
@@ -3614,7 +3639,7 @@ const Squad = (function(){
             <td class="nm"><div class="sq-name"><bdi>${esc(r.name)}</bdi> <span class="sq-today-tag ${todayCount(r.id) ? 'on' : ''}" title="أوردرات النهارده">النهارده ${todayCount(r.id).toLocaleString('ar-EG')}</span> <small class="sq-rate">· نسبة التسليم ${rateTxt(r.delRate)}</small>
               ${sourceChips(r.sources)}
               ${canViewAll() ? `<button type="button" class="sq-viewbtn" data-view-agent="${esc(r.id)}" data-agent-name="${esc(r.name)}">👁 عرض الأوردرات</button>` : ''}</div></td>
-            <td class="num sq-metric">${r.total}</td>
+            <td class="num sq-metric">${r.total}${r.renewals ? `<small style="display:block;color:#2f7d55" title="أوردرات تجديد بعد اندلفرد">♻️ ${r.renewals} تجديد</small>` : ''}${r.renewedAway ? `<small style="display:block;color:var(--muted)" title="أوردرات ليها ماتسلمتش واتجددت — عمولتها راحت لأوردر التجديد">↪ ${r.renewedAway} اتجدد</small>` : ''}</td>
             <td class="num sq-metric">${r.delivered}</td>
             ${QCOLS.map(([k, c]) => qCell(r, k, c)).join('')}
             <td class="num sq-metric green">${money(r.delValue)}${valBreak(r, true)}</td>
@@ -3622,10 +3647,10 @@ const Squad = (function(){
             <td class="num sq-metric gold">${r.dueComm} ج${r.active ? '' : '<small class="sq-under50">تحت 50%</small>'}${commBreak(r, true, true)}</td>
           </tr>`).join('')}</tbody>
           ${(() => {
-            const T = rows.reduce((a, r) => ({ total:a.total + r.total, delivered:a.delivered + r.delivered, delValue:a.delValue + (r.delValue || 0), totalComm:a.totalComm + r.totalComm, dueComm:a.dueComm + r.dueComm }), { total:0, delivered:0, delValue:0, totalComm:0, dueComm:0 });
+            const T = rows.reduce((a, r) => ({ total:a.total + r.total, ren:a.ren + (r.renewals || 0), delivered:a.delivered + r.delivered, delValue:a.delValue + (r.delValue || 0), totalComm:a.totalComm + r.totalComm, dueComm:a.dueComm + r.dueComm }), { total:0, ren:0, delivered:0, delValue:0, totalComm:0, dueComm:0 });
             const sum = k => { if(!qOk) return '—'; const n = Object.values(Q).reduce((a, x) => a + ((x && x[k]) || []).length, 0); return n ? `<a href="#" class="bq-n" data-bqa="*" data-bqk="${k}">${n}</a>` : 0; };
             return `<tfoot><tr><td class="rk"></td><td class="nm">الإجمالي</td>
-              <td class="num">${T.total}</td><td class="num">${T.delivered}</td>
+              <td class="num">${T.total}${T.ren ? `<small style="display:block;color:#2f7d55">♻️ فيهم ${T.ren} تجديد</small>` : ''}</td><td class="num">${T.delivered}</td>
               ${BQ_KEYS.map(k => `<td class="num">${sum(k)}</td>`).join('')}
               <td class="num">${money(T.delValue)}</td><td class="num">${Math.round(T.totalComm * 100) / 100} ج</td><td class="num">${Math.round(T.dueComm * 100) / 100} ج</td></tr></tfoot>`;
           })()}
