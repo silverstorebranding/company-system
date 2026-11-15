@@ -15462,7 +15462,7 @@ table.gs tr.wk td.day{color:#c5221f}
     S.w.gSent.add(String(q.serial)); drawWork();
   }
   function renew(q, mode){
-    if(!window.Squad || !Squad.openNewOrder) return alert('Squad مش متاح.');
+    if(typeof Squad === 'undefined' || !Squad.openNewOrder) return alert('Squad مش متاح.');
     const W = S.w;
     Squad.openNewOrder({
       brand: B().squad, customer_name: q.full_name || '', customer_phone: String(q.phone || ''), customer_address: [q.address, q.city].filter(Boolean).join(' - '),
