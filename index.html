@@ -15877,6 +15877,7 @@ table.cs tr.cs-open td{background:#fff7dd}
       <div class="cs-bar"><label>الشهر <select id="csM">${months.map(x => `<option value="${x}" ${x === m ? 'selected' : ''}>${new Date(x + '-15').toLocaleDateString('ar-EG', { month:'long', year:'numeric' })}</option>`).join('')}</select></label>
         <span id="csSt" style="font-size:13px;color:var(--muted)"></span>${window.XLSX ? '<button class="mockbtn" id="csX">⬇️ Excel</button>' : ''}
         ${SEED[m] && S.loaded[m] && !(doc(m).days['0'] && doc(m).days['0'].imported) ? '<button class="mockbtn" id="csImp" style="background:#2f7d55;border-color:#2f7d55;color:#fff">📥 انقل أرقام الشهر ده من شيت new system 2026</button>' : ''}</div>`;
+    h += oxCard();
     if(S.err) h += `<div class="mono-note">${esc(S.err)}</div>`;
     if(!S.loaded[m]) return h + '<div class="card"><p class="none">⏳ بيحمّل الشيت...</p></div>';
     const D = doc(m), v = (d, k) => esc((D.days[d] || {})[k] ?? '');
@@ -15931,10 +15932,77 @@ table.cs tr.cs-open td{background:#fff7dd}
     const ws = XLSX.utils.aoa_to_sheet([['', ...COLS.map(c => c.l)], ...rows]), wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, m); XLSX.writeFile(wb, 'الحسابات-' + m + '.xlsx');
   }
+  /* 🧾 مصروفات اتدفعت من جيب حد (زي بيتر) لصالح المكتب — بتظهر فوق في الحسابات لحد ما اللي بيكتب الحسابات يسجّلها
+     app_kv: owner_expenses = { list:[{ id, by_id, by_name, date, item, amount, method, note, at, done:{ by_name, at } | null }] } */
+  const OX = { list:null, open:null, showDone:false, err:'' };
+  const OX_METHODS = ['كاش', 'فودافون كاش', 'إنستاباي', 'تحويل بنكي', 'كارت'];
+  async function oxLoad(){
+    try{ const { data, error } = await sb().from('app_kv').select('value').eq('key', 'owner_expenses').maybeSingle();
+      if(error) throw error; OX.list = (data && data.value && data.value.list) || []; OX.err = ''; }
+    catch(e){ OX.list = OX.list || []; OX.err = 'مقدرناش نجيب المصروفات: ' + e.message; }
+    draw();
+  }
+  async function oxSave(fn){
+    const { data } = await sb().from('app_kv').select('value').eq('key', 'owner_expenses').maybeSingle();
+    const list = (data && data.value && data.value.list) || []; fn(list);
+    const { error } = await sb().from('app_kv').upsert({ key:'owner_expenses', value:{ list }, updated_at:new Date().toISOString(), updated_by_name: me().full_name || me().username || '' });
+    if(error) throw error; OX.list = list; draw();
+  }
+  const oxDate = d => d ? new Date(d + 'T12:00:00').toLocaleDateString('ar-EG', { weekday:'short', day:'numeric', month:'short' }) : '—';
+  const oxAt = t => new Date(t).toLocaleString('ar-EG', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' });
+  function oxCard(){
+    if(OX.list === null) return '';
+    const P = OX.list.filter(x => !x.done), D = OX.list.filter(x => x.done).sort((a, b) => (b.done.at || '').localeCompare(a.done.at || ''));
+    const names = [...new Set(P.map(x => x.by_name).filter(Boolean))], who = names.length ? names.join(' و') : (me().full_name || me().username || '');
+    const sum = P.reduce((a, x) => a + num(x.amount), 0), open = OX.open === null ? P.length > 0 : OX.open, today = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+    let h = `<div class="card" style="border:2px solid ${P.length ? '#e0a020' : 'var(--line)'};${P.length ? 'background:#fffaf0' : ''}">
+      <button type="button" id="oxTog" style="all:unset;cursor:pointer;display:flex;gap:10px;align-items:center;width:100%;flex-wrap:wrap">
+        <b style="font-size:16px">🧾 مصروفات ${esc(who)} على المكتب</b>
+        ${P.length ? `<span style="background:#e0a020;color:#fff;border-radius:20px;padding:2px 10px;font-size:13px;font-weight:700">${P.length} بند بانتظار التسجيل · ${fmt(sum)} ج</span>` : '<span style="color:var(--muted);font-size:13px">✅ كله اتسجل</span>'}
+        <span style="margin-inline-start:auto;color:var(--muted)">${open ? '▲' : '▼'}</span></button>`;
+    if(!open) return h + '</div>';
+    if(OX.err) h += `<div class="mono-note">${esc(OX.err)}</div>`;
+    h += `<p style="margin:8px 0;font-size:13.5px;color:var(--muted)">مصروفات اتدفعت شخصيًا لصالح المكتب ومحتاجة تتسجل في شيت الحسابات. بعد ما تسجّل البند دوس <b>✅ تمت الإضافة</b>.</p>`;
+    h += P.length ? `<div class="tablewrap"><table class="pr" style="width:100%"><tr><th>التاريخ</th><th>البيان</th><th>المبلغ</th><th>طريقة الدفع</th><th>ملاحظات</th><th>دفعها</th><th></th></tr>
+      ${P.map(x => `<tr><td>${esc(oxDate(x.date))}</td><td class="lbl">${esc(x.item)}</td><td><b>${fmt(x.amount)} ج</b></td><td>${esc(x.method || '—')}</td><td style="font-size:13px">${esc(x.note || '—')}</td><td style="font-size:13px">${esc(x.by_name || '')}<div style="color:var(--muted);font-size:11.5px">${esc(oxAt(x.at))}</div></td>
+        <td style="white-space:nowrap"><button class="mockbtn" data-oxd="${esc(x.id)}" style="background:#2f7d55;border-color:#2f7d55;color:#fff">✅ تمت الإضافة</button>${x.by_id === me().id ? ` <button class="mockbtn" data-oxx="${esc(x.id)}" title="امسح البند" style="color:#b3261e">🗑</button>` : ''}</td></tr>`).join('')}
+      <tr class="total"><td colspan="2">الإجمالي</td><td>${fmt(sum)} ج</td><td colspan="4"></td></tr></table></div>` : '<p class="none" style="margin:6px 0">مفيش بنود مستنية تتسجل.</p>';
+    h += `<div style="margin-top:12px;padding-top:10px;border-top:1px dashed var(--line)"><b style="font-size:14px">➕ إضافة مصروف</b>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;align-items:center">
+        <input type="date" id="oxDt" value="${today}" style="padding:7px 9px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit">
+        <input id="oxIt" placeholder="البيان (مثلاً: أدوات مكتبية، صيانة تكييف)" style="flex:2;min-width:200px;padding:7px 9px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit">
+        <input id="oxAm" inputmode="decimal" placeholder="المبلغ" style="width:110px;padding:7px 9px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit">
+        <select id="oxMt" style="padding:7px 9px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit">${OX_METHODS.map(x => `<option>${x}</option>`).join('')}</select>
+        <input id="oxNt" placeholder="ملاحظات (اختياري)" style="flex:1;min-width:150px;padding:7px 9px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit">
+        <button class="mockbtn" id="oxAdd" style="background:#1f3d36;border-color:#1f3d36;color:#fff">➕ أضف</button></div></div>`;
+    if(D.length) h += `<div style="margin-top:10px"><button type="button" class="mockbtn" id="oxShowD">✔ اتسجلوا (${D.length}) ${OX.showDone ? '▲' : '▼'}</button>
+      ${OX.showDone ? `<div class="tablewrap" style="margin-top:8px"><table class="pr" style="width:100%"><tr><th>التاريخ</th><th>البيان</th><th>المبلغ</th><th>دفعها</th><th>اتسجل</th></tr>
+        ${D.slice(0, 60).map(x => `<tr style="opacity:.8"><td>${esc(oxDate(x.date))}</td><td class="lbl">${esc(x.item)}${x.note ? `<div style="font-size:12px;color:var(--muted)">${esc(x.note)}</div>` : ''}</td><td>${fmt(x.amount)} ج</td><td>${esc(x.by_name || '')}</td><td style="font-size:13px;color:#2f7d55">✅ تمت الإضافة — ${esc(x.done.by_name || '')} · ${esc(oxAt(x.done.at))}</td></tr>`).join('')}</table></div>` : ''}</div>`;
+    return h + '</div>';
+  }
+  function oxWire(main){
+    const $ = id => document.getElementById(id), name = me().full_name || me().username || '';
+    if($('oxTog')) $('oxTog').onclick = () => { const P = (OX.list || []).filter(x => !x.done); OX.open = !(OX.open === null ? P.length > 0 : OX.open); draw(); };
+    if($('oxShowD')) $('oxShowD').onclick = () => { OX.showDone = !OX.showDone; draw(); };
+    if($('oxAdd')) $('oxAdd').onclick = async () => {
+      const item = $('oxIt').value.trim(), amount = num($('oxAm').value);
+      if(!item) return alert('اكتب البيان.'); if(!amount) return alert('اكتب المبلغ.');
+      const e = { id:Date.now().toString(36) + Math.random().toString(36).slice(2, 6), by_id:me().id, by_name:name, date:$('oxDt').value, item, amount, method:$('oxMt').value, note:$('oxNt').value.trim(), at:new Date().toISOString(), done:null };
+      $('oxAdd').disabled = true;
+      try{ OX.open = true; await oxSave(L => L.push(e)); ['oxIt', 'oxAm', 'oxNt'].forEach(id => { const el = document.getElementById(id); if(el) el.value = ''; }); }catch(err){ alert('مااتحفظش: ' + err.message); $('oxAdd').disabled = false; }
+    };
+    main.querySelectorAll('[data-oxd]').forEach(b => b.onclick = async () => { b.disabled = true;
+      try{ await oxSave(L => { const x = L.find(z => z.id === b.dataset.oxd); if(x && !x.done) x.done = { by_id:me().id, by_name:name, at:new Date().toISOString() }; }); }
+      catch(err){ alert('مااتحفظش: ' + err.message); b.disabled = false; } });
+    main.querySelectorAll('[data-oxx]').forEach(b => b.onclick = async () => { if(!confirm('تمسح البند ده؟')) return;
+      try{ await oxSave(L => { const i = L.findIndex(z => z.id === b.dataset.oxx && !z.done); if(i >= 0) L.splice(i, 1); }); }catch(err){ alert('مااتمسحش: ' + err.message); } });
+  }
   function draw(){
     if(route() !== 'accounts') return;
     const main = document.getElementById('main'); if(!main) return;
-    main.innerHTML = view();
+    const keep = {}; ['oxDt', 'oxIt', 'oxAm', 'oxMt', 'oxNt'].forEach(id => { const el = document.getElementById(id); if(el) keep[id] = el.value; });
+    main.innerHTML = view(); oxWire(main);
+    Object.entries(keep).forEach(([id, v]) => { const el = document.getElementById(id); if(el) el.value = v; });
     const sel = document.getElementById('csM'); if(sel) sel.onchange = e => { S.m = e.target.value; if(!S.loaded[S.m]) load(S.m); draw(); };
     const x = document.getElementById('csX'); if(x) x.onclick = exportX;
     const im = document.getElementById('csImp'); if(im) im.onclick = importSeed;
@@ -15951,6 +16019,7 @@ table.cs tr.cs-open td{background:#fff7dd}
     if(route() !== 'accounts') return;
     document.querySelectorAll('#sidebar a.navlink').forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#/accounts'));
     draw(); if(!S.loaded[S.m] && sb()) load(S.m);
+    if(sb() && (!OX.t || Date.now() - OX.t > 30000)){ OX.t = Date.now(); oxLoad(); }
   }
   // 🏠 للصفحة الرئيسية: رصيد الخزنة للشهر الحالي
   window.CashAPI = { async balance(){ const m = curM(); if(!S.loaded[m]) await load(m); return { month:m, ...totals(m) }; } };
