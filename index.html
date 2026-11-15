@@ -2612,8 +2612,22 @@ const Squad = (function(){
     const { data: off } = await sb.from('office_sales').select('id, agent_id, amount, customer, status, created_at').gte('created_at', todayStartIso());
     (off || []).filter(r => r.status !== 'not_bought' && isTodayTs(r.created_at)).forEach(r => todayOrders.push(officeToToday(r)));
     todayOrders.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    await loadTodayWork();
     todayDay = localYmd(new Date());
     drawTodayIcon(); refreshTodayInViews();
+  }
+  /* 🗂️ شغل خدمة العملاء النهارده على أوردرات الهولد والاندلفرد (متابعة / تجديد) — من سجل أيام التسليم */
+  let todayWork = [];
+  async function loadTodayWork(){
+    try{ const { data } = await sb.from('app_kv').select('value').like('key', 'recov_%').gte('updated_at', todayStartIso());
+      todayWork = (data || []).flatMap(r => (r.value && r.value.list) || []).filter(e => e && e.at && isTodayTs(e.at)); }catch(e){}
+  }
+  function todayWorkBy(){
+    const by = {};
+    todayWork.forEach(e => { const r = by[e.agent_id] = by[e.agent_id] || { name:e.agent_name || '', und:new Set(), hold:new Set(), ren:0, first:e.at, last:e.at };
+      (e.kind === 'hold' ? r.hold : r.und).add(e.brand + ':' + e.serial); if(e.type === 'renew') r.ren++;
+      if(e.at < r.first) r.first = e.at; if(e.at > r.last) r.last = e.at; });
+    return Object.entries(by).map(([id, r]) => ({ id, ...r, n:r.und.size + r.hold.size })).sort((a, b) => b.n - a.n);
   }
   const todayCount = id => (todayOrders || []).filter(o => o.agent_id === id).length;
   const officeToToday = r => ({ id:'off-' + r.id, agent_id:r.agent_id, amount:r.amount, customer_name:r.customer, page_name:'🏢 المكتب', created_at:r.created_at, office:true });
@@ -2690,6 +2704,7 @@ const Squad = (function(){
   function toggleTodayPanel(forceOpen){
     let pnl = document.getElementById('sqTodayPanel');
     if(pnl && !forceOpen){ pnl.remove(); return; }
+    if(!forceOpen) loadTodayWork().then(() => { if(document.getElementById('sqTodayPanel')) toggleTodayPanel(true); });
     if(!pnl){ pnl = document.createElement('div'); pnl.id = 'sqTodayPanel'; pnl.className = 'sq-today-panel'; document.body.appendChild(pnl); }
     const L = todayOrders || [], by = {};
     L.forEach(o => { const r = by[o.agent_id] = by[o.agent_id] || { n:0, v:0, ren:0 }; r.n++; r.v += Number(o.amount) || 0; if(isRenewSrc(o.page_name)) r.ren++; });   // ♻️ تجديد اندلفرد بأوردر تاني
@@ -2698,6 +2713,10 @@ const Squad = (function(){
     pnl.innerHTML = `<div class="hd"><b>🧾 أوردرات النهارده: ${L.length.toLocaleString('ar-EG')}</b><button type="button" onclick="document.getElementById('sqTodayPanel').remove()">✕</button></div>
       <div class="sub">بقيمة ${L.reduce((a, o) => a + (Number(o.amount) || 0), 0).toLocaleString('ar-EG')} ج — العدّاد بيرجع صفر كل يوم</div>
       ${rows.map(([id, r], i) => `<div class="r ${id === myId ? 'me' : ''}"><span>${i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '•'} ${esc(profileNameMap[id] || 'موظف')}${id === myId ? ' (إنت)' : ''}<small style="display:block;font-size:12px;color:${r.ren ? '#2f7d55' : 'var(--muted)'}">♻️ منهم ${r.ren.toLocaleString('ar-EG')} تجديد اندلفرد</small></span><b>${r.n.toLocaleString('ar-EG')}</b></div>`).join('') || '<div class="sub" style="padding:10px 0">لسه محدش خد أوردر النهارده.</div>'}
+      ${(() => { const W = todayWorkBy(); if(!W.length) return ''; const tm = t => new Date(t).toLocaleTimeString('ar-EG', { hour:'2-digit', minute:'2-digit' });
+        const dur = r => { const m = Math.round((new Date(r.last) - new Date(r.first)) / 60000); return m < 1 ? '' : ' · ' + (m >= 60 ? Math.floor(m / 60) + ' س ' : '') + (m % 60) + ' د'; };
+        return `<div class="sub" style="margin-top:10px;font-weight:700">🗂️ شغل الهولد والاندلفرد النهارده: ${W.reduce((a, r) => a + r.n, 0).toLocaleString('ar-EG')} أوردر</div>
+        ${W.map(r => `<div class="r ${r.id === myId ? 'me' : ''}"><span>${esc(profileNameMap[r.id] || r.name || 'موظف')}${r.id === myId ? ' (إنت)' : ''}<small style="display:block;font-size:12px;color:var(--muted)">💔 ${r.und.size.toLocaleString('ar-EG')} اندلفرد · ✋ ${r.hold.size.toLocaleString('ar-EG')} هولد${r.ren ? ' · ♻️ جدّدت ' + r.ren.toLocaleString('ar-EG') : ''}</small><small style="display:block;font-size:12px;color:var(--muted)">⏱ من ${tm(r.first)} لـ ${tm(r.last)}${dur(r)}</small></span><b>${r.n.toLocaleString('ar-EG')}</b></div>`).join('')}`; })()}
       ${L.length ? `<div class="sub" style="margin-top:10px;font-weight:700">آخر الأوردرات</div>
         ${L.slice(0, 8).map(o => `<div class="r sm"><span>${o.office ? '🏢 ' : ''}${isRenewSrc(o.page_name) ? '♻️ ' : ''}${esc(profileNameMap[o.agent_id] || 'موظف')} · ${new Date(o.created_at).toLocaleTimeString('ar-EG', { hour:'2-digit', minute:'2-digit' })}</span><span>${o.amount ? Number(o.amount).toLocaleString('ar-EG') + ' ج' : '—'}</span></div>`).join('')}` : ''}
       ${'Notification' in window && Notification.permission === 'default' ? `<button type="button" class="perm" onclick="Notification.requestPermission().then(()=>document.getElementById('sqTodayPanel').remove())">🔔 فعّل إشعارات المتصفح</button>` : ''}`;
@@ -15485,6 +15504,8 @@ table.gs tr.wk td.day{color:#c5221f}
   function grpSend(q){
     window.open('https://wa.me/?text=' + encodeURIComponent(grpMsg(q)), '_blank', 'noopener');
     S.w.gSent.add(String(q.serial)); drawWork();
+    // 🗂️ بيتحسب ضمن شغلها النهارده على الهولد
+    addLog({ type:'grp', serial:String(q.serial), day:S.w.day, brand:S.w.brand, kind:S.w.kind, agent_id:me().id, agent_name:me().full_name || me().username || '', at:new Date().toISOString() }).catch(() => {});
   }
   function renew(q, mode){
     if(typeof Squad === 'undefined' || !Squad.openNewOrder) return alert('Squad مش متاح.');
