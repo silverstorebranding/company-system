@@ -15501,16 +15501,25 @@ table.gs tr.wk td.day{color:#c5221f}
         ${W.gOpen ? `<p style="margin:8px 0;color:var(--muted);font-size:13px">كل أوردر في رسالة لوحده: دوسي <b>💬 ابعت</b> (أو <b>▶️ ابعت اللي بعده</b>) — هيفتح واتساب والرسالة جاهزة، اختاري الجروب ودوسي إرسال، وارجعي هنا للي بعده.</p>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">${nx >= 0 ? `<button class="kd-btn" data-gs="${nx}" style="background:#2f7d55;color:#fff;border-color:#2f7d55">▶️ ابعت اللي بعده (${nx + 1})</button>` : '<b style="color:#2f7d55">✅ كل الأوردرات اتبعتت</b>'}<button class="kd-btn" id="kwGrpRst">↺ من الأول</button></div>
         ${L.map((q, i) => `<div style="display:flex;gap:8px;align-items:center;justify-content:space-between;padding:6px 0;border-top:1px dashed var(--line)"><span style="white-space:pre-line">${sent.has(String(q.serial)) ? '✅ ' : ''}${esc(grpMsg(q))}</span><span style="white-space:nowrap"><button class="kd-btn" data-gs="${i}">💬 ابعت</button> <button class="kd-btn" data-gc="${i}" title="انسخ الرسالة">📋</button></span></div>`).join('')}` : ''}</div>`; }
-    const last = serial => { const n = S.log.filter(x => String(x.serial) === String(serial)); return { renew:n.filter(x => x.type === 'renew').pop(), note:n.filter(x => x.type === 'note').pop() }; };
-    h += L.map((q, i) => { const ph = String(q.phone || '').replace(/\D/g, '').replace(/^0/, ''), x = last(q.serial);
+    const last = serial => { const n = S.log.filter(x => String(x.serial) === String(serial)); const notes = n.filter(x => x.type === 'note'); return { renew:n.filter(x => x.type === 'renew').pop(), note:notes[notes.length - 1], notes }; };
+    // 🔁 أوردرات آخر متابعة ليها "مبتردش / رقم غلط" ولسه ماتجددتش = محتاجة متابعة تانية
+    const needAgain = x => !x.renew && x.note && NO_REPLY.includes(x.note.note);
+    const nAgain = L.filter(q => needAgain(last(q.serial))).length;
+    if(nAgain || W.again) h += `<div style="margin:0 0 10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button class="kd-btn ${W.again ? 'kd-on' : ''}" id="kwAgain" style="${W.again ? '' : 'border-color:#c0392b;color:#c0392b'}">🔁 محتاجة متابعة تانية (${nAgain})</button>${W.again ? '<span style="font-size:13px;color:var(--muted)">بيظهر بس الأوردرات اللي العميل مردّش فيها — دوسي تاني ترجعي للكل</span>' : ''}</div>`;
+    const tm = t => new Date(t).toLocaleString('ar-EG', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' });
+    h += L.map((q, i) => { const ph = String(q.phone || '').replace(/\D/g, '').replace(/^0/, ''), x = last(q.serial), again = needAgain(x);
+      if(W.again && !again) return '';
       const rs = x.renew ? (x.renew.delivered ? '✅ التجديد اتسلم' : x.renew.shipped ? '🚚 التجديد اتشحن (' + esc(lbl(x.renew.qp)) + ')' : '⏳ التجديد لسه مااتشحنش') : '';
       return `<div class="kd-wrow ${x.renew || (x.note && x.note.note === RECV) ? 'done' : ''}"><div><b>${i + 1}. ${esc(q.full_name || '')}</b> <span style="direction:ltr;display:inline-block">${esc(q.phone || '')}</span> · ${esc(q.total_amount ?? q.price ?? '')} ج · <span style="color:var(--muted)">شحنة ${esc(q.serial)} · ${esc(lbl(q))}</span>
           <div style="font-size:13px;color:var(--muted);margin-top:3px">${esc(q.address || '')}${q.city ? ' — ' + esc(q.city) : ''}</div>
           <div style="font-size:13.5px;margin-top:3px">🛍️ ${esc(q.shipment_contents || '—')}</div>
           ${x.renew ? `<div class="kd-done">♻️ اتجدد (${x.renew.mode === 'edit' ? 'بتعديل' : 'نفس الطلب'}) — ${esc(x.renew.agent_name || '')} · ${new Date(x.renew.at).toLocaleString('ar-EG', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' })} · ${rs}</div>` : ''}
-          ${x.note ? (x.note.note === RECV ? `<div class="kd-done">📦 استلم خلاص (بكلام العميل) — ${esc(x.note.agent_name || '')} · بيتحسب متسلم لحد ما QP يحدّث</div>` : `<div style="font-size:12.5px;margin-top:3px">📝 ${esc(x.note.note)} — ${esc(x.note.agent_name || '')}</div>`) : ''}</div>
+          ${x.note ? (x.note.note === RECV ? `<div class="kd-done">📦 استلم خلاص (بكلام العميل) — ${esc(x.note.agent_name || '')} · بيتحسب متسلم لحد ما QP يحدّث</div>` : x.notes.map((n, k) => `<div style="font-size:12.5px;margin-top:3px">📝 ${x.notes.length > 1 ? `<b>متابعة ${k + 1}:</b> ` : ''}${esc(n.note)} — ${esc(n.agent_name || '')} · <span style="color:var(--muted)">${tm(n.at)}</span></div>`).join('')) : ''}
+          ${again ? `<div style="font-size:13px;margin-top:4px;color:#c0392b;font-weight:700">🔁 العميل مردّش — محتاجة متابعة رقم ${x.notes.length + 1}</div>` : ''}</div>
         <div class="kd-wact">${ph ? `<a class="kd-btn" style="text-decoration:none" href="tel:0${ph}">📞</a><a class="kd-btn" style="text-decoration:none" target="_blank" rel="noopener" href="https://wa.me/20${ph}">💬</a>` : ''}
-          <select class="kd-sel" data-wn="${i}" style="width:auto"><option value="">📝 المتابعة...</option>${NOTES.map(n => `<option ${x.note && x.note.note === n ? 'selected' : ''}>${n}</option>`).join('')}</select>
+          ${again && W.openAgain !== String(q.serial) ? `<button class="kd-btn" data-wa="${esc(q.serial)}" style="background:#c0392b;color:#fff;border-color:#c0392b">🔁 متابعة تانية</button>`
+            : again ? `<select class="kd-sel" data-wn="${i}" style="width:auto;border-color:#c0392b"><option value="">📝 حالة المتابعة رقم ${x.notes.length + 1}...</option>${NOTES.map(n => `<option>${n}</option>`).join('')}</select>`
+            : `<select class="kd-sel" data-wn="${i}" style="width:auto"><option value="">📝 المتابعة...</option>${NOTES.map(n => `<option ${x.note && x.note.note === n ? 'selected' : ''}>${n}</option>`).join('')}</select>`}
           ${x.renew ? '' : `<button class="kd-btn" data-wr="${i}" data-m="same" style="background:#2f7d55;color:#fff;border-color:#2f7d55">🔁 جدّدي نفس الطلب</button><button class="kd-btn" data-wr="${i}" data-m="edit">✏️ جدّدي بتعديل</button>`}</div></div>`; }).join('');
     return h;
   }
@@ -15534,7 +15543,7 @@ table.gs tr.wk td.day{color:#c5221f}
   }
   async function note(q, val){
     const e = { type:'note', serial:String(q.serial), day:S.w.day, brand:S.w.brand, kind:S.w.kind, note:val, agent_id:me().id, agent_name:me().full_name || me().username || '', at:new Date().toISOString() };
-    try{ await addLog(e); S.log.push(e); drawWork(); }
+    try{ await addLog(e); S.log.push(e); S.w.openAgain = null; drawWork(); }
     catch(e){ alert('الملاحظة مااتحفظتش: ' + e.message); }
   }
   function drawWork(){
@@ -15544,6 +15553,8 @@ table.gs tr.wk td.day{color:#c5221f}
     const L = S.w && S.w.d ? (S.w.kind === 'hold' ? S.w.d.hold : S.w.d.und) : [];
     main.querySelectorAll('[data-wk]').forEach(b => b.onclick = () => { S.w.kind = b.dataset.wk; history.replaceState(null, '', location.href.replace(/k=\w+/, 'k=' + S.w.kind)); drawWork(); });
     const re = document.getElementById('kwRe'); if(re) re.onclick = loadWork;
+    const ag = document.getElementById('kwAgain'); if(ag) ag.onclick = () => { S.w.again = !S.w.again; drawWork(); };
+    main.querySelectorAll('[data-wa]').forEach(b => b.onclick = () => { S.w.openAgain = b.dataset.wa; drawWork(); const sel = main.querySelector('.kd-sel[style*="c0392b"]'); if(sel) sel.focus(); });
     main.querySelectorAll('[data-wr]').forEach(b => b.onclick = () => renew(L[+b.dataset.wr], b.dataset.m));
     main.querySelectorAll('[data-wn]').forEach(s => s.onchange = () => { if(s.value) note(L[+s.dataset.wn], s.value); });
     const g = document.getElementById('kwGrp'); if(g) g.onclick = () => { S.w.gOpen = !S.w.gOpen; drawWork(); };
