@@ -13721,8 +13721,14 @@ a.hm-kpi:hover{box-shadow:0 6px 16px rgba(0,0,0,.07)}
         const cpa = (sp, o) => o ? fmt(sp / o) + ' ج' : (sp ? '∞' : '—');
         h += `<p class="hm-note" style="margin:0 0 6px">${H.ads.date.toLocaleDateString('ar-EG', { weekday:'long', day:'numeric', month:'long' })}</p>`;
         h += `<div class="hm-row" style="font-size:12.5px;color:var(--muted)"><span>الميديا باير</span>${C(['الصرف', 'أوردرات', 'CPA'])}</div>`;
-        h += L.map(x => `<div class="hm-row"><span>👤 ${esc(x.name)}${x.brands.length ? `<br><small style="color:var(--muted)">${x.brands.map(B => `<span style="color:${esc(B.color)}">●</span> ${esc(B.name)} ${fmt(B.spend)} ج · ${fmt(B.orders)} أوردر`).join(' &nbsp; ')}</small>` : (x.spend || x.orders ? '' : ' <small style="color:var(--muted)">(مفيش أرقام متسجلة)</small>')}</span>
-          ${C([`<b>${fmt(x.spend)} ج</b>`, `<b>${fmt(x.orders)}</b>`, `<b>${cpa(x.spend, x.orders)}</b>`])}</div>`).join('');
+        // كل براند في سطر لوحده بالـ CPA بتاعه — ولو الميديا باير ليه أكتر من براند بيظهر مجموعه فوقهم
+        const brRow = B => `<div class="hm-row" style="padding-inline-start:18px;font-size:13.5px"><span><span style="color:${esc(B.color)}">●</span> ${esc(B.name)}</span>${C([`${fmt(B.spend)} ج`, fmt(B.orders), `<b>${cpa(B.spend, B.orders)}</b>`])}</div>`;
+        h += L.map(x => {
+          if(!x.brands.length) return `<div class="hm-row"><span>👤 ${esc(x.name)} <small style="color:var(--muted)">(مفيش أرقام متسجلة)</small></span>${C(['—', '—', '—'])}</div>`;
+          if(x.brands.length === 1){ const B = x.brands[0];
+            return `<div class="hm-row"><span>👤 ${esc(x.name)} · <span style="color:${esc(B.color)}">●</span> ${esc(B.name)}</span>${C([`<b>${fmt(B.spend)} ج</b>`, `<b>${fmt(B.orders)}</b>`, `<b>${cpa(B.spend, B.orders)}</b>`])}</div>`; }
+          return `<div class="hm-row"><span>👤 <b>${esc(x.name)}</b> <small style="color:var(--muted)">(مجموع ${x.brands.length} براند)</small></span>${C([`<b>${fmt(x.spend)} ج</b>`, `<b>${fmt(x.orders)}</b>`, cpa(x.spend, x.orders)])}</div>` + x.brands.map(brRow).join('');
+        }).join('');
         h += `<div class="hm-row" style="background:#fdf3d7"><span><b>الإجمالي</b></span>${C([`<b>${fmt(ts)} ج</b>`, `<b>${fmt(to)}</b>`, `<b>${cpa(ts, to)}</b>`])}</div>`;
       }
       h += `</div>`;
