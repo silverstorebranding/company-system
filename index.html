@@ -4123,6 +4123,11 @@ table.pr td.cpo-bad{color:#b3261e;font-weight:700}
 .ads-sheet th{background:#0f4f3c;color:#fff;font-weight:700;padding:5px 6px}
 .ads-sheet .ads-sh-h{background:#7a1f4a;font-size:17px;padding:8px}
 .ads-sheet .ads-sh-tot td{background:#fdf3d7;font-weight:800;font-size:15.5px;padding:6px;color:#1c2321}
+.ads-brandcfg{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:12px 14px}
+.ads-bn{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap}
+.ads-bn i{width:14px;height:14px;border-radius:4px;display:inline-block}
+.ads-bn input{padding:6px 9px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--ink);font-family:inherit;width:150px}
+.ads-bn small{font-size:12px;color:var(--muted)}.ads-bn small.ok{color:#1f7a45}
 .ads-sheet .ads-sh-day{background:#123b33;white-space:nowrap}
 .ads-sheet input{width:100%;min-width:62px;border:0;padding:6px 4px;text-align:center;font-family:inherit;font-size:13.5px;background:transparent;color:var(--ink)}
 .ads-sheet input:focus{outline:2px solid #2b6cb0;background:#eef5ff}
@@ -4264,29 +4269,65 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
     return out.sort((a,b) => a.date - b.date);
   }
 
-  /* ---------- 📝 شيت الإعلانات جوه السيستم (Dream و Kidzzly) ----------
-     بيتحفظ في app_kv بمفتاح ads_manual_<YYYY-MM> = { days: { '1': { dream:{spend,orders,msgs}, kidzzly:{...} } } }
-     وأي يوم/براند مكتوب هنا بياخد مكان رقم جوجل شيت لنفس اليوم */
-  const ADS_MAN = [ { key:'dream', name:'dream', color:'#5b3f7a', msgs:true }, { key:'kidzzly', name:'kidzzly', color:'#4f8fd8', msgs:true } ];
+  /* ---------- 📝 شيت الإعلانات جوه السيستم — شيت لكل ميديا باير ----------
+     - الميديا باير وبراندته متسجلين في app_kv بمفتاح ads_buyers = { list:[{ key, name, brands:[{ key, name, color }] }] }
+     - شيت Fady (Dream و Kidzzly) لسه بيتحفظ في ads_manual_<YYYY-MM> زي الأول = { days: { '1': { dream:{spend,orders,msgs}, ... } } }
+     - الباقيين: ads_buyer_<buyer>__<YYYY-MM> بنفس الشكل
+     - البراند بيدخل في الأرباح والبوصلة لو اسمه نفس اسم براند معروف (dream / kidzzly / cara ...) — ولو كذا ميديا باير صرفوا على نفس البراند في نفس اليوم بيتجمعوا
+       وأي يوم/براند مكتوب هنا بياخد مكان رقم جوجل شيت لنفس اليوم */
+  const ADS_COLORS = ['#5b3f7a', '#4f8fd8', '#2f5f73', '#a0456e', '#8a6d3b', '#3f9b74', '#7a5c3a', '#6b7a3a'];
+  const ADS_BUYERS_DEF = [
+    { key:'fady',    name:'Fady',    brands:[ { key:'dream', name:'dream', color:'#5b3f7a' }, { key:'kidzzly', name:'kidzzly', color:'#4f8fd8' } ] },
+    { key:'joseph',  name:'جوزيف',   brands:[ { key:'b1', name:'', color:'#2f5f73' }, { key:'b2', name:'', color:'#a0456e' } ] },
+    { key:'mohamed', name:'محمد',    brands:[ { key:'b1', name:'', color:'#8a6d3b' }, { key:'b2', name:'', color:'#3f9b74' } ] },
+    { key:'peter',   name:'بيتر',    brands:[ { key:'b1', name:'', color:'#7a5c3a' }, { key:'b2', name:'', color:'#6b7a3a' } ] },
+  ];
   const sbA = () => window.__sbClient || (window.AuthGate && window.AuthGate.sb);
-  let adsRaw = [], adsManual = {}, adsManLoaded = false, adsTab = 'report', adsSheetM = (d => d.getFullYear() + '-' + pad2(d.getMonth() + 1))(new Date()), adsSaveT = null, adsSaveMsg = '';
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  let adsBuyers = JSON.parse(JSON.stringify(ADS_BUYERS_DEF)), adsBuy = {}, adsBuyer = 'fady';
+  try{ const k = localStorage.getItem('adsBuyer'); if(k) adsBuyer = k; }catch(e){}
+  let adsRaw = [], adsManLoaded = false, adsTab = 'report', adsSheetM = (d => d.getFullYear() + '-' + pad2(d.getMonth() + 1))(new Date()), adsSaveT = null, adsSaveMsg = '', adsCfgT = null;
+  const curBuyer = () => adsBuyers.find(b => b.key === adsBuyer) || adsBuyers[0];
+  const buyKvKey = (b, m) => b === 'fady' ? 'ads_manual_' + m : 'ads_buyer_' + b + '__' + m;
   async function adsManualLoad(){
-    try{ const c = sbA(); if(!c) return; const { data, error } = await c.from('app_kv').select('key, value').like('key', 'ads_manual_%');
-      if(error) throw error; adsManual = {}; (data || []).forEach(r => adsManual[r.key.slice(11)] = (r.value && r.value.days) || {}); adsManLoaded = true; }catch(e){}
+    try{ const c = sbA(); if(!c) return;
+      const [man, oth, cfg] = await Promise.all([
+        c.from('app_kv').select('key, value').like('key', 'ads_manual_%'),
+        c.from('app_kv').select('key, value').like('key', 'ads_buyer_%'),
+        c.from('app_kv').select('value').eq('key', 'ads_buyers').maybeSingle() ]);
+      if(man.error) throw man.error;
+      adsBuy = { fady:{} };
+      (man.data || []).forEach(r => adsBuy.fady[r.key.slice(11)] = (r.value && r.value.days) || {});
+      (oth.data || []).forEach(r => { const m = /^ads_buyer_(.+)__(\d{4}-\d{2})$/.exec(r.key); if(!m) return; (adsBuy[m[1]] = adsBuy[m[1]] || {})[m[2]] = (r.value && r.value.days) || {}; });
+      const L = cfg.data && cfg.data.value && cfg.data.value.list;
+      if(Array.isArray(L) && L.length) adsBuyers = L;
+      if(!adsBuyers.some(b => b.key === adsBuyer)) adsBuyer = adsBuyers[0].key;
+      adsManLoaded = true; }catch(e){}
+  }
+  // البراند ده يدخل في أنهي براند في الأرباح؟ (بالاسم)
+  function brandGroup(B){
+    const n = String(B.name || '').trim().toLowerCase(); if(!n) return null;
+    const first = n.split(/\s+/)[0];
+    const G = ADS_GROUPS.find(G => n === G.key || n === G.name.toLowerCase() || (G.prBrands || []).includes(n) || first === G.key || first === G.name.toLowerCase().split(/\s+/)[0]);
+    return G ? G.key : null;
   }
   const manHas = x => x && ['spend', 'orders', 'msgs'].some(f => x[f] !== '' && x[f] != null);
   function adsMerge(){
     const by = {};
     (adsRaw || []).forEach(r => { by[r.key] = { key:r.key, date:r.date, g:Object.fromEntries(ADS_GROUPS.map(G => [G.key, { ...r.g[G.key] }])) }; });
-    Object.entries(adsManual).forEach(([m, days]) => Object.entries(days || {}).forEach(([d, v]) => {
+    const man = {};   // { dayKey: { date, g: { group: {spend,orders,msgs} } } } — مجموع كل الميديا باير
+    adsBuyers.forEach(buyer => Object.entries(adsBuy[buyer.key] || {}).forEach(([m, days]) => Object.entries(days || {}).forEach(([d, v]) => {
       const date = new Date(+m.slice(0, 4), +m.slice(5, 7) - 1, +d), key = adsKey(date);
-      if(!ADS_MAN.some(B => manHas(v && v[B.key]))) return;
-      if(!by[key]) by[key] = { key, date, g:Object.fromEntries(ADS_GROUPS.map(G => [G.key, { spend:0, orders:0, msgs:0 }])) };
-      ADS_MAN.forEach(B => { const x = v[B.key]; if(manHas(x)) by[key].g[B.key] = { spend:adsNum(x.spend), orders:adsNum(x.orders), msgs:adsNum(x.msgs) }; });
-    }));
+      buyer.brands.forEach(B => { const x = v && v[B.key], gk = brandGroup(B); if(!gk || !manHas(x)) return;
+        const day = man[key] = man[key] || { date, g:{} }, a = day.g[gk] = day.g[gk] || { spend:0, orders:0, msgs:0 };
+        a.spend += adsNum(x.spend); a.orders += adsNum(x.orders); a.msgs += adsNum(x.msgs); });
+    })));
+    Object.entries(man).forEach(([key, day]) => {
+      if(!by[key]) by[key] = { key, date:day.date, g:Object.fromEntries(ADS_GROUPS.map(G => [G.key, { spend:0, orders:0, msgs:0 }])) };
+      Object.entries(day.g).forEach(([gk, a]) => by[key].g[gk] = a);
+    });
     return Object.values(by).sort((a, b) => a.date - b.date);
   }
-
   function adsLoad(force){
     if(adsLoading) return adsPromise;
     if(adsData && !force) return Promise.resolve(adsData);
@@ -4348,55 +4389,92 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
   function viewAds(){ return viewAdsSheet(); }
   // 📝 الشيت: نفس شكل جوجل شيت — صف لكل يوم، ولكل براند spend / order / wa-msg / cpo
   function viewAdsSheet(){
-    const m = adsSheetM, y = +m.slice(0, 4), mo = +m.slice(5, 7), n = new Date(y, mo, 0).getDate(), D = adsManual[m] || {};
+    const m = adsSheetM, y = +m.slice(0, 4), mo = +m.slice(5, 7), n = new Date(y, mo, 0).getDate();
     const monEn = new Date(y, mo - 1, 1).toLocaleDateString('en-US', { month:'long' });
     const months = []; { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() + 1); for(let i = 0; i < 8; i++){ months.push(d.getFullYear() + '-' + pad2(d.getMonth() + 1)); d.setMonth(d.getMonth() - 1); } }
     if(!months.includes(m)) months.push(m);
+    let h = `<div class="pagehead"><h1>📢 الإعلانات</h1><p>كل ميديا باير ليه شيت لوحده — سجّل الصرف يوم بيوم، بيتحفظ لوحده، وبيدخل على طول في الأرباح والبوصلة لو اسم البراند نفس اسم براند عندنا (وبياخد مكان رقم جوجل شيت لنفس اليوم).</p></div>`;
+    if(!adsManLoaded){ adsManualLoad().then(() => adsRerender()); return h + '<div class="card"><p class="none">⏳ بيحمّل...</p></div>'; }
+    const buyer = curBuyer(), BR = buyer.brands, D = (adsBuy[buyer.key] || {})[m] || {};
     const v = (d, b, f) => { const x = D[d] && D[d][b]; return x && x[f] != null ? x[f] : ''; };
-    let h = `<div class="pagehead"><h1>📢 الإعلانات</h1><p>سجّل صرف الإعلانات يوم بيوم لـ Dream و Kidzzly — بيتحفظ لوحده، وبيدخل على طول في الأرباح والبوصلة (وبياخد مكان رقم جوجل شيت لنفس اليوم).</p></div>` + `
+    const hasData = bk => Object.values((adsBuy[buyer.key] || {})).some(M => Object.values(M || {}).some(day => manHas(day && day[bk])));
+    h += `<div class="ads-toolbar ads-buyers">${adsBuyers.map(b => `<button class="${b.key === buyer.key ? 'mockbtn' : 'linkbtn'}" onclick="Ads.buyer('${esc(b.key)}')">👤 ${esc(b.name)}</button>`).join('')}</div>
+      <div class="card ads-brandcfg"><b>🏷️ براندات ${esc(buyer.name)}:</b>
+        ${BR.map((B, i) => { const gk = brandGroup(B), G = gk && ADS_GROUPS.find(x => x.key === gk);
+          return `<span class="ads-bn"><i style="background:${esc(B.color)}"></i><input value="${esc(B.name)}" placeholder="اسم البراند ${i + 1}" oninput="Ads.brandName('${esc(B.key)}', this.value)" onchange="Ads.rerender()">
+          <small class="${G ? 'ok' : ''}">${G ? '↳ بيدخل في أرباح ' + esc(G.name) : B.name ? 'مش مربوط بالأرباح' : ''}</small>
+          ${!hasData(B.key) && BR.length > 1 ? `<button class="linkbtn" title="شيل البراند" onclick="Ads.brandDel('${esc(B.key)}')">✖</button>` : ''}</span>`; }).join('')}
+        <button class="linkbtn" onclick="Ads.brandAdd()">➕ براند</button></div>
       <div class="ads-toolbar"><label>الشهر <select onchange="Ads.sheetMonth(this.value)">${months.map(x => `<option value="${x}" ${x === m ? 'selected' : ''}>${new Date(x + '-15').toLocaleDateString('ar-EG', { month:'long', year:'numeric' })}</option>`).join('')}</select></label>
         <span class="ads-upd" id="adsSaveSt">${adsSaveMsg}</span></div>`;
-    if(!adsManLoaded){ adsManualLoad().then(() => adsRerender()); return h + '<div class="card"><p class="none">⏳ بيحمّل...</p></div>'; }
-    const cols = ADS_MAN.length * 4;
+    const cols = BR.length * 4;
     h += `<div class="card" style="padding:0;overflow:auto"><table class="ads-sheet" dir="ltr">
-      <tr><th class="ads-sh-h" colspan="${cols + 1}">Italy &amp; Kids Brands</th></tr>
-      <tr><th></th>${ADS_MAN.map(B => `<th>اجمالى انفاق</th><th>اجمالى العدد</th><th>رسايل</th><th>متوسط cpo</th>`).join('')}</tr>
-      <tr class="ads-sh-tot"><th></th>${ADS_MAN.map(B => ['spend', 'orders', 'msgs', 'cpo'].map(f => `<td id="adsT_${B.key}_${f}">0</td>`).join('')).join('')}</tr>
-      <tr><th></th>${ADS_MAN.map(B => `<th colspan="4" style="background:${B.color}">${B.name}</th>`).join('')}</tr>
-      <tr><th></th>${ADS_MAN.map(() => '<th>spend</th><th>order</th><th>wa-msg</th><th>cpo</th>').join('')}</tr>
-      ${Array.from({ length:n }, (_, i) => i + 1).map(d => `<tr><th class="ads-sh-day">${d}${monEn}</th>${ADS_MAN.map(B => ['spend', 'orders', 'msgs'].map(f =>
-        `<td><input type="number" min="0" step="any" inputmode="decimal" value="${v(d, B.key, f)}" data-ad="${d}|${B.key}|${f}" oninput="Ads.sheetIn(this)"></td>`).join('') + `<td class="ads-sh-cpo" id="adsC_${d}_${B.key}"></td>`).join('')}</tr>`).join('')}
+      <tr><th class="ads-sh-h" colspan="${cols + 1}">${esc(buyer.name)}</th></tr>
+      <tr><th></th>${BR.map(() => `<th>اجمالى انفاق</th><th>اجمالى العدد</th><th>رسايل</th><th>متوسط cpo</th>`).join('')}</tr>
+      <tr class="ads-sh-tot"><th></th>${BR.map(B => ['spend', 'orders', 'msgs', 'cpo'].map(f => `<td id="adsT_${esc(B.key)}_${f}">0</td>`).join('')).join('')}</tr>
+      <tr><th></th>${BR.map(B => `<th colspan="4" style="background:${esc(B.color)}" id="adsBH_${esc(B.key)}">${esc(B.name || '—')}</th>`).join('')}</tr>
+      <tr><th></th>${BR.map(() => '<th>spend</th><th>order</th><th>wa-msg</th><th>cpo</th>').join('')}</tr>
+      ${Array.from({ length:n }, (_, i) => i + 1).map(d => `<tr><th class="ads-sh-day">${d}${monEn}</th>${BR.map(B => ['spend', 'orders', 'msgs'].map(f =>
+        `<td><input type="number" min="0" step="any" inputmode="decimal" value="${v(d, B.key, f)}" data-ad="${d}|${esc(B.key)}|${f}" oninput="Ads.sheetIn(this)"></td>`).join('') + `<td class="ads-sh-cpo" id="adsC_${d}_${esc(B.key)}"></td>`).join('')}</tr>`).join('')}
     </table></div>`;
     setTimeout(adsSheetTotals, 0);
     return h;
   }
   function adsSheetTotals(){
-    const D = adsManual[adsSheetM] || {}, t = {};
-    ADS_MAN.forEach(B => t[B.key] = { spend:0, orders:0, msgs:0 });
-    Object.entries(D).forEach(([d, v]) => ADS_MAN.forEach(B => { const x = v && v[B.key]; if(!x) return;
+    const buyer = curBuyer(), BR = buyer.brands, D = (adsBuy[buyer.key] || {})[adsSheetM] || {}, t = {};
+    BR.forEach(B => t[B.key] = { spend:0, orders:0, msgs:0 });
+    Object.entries(D).forEach(([d, v]) => BR.forEach(B => { const x = v && v[B.key]; if(!x) return;
       t[B.key].spend += adsNum(x.spend); t[B.key].orders += adsNum(x.orders); t[B.key].msgs += adsNum(x.msgs);
       const c = document.getElementById(`adsC_${d}_${B.key}`); if(c) c.textContent = adsNum(x.orders) ? fmt(adsNum(x.spend) / adsNum(x.orders)) : (adsNum(x.spend) ? '∞' : ''); }));
-    ADS_MAN.forEach(B => { const set = (f, val) => { const e = document.getElementById(`adsT_${B.key}_${f}`); if(e) e.textContent = val; };
+    BR.forEach(B => { const set = (f, val) => { const e = document.getElementById(`adsT_${B.key}_${f}`); if(e) e.textContent = val; };
       set('spend', fmt(t[B.key].spend)); set('orders', fmt(t[B.key].orders)); set('msgs', fmt(t[B.key].msgs)); set('cpo', t[B.key].orders ? fmt(t[B.key].spend / t[B.key].orders) : '—'); });
   }
   function adsSheetIn(el){
-    const [d, b, f] = el.dataset.ad.split('|'), m = adsSheetM;
-    const M = adsManual[m] = adsManual[m] || {}, day = M[d] = M[d] || {}, x = day[b] = day[b] || {};
+    const [d, b, f] = el.dataset.ad.split('|'), m = adsSheetM, bk = curBuyer().key;
+    const P = adsBuy[bk] = adsBuy[bk] || {}, M = P[m] = P[m] || {}, day = M[d] = M[d] || {}, x = day[b] = day[b] || {};
     x[f] = el.value === '' ? '' : el.value;
     adsSheetTotals();
     adsData = adsMerge();
     const st = document.getElementById('adsSaveSt'); if(st) st.textContent = '✏️ بيتحفظ...';
-    clearTimeout(adsSaveT); adsSaveT = setTimeout(() => adsSheetSave(m), 700);
+    clearTimeout(adsSaveT); adsSaveT = setTimeout(() => adsSheetSave(bk, m), 700);
   }
-  async function adsSheetSave(m){
+  const adsWho = () => { const who = (window.AuthGate && window.AuthGate.me && window.AuthGate.me()) || {}; return who.full_name || who.username || ''; };
+  async function adsSheetSave(bk, m){
     const st = () => document.getElementById('adsSaveSt');
     try{ const c = sbA(); if(!c) throw new Error('لازم تكون داخل على السيستم');
-      const who = (window.AuthGate && window.AuthGate.me && window.AuthGate.me()) || {};
-      const { error } = await c.from('app_kv').upsert({ key:'ads_manual_' + m, value:{ days:adsManual[m] || {} }, updated_at:new Date().toISOString(), updated_by_name: who.full_name || who.username || '' });
+      const { error } = await c.from('app_kv').upsert({ key:buyKvKey(bk, m), value:{ days:(adsBuy[bk] || {})[m] || {} }, updated_at:new Date().toISOString(), updated_by_name: adsWho() });
       if(error) throw error;
       adsSaveMsg = '✅ اتحفظ ' + new Date().toLocaleTimeString('ar-EG', { hour:'2-digit', minute:'2-digit' });
     }catch(e){ adsSaveMsg = '⚠️ مااتحفظش: ' + (e.message || e); }
     if(st()) st().textContent = adsSaveMsg;
+  }
+  // 🏷️ أسماء البراندات لكل ميديا باير — بتتحفظ في ads_buyers
+  function adsCfgSave(){
+    const st = document.getElementById('adsSaveSt'); if(st) st.textContent = '✏️ بيتحفظ...';
+    clearTimeout(adsCfgT); adsCfgT = setTimeout(async () => {
+      try{ const c = sbA(); if(!c) throw new Error('لازم تكون داخل على السيستم');
+        const { error } = await c.from('app_kv').upsert({ key:'ads_buyers', value:{ list:adsBuyers }, updated_at:new Date().toISOString(), updated_by_name: adsWho() });
+        if(error) throw error; adsSaveMsg = '✅ اتحفظ ' + new Date().toLocaleTimeString('ar-EG', { hour:'2-digit', minute:'2-digit' });
+      }catch(e){ adsSaveMsg = '⚠️ مااتحفظش: ' + (e.message || e); }
+      const s2 = document.getElementById('adsSaveSt'); if(s2) s2.textContent = adsSaveMsg;
+    }, 600);
+  }
+  function adsBrandName(bk, val){
+    const B = curBuyer().brands.find(x => x.key === bk); if(!B) return;
+    B.name = val.trim(); const th = document.getElementById('adsBH_' + bk); if(th) th.textContent = B.name || '—';
+    adsData = adsMerge(); adsCfgSave();
+  }
+  function adsBrandAdd(){
+    const buyer = curBuyer(), used = buyer.brands.map(b => b.color);
+    buyer.brands.push({ key:'b' + Date.now().toString(36), name:'', color:ADS_COLORS.find(c => !used.includes(c)) || ADS_COLORS[buyer.brands.length % ADS_COLORS.length] });
+    adsCfgSave(); adsRerender();
+  }
+  function adsBrandDel(bk){
+    const buyer = curBuyer(); if(buyer.brands.length < 2) return;
+    const used = Object.values(adsBuy[buyer.key] || {}).some(M => Object.values(M || {}).some(day => manHas(day && day[bk])));
+    if(used){ alert('البراند ده متسجل عليه أرقام — امسح أرقامه الأول لو عايز تشيله.'); adsRerender(); return; }
+    if(!confirm('تشيل البراند ده من شيت ' + buyer.name + '؟')) return;
+    buyer.brands =buyer.brands.filter(b => b.key !== bk); adsData = adsMerge(); adsCfgSave(); adsRerender();
   }
   function viewAdsReport(){
     const minK = adsData?.length ? adsData[0].key : '', maxK = adsData?.length ? adsData[adsData.length-1].key : '';
@@ -4692,6 +4770,9 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
     tab(t){ adsTab = t === 'sheet' ? 'sheet' : 'report'; adsRerender(); },
     sheetMonth(m){ adsSheetM = m; adsSaveMsg = ''; adsRerender(); },
     sheetIn: adsSheetIn,
+    buyer(k){ adsBuyer = k; adsSaveMsg = ''; try{ localStorage.setItem('adsBuyer', k); }catch(e){} adsRerender(); },
+    brandName: adsBrandName, brandAdd: adsBrandAdd, brandDel: adsBrandDel,
+    rerender(){ adsRerender(); },
     fill: adsFill,
     setPrRange(f, t){ prForcedRange = f && t ? { from:f, to:t } : null; },
   };
