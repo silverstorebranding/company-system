@@ -771,7 +771,7 @@ const SOPS = [
 const CHANNELS = "WhatsApp, Messenger, Instagram, TikTok, Phone";
 
 /* ---------------- PROFITS DATA/LOGIC ---------------- */
-const PR_BRANDS=["dream","dream msg site","dream wa","msg","lo gel nails","fastplt","cara silver","cara silver un","cara wa","ersal","rs kids","kidzzly"];   // ⛔ SQUAD / SOCKY / BLOOM اتشالوا من الأرباح — أوردرات Squad بتتوزع على دريم / كيدزلي / إرسال صفحة
+const PR_BRANDS=["dream","dream msg site","dream wa","msg","lo gel nails","fastplt","cara silver","cara silver un","cara wa","ersal","rs kids","kidzzly","bunny"];   // ⛔ SQUAD / SOCKY / BLOOM اتشالوا من الأرباح — أوردرات Squad بتتوزع على دريم / كيدزلي / إرسال صفحة
 const PR_PNL_BRANDS=PR_BRANDS.filter(b=>b!=="lo gel nails");
 const PR_SOLO="lo gel nails";
 const PR_MSG_GROUP=["msg","dream msg site","fastplt"];
@@ -784,7 +784,8 @@ const PR_COLS=[
  {type:"agg",key:"cara_group",h:"CARA مجمع",brands:["cara silver","cara silver un","cara wa"]},
  {type:"brand",key:"rs kids",h:"RS KIDS",sum:true}, // بيظهر كمان في جدول الخلاصة
  {type:"brand",key:"kidzzly",h:"KIDZZLY",sum:true}, // 🧸 براند KIDZZLY — نفس معاملة RS KIDS
- {type:"brand",key:"ersal",h:"إرسال صفحة",sum:true}, // 📨 إرسال صفحة — براند لوحده (أوردرات Squad بمصدر "إرسال صفحة")
+ {type:"brand",key:"ersal",h:"إرسال صفحة",sum:true},
+ {type:"brand",key:"bunny",h:"BUNNY",sum:true}, // 🐰 براند BUNNY (اللاندينج) — تكلفة البضاعة بالقطعة زي KIDZZLY // 📨 إرسال صفحة — براند لوحده (أوردرات Squad بمصدر "إرسال صفحة")
 ];
 // راتب مساعد مدير المكتب: 16000 شهريًا
 // 🏢 المصاريف الثابتة الشهرية — بتتوزع على الإيطالي و Kidzzly و RS حسب عدد الأوردرات (Bloom مالوش دعوة)
@@ -826,13 +827,14 @@ const PR_RATE_OVERRIDES={
   "cara wa":{ofd:0.38,hold:0.15},
   "rs kids":{ofd:0.70,hold:0.30},
   "kidzzly":{ofd:0.70,hold:0.30}, // نفس RS KIDS
+  "bunny":{ofd:0.70,hold:0.30}, // 🐰 براند أطفال — نفس KIDZZLY
   "bloom":{ofd:0.60,hold:0.30}
 };
 const prRatesFor=b=>PR_RATE_OVERRIDES[b]||{ofd:PR_OFD_RATE,hold:PR_HOLD_RATE};
 // براندات تكلفة بضاعتها نسبة ثابتة من المبيعات (بدل 65.2 / 94 للقطعة)
 const PR_COGS_PCT={"bloom":0.45};
 // 🧸 KIDZZLY و 👶 RS KIDS: تكلفة البضاعة = عدد القطع في الطلب × سعر القطعة
-const PR_PIECE_DEF={"kidzzly":100,"rs kids":175,"bloom":0,"socky":0};
+const PR_PIECE_DEF={"kidzzly":100,"bunny":100,"rs kids":175,"bloom":0,"socky":0};
 const PR_PIECE_COST=(()=>{try{return {...PR_PIECE_DEF,...JSON.parse(localStorage.getItem('pr_piece_cost')||'{}')};}catch(e){return {...PR_PIECE_DEF};}})();
 // Bloom: لو تكلفة القطعة 0 بيفضل 45% من المبيعات
 function prSetPiece(b,v){PR_PIECE_COST[b]=prNum(v);try{localStorage.setItem('pr_piece_cost',JSON.stringify(PR_PIECE_COST));}catch(e){}
@@ -840,6 +842,7 @@ function prSetPiece(b,v){PR_PIECE_COST[b]=prNum(v);try{localStorage.setItem('pr_
 const PR_BD_KEY={"kidzzly":"kidzzly","rs kids":"rs","bloom":"bloom","socky":"socky"};
 // عدد القطع: من تحليل المكونات لو متاح، وإلا الطريقة القديمة
 function prPiecesSmart(contents, price, brand){
+  if(brand==="bunny") return prBunnyPieces(contents, price);
   const OB=window.OrderBreakdown;
   if(OB&&OB.countPieces&&PR_BD_KEY[brand]){ try{ return OB.countPieces(contents, price, PR_BD_KEY[brand]).n; }catch(e){} }
   return prPieces(contents, price);
@@ -932,6 +935,12 @@ function kidsPajamaText(text, price){
   const sz=(t.match(/\)\s*(\d{1,2})\s*$/)||t.match(/size\s*(\d+)/i)||[])[1]||"";
   add(3*sets, sz, vOf(t), sets); return {n,sizes,colors,byPrice:true};
 }
+// 🐰 Bunny: المحتوى جاي من اللاندينج "▪ طفل 1 · مقاس 4 لـ 6 سنين - الأرانب الوردي × 1 - الكتاكيت × 2 + ▪ طفل 2 ..." — عدد القطع = مجموع كل "× N"
+function prBunnyPieces(contents, price){
+  const t=String(contents||"").replace(/[٠-٩]/g,d=>"٠١٢٣٤٥٦٧٨٩".indexOf(d));
+  let n=0; (t.match(/[×xX\*]\s*\d+/g)||[]).forEach(m=>n+=parseInt(m.replace(/\D/g,""),10)||0);
+  return n||prPieces(contents, price);
+}
 function prPieces(contents, price){
   const pj=kidsPajamaParse(contents, price); if(pj) return pj.n;
   const t=String(contents||"").replace(/[٠-٩]/g,d=>"٠١٢٣٤٥٦٧٨٩".indexOf(d)).trim();
@@ -966,6 +975,7 @@ function prGetBrand(note){
   if(n.startsWith("squad"))return"squad"; // 🏆 SQUAD
   if(n.startsWith("ersal")||n.startsWith("إرسال")||n.startsWith("ارسال"))return"ersal"; // 📨 إرسال صفحة
   if(n.startsWith("sock")||n.startsWith("سوك"))return"socky"; // 🧦 SOCKY
+  if(n.startsWith("bunny")||n.startsWith("باني"))return"bunny"; // 🐰 BUNNY (أوردرات اللاندينج — notes المصدر في رفع الأوردرات)
   if(n.startsWith("kidzzly")||n.startsWith("kidzly")||n.startsWith("kidz"))return"kidzzly"; // 🧸 براند KIDZZLY (kidzzly / kidzzly msg ...)
   if(n.startsWith("rs kids")||n.startsWith("rskids")||n.startsWith("rs-kids")||n.startsWith("rs_kids"))return"rs kids"; // براند RS KIDS
   if(/^rs(\s|$|[^a-z])/.test(n))return"rs kids"; // ملاحظة "rs" لوحدها = براند RS
@@ -1261,6 +1271,7 @@ const PR_GUIDE_GROUPS=[
   {k:'g_italy', l:'💍💎 DREAM + CARA مع بعض', m:['dream','dream msg site','dream wa','cara silver','cara silver un','cara wa']},
   {k:'g_rs',    l:'👶 RS KIDS', m:['rs kids']},
   {k:'g_kid',   l:'🧸 KIDZZLY', m:['kidzzly']},
+  {k:'g_bunny', l:'🐰 BUNNY', m:['bunny']},
   {k:'g_ersal', l:'📨 إرسال صفحة', m:['ersal']},
 ];
 const PR_GUIDE_ROWS=[
@@ -1851,6 +1862,7 @@ function viewProfits(){
       <div class="kpi"><b>🧩 تكلفة القطعة</b> (عدد القطع بيتجاب من تحليل المكونات أوتوماتيك):</div>
       <div class="kpi">🧸 Kidzzly <input class="plainIn" type="number" value="${PR_PIECE_COST.kidzzly}" oninput="prSetPiece('kidzzly',this.value)"></div>
       <div class="kpi">👶 RS <input class="plainIn" type="number" value="${PR_PIECE_COST['rs kids']}" oninput="prSetPiece('rs kids',this.value)"></div>
+      <div class="kpi">🐰 Bunny <input class="plainIn" type="number" value="${PR_PIECE_COST.bunny}" oninput="prSetPiece('bunny',this.value)"></div>
     </div>
     <div style="font-size:12.5px;color:var(--muted);margin-top:6px">وكمان تلقائي في التقرير: 📢 الإعلانات من جوجل شيت (DREAM / CARA / FASTPLT / KIDZZLY عمود M / RS عمود P) · 🏆 عمولة البنات من Squad لنفس الفترة · 💔 الهوالك 0.25% من المبيعات.</div>
     <div>
@@ -4178,6 +4190,7 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
     { key:'kidzzly', name:'KIDZZLY', color:'#4f8fd8', spend:12, orders:null, msgs:null, pr:'kidzzly',   prBrands:['kidzzly'] },
     { key:'msg',     name:'MSG',     color:'#6b7a3a', spend:null, orders:null, msgs:null, pr:'msg',     prBrands:['msg'] },
     { key:'socky',   name:'SOCKY',   color:'#7a5c3a', spend:null, orders:null, msgs:null, pr:'socky',   prBrands:['socky'] },
+    { key:'bunny',   name:'BUNNY',   color:'#c0628f', spend:null, orders:null, msgs:null, pr:'bunny',   prBrands:['bunny'] },
   ];
   const MONTHS = ['january','february','march','april','may','june','july','august','september','october','november','december'];
 
@@ -4773,6 +4786,16 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
     buyer(k){ adsBuyer = k; adsSaveMsg = ''; try{ localStorage.setItem('adsBuyer', k); }catch(e){} adsRerender(); },
     brandName: adsBrandName, brandAdd: adsBrandAdd, brandDel: adsBrandDel,
     rerender(){ adsRerender(); },
+    // 🏠 للصفحة الرئيسية: صرف امبارح لكل ميديا باير (من شيتات الإعلانات جوه السيستم)
+    async yesterday(){
+      await adsManualLoad();
+      const d = new Date(); d.setDate(d.getDate() - 1);
+      const m = d.getFullYear() + '-' + pad2(d.getMonth() + 1), day = String(d.getDate());
+      const list = adsBuyers.map(b => { const v = ((adsBuy[b.key] || {})[m] || {})[day] || {};
+        const brands = b.brands.map(B => { const x = v[B.key] || {}; return { name:B.name || '—', color:B.color, spend:adsNum(x.spend), orders:adsNum(x.orders), msgs:adsNum(x.msgs) }; }).filter(x => x.spend || x.orders);
+        return { key:b.key, name:b.name, spend:brands.reduce((s, x) => s + x.spend, 0), orders:brands.reduce((s, x) => s + x.orders, 0), brands }; });
+      return { date:d, list };
+    },
     fill: adsFill,
     setPrRange(f, t){ prForcedRange = f && t ? { from:f, to:t } : null; },
   };
@@ -5305,7 +5328,7 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
     let b = null; try{ b = prGetBrand(o.notes); }catch(e){}
     const contents = o.shipment_contents || o.contents || '', price = num(o.total_amount ?? o.price);
     try{
-      if(b && typeof PR_PIECE_COST !== 'undefined' && (b in PR_PIECE_COST)) return PR_PIECE_COST[b] ? prPieces(contents, price) * PR_PIECE_COST[b] : null;
+      if(b && typeof PR_PIECE_COST !== 'undefined' && (b in PR_PIECE_COST)) return PR_PIECE_COST[b] ? (b === 'bunny' ? prBunnyPieces(contents, price) : prPieces(contents, price)) * PR_PIECE_COST[b] : null;
       if(b && typeof PR_COGS_PCT !== 'undefined' && PR_COGS_PCT[b] != null) return price * PR_COGS_PCT[b];
       if(b) return prHasInsial(contents) ? PR_COGS_YES : PR_COGS_NO;
     }catch(e){}
@@ -13487,7 +13510,7 @@ a.hm-kpi:hover{box-shadow:0 6px 16px rgba(0,0,0,.07)}
   const phoneKey = p => { let t = String(p || '').replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/\D/g, ''); if(t.startsWith('20') && t.length === 12) t = t.slice(2); return t.replace(/^0/, ''); };
   const isCancel = st => /cancel|ملغ|refus|رفض|return/i.test(String(st || ''));
 
-  const H = { today:null, pend:null, qp:null, qpErr:'', acc:null, last:null, loading:false, at:null };
+  const H = { today:null, pend:null, qp:null, qpErr:'', acc:null, ads:null, last:null, loading:false, at:null };
   // 💍/🧸 مبيعات المحفظة لكل قسم + الربح التقريبي (المحفظة بعد الشحن − تكلفة البضاعة)
   const WB = [['italy', '💍 إيطالي'], ['kidzzly', '🧸 كيدزلي'], ['ersal', '📨 إرسال'], ['socky', '🧦 سوكي'], ['bloom', '🌸 بلوم'], ['other', '❔ غيره']];
   // 📈 ربح المحفظة = نسبة من قيمة التسليمات (قبل خصم الشحن) — مش من التحصيل اللي بعد الشحن: الإيطالي 15% · كيدزلي 30% · إرسال صفحة 40%
@@ -13604,6 +13627,7 @@ a.hm-kpi:hover{box-shadow:0 6px 16px rgba(0,0,0,.07)}
     if(can('qp-upload')) jobs.push(loadPending().catch(() => {}));
     if(can('qp')) jobs.push(loadQP().catch(() => {}));
     if(can('accounts')) jobs.push(loadAcc().catch(() => {}));
+    if(can('ads') && window.Ads && window.Ads.yesterday) jobs.push(window.Ads.yesterday().then(r => { H.ads = r; }).catch(() => { H.ads = { err:true, list:[] }; }));
     // كل كارت بيترسم أول ما الداتا بتاعته توصل
     jobs.forEach(j => j.then(draw));
     await Promise.all(jobs);
@@ -13684,6 +13708,23 @@ a.hm-kpi:hover{box-shadow:0 6px 16px rgba(0,0,0,.07)}
       else if(!H.today.top.length) h += '<p class="hm-wait">لسه محدش خد أوردر النهارده.</p>';
       else { const mx = Math.max(...H.today.top.map(x => x.n));
         h += H.today.top.map((x, i) => `<div style="padding:6px 0"><div class="hm-row" style="border:none;padding:0"><span>${['🥇','🥈','🥉'][i] || '•'} ${esc(x.name)}</span><b>${fmt(x.n)} <small style="font-weight:500;color:var(--muted)">· ${fmt(x.v)} ج</small></b></div><div class="hm-bar"><i style="width:${x.n / mx * 100}%"></i></div></div>`).join(''); }
+      h += `</div>`;
+    }
+    // 📢 إعلانات امبارح — لكل ميديا باير: الصرف وعدد الأوردرات والـ CPA
+    if(can('ads')){
+      h += `<div class="card hm-card"><h3>📢 إعلانات امبارح <a class="hm-btn" href="#/ads">الإعلانات</a></h3>`;
+      if(!H.ads) h += '<p class="hm-wait">⏳</p>';
+      else if(H.ads.err) h += '<p class="hm-wait">مقدرناش نجيب أرقام الإعلانات.</p>';
+      else {
+        const L = H.ads.list, ts = L.reduce((a, x) => a + x.spend, 0), to = L.reduce((a, x) => a + x.orders, 0);
+        const C = v => `<span style="display:flex;white-space:nowrap">${v.map(x => `<span style="width:78px;text-align:center">${x}</span>`).join('')}</span>`;
+        const cpa = (sp, o) => o ? fmt(sp / o) + ' ج' : (sp ? '∞' : '—');
+        h += `<p class="hm-note" style="margin:0 0 6px">${H.ads.date.toLocaleDateString('ar-EG', { weekday:'long', day:'numeric', month:'long' })}</p>`;
+        h += `<div class="hm-row" style="font-size:12.5px;color:var(--muted)"><span>الميديا باير</span>${C(['الصرف', 'أوردرات', 'CPA'])}</div>`;
+        h += L.map(x => `<div class="hm-row"><span>👤 ${esc(x.name)}${x.brands.length ? `<br><small style="color:var(--muted)">${x.brands.map(B => `<span style="color:${esc(B.color)}">●</span> ${esc(B.name)} ${fmt(B.spend)} ج · ${fmt(B.orders)} أوردر`).join(' &nbsp; ')}</small>` : (x.spend || x.orders ? '' : ' <small style="color:var(--muted)">(مفيش أرقام متسجلة)</small>')}</span>
+          ${C([`<b>${fmt(x.spend)} ج</b>`, `<b>${fmt(x.orders)}</b>`, `<b>${cpa(x.spend, x.orders)}</b>`])}</div>`).join('');
+        h += `<div class="hm-row" style="background:#fdf3d7"><span><b>الإجمالي</b></span>${C([`<b>${fmt(ts)} ج</b>`, `<b>${fmt(to)}</b>`, `<b>${cpa(ts, to)}</b>`])}</div>`;
+      }
       h += `</div>`;
     }
     // 🏦 الخزن
