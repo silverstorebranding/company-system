@@ -2018,14 +2018,18 @@ const Squad = (function(){
 
   // مصادر الأوردر — 5 بس لكل البراندات (من غير كتابة بالإيد) — زوّد أو شيل من هنا
   // ⚠️ "إرسال صفحة" اسمها متسجل كده في الأوردرات وعمولتها أعلى، فبتفضل بنفس القيمة وبتظهر "إرسال"
-  const ORDER_SOURCES = ['واتساب دريم', 'بيدج دريم', 'واتساب كيدزلي', 'بيدج كيدزلي', 'إرسال صفحة'];
-  const SOURCE_LABEL = { 'إرسال صفحة':'إرسال' };
+  // 🧸 "إرسال صفحة kidzzly" = إرسال صفحة لبراند Kidzzly — بيظهر في فورم Kidzzly بس، عمولته زي إرسال صفحة، وبيتحسب في الأرباح على Kidzzly
+  const ORDER_SOURCES = ['واتساب دريم', 'بيدج دريم', 'واتساب كيدزلي', 'بيدج كيدزلي', 'إرسال صفحة', 'إرسال صفحة kidzzly'];
+  const KIDZZLY_ONLY_SOURCES = ['إرسال صفحة kidzzly'];
+  const SOURCE_LABEL = { 'إرسال صفحة':'إرسال', 'إرسال صفحة kidzzly':'إرسال صفحة Kidzzly' };
+  const isErsalSrc = p => p === 'إرسال صفحة' || p === 'إرسال صفحة kidzzly';
   // ♻️ مصدر الأوردرات المتجددة من "🎯 أيام تحت الهدف" — بيتحط لوحده لما تدوسي "جدّدي" (البراند في الاسم عشان الـ notes في الرفع)
   const RENEW_SOURCES = { acc:'تجديد من اندلفرد - دريم', kidzzly:'تجديد من اندلفرد - كيدزلي' };
   const isRenewSrc = x => Object.values(RENEW_SOURCES).includes(x);
   const isSource = x => ORDER_SOURCES.includes(x) || isRenewSrc(x);
-  function sourceSelect(id, val, disabled){
-    const L = isRenewSrc(val) ? [val] : ORDER_SOURCES;   // التجديد مصدره ثابت
+  function sourceSelect(id, val, disabled, dreamForm){
+    // فورم Dream (أوردر جديد) مابيظهرش فيه مصادر Kidzzly بس
+    const L = isRenewSrc(val) ? [val] : ORDER_SOURCES.filter(x => !dreamForm || !KIDZZLY_ONLY_SOURCES.includes(x) || x === val);   // التجديد مصدره ثابت
     return `<select id="${id}" required ${disabled ? 'disabled' : ''}>
           <option value="" disabled ${isSource(val) ? '' : 'selected'}>اختار المصدر اللي جه منه الأوردر</option>
           ${L.map(x => `<option value="${esc(x)}" ${val === x ? 'selected' : ''}>${esc(isRenewSrc(x) ? '♻️ ' + x : (SOURCE_LABEL[x] || x))}</option>`).join('')}
@@ -2053,6 +2057,7 @@ const Squad = (function(){
     'واتساب كيدزلي': STD_COMM,
     'بيدج كيدزلي':   STD_COMM,
     'إرسال صفحة':  { order:10, delivered:30 },
+    'إرسال صفحة kidzzly': { order:10, delivered:30 },   // نفس إرسال صفحة
   };
   const MIN_RATE = 0.5;
   // 💰 عمولة الأوردر المتسلم حسب سعره (بأثر رجعي على كل الأوردرات):
@@ -2065,7 +2070,7 @@ const Squad = (function(){
     const amt = Number(o && o.amount) || 0;
     if(amt > MANUAL_FROM) return Number(o.manual_commission) || 0;
     const t = COMM_TIERS.find(([mx]) => amt <= mx)[1];
-    return (o && o.page_name === 'إرسال صفحة') ? Math.max(30, t) : t;   // إرسال صفحة مالهاش أقل من 30 (زي ما كانت)
+    return (o && isErsalSrc(o.page_name)) ? Math.max(30, t) : t;   // إرسال صفحة مالهاش أقل من 30 (زي ما كانت)
   };
 
   // النظام القديم (حسب السعر) — للأوردرات اللي قبل RULES_FROM بس
@@ -3029,7 +3034,7 @@ const Squad = (function(){
         <input type="text" id="${prefix}-customer-address" value="${esc(o.customer_address||'')}"></div>
       ${isNew ? `<div id="${prefix}-acc" class="${t === 'acc' ? '' : 'sq-hide'}">` : ''}
       <div class="sq-field"><label for="${prefix}-page-name">المصدر</label>
-        ${sourceSelect(prefix + '-page-name', o.page_name || '', isNew && t !== 'acc')}</div>
+        ${sourceSelect(prefix + '-page-name', o.page_name || '', isNew && t !== 'acc', isNew)}</div>
       <div class="sq-field"><label for="${prefix}-size">المقاس <span class="sq-hint">مثلاً 16 أو 18 — ولو أكتر من قطعة اكتبهم: محبس 18 / دبلة 22</span></label>
         <input type="text" id="${prefix}-size" value="${esc(o.size||'')}" placeholder="اكتب المقاس" autocomplete="off" ${isNew && t !== 'acc' ? 'disabled' : ''}></div>
       ${productPicker(prefix, o.order_details)}
@@ -5352,11 +5357,11 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
     try{ const { data } = await c.from('app_kv').select('value').eq('key', 'wallet_note_map').maybeSingle(); window.__noteMap = (data && data.value && data.value.map) || {}; }catch(e){}
   }
   // 📒 الـ notes اللي أوردر Squad يتحسب بيها في الأرباح وأيام التسليم حسب مصدره
-  const pageNote = pg => { const p = String(pg || ''); if(/إرسال|ارسال/.test(p)) return 'ersal'; if(/كيدز|kid/i.test(p)) return 'kidzzly'; if(/واتساب\s*دريم|dream\s*wa/i.test(p)) return 'dream wa'; if(/دريم|dream/i.test(p)) return 'dream'; return null; };
+  const pageNote = pg => { const p = String(pg || ''); if(/كيدز|kid/i.test(p)) return 'kidzzly'; if(/إرسال|ارسال/.test(p)) return 'ersal'; if(/واتساب\s*دريم|dream\s*wa/i.test(p)) return 'dream wa'; if(/دريم|dream/i.test(p)) return 'dream'; return null; };
   const squadPageOf = o => o && sqPages ? [o.phone, o.phone2, o.customer_phone].map(phKey).map(k => k && sqPages[k]).find(x => x != null) : null;
   // للأرباح وأيام التسليم: لو notes = squad رجّع البراند الحقيقي من المصدر (أو null لو مش معروف)
   function squadBrandOf(o){ let b = null; try{ b = prGetBrand(o && o.notes); }catch(e){} if(b !== 'squad') return null; const pg = squadPageOf(o); return (pg == null ? null : pageNote(pg)) || 'dream'; }   // ملقيناش المصدر = دريم
-  const pageGroup = pg => { const p = String(pg || ''); if(/إرسال|ارسال/.test(p)) return 'ersal'; if(/كيدز|kid/i.test(p)) return 'kidzzly'; return 'italy'; };
+  const pageGroup = pg => { const p = String(pg || ''); if(/كيدز|kid/i.test(p)) return 'kidzzly'; if(/إرسال|ارسال/.test(p)) return 'ersal'; return 'italy'; };
   function walletGroup(note, o){
     const n = String(note || '').toLowerCase().trim();
     const nm = n.split('\n')[0].trim().replace(/\s+/g, ' ');
