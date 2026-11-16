@@ -11782,6 +11782,21 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
     }catch(e){ X.msg = 'مقدرتش أعمل الشيت: ' + e.message; X.msgErr = true; }
     QD.loading = false; draw();
   }
+  // ↩️ بوالص اتصوّرت واتأجلت امبارح (قبل ما السجل يبقى موجود، أو اتصورت بالغلط النهارده) → تتسجل مؤجلة من امبارح فتطلع في شيت النهارده
+  async function ppAddYesterday(){
+    if(!X.list.length) return;
+    if(!confirm(`الـ ${X.list.length} بوليصة دول اتأجلوا امبارح؟\nهيتسجلوا مؤجلين من امبارح ويطلعوا في شيت الـ Pending النهارده (مش هيتشالوا منه).`)) return;
+    await loadPP(true);
+    const y = ymd(new Date(Date.now() - 86400000)), by = me().full_name || me().username || '';
+    let L = PP.list || [], n = 0;
+    X.list.forEach(x => { const sr = String(x.serial), q = x.q || {};
+      L = L.filter(z => String(z.serial) !== sr);
+      L.unshift({ serial:sr, name:q.full_name || '', phone:q.phone || '', amount:q.total_amount ?? q.price ?? '', day:y, at:new Date().toISOString(), by, sentDay:null, uploaded:q.order_date ? ymd(new Date(q.order_date)) : '' }); n++; });
+    PP.list = L.slice(0, 2000);
+    try{ await savePP(); X.list = []; X.msg = `✅ اتسجل ${n} أوردر مؤجل من امبارح — هيطلعوا في شيت الـ Pending النهارده. دلوقتي صوّري اللي مش جاهز النهارده (لو فيه) ودوسي نزّل الشيت.`; X.msgErr = false; }
+    catch(e){ X.msg = 'مااتحفظش: ' + e.message; X.msgErr = true; }
+    draw();
+  }
   function ppCard(){
     if(PP.list === null){ loadPP().then(draw); return '<div class="card"><p class="up-empty">⏳ بيحمّل المؤجلين...</p></div>'; }
     const due = ppDue(), y = ymd(new Date(Date.now() - 86400000)), fromY = due.filter(x => x.day === y).length, td = ppToday();
@@ -11794,6 +11809,8 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
         <label style="font-size:13.5px">أوردرات اترفعت يوم <input type="date" id="upExDay" value="${esc(ppDay())}" style="padding:7px 9px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit"></label>
         <button class="up-btn ok" id="upPPGo" ${QD.loading ? 'disabled' : ''}>${QD.loading ? '⏳ بيجيب...' : `⬇️ نزّل الشيت: أوردرات اليوم${PP.include && due.length ? ` + ${due.length} مؤجل` : ''}${X.list.length ? ` − ${X.list.length} اتصوروا` : ''}`}</button>
         ${X.list.length ? '<button class="up-btn" id="upDelClear">🧹 فضّي الليستة</button>' : ''}</div>
+      ${X.list.length ? `<div class="up-row" style="margin-top:8px;font-size:13px;color:var(--muted)">البوالص اللي في الليستة تحت دي اتصوّرت <b>امبارح</b> ومش النهارده؟
+        <button class="up-btn" id="upPPYest" style="padding:5px 12px;font-size:12.5px">↩️ دول مؤجلين من امبارح — ضيفهم لشيت النهارده (${X.list.length})</button></div>` : ''}
       ${PP.show ? `<div class="up-sheet" style="margin-top:10px;max-height:300px;overflow:auto"><table><thead><tr><th>رقم الشحنة</th><th>العميل</th><th>الموبايل</th><th>السعر</th><th>اتأجل يوم</th><th>الحالة</th><th></th></tr></thead><tbody>
         ${(PP.list || []).filter(x => !x.sentDay).map(x => `<tr><td style="padding:5px 8px;direction:ltr;font-weight:700">${esc(x.serial)}</td><td style="padding:5px 8px">${esc(x.name)}</td><td style="padding:5px 8px;direction:ltr">${esc(x.phone)}</td>
           <td style="padding:5px 8px">${esc(String(x.amount).replace(/\.00$/, ''))}</td><td style="padding:5px 8px">${esc(x.day)}</td><td style="padding:5px 8px">${x.day === ymd(new Date()) ? 'لبكرة' : 'هيطلع في الشيت'}</td>
@@ -13390,6 +13407,7 @@ create policy "sheets: upload" on storage.objects for insert to authenticated wi
     if($('upScanSheet')) $('upScanSheet').onclick = scanSheet;
     if($('upExDay')) $('upExDay').onchange = e => { QD.day = e.target.value || ymd(new Date()); QD.dayTouched = !!e.target.value && e.target.value !== ymd(new Date()); };
     if($('upPPGo')) $('upPPGo').onclick = exportPendingNext;
+    if($('upPPYest')) $('upPPYest').onclick = ppAddYesterday;
     if($('upPPInc')) $('upPPInc').onchange = e => { PP.include = e.target.checked; draw(); };
     if($('upPPShow')) $('upPPShow').onclick = () => { PP.show = !PP.show; draw(); };
     document.querySelectorAll('[data-ppx]').forEach(b => b.onclick = async () => { if(!confirm('تشيل البوليصة ' + b.dataset.ppx + ' من المؤجلين؟ (مش هتطلع في شيت بعد كده)')) return;
