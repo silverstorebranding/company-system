@@ -11702,6 +11702,111 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
     }catch(e){ QD.msg = 'مقدرتش أجيب أوردرات QP: ' + e.message; }
     QD.loading = false; draw();
   }
+  /* =====================================================================
+     📦 الأوردرات المؤجلة (اترفعت على QP بس لسه ماجهزتش)
+     - في "⏭️ شيت Pending من غيرهم": بتصوّر اللي مش جاهز → الشيت = Pending اللي اترفعوا يوم الرفع + المؤجلين اللي لسه ماطلعوش − اللي اتصوروا
+     - اللي اتصوروا بيتسجلوا "مؤجلين" بتاريخ النهارده، وبيطلعوا لوحدهم في شيت يوم تاني (من غير ما يترفعوا تاني على QP)
+     - مؤجل اتحط في شيت = sentDay (ولو نزّلت الشيت تاني نفس اليوم بيفضل فيه)، ومؤجل حالته على QP مابقتش Pending بيتشال من السجل
+     - التخزين: app_kv بمفتاح up_postponed = { list:[{ serial, name, phone, amount, day, at, by, sentDay }] }
+     ===================================================================== */
+  const PP_KV = 'up_postponed';
+  const PP = { list:null, include:true, show:false };
+  async function loadPP(force){
+    if(PP.list && !force) return PP.list;
+    try{ const { data } = await sbc().from('app_kv').select('*').eq('key', PP_KV).maybeSingle(); PP.list = (data && data.value && data.value.list) || []; }catch(e){ PP.list = PP.list || []; }
+    return PP.list;
+  }
+  async function savePP(){
+    const by = me().full_name || me().username || '';
+    const { error } = await sbc().from('app_kv').upsert({ key:PP_KV, value:{ list:PP.list }, updated_at:new Date().toISOString(), updated_by_name:by });
+    if(error) throw error;
+  }
+  // المؤجلين اللي يطلعوا في شيت النهارده: من أيام قبل النهارده، ولسه ماطلعوش في شيت (أو طلعوا في شيت النهارده نفسه)
+  const ppDue = () => { const t = ymd(new Date()); return (PP.list || []).filter(x => x.day < t && (!x.sentDay || x.sentDay === t)); };
+  // يوم الرفع: النهارده دايمًا (حتى لو الصفحة فضلت مفتوحة من امبارح) — إلا لو اتغيّر بالإيد
+  const ppDay = () => (QD.dayTouched && QD.day) || ymd(new Date());
+  const ppToday = () => { const t = ymd(new Date()); return (PP.list || []).filter(x => x.day === t); };
+  async function exportPendingNext(){
+    const api = window.QP && window.QP.api;
+    if(!api || !api.hasCreds()){ X.msg = '⚠️ لازم تكون عامل دخول QP من قسم 🚚 QP على الجهاز ده.'; X.msgErr = true; draw(); return; }
+    if(!window.XLSX){ X.msg = 'مكتبة Excel مش متحمّلة، اعمل Refresh.'; X.msgErr = true; draw(); return; }
+    QD.loading = true; X.msg = 'بيجيب أوردرات QP...'; X.msgErr = false; draw();
+    try{
+      await loadPP(true);
+      const today = ymd(new Date()), day = ppDay();
+      const due = PP.include ? ppDue() : [];
+      const minDay = [day].concat(due.map(x => x.day)).sort()[0];
+      const lim = ymd(new Date(Date.now() - 30 * 86400000)), from = minDay < lim ? lim : minDay, to = day > today ? day : today;
+      const all = await api.fetchRange(from, to, n => { X.msg = `بيجيب أوردرات QP... ${n} أوردر`; draw(); });
+      const isP = q => String(q.Order_Delivery_Status ?? '').trim() === '1';
+      const pendBy = new Map(all.filter(isP).map(q => [String(q.serial), q]));
+      const dayRows = [...pendBy.values()].filter(q => ymd(new Date(q.order_date)) === day);
+      const daySet = new Set(dayRows.map(q => String(q.serial)));
+      const ppRows = due.map(x => pendBy.get(String(x.serial))).filter(q => q && !daySet.has(String(q.serial)));
+      const gone = due.filter(x => !pendBy.has(String(x.serial)));
+      // ⏭️ اللي اتصوروا النهارده (الليستة + اللي اتسجلوا مؤجلين النهارده قبل كده) بيتشالوا من الشيت
+      const scanned = new Set(X.list.map(x => String(x.serial)).concat(ppToday().map(x => String(x.serial))));
+      const pool = dayRows.concat(ppRows);
+      const list = pool.filter(q => !scanned.has(String(q.serial))).sort((a, b) => new Date(a.order_date) - new Date(b.order_date));
+      const removed = pool.length - list.length;
+      const scanNotPend = X.list.filter(x => !pendBy.has(String(x.serial))).length;
+      // 📒 تحديث السجل: المؤجلين اللي طلعوا → sentDay، اللي مابقوش Pending → يتشالوا، اللي اتصوروا النهارده → مؤجلين بتاريخ النهارده
+      const sentSet = new Set(list.map(q => String(q.serial))), goneSet = new Set(gone.map(x => String(x.serial)));
+      const by = me().full_name || me().username || '';
+      let L = (PP.list || []).filter(x => !goneSet.has(String(x.serial)) && !(x.sentDay && x.sentDay < today));
+      L.forEach(x => { if(x.day < today && sentSet.has(String(x.serial))) x.sentDay = today; });
+      X.list.forEach(x => { const sr = String(x.serial); if(!pendBy.has(sr)) return; const q = pendBy.get(sr);
+        L = L.filter(y => String(y.serial) !== sr);
+        L.unshift({ serial:sr, name:q.full_name || '', phone:q.phone || '', amount:q.total_amount ?? q.price ?? '', day:today, at:new Date().toISOString(), by, sentDay:null, uploaded:ymd(new Date(q.order_date)) }); });
+      PP.list = L.slice(0, 2000);
+      await savePP();
+      if(list.length){
+        const H = [null, 'serial', 'full name', 'phone', 'address', 'total amount', 'notes', 'order date', 'shipment contents', 'weight', 'city', 'status'];
+        const aoa = [H].concat(list.map(q => [null, String(q.serial ?? ''), q.full_name || '', phoneOf(q.phone), q.address || '', numOf(q.total_amount ?? q.price), q.notes || '',
+          q.order_date ? new Date(q.order_date).toLocaleString('en-GB', { hour12:false }) : '', q.shipment_contents || '', numOf(q.weight), q.city || '', String(api.label(q) || '').replace(/\s*#\d+$/, '')]));
+        const ws = XLSX.utils.aoa_to_sheet(aoa);
+        for(let i = 2; i <= aoa.length; i++){ ['B', 'D'].forEach(c => { const v = ws[c + i]; if(v){ v.t = 's'; v.v = String(v.v); v.z = '@'; } }); }
+        ws['!cols'] = [{ wch:3 }, { wch:11 }, { wch:22 }, { wch:13 }, { wch:45 }, { wch:12 }, { wch:16 }, { wch:18 }, { wch:40 }, { wch:8 }, { wch:12 }, { wch:16 }];
+        const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Sheet3');
+        XLSX.writeFile(wb, `QP Pending ${today} (${list.length}).xlsx`);
+      }
+      const dueIn = ppRows.filter(q => sentSet.has(String(q.serial))).length;
+      X.msg = (list.length ? `✅ اتنزّل شيت فيه ${list.length} أوردر` : '⚠️ مفيش أوردرات تطلع في الشيت') +
+        ` = ${dayRows.length} اترفعوا يوم ${day}` + (PP.include ? ` + ${ppRows.length} مؤجلين من قبل كده` : '') + ` − ${removed} اتصوروا (مؤجلين لبكرة).` +
+        ` 📦 اتسجل ${ppToday().length} مؤجل لبكرة.` + (dueIn < ppRows.length ? ` (${ppRows.length - dueIn} من المؤجلين القدام اتأجلوا تاني)` : '') +
+        (gone.length ? ` ${gone.length} مؤجل قديم اتشال من السجل عشان حالته على QP مابقتش Pending.` : '') +
+        (scanNotPend ? ` ⚠️ ${scanNotPend} بوليصة من اللي اتصوروا مش Pending على QP، فماتسجلتش مؤجلة.` : '');
+      X.msgErr = !list.length;
+    }catch(e){ X.msg = 'مقدرتش أعمل الشيت: ' + e.message; X.msgErr = true; }
+    QD.loading = false; draw();
+  }
+  function ppCard(){
+    if(PP.list === null){ loadPP().then(draw); return '<div class="card"><p class="up-empty">⏳ بيحمّل المؤجلين...</p></div>'; }
+    const due = ppDue(), y = ymd(new Date(Date.now() - 86400000)), fromY = due.filter(x => x.day === y).length, td = ppToday();
+    return `<div class="card"><h3 style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">📦 شيت Pending لـ QP
+        <button class="up-btn" id="upPPShow" style="padding:5px 12px;font-size:12.5px">${PP.show ? 'اخفي' : '👀 شوف'} المؤجلين</button></h3>
+      <div class="up-row" style="font-size:14px;gap:16px">
+        <label><input type="checkbox" id="upPPInc" ${PP.include ? 'checked' : ''}> ضيف <b style="font-size:17px;color:#6b46c1">${due.length}</b> أوردر مؤجل لسه ماطلعش${due.length ? ` <small style="color:var(--muted)">(${fromY} من امبارح${due.length - fromY ? ` + ${due.length - fromY} أقدم` : ''})</small>` : ''}</label>
+        ${td.length ? `<span>⏭️ اتأجل النهارده لبكرة: <b>${td.length}</b></span>` : ''}</div>
+      <div class="up-row" style="margin-top:10px">
+        <label style="font-size:13.5px">أوردرات اترفعت يوم <input type="date" id="upExDay" value="${esc(ppDay())}" style="padding:7px 9px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit"></label>
+        <button class="up-btn ok" id="upPPGo" ${QD.loading ? 'disabled' : ''}>${QD.loading ? '⏳ بيجيب...' : `⬇️ نزّل الشيت: أوردرات اليوم${PP.include && due.length ? ` + ${due.length} مؤجل` : ''}${X.list.length ? ` − ${X.list.length} اتصوروا` : ''}`}</button>
+        ${X.list.length ? '<button class="up-btn" id="upDelClear">🧹 فضّي الليستة</button>' : ''}</div>
+      ${PP.show ? `<div class="up-sheet" style="margin-top:10px;max-height:300px;overflow:auto"><table><thead><tr><th>رقم الشحنة</th><th>العميل</th><th>الموبايل</th><th>السعر</th><th>اتأجل يوم</th><th>الحالة</th><th></th></tr></thead><tbody>
+        ${(PP.list || []).filter(x => !x.sentDay).map(x => `<tr><td style="padding:5px 8px;direction:ltr;font-weight:700">${esc(x.serial)}</td><td style="padding:5px 8px">${esc(x.name)}</td><td style="padding:5px 8px;direction:ltr">${esc(x.phone)}</td>
+          <td style="padding:5px 8px">${esc(String(x.amount).replace(/\.00$/, ''))}</td><td style="padding:5px 8px">${esc(x.day)}</td><td style="padding:5px 8px">${x.day === ymd(new Date()) ? 'لبكرة' : 'هيطلع في الشيت'}</td>
+          <td class="x"><button data-ppx="${esc(x.serial)}" title="شيله من المؤجلين">✕</button></td></tr>`).join('') || '<tr><td colspan="7" style="padding:10px;text-align:center;color:var(--muted)">مفيش مؤجلين.</td></tr>'}
+      </tbody></table></div>` : ''}</div>`;
+  }
+  // 📦 تنبيه في صفحة الرفع: فيه مؤجلين من امبارح لازم يطلعوا في شيت النهارده
+  function ppBanner(){
+    if(!canScan()) return '';
+    if(PP.list === null){ if(sbc()) loadPP().then(() => { if(PP.list.length) draw(); }); return ''; }
+    const due = ppDue(); if(!due.length) return '';
+    return `<div class="up-msg ok" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+      <span>📦 فيه <b>${due.length}</b> أوردر مؤجل (مرفوعين على QP من قبل كده ولسه ماطلعوش في شيت) — هيتضافوا لشيت الـ Pending.</span>
+      <button class="up-btn ok" id="upPPOpen">📦 شيت Pending + المؤجلين (${due.length})</button></div>`;
+  }
   function qpDayHtml(){
     return `<div class="card"><h3>🖨️ شيت أوردرات QP (Print order)</h3>
       <p style="margin:0 0 10px;font-size:13.5px;color:var(--muted)">بينزّل شيت بكل الأوردرات اللي اترفعت على QP في اليوم ده — من السيستم أو من برّه — بأرقام الشحنات، بنفس أعمدة شيت QP.</p>
@@ -12129,8 +12234,9 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
       ${X.scanning ? '<p style="font-size:12.5px;color:var(--muted);margin:6px 0 0">وجّه الكاميرا على الباركود اللي على البوليصة — أول ما يتقري هتسمع بيب وتنزل في الليستة. عدّي البوالص واحدة ورا التانية.</p>' : ''}
       ${X.msg ? `<div class="up-msg ${X.msgErr ? 'err' : 'ok'}">${esc(X.msg)}</div>` : ''}
     </div>`;
+    if(EX) h += ppCard();
     if(X.list.length){
-      h += `<div class="card"><h3>📋 البوالص (${X.list.length})</h3>
+      h += `<div class="card"><h3>📋 ${EX ? 'البوالص المؤجلة لبكرة' : 'البوالص'} (${X.list.length})</h3>
         <div class="up-sheet"><table><thead><tr><th>رقم الشحنة</th><th>العميل</th><th>الموبايل</th><th>المحتوى</th><th>السعر</th><th>notes</th><th>الحالة في QP</th>${SH || EX ? '' : '<th>السبب</th><th>النتيجة</th>'}<th></th></tr></thead><tbody>
         ${X.list.map((x, i) => { const q = x.q || {}, pend = x.q && isPendingQ(q);
           const stTxt = x.loading ? '⏳' : x.err && !x.q ? '❌ ' + x.err : (window.QP && window.QP.api && x.q ? String(window.QP.api.label(q) || '').replace(/\s*#\d+$/, '') : (q.status || ''));
@@ -12143,10 +12249,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
             <td class="err">${x.res === 'ok' ? '<span style="color:#2f7d55;font-weight:700">✅ اتمسح</span>' : x.res === 'err' ? '❌ ' + esc(x.err) : ''}</td>`}
             <td class="x">${x.res === 'ok' ? '' : `<button data-delx="${i}" title="شيلها من الليستة">✕</button>`}</td></tr>`; }).join('')}
         </tbody></table></div>
-        ${EX ? `<div class="up-row" style="margin-top:12px">
-          <label style="font-size:13.5px">كل الـ Pending من يوم <input type="date" id="upExFrom" value="${esc(QD.exFrom)}" style="padding:7px 9px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit"> لحد النهارده</label>
-          <button class="up-btn ok" id="upExGo" ${X.list.length && !QD.loading ? '' : 'disabled'}>${QD.loading ? '⏳ بيجيب...' : `⬇️ نزّل شيت كل الـ Pending من غير الـ ${X.list.length} دول`}</button>
-          <button class="up-btn" id="upDelClear">🧹 فضّي الليستة</button></div>` : SH ? `<div class="up-row" style="margin-top:12px">
+        ${EX ? '' : SH ? `<div class="up-row" style="margin-top:12px">
           <button class="up-btn ok" id="upScanSheet" ${X.list.some(x => x.q) ? '' : 'disabled'}>⬇️ نزّل الشيت (${X.list.filter(x => x.q).length} بوليصة)</button>
           <button class="up-btn" id="upDelClear">🧹 فضّي الليستة</button></div>` : `
         <div class="up-row" style="margin-top:12px;font-size:13.5px">
@@ -12158,7 +12261,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
           <button class="up-btn" id="upDelClear">🧹 فضّي الليستة</button>
         </div>`}</div>`;
     }
-    if(SH){}
+    if(SH || EX){}
     else if(X.log === null){ loadDelLog().then(draw); }
     else if(X.log.length){
       h += `<div class="card"><h3 style="display:flex;justify-content:space-between;align-items:center">📒 سجل البوالص اللي اتمسحت <button class="up-btn" id="upDelLogX" style="padding:5px 12px;font-size:12.5px">⬇️ نزّل السجل</button></h3>
@@ -12710,6 +12813,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
       ${S.src === 'restore' || (S.store.restore && S.store.restore.rows && S.store.restore.rows.length) ? `<button class="${S.src === 'restore' ? 'on' : ''}" style="--bc:#2f7d55" data-upsrc="restore">♻️ اتمسحت</button>` : ''}
       ${canScan() ? `<button class="${S.src === 'delete' ? 'on' : ''}" style="--bc:#b3261e" data-upsrc="delete">📷 بوالص</button>` : ''}
       ${me().is_admin ? `<button class="${S.src === 'settings' ? 'on' : ''}" style="--bc:#555" data-upsrc="settings" title="إدارة المصادر">⚙️</button>` : ''}</div>`;
+    if(S.src !== 'delete' && S.src !== 'settings') h += ppBanner();
     if(S.src === 'settings') return h + settingsHtml() + '</div>';
     if(S.src === 'delete') return h + delHtml() + '</div>';
     if(S.msg) h += `<div class="up-msg ${S.msgErr ? 'err' : 'ok'}">${esc(S.msg)}</div>`;
@@ -13281,7 +13385,13 @@ create policy "sheets: upload" on storage.objects for insert to authenticated wi
     if($('upRestQ')) $('upRestQ').oninput = e => { X.q = e.target.value; clearTimeout(X.qt); X.qt = setTimeout(() => { draw(); const el = document.getElementById('upRestQ'); if(el){ el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }, 350); };
     if($('upBackScan')) $('upBackScan').onclick = e => { e.preventDefault(); X.mode = 'restore'; switchSrc('delete'); };
     if($('upScanSheet')) $('upScanSheet').onclick = scanSheet;
-    if($('upExFrom')) $('upExFrom').onchange = e => { QD.exFrom = e.target.value || ymd(new Date(Date.now() - 14 * 86400000)); };
+    if($('upExDay')) $('upExDay').onchange = e => { QD.day = e.target.value || ymd(new Date()); QD.dayTouched = !!e.target.value && e.target.value !== ymd(new Date()); };
+    if($('upPPGo')) $('upPPGo').onclick = exportPendingNext;
+    if($('upPPInc')) $('upPPInc').onchange = e => { PP.include = e.target.checked; draw(); };
+    if($('upPPShow')) $('upPPShow').onclick = () => { PP.show = !PP.show; draw(); };
+    document.querySelectorAll('[data-ppx]').forEach(b => b.onclick = async () => { if(!confirm('تشيل البوليصة ' + b.dataset.ppx + ' من المؤجلين؟ (مش هتطلع في شيت بعد كده)')) return;
+      PP.list = (PP.list || []).filter(x => String(x.serial) !== b.dataset.ppx); try{ await savePP(); }catch(e){ X.msg = 'مااتحفظش: ' + e.message; X.msgErr = true; } draw(); });
+    if($('upPPOpen')) $('upPPOpen').onclick = () => { X.mode = 'exclude'; X.msg = ''; QD.dayTouched = false; switchSrc('delete'); };
     if($('upExPend')) $('upExPend').onchange = e => { QD.pendOnly = e.target.checked; };
     if($('upExGo')) $('upExGo').onclick = () => exportQPDay(new Set(X.list.map(x => String(x.serial))));
     if($('upQdDay')) $('upQdDay').onchange = e => { QD.day = e.target.value || ymd(new Date()); QD.msg = ''; };
