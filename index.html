@@ -11732,6 +11732,14 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
   }
   const DEL_REASONS = ['المنتج مش موجود', 'العميل لغى', 'أوردر متكرر', 'غلط في البيانات', 'سبب تاني'];
   const X = { mode:'delete', list:[], scanning:false, scanner:null, busy:false, msg:'', msgErr:false, notify:true, cancelSquad:false, log:null, lastCode:'', lastAt:0, reason:DEL_REASONS[0] };
+  // 💾 ليستة البوالص اللي اتصورت بتتحفظ على الجهاز — عشان ماتختفيش لو الصفحة اتقفلت أو اتعملها Refresh (بتفضل لحد "تفضّي الليستة")
+  const SCAN_LS = 'upScanList';
+  try{ const sv = JSON.parse(localStorage.getItem(SCAN_LS) || 'null'); if(sv && Array.isArray(sv.list)){ X.list = sv.list.filter(x => x && x.serial && !x.loading); if(sv.mode && ['delete', 'sheet', 'exclude'].includes(sv.mode)) X.mode = sv.mode; } }catch(e){}
+  let scanSaved = '';
+  function saveScanList(){
+    try{ const v = JSON.stringify({ mode:['delete', 'sheet', 'exclude'].includes(X.mode) ? X.mode : undefined, list:X.list.filter(x => !x.loading), at:Date.now() });
+      if(v !== scanSaved){ localStorage.setItem(SCAN_LS, v); scanSaved = v; } }catch(e){}
+  }
   const isPendingQ = q => { const st = String(q.Order_Delivery_Status ?? q.status ?? '').trim().toLowerCase(); return st === '1' || st === 'pending'; };
   const serialFrom = t => { const m = digits(String(t || '')).match(/\d{6,12}/); return m ? m[0] : ''; };
   function beep(ok){
@@ -11979,7 +11987,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
       <div id="upScanBox" style="${X.scanning ? 'display:block;margin-top:12px;width:100%;max-width:460px;min-height:240px;border-radius:12px;overflow:hidden;background:#000' : 'display:none'}"></div>
       ${X.msg ? `<div class="up-msg ${X.msgErr ? 'err' : 'ok'}">${esc(X.msg)}</div>` : ''}</div>`;
     h += `<div class="card"><h3 style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">📒 اتمسحت ولسه مارجعتش (${L.length})${back ? ` <span style="font-size:12.5px;color:var(--muted);font-weight:500">+ ${back} رجعوا قبل كده</span>` : ''}
-        <span class="up-row" style="margin:0"><button class="up-btn" id="upRestAll" style="padding:5px 12px;font-size:12.5px">☑️ علّم الكل</button>
+        <span class="up-row" style="margin:0">${X.log.length ? `<button class="up-btn" id="upDelLogXl" style="padding:5px 12px;font-size:12.5px">⬇️ شيت بكل اللي اتمسح (${X.log.length})</button>` : ''}<button class="up-btn" id="upRestAll" style="padding:5px 12px;font-size:12.5px">☑️ علّم الكل</button>
         <button class="up-btn ok" id="upRestGo" ${X.pick.size && !X.busy ? '' : 'disabled'}>${X.busy ? '⏳' : `➕ ضيفهم لشيت الرفع (${X.pick.size})`}</button></span></h3>
       ${L.length ? `<div class="up-sheet"><table><thead><tr><th></th><th>رقم الشحنة القديم</th><th>العميل</th><th>الموبايل</th><th>العنوان</th><th>المحتوى</th><th>السعر</th><th>notes</th><th>السبب</th><th>اتمسح</th></tr></thead><tbody>
         ${L.map(x => { const on = X.pick.has(String(x.serial));
@@ -13200,6 +13208,7 @@ create policy "sheets: upload" on storage.objects for insert to authenticated wi
 
   function draw(){
     if(!isUP()) return;
+    saveScanList();
     const main = document.getElementById('main'); if(!main) return;
     // 📷 وإحنا بنمسح: نحدّث الليستة بس من غير ما نعيد رسم الكاميرا
     if((S.src === 'delete' || isSend()) && X.scanning && document.getElementById('upScanBox')){
@@ -13255,6 +13264,7 @@ create policy "sheets: upload" on storage.objects for insert to authenticated wi
     if($('upDelLogX')) $('upDelLogX').onclick = () => delSheet(X.log || []);
     document.querySelectorAll('[data-xmode]').forEach(b => b.onclick = () => { if(X.scanning) stopScan(); X.mode = b.dataset.xmode; X.msg = ''; draw(); });
     document.querySelectorAll('[data-rpick]').forEach(cb => cb.onchange = () => { const k = cb.dataset.rpick; if(cb.checked) X.pick.add(k); else X.pick.delete(k); draw(); });
+    if($('upDelLogXl')) $('upDelLogXl').onclick = () => delSheet(X.log || []);
     if($('upRestAll')) $('upRestAll').onclick = () => { (X.log || []).filter(x => !x.restored).forEach(x => X.pick.add(String(x.serial))); draw(); };
     if($('upRestGo')) $('upRestGo').onclick = restoreToSheet;
     if($('upRestQ')) $('upRestQ').oninput = e => { X.q = e.target.value; clearTimeout(X.qt); X.qt = setTimeout(() => { draw(); const el = document.getElementById('upRestQ'); if(el){ el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }, 350); };
