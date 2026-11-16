@@ -11660,18 +11660,21 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
   }
 
   /* ⬇️ شيت كل الأوردرات اللي اترفعت على QP في يوم (زي Print order) — بأرقام الشحنات */
-  const QD = { day: ymd(new Date()), pendOnly:true, loading:false, msg:'' };
+  // ⏭️ وضع "شيت Pending من غيرهم": بياخد كل الـ Pending اللي على QP من exFrom لحد النهارده (مش يوم واحد) ويشيل اللي اتصوروا بس
+  const QD = { day: ymd(new Date()), pendOnly:true, loading:false, msg:'', exFrom: ymd(new Date(Date.now() - 14 * 86400000)) };
   async function exportQPDay(exclude){
     const api = window.QP && window.QP.api;
     if(!api || !api.hasCreds()){ QD.msg = '⚠️ لازم تكون عامل دخول QP من قسم 🚚 QP على الجهاز ده.'; draw(); return; }
     if(!window.XLSX){ QD.msg = 'مكتبة Excel مش متحمّلة، اعمل Refresh.'; draw(); return; }
     QD.loading = true; QD.msg = 'بيجيب أوردرات QP...'; draw();
     try{
-      let list = await api.fetchRange(QD.day, QD.day, n => { QD.msg = `بيجيب أوردرات QP... ${n} أوردر`; draw(); });
-      list = list.filter(q => ymd(new Date(q.order_date)) === QD.day);
+      const ex0 = exclude && exclude.size ? exclude : null, today = ymd(new Date());
+      const qFrom = ex0 ? (QD.exFrom || today) : QD.day, qTo = ex0 ? today : QD.day;
+      let list = await api.fetchRange(qFrom, qTo, n => { QD.msg = `بيجيب أوردرات QP... ${n} أوردر`; draw(); });
+      if(!ex0) list = list.filter(q => ymd(new Date(q.order_date)) === QD.day);
       // 🔎 تفاصيل: كام أوردر على QP اليوم ده، وكام منهم مش Pending (وحالتهم إيه) — عشان نعرف الشيت ناقص ليه
       const dayAll = list, notPend = {};
-      if(QD.pendOnly){ list = list.filter(q => String(q.Order_Delivery_Status ?? '').trim() === '1');
+      if(QD.pendOnly || ex0){ list = list.filter(q => String(q.Order_Delivery_Status ?? '').trim() === '1');
         dayAll.forEach(q => { if(String(q.Order_Delivery_Status ?? '').trim() !== '1'){ const l = String(api.label(q) || q.Order_Delivery_Status || '؟').replace(/\s*#\d+$/, ''); notPend[l] = (notPend[l] || 0) + 1; } }); }
       // ⏭️ البوالص اللي اتصوّرت عشان تتأجل لبكرة: بتتشال من الشيت بس (مش من QP)
       const before = list.length, ex = exclude && exclude.size ? exclude : null;
@@ -11680,10 +11683,11 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
       const daySet = new Set(dayAll.map(q => String(q.serial)));
       const exOther = ex ? [...ex].filter(s => !daySet.has(s)).length : 0, exNotPend = ex ? [...ex].filter(s => daySet.has(s)).length - removed : 0;
       const npN = Object.values(notPend).reduce((a, n) => a + n, 0);
-      const why = `📊 يوم ${QD.day} على QP: ${dayAll.length} أوردر` + (npN ? ` — منهم ${npN} مش Pending (${Object.entries(notPend).sort((x, y) => y[1] - x[1]).map(([l, n]) => l + ' ' + n).join('، ')}) فمش داخلين الشيت` : '') +
-        (ex ? ` — اتشال ${removed} من الـ ${ex.size} اللي اتصوروا` + (exOther ? `، و${exOther} منهم مش من أوردرات اليوم ده` : '') + (exNotPend > 0 ? `، و${exNotPend} أصلاً مش Pending` : '') : '') + '.';
+      const why = ex
+        ? `📊 الـ Pending على QP (من ${qFrom} لحد النهارده): ${before} أوردر — اتشال منهم ${removed} من الـ ${ex.size} اللي اتصوروا` + (exNotPend > 0 ? `، و${exNotPend} منهم حالتهم مش Pending أصلاً` : '') + (exOther ? `، و${exOther} مش لاقيهم في QP في الفترة دي (لو قديمة رجّع تاريخ "من" لورا)` : '') + ` = ${before - removed}.`
+        : `📊 يوم ${QD.day} على QP: ${dayAll.length} أوردر` + (npN ? ` — منهم ${npN} مش Pending (${Object.entries(notPend).sort((x, y) => y[1] - x[1]).map(([l, n]) => l + ' ' + n).join('، ')}) فمش داخلين الشيت` : '') + '.';
       list.sort((a, b) => new Date(a.order_date) - new Date(b.order_date));
-      if(!list.length){ QD.loading = false; QD.msg = `مفيش أوردرات${QD.pendOnly ? ' Pending' : ''} في QP يوم ${QD.day}${ex ? ' بعد ما شلنا المتأجلين' : ''}. ` + why; if(ex){ X.msg = QD.msg; X.msgErr = true; } draw(); return; }
+      if(!list.length){ QD.loading = false; QD.msg = (ex ? 'مفيش أوردرات Pending فاضلة بعد ما شلنا المتأجلين. ' : `مفيش أوردرات${QD.pendOnly ? ' Pending' : ''} في QP يوم ${QD.day}. `) + why; if(ex){ X.msg = QD.msg; X.msgErr = true; } draw(); return; }
       const H = [null, 'serial', 'full name', 'phone', 'address', 'total amount', 'notes', 'order date', 'shipment contents', 'weight', 'city', 'status'];
       const aoa = [H].concat(list.map(q => [null, String(q.serial ?? ''), q.full_name || '', phoneOf(q.phone), q.address || '', numOf(q.total_amount ?? q.price), q.notes || '',
         q.order_date ? new Date(q.order_date).toLocaleString('en-GB', { hour12:false }) : '', q.shipment_contents || '', numOf(q.weight), q.city || '', String(api.label(q) || '').replace(/\s*#\d+$/, '')]));
@@ -11692,7 +11696,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
       ws['!cols'] = [{ wch:3 }, { wch:11 }, { wch:22 }, { wch:13 }, { wch:45 }, { wch:12 }, { wch:16 }, { wch:18 }, { wch:40 }, { wch:8 }, { wch:12 }, { wch:16 }];
       const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Sheet3');
       const total = list.reduce((a, q) => a + (numOf(q.total_amount ?? q.price) || 0), 0);
-      XLSX.writeFile(wb, `QP Print order ${QD.day}${ex ? ' من غير المتأجلين' : ''} (${list.length}).xlsx`);
+      XLSX.writeFile(wb, `QP ${ex ? 'Pending' : 'Print order'} ${ex ? today + ' من غير المتأجلين' : QD.day} (${list.length}).xlsx`);
       QD.msg = `✅ اتنزّل شيت فيه ${list.length} أوردر${QD.pendOnly ? ' Pending' : ''} — إجمالي ${total.toLocaleString('ar-EG')} ج.` + ' ' + why;
       if(ex){ X.msg = QD.msg; X.msgErr = false; }
     }catch(e){ QD.msg = 'مقدرتش أجيب أوردرات QP: ' + e.message; }
@@ -12140,9 +12144,8 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
             <td class="x">${x.res === 'ok' ? '' : `<button data-delx="${i}" title="شيلها من الليستة">✕</button>`}</td></tr>`; }).join('')}
         </tbody></table></div>
         ${EX ? `<div class="up-row" style="margin-top:12px">
-          <label style="font-size:13.5px">يوم الشيت <input type="date" id="upExDay" value="${esc(QD.day)}" style="padding:7px 9px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit"></label>
-          <label style="font-size:13.5px"><input type="checkbox" id="upExPend" ${QD.pendOnly ? 'checked' : ''}> Pending بس</label>
-          <button class="up-btn ok" id="upExGo" ${X.list.length && !QD.loading ? '' : 'disabled'}>${QD.loading ? '⏳ بيجيب...' : `⬇️ نزّل شيت الـ Pending من غير الـ ${X.list.length} دول`}</button>
+          <label style="font-size:13.5px">كل الـ Pending من يوم <input type="date" id="upExFrom" value="${esc(QD.exFrom)}" style="padding:7px 9px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit"> لحد النهارده</label>
+          <button class="up-btn ok" id="upExGo" ${X.list.length && !QD.loading ? '' : 'disabled'}>${QD.loading ? '⏳ بيجيب...' : `⬇️ نزّل شيت كل الـ Pending من غير الـ ${X.list.length} دول`}</button>
           <button class="up-btn" id="upDelClear">🧹 فضّي الليستة</button></div>` : SH ? `<div class="up-row" style="margin-top:12px">
           <button class="up-btn ok" id="upScanSheet" ${X.list.some(x => x.q) ? '' : 'disabled'}>⬇️ نزّل الشيت (${X.list.filter(x => x.q).length} بوليصة)</button>
           <button class="up-btn" id="upDelClear">🧹 فضّي الليستة</button></div>` : `
@@ -13278,7 +13281,7 @@ create policy "sheets: upload" on storage.objects for insert to authenticated wi
     if($('upRestQ')) $('upRestQ').oninput = e => { X.q = e.target.value; clearTimeout(X.qt); X.qt = setTimeout(() => { draw(); const el = document.getElementById('upRestQ'); if(el){ el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }, 350); };
     if($('upBackScan')) $('upBackScan').onclick = e => { e.preventDefault(); X.mode = 'restore'; switchSrc('delete'); };
     if($('upScanSheet')) $('upScanSheet').onclick = scanSheet;
-    if($('upExDay')) $('upExDay').onchange = e => { QD.day = e.target.value || ymd(new Date()); };
+    if($('upExFrom')) $('upExFrom').onchange = e => { QD.exFrom = e.target.value || ymd(new Date(Date.now() - 14 * 86400000)); };
     if($('upExPend')) $('upExPend').onchange = e => { QD.pendOnly = e.target.checked; };
     if($('upExGo')) $('upExGo').onclick = () => exportQPDay(new Set(X.list.map(x => String(x.serial))));
     if($('upQdDay')) $('upQdDay').onchange = e => { QD.day = e.target.value || ymd(new Date()); QD.msg = ''; };
