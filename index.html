@@ -5279,7 +5279,7 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
   };
   const qpdSt = k => QPD_ST[k] || { n:(qpNames[k] || 'حالة') + ' #' + k, c:'#a39e8f' };
   // 👛 البراند من عمود notes: Italy (دريم/كارا/واتساتهم/MSG/FASTPLT) — Kidzzly (RS) — Socky — Bloom — غيره
-  const WALLET_GROUPS = [ ['italy', '💍 Italy (دريم + كارا + واتساتهم)'], ['kidzzly', '🧸 Kidzzly (RS)'], ['ersal', '📨 إرسال صفحة'], ['socky', '🧦 Socky'], ['bloom', '🌸 Bloom'], ['other', '❔ من غير براند واضح'] ];
+  const WALLET_GROUPS = [ ['italy', '💍 Italy (دريم + كارا + واتساتهم)'], ['kidzzly', '🧸 Kidzzly (RS)'], ['ersal', '📨 إرسال صفحة'], ['socky', '🧦 Socky'], ['bloom', '🌸 Bloom'], ['bunny', '🐰 Bunny'], ['other', '❔ من غير براند واضح'] ];
   /* 🚚 البيكب اللي شغالين فيه = أوردرات امبارح (نفس "Yesterday Orders" في QP)
      - اليوم بيتحسب من تاريخ الأوردر (order_date) زي QP
      - الافتراضي امبارح، وتقدر تختار يوم تاني من الليستة
@@ -5303,7 +5303,7 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
   // ❔ أسماء الـ notes اللي في "غيره" — الأكبر فلوس الأول
   const otherNames = W => Object.entries((W && W.names) || {}).sort((a, b) => b[1].v - a[1].v);
   window.QPOtherNames = otherNames;
-  const WALLET_COLORS = { italy:'#b08d57', kidzzly:'#4f8fd8', ersal:'#8a4fb0', socky:'#3f9b74', bloom:'#c0628f', other:'#9a9a9a' };
+  const WALLET_COLORS = { italy:'#b08d57', kidzzly:'#4f8fd8', ersal:'#8a4fb0', socky:'#3f9b74', bloom:'#c0628f', bunny:'#d4789c', other:'#9a9a9a' };
   function walletBrandsHtml(D){
     if(!D.walletBy || !Object.keys(D.walletBy).length) return '';
     const LP = lastPickupStats(), tot = D.wallet || 0;
@@ -5365,7 +5365,7 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
   function walletGroup(note, o){
     const n = String(note || '').toLowerCase().trim();
     const nm = n.split('\n')[0].trim().replace(/\s+/g, ' ');
-    if(window.__noteMap && window.__noteMap[nm]){ const m = window.__noteMap[nm]; return m === 'none' ? 'other' : m === 'kidzzly' || m === 'rs kids' ? 'kidzzly' : m === 'ersal' ? 'ersal' : m === 'socky' ? 'socky' : m === 'bloom' ? 'bloom' : 'italy'; }
+    if(window.__noteMap && window.__noteMap[nm]){ const m = window.__noteMap[nm]; return m === 'none' ? 'other' : m === 'kidzzly' || m === 'rs kids' ? 'kidzzly' : m === 'ersal' ? 'ersal' : m === 'socky' ? 'socky' : m === 'bloom' ? 'bloom' : m === 'bunny' ? 'bunny' : 'italy'; }
     if(/^(sock|سوك|شراب)/.test(n)) return 'socky';
     let b = null; try{ b = prGetBrand(note); }catch(e){}
     if(b === 'squad'){
@@ -5374,6 +5374,7 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
     }
     if(b === 'rs kids' || b === 'kidzzly') return 'kidzzly';
     if(b === 'bloom') return 'bloom';
+    if(b === 'bunny') return 'bunny';
     if(b === 'ersal') return 'ersal';
     if(['dream', 'dream wa', 'dream msg site', 'msg', 'fastplt', 'cara silver', 'cara silver un', 'cara wa'].includes(b)) return 'italy';
     return 'other';
@@ -11569,12 +11570,13 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
     if(/kid|كيدز/.test(n) || /kid/.test(k)) return 'kidzzly';
     if(/sock|سوك/.test(n) || /sock/.test(k)) return 'socky';
     if(/bloom|بلوم/.test(n) || /bloom/.test(k)) return 'bloom';
+    if(/bunny|باني/.test(n) || /bunny/.test(k)) return 'bunny';
     return 'italy';
   }
   const noteFor = r => (r.srcKey === 'squad' ? (SQ.pageNotes[r.page] || '') : (srcNote(r.srcKey) || r.srcKey || ''));
   async function pendingCounts(){
     await loadDone(); if(!SQ.loaded) await loadSquadPtr(); if(!E.ptrLoaded) await loadPtr(); if(!E.srcLoaded && typeof loadSources === 'function') await loadSources();
-    const list = [], byBrand = { italy:0, kidzzly:0, rs:0, bloom:0, socky:0 };
+    const list = [], byBrand = { italy:0, kidzzly:0, rs:0, bloom:0, socky:0, bunny:0 };
     let idx = null; try{ idx = await qpIndex(); }catch(e){}
     let onQPn = 0;
     const add = (label, key, rows) => { const L0 = notDone(rows).filter(r => !isCancel(r.estatus)), L = idx ? L0.filter(r => !onQP(r, idx)) : L0; onQPn += L0.length - L.length;
@@ -13054,12 +13056,13 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
     return out;
   }
   /* 📊 تقسيمة الأوردرات اللي اترفعت حسب البراند (من الـ notes) */
-  const BR = [ ['italy', '💍 Italy', 'دريم + كارا + واتساتهم', '#b08d57'], ['kidzzly', '🧸 Kidzzly', 'كيدزلي + RS', '#4f8fd8'], ['socky', '🧦 Socky', '', '#3f9b74'], ['bloom', '🌸 Bloom', '', '#c0628f'], ['other', '❔ أخرى', '', '#9a9a9a'] ];
+  const BR = [ ['italy', '💍 Italy', 'دريم + كارا + واتساتهم', '#b08d57'], ['kidzzly', '🧸 Kidzzly', 'كيدزلي + RS', '#4f8fd8'], ['socky', '🧦 Socky', '', '#3f9b74'], ['bloom', '🌸 Bloom', '', '#c0628f'], ['bunny', '🐰 Bunny', 'اللاندينج', '#d4789c'], ['other', '❔ أخرى', '', '#9a9a9a'] ];
   function brandOf(note){
     const n = String(note || '').toLowerCase();
     if(/kid|كيدز|rs\b|^rs|رويال|royal/.test(n)) return 'kidzzly';
     if(/sock|سوك|شراب/.test(n)) return 'socky';
     if(/bloom|بلوم/.test(n)) return 'bloom';
+    if(/bunny|باني/.test(n)) return 'bunny';
     if(/dream|دريم|cara|كارا|msg|fastplt|silver|ايطال|إيطال|italy/.test(n)) return 'italy';
     return 'other';
   }
@@ -13648,7 +13651,7 @@ a.hm-kpi:hover{box-shadow:0 6px 16px rgba(0,0,0,.07)}
 
   const H = { today:null, pend:null, qp:null, qpErr:'', acc:null, ads:null, last:null, loading:false, at:null };
   // 💍/🧸 مبيعات المحفظة لكل قسم + الربح التقريبي (المحفظة بعد الشحن − تكلفة البضاعة)
-  const WB = [['italy', '💍 إيطالي'], ['kidzzly', '🧸 كيدزلي'], ['ersal', '📨 إرسال'], ['socky', '🧦 سوكي'], ['bloom', '🌸 بلوم'], ['other', '❔ غيره']];
+  const WB = [['italy', '💍 إيطالي'], ['kidzzly', '🧸 كيدزلي'], ['ersal', '📨 إرسال'], ['socky', '🧦 سوكي'], ['bloom', '🌸 بلوم'], ['bunny', '🐰 Bunny'], ['other', '❔ غيره']];
   // 📈 ربح المحفظة = نسبة من قيمة التسليمات (قبل خصم الشحن) — مش من التحصيل اللي بعد الشحن: الإيطالي 15% · كيدزلي 30% · إرسال صفحة 40%
   const WALLET_PROFIT_PCT = { italy:0.15, kidzzly:0.30, ersal:0.40 };
   const WP_LBL = [['italy', '💍 إيطالي', '15%'], ['kidzzly', '🧸 كيدزلي', '30%'], ['ersal', '📨 إرسال صفحة', '40%']];
@@ -13772,7 +13775,7 @@ a.hm-kpi:hover{box-shadow:0 6px 16px rgba(0,0,0,.07)}
 
   /* 🏬 المحلات: لكل براند محل صغير، وقدامه طابور العملاء اللي أوردراتهم مستنية الرفع */
   const SHOPS = [ { k:'italy', n:'الإيطالي', e:'💍', c1:'#b08d57', c2:'#f3e6cc' }, { k:'kidzzly', n:'Kidzzly', e:'🧸', c1:'#4f8fd8', c2:'#dbe9fa' },
-    { k:'rs', n:'RS Kids', e:'👶', c1:'#a0456e', c2:'#f6dde8' }, { k:'bloom', n:'Bloom', e:'🌸', c1:'#c0628f', c2:'#fae0ec' }, { k:'socky', n:'Socky', e:'🧦', c1:'#3f9b74', c2:'#d8f0e5' } ];
+    { k:'rs', n:'RS Kids', e:'👶', c1:'#a0456e', c2:'#f6dde8' }, { k:'bloom', n:'Bloom', e:'🌸', c1:'#c0628f', c2:'#fae0ec' }, { k:'socky', n:'Socky', e:'🧦', c1:'#3f9b74', c2:'#d8f0e5' }, { k:'bunny', n:'Bunny', e:'🐰', c1:'#d4789c', c2:'#fae3ec' } ];
   const PEOPLE = ['#e07a3f', '#2b6cb0', '#c0628f', '#3d7a3a', '#6b46c1', '#b7791f', '#2f7d55', '#a0456e'];
   const person = i => `<svg class="pp" viewBox="0 0 20 34" aria-hidden="true" style="animation-delay:${(i % 6) * .15}s"><circle cx="10" cy="7" r="6" fill="#e8b98f"/><path d="M3 34 V20 Q3 14 10 14 Q17 14 17 20 V34Z" fill="${PEOPLE[i % PEOPLE.length]}"/></svg>`;
   function shopsCard(){
@@ -13823,7 +13826,7 @@ a.hm-kpi:hover{box-shadow:0 6px 16px rgba(0,0,0,.07)}
         const T = H.qpTrack;
         if(D.wallet) h += `<div class="hm-row" style="font-size:13px"><span>💸 اللي QP هتحوّله (لو حوّلت النهارده)</span><b>${fmt(D.wallet)} ج</b></div>`;
         if(T && T.payouts && T.payouts[0]) h += `<div class="hm-row" style="font-size:13px;background:#eef4fb"><span>💸 آخر تحويل من QP (المحفظة اتصفرت)</span><b style="color:#2b5a8a">${fmt(T.payouts[0].v)} ج <small style="font-weight:500">· ${new Date(T.payouts[0].at).toLocaleDateString('ar-EG', { weekday:'short', day:'numeric', month:'short' })}${T.payouts[0].p ? ' · ربح ' + fmt(T.payouts[0].p) : ''}</small></b></div>`;
-        if(D.walletBy) [['italy', '💍 Italy'], ['kidzzly', '🧸 Kidzzly'], ['ersal', '📨 إرسال صفحة'], ['socky', '🧦 Socky'], ['bloom', '🌸 Bloom'], ['other', '❔ غيره']].filter(([kk]) => D.walletBy[kk]).forEach(([kk, l]) => {
+        if(D.walletBy) [['italy', '💍 Italy'], ['kidzzly', '🧸 Kidzzly'], ['ersal', '📨 إرسال صفحة'], ['socky', '🧦 Socky'], ['bloom', '🌸 Bloom'], ['bunny', '🐰 Bunny'], ['other', '❔ غيره']].filter(([kk]) => D.walletBy[kk]).forEach(([kk, l]) => {
           const W = D.walletBy[kk], pr = wGroupProfit(kk, W);
           h += `<div class="hm-row" style="padding-inline-start:14px;font-size:13px"><span>${l}${kk === 'other' && W.orders ? ` <button class="hm-btn" data-hm-other style="padding:2px 8px;font-size:12px">👀 شوف الأوردرات وحدّد براندها</button>` : ''}</span><span>${fmt(W.v)} ج${pr != null ? ` <small style="color:#2f7d55">· ربح ${fmt(pr)}</small>` : ''}</span></div>`; });
         const wp = walletProfit(D);
