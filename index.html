@@ -11669,13 +11669,21 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
     try{
       let list = await api.fetchRange(QD.day, QD.day, n => { QD.msg = `بيجيب أوردرات QP... ${n} أوردر`; draw(); });
       list = list.filter(q => ymd(new Date(q.order_date)) === QD.day);
-      if(QD.pendOnly) list = list.filter(q => String(q.Order_Delivery_Status ?? '').trim() === '1');
+      // 🔎 تفاصيل: كام أوردر على QP اليوم ده، وكام منهم مش Pending (وحالتهم إيه) — عشان نعرف الشيت ناقص ليه
+      const dayAll = list, notPend = {};
+      if(QD.pendOnly){ list = list.filter(q => String(q.Order_Delivery_Status ?? '').trim() === '1');
+        dayAll.forEach(q => { if(String(q.Order_Delivery_Status ?? '').trim() !== '1'){ const l = String(api.label(q) || q.Order_Delivery_Status || '؟').replace(/\s*#\d+$/, ''); notPend[l] = (notPend[l] || 0) + 1; } }); }
       // ⏭️ البوالص اللي اتصوّرت عشان تتأجل لبكرة: بتتشال من الشيت بس (مش من QP)
       const before = list.length, ex = exclude && exclude.size ? exclude : null;
       if(ex) list = list.filter(q => !ex.has(String(q.serial)));
       const removed = before - list.length;
+      const daySet = new Set(dayAll.map(q => String(q.serial)));
+      const exOther = ex ? [...ex].filter(s => !daySet.has(s)).length : 0, exNotPend = ex ? [...ex].filter(s => daySet.has(s)).length - removed : 0;
+      const npN = Object.values(notPend).reduce((a, n) => a + n, 0);
+      const why = `📊 يوم ${QD.day} على QP: ${dayAll.length} أوردر` + (npN ? ` — منهم ${npN} مش Pending (${Object.entries(notPend).sort((x, y) => y[1] - x[1]).map(([l, n]) => l + ' ' + n).join('، ')}) فمش داخلين الشيت` : '') +
+        (ex ? ` — اتشال ${removed} من الـ ${ex.size} اللي اتصوروا` + (exOther ? `، و${exOther} منهم مش من أوردرات اليوم ده` : '') + (exNotPend > 0 ? `، و${exNotPend} أصلاً مش Pending` : '') : '') + '.';
       list.sort((a, b) => new Date(a.order_date) - new Date(b.order_date));
-      if(!list.length){ QD.loading = false; QD.msg = `مفيش أوردرات${QD.pendOnly ? ' Pending' : ''} في QP يوم ${QD.day}${ex ? ' بعد ما شلنا المتأجلين' : ''}.`; draw(); return; }
+      if(!list.length){ QD.loading = false; QD.msg = `مفيش أوردرات${QD.pendOnly ? ' Pending' : ''} في QP يوم ${QD.day}${ex ? ' بعد ما شلنا المتأجلين' : ''}. ` + why; if(ex){ X.msg = QD.msg; X.msgErr = true; } draw(); return; }
       const H = [null, 'serial', 'full name', 'phone', 'address', 'total amount', 'notes', 'order date', 'shipment contents', 'weight', 'city', 'status'];
       const aoa = [H].concat(list.map(q => [null, String(q.serial ?? ''), q.full_name || '', phoneOf(q.phone), q.address || '', numOf(q.total_amount ?? q.price), q.notes || '',
         q.order_date ? new Date(q.order_date).toLocaleString('en-GB', { hour12:false }) : '', q.shipment_contents || '', numOf(q.weight), q.city || '', String(api.label(q) || '').replace(/\s*#\d+$/, '')]));
@@ -11685,7 +11693,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
       const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Sheet3');
       const total = list.reduce((a, q) => a + (numOf(q.total_amount ?? q.price) || 0), 0);
       XLSX.writeFile(wb, `QP Print order ${QD.day}${ex ? ' من غير المتأجلين' : ''} (${list.length}).xlsx`);
-      QD.msg = `✅ اتنزّل شيت فيه ${list.length} أوردر${QD.pendOnly ? ' Pending' : ''} — إجمالي ${total.toLocaleString('ar-EG')} ج.` + (ex ? ` (اتشال منه ${removed} من ${ex.size} بوليصة متأجلة${removed < ex.size ? ' — الباقيين مش في أوردرات اليوم ده' : ''})` : '');
+      QD.msg = `✅ اتنزّل شيت فيه ${list.length} أوردر${QD.pendOnly ? ' Pending' : ''} — إجمالي ${total.toLocaleString('ar-EG')} ج.` + ' ' + why;
       if(ex){ X.msg = QD.msg; X.msgErr = false; }
     }catch(e){ QD.msg = 'مقدرتش أجيب أوردرات QP: ' + e.message; }
     QD.loading = false; draw();
