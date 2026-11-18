@@ -13090,8 +13090,14 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
   function splitCol(title, list){
     if(!list.length) return '';
     const g = splitStats(list), tot = list.length;
+    /* البراندات اللي مش معروفة: كل براند باسمه (من الـ notes) بدل "أخرى" */
+    const OC = ['#8e7cc3', '#e0a03a', '#5aa9a0', '#c96b4f', '#7a8fa6', '#9a9a9a'], rows = BR.filter(([k]) => k !== 'other' && g[k]);
+    if(g.other){ const og = {}; list.filter(o => brandOf(o.notes) === 'other').forEach(o => {
+        const nm = String(o.notes || '').trim().split(/\s+/)[0] || 'بدون اسم', k = 'o:' + nm.toLowerCase();
+        const x = og[k] = og[k] || { nm, n:0, v:0, notes:{} }; x.n++; x.v += numOf(o.amount) || 0; const nt = String(o.notes || '—'); x.notes[nt] = (x.notes[nt] || 0) + 1; });
+      Object.entries(og).sort((a, b) => b[1].n - a[1].n).forEach(([k, x], i) => { g[k] = x; rows.push([k, '🏷️ ' + esc(x.nm.charAt(0).toUpperCase() + x.nm.slice(1)), '', OC[i % OC.length]]); }); }
     return `<div class="sp-col"><div class="sp-h">${title} <b>${tot.toLocaleString('ar-EG')}</b> أوردر</div>
-      ${BR.filter(([k]) => g[k]).map(([k, l, sub, c]) => { const x = g[k], pct = Math.round(x.n / tot * 100);
+      ${rows.map(([k, l, sub, c]) => { const x = g[k], pct = Math.round(x.n / tot * 100);
         return `<div class="sp-row"><div class="sp-l"><b>${l}</b>${sub ? `<small>${sub}</small>` : ''}</div><div class="sp-n">${x.n.toLocaleString('ar-EG')} <small>${pct}%</small></div>
           <div class="sp-bar"><i style="width:${pct}%;background:${c}"></i></div>
           <div class="sp-sub">${Math.round(x.v).toLocaleString('ar-EG')} ج · ${Object.entries(x.notes).sort((a, b) => b[1] - a[1]).map(([nt, n]) => esc(nt) + ' ' + n).join(' · ')}</div></div>`; }).join('')}</div>`;
