@@ -15448,7 +15448,7 @@ table.gs tr.wk td.day{color:#c5221f}
 </style>
 <script>
 /* =====================================================================
-   🎯 أيام التسليم تحت الهدف — 🧸 Kidzzly (هدف 60%) و 💍 Dream (هدف 40%) — الحوافز بتبدأ من بعد الهدف بس
+   🎯 أيام التسليم تحت الهدف — 🧸 Kidzzly (هدف 60%) و 💍 Dream (هدف 40%) و 🐰 Bunny و ☁️ Fluffy (هدف 60%) — الحوافز بتبدأ من بعد الهدف بس
    لكل يوم: كام أوردر واتسلم كام، وناقص كام عشان نوصل الهدف، والهولد والاندلفرد بتوعه
    والأيام دي بتتوزع على خدمة العملاء (أسماء ونوران ورنا — جوليا اتنقلت للتجهيزات) — كل واحدة تتابع أيامها
    🗂️ دوسة على "اندلفرد" أو "هولد" بتفتح تاب جديد فيه أوردرات اليوم ده عشان الموظفة تشتغل عليهم:
@@ -15482,6 +15482,9 @@ table.gs tr.wk td.day{color:#c5221f}
   const BR = {
     kid:   { name:'Kidzzly', icon:'🧸', target:0.60, kv:'kid_days_assign',   squad:'kidzzly', test:q => brandOf(q) === 'kidzzly' || /كيدز/.test(String(q.notes || '')) },
     dream: { name:'Dream',   icon:'💍', target:0.40, kv:'dream_days_assign', squad:'acc',     test:q => ['dream', 'dream msg site', 'dream wa'].includes(brandOf(q)) },
+    // 🐰 Bunny و ☁️ Fluffy — من غير تجديد من Squad (Squad بيعمل أوردرات Dream وKidzzly بس)
+    bunny:  { name:'Bunny',  icon:'🐰', target:0.60, kv:'bunny_days_assign',  squad:null, test:q => brandOf(q) === 'bunny' || /^\s*(bunny|باني)/i.test(String(q.notes || '')) },
+    fluffy: { name:'Fluffy', icon:'☁️', target:0.60, kv:'fluffy_days_assign', squad:null, test:q => /^\s*(fluffy|فلافي)/i.test(String(q.notes || '')) },
   };
   // 💰 قواعد الحافز والخصم
   const KD_RULES = { perDay:30, goodPct:0.8, goodBonus:200, badPct:0.5, perMissing:5, maxDeduct:300 };
@@ -15678,7 +15681,7 @@ table.gs tr.wk td.day{color:#c5221f}
       const id = ids.slice().sort((a, b) => load[a] - load[b] || cnt[a] - cnt[b])[0];
       S.assignAll[t.brand][t.k] = id; load[id] += t.need; cnt[id]++; changed.add(t.brand);
     });
-    if(force){ S.balanced = [...new Set((S.balanced || []).concat(S.month))]; ['kid', 'dream'].forEach(b => changed.add(b)); }
+    if(force){ S.balanced = [...new Set((S.balanced || []).concat(S.month))]; Object.keys(BR).forEach(b => changed.add(b)); }
     for(const brand of changed) await saveAssign(brand);
     S.assign = S.assignAll[S.brand] || {};
   }
@@ -15734,7 +15737,7 @@ table.gs tr.wk td.day{color:#c5221f}
   }
 
   function view(){
-    let h = `<div class="pagehead"><h1>🎯 أيام التسليم تحت الهدف</h1><p>لكل يوم: اتسلم كام، وناقص كام أوردر عشان نوصل الهدف (🧸 Kidzzly 60% · 💍 Dream 40%). دوسي على "💔 اندلفرد" أو "✋ هولد" يفتحلك تاب جديد تشتغلي فيه على أوردرات اليوم ده.</p></div>
+    let h = `<div class="pagehead"><h1>🎯 أيام التسليم تحت الهدف</h1><p>لكل يوم: اتسلم كام، وناقص كام أوردر عشان نوصل الهدف (🧸 Kidzzly 60% · 💍 Dream 40% · 🐰 Bunny 60% · ☁️ Fluffy 60%). دوسي على "💔 اندلفرد" أو "✋ هولد" يفتحلك تاب جديد تشتغلي فيه على أوردرات اليوم ده.</p></div>
       <div class="card"><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         ${Object.entries(BR).map(([k, b]) => `<button class="kd-btn ${S.brand === k ? 'kd-on' : ''}" data-kdb="${k}">${b.icon} ${b.name} (${Math.round(b.target * 100)}%)</button>`).join('')}
         <select class="kd-sel" id="kdM" style="width:auto">${(() => { const L = [], d = new Date(); d.setDate(1);
@@ -15811,7 +15814,7 @@ table.gs tr.wk td.day{color:#c5221f}
           ${again && W.openAgain !== String(q.serial) ? `<button class="kd-btn" data-wa="${esc(q.serial)}" style="background:#c0392b;color:#fff;border-color:#c0392b">🔁 متابعة تانية</button>`
             : again ? `<select class="kd-sel" data-wn="${i}" style="width:auto;border-color:#c0392b"><option value="">📝 حالة المتابعة رقم ${x.notes.length + 1}...</option>${NOTES.map(n => `<option>${n}</option>`).join('')}</select>`
             : `<select class="kd-sel" data-wn="${i}" style="width:auto"><option value="">📝 المتابعة...</option>${NOTES.map(n => `<option ${x.note && x.note.note === n ? 'selected' : ''}>${n}</option>`).join('')}</select>`}
-          ${x.renew ? '' : `<button class="kd-btn" data-wr="${i}" data-m="same" style="background:#2f7d55;color:#fff;border-color:#2f7d55">🔁 جدّدي نفس الطلب</button><button class="kd-btn" data-wr="${i}" data-m="edit">✏️ جدّدي بتعديل</button>`}</div></div>`; }).join('');
+          ${x.renew || !B().squad ? '' : `<button class="kd-btn" data-wr="${i}" data-m="same" style="background:#2f7d55;color:#fff;border-color:#2f7d55">🔁 جدّدي نفس الطلب</button><button class="kd-btn" data-wr="${i}" data-m="edit">✏️ جدّدي بتعديل</button>`}</div></div>`; }).join('');
     return h;
   }
   /* 📣 رسالة الأوردر الهولد لجروب المناديب على الواتساب (كل أوردر في رسالة لوحده) */
