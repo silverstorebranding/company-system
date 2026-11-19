@@ -15712,10 +15712,11 @@ table.gs tr.wk td.day{color:#c5221f}
     return d;
   }
   // 💰 حسبة الحافز والخصم لكل موظفة في الشهر (البراندين مع بعض)
-  function computeScores(){
+  // 💰 brands = البراندات اللي بتتحسب (الافتراضي كلهم — للرواتب ومكافأة المتابعة) · الجدول اللي في الصفحة بيعرض البراند المفتوح بس
+  function scoresFor(brands){
     const out = {};
     const row = id => out[id] = out[id] || { id, name:nameOf(id), days:0, closed:0, missing:0, ren:0, renDel:0, list:[] };
-    Object.keys(BR).forEach(brand => {
+    brands.forEach(brand => {
       const A = S.assignAll[brand] || {};
       daysFor(brand, S.month).filter(d => d.rate < BR[brand].target).forEach(d => {
         const a = A[d.k]; if(!a) return; const r = row(a);
@@ -15723,7 +15724,7 @@ table.gs tr.wk td.day{color:#c5221f}
         r.list.push({ k:d.k, b:BR[brand].name, ic:BR[brand].icon, closed:!!d.closed, goal:d.goal, have:d.have, missing:d.missing, n:d.L.length });
       });
     });
-    S.log.filter(x => x.type === 'renew').forEach(x => { const r = row(x.agent_id); r.ren++; if(x.delivered) r.renDel++; if(!r.name) r.name = x.agent_name || ''; });
+    S.log.filter(x => x.type === 'renew' && (brands.length > 1 || x.brand === brands[0])).forEach(x => { const r = row(x.agent_id); r.ren++; if(x.delivered) r.renDel++; if(!r.name) r.name = x.agent_name || ''; });
     Object.values(out).forEach(r => {
       r.pct = r.days ? r.closed / r.days : null;
       r.dayBonus = r.closed * KD_RULES.perDay;
@@ -15731,8 +15732,9 @@ table.gs tr.wk td.day{color:#c5221f}
       r.deduct = r.days && r.pct < KD_RULES.badPct ? Math.min(KD_RULES.maxDeduct, r.missing * KD_RULES.perMissing) : 0;
       r.net = r.dayBonus + r.monthBonus - r.deduct;
     });
-    S.scores = Object.values(out).filter(r => r.days || r.ren).sort((a, c) => c.net - a.net);
+    return Object.values(out).filter(r => r.days || r.ren).sort((a, c) => c.net - a.net);
   }
+  function computeScores(){ S.scores = scoresFor(Object.keys(BR)); }
 
   async function load(){
     const A = api(); if(!A || !A.hasCreds()){ S.err = 'محتاج دخول QP على الجهاز ده (من قسم 🚚 QP).'; return draw(); }
@@ -15829,14 +15831,15 @@ table.gs tr.wk td.day{color:#c5221f}
 
   function scoreCard(){
     if(!S.scores) return '';
-    const admin = me().is_admin, L = admin ? S.scores : S.scores.filter(r => r.id === me().id);
+    const SB = scoresFor([S.brand]);   // 📌 أيام البراند اللي إنت واقف عليه بس
+    const admin = me().is_admin, L = admin ? SB : SB.filter(r => r.id === me().id);
     const R = KD_RULES, monthEnded = ymd(new Date()) > ymd(new Date(+S.month.slice(0, 4), +S.month.slice(5), 0));
-    return `<div class="card"><h3>💰 حافز وخصم أيام التسليم — ${new Date(S.month + '-15').toLocaleDateString('ar-EG', { month:'long', year:'numeric' })}${monthEnded ? '' : ' <small style="color:var(--muted);font-weight:500">(لسه الشهر مخلصش — الأرقام بتتغير)</small>'}</h3>
+    return `<div class="card"><h3>💰 حافز وخصم أيام التسليم — ${B().icon} ${esc(B().name)} — ${new Date(S.month + '-15').toLocaleDateString('ar-EG', { month:'long', year:'numeric' })}${monthEnded ? '' : ' <small style="color:var(--muted);font-weight:500">(لسه الشهر مخلصش — الأرقام بتتغير)</small>'}</h3>
       <p style="font-size:12.5px;color:var(--muted);margin:0 0 8px">اليوم بيتقفل لما (اللي اتسلم منه + التجديدات اللي اتسلمت) يوصل الهدف · كل يوم يتقفل = ${R.perDay} ج · قفلت ${R.goodPct * 100}% من أيامها أو أكتر = +${R.goodBonus} ج · أقل من ${R.badPct * 100}% = خصم ${R.perMissing} ج لكل أوردر ناقص (بحد أقصى ${R.maxDeduct} ج) · التجديد بيتحسب بس لما يتسلم.</p>
       ${L.length ? `<div class="tablewrap"><table class="pr" style="width:100%"><tr><th>الموظفة</th><th>أيام عليها</th><th>اتقفل</th><th>نسبة</th><th>♻️ تجديدات</th><th>✅ اتسلم منها</th><th>ناقص</th><th>حافز الأيام</th><th>مكافأة / خصم الشهر</th><th>الصافي</th></tr>
         ${L.map(r => `<tr><td class="lbl">${esc(r.name || '—')}</td><td>${r.days}</td><td>${r.closed}</td><td>${r.pct == null ? '—' : Math.round(r.pct * 100) + '%'}</td><td>${r.ren}</td><td>${r.renDel}</td><td>${r.missing}</td><td>${fmt(r.dayBonus)}</td>
           <td style="color:${r.deduct ? '#c0392b' : r.monthBonus ? '#2f7d55' : 'inherit'}">${r.deduct ? '−' + fmt(r.deduct) : r.monthBonus ? '+' + fmt(r.monthBonus) : '—'}</td><td><b style="color:${r.net < 0 ? '#c0392b' : '#2f7d55'}">${r.net < 0 ? '−' : ''}${fmt(Math.abs(r.net))} ج</b></td></tr>`).join('')}</table></div>` : '<p style="color:var(--muted);margin:0">مفيش أيام متوزعة عليكي الشهر ده.</p>'}
-      ${admin ? `<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap"><button class="kd-btn" id="kdPay" style="background:#2f7d55;color:#fff;border-color:#2f7d55">💵 سجّل في الرواتب (${S.month})</button><span style="font-size:12.5px;color:var(--muted);align-self:center">بيسجّل إضافة "حافز" وخصم "جزاء" لكل موظفة، وبيبدّل أي تسجيل قديم لنفس الشهر.</span></div>` : ''}</div>`;
+      ${admin ? `<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap"><button class="kd-btn" id="kdPay" style="background:#2f7d55;color:#fff;border-color:#2f7d55">💵 سجّل في الرواتب (${S.month})</button><span style="font-size:12.5px;color:var(--muted);align-self:center">بيسجّل إضافة "حافز" وخصم "جزاء" لكل موظفة <b>بكل البراندات مع بعض</b>، وبيبدّل أي تسجيل قديم لنفس الشهر.</span></div>` : ''}</div>`;
   }
 
   /* 🏷️ براند جديد: بيتضاف هنا وبيدخل أوتوماتيك في أيام التسليم وفي 💰 الأرباح — وإنت بتختار يتعامل زي أنهي براند */
