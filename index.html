@@ -17117,22 +17117,28 @@ table.cs tr.cs-open td{background:#fff7dd}
     }catch(e){ W.pr = { err:e.message }; }
     host.remove(); draw();
   }
+  // 🧸 Kidzzly: البضاعة = القطع × 110 · 💍 الإيطالي: الطقم = قطعة وتكلفته زي قسم الأرباح (من غير انسيال / بانسيال) · باقي البراندات مش داخلة
+  const WF_G = [['kidzzly', '🧸 Kidzzly'], ['italy', '💍 الإيطالي']];
+  function goodsCost(x){
+    if(x.g === 'kidzzly') return x.p * WF_PIECE;
+    let ins = false; try{ ins = prHasInsial(x.o.shipment_contents || ''); }catch(e){}
+    return ins ? (typeof PR_COGS_YES !== 'undefined' ? PR_COGS_YES : 89.75) : (typeof PR_COGS_NO !== 'undefined' ? PR_COGS_NO : 61.25);
+  }
   function calc(){
     if(!W.list) return null;
     const c = k => A().category(k);
-    const st = { pending:[], ofd:[], hold:[], undel:[] };
-    W.list.forEach(o => { const k = c(o), b = brandOf(o), x = { o, b, g:grpOf(b), v:price(o), p:0 }; x.p = pieces(o, b);
-      if(k === 'pending') st.pending.push(x); else if(k === 'ofd') st.ofd.push(x); else if(k === 'hold') st.hold.push(x);
-      else if(k === 'undelivered' && !isRet(o)) st.undel.push(x); });
-    const agg = L => ({ n:L.length, v:L.reduce((a, x) => a + x.v, 0), p:L.reduce((a, x) => a + x.p, 0) });
-    const S = { pending:agg(st.pending), ofd:agg(st.ofd), hold:agg(st.hold), undel:agg(st.undel) };
-    // نسبة التسليم: Pending + مع المندوب 55% · هولد 20% · الاندلفرد 0% (كله راجع)
-    const R = { pending:WF_RATE.ofd, ofd:WF_RATE.ofd, hold:WF_RATE.hold, undel:0 };
-    Object.keys(S).forEach(k => { const x = S[k]; x.r = R[k]; x.dv = x.v * x.r; x.dp = x.p * x.r; x.rp = x.p - x.dp; x.cost = x.p * WF_PIECE; x.rc = x.rp * WF_PIECE; });
-    const way = [...st.pending, ...st.ofd, ...st.hold], out = [...way, ...st.undel];
-    const sum = f => Object.values(S).reduce((a, x) => a + x[f], 0);
-    const O = agg(out); O.dv = sum('dv'); O.dp = sum('dp'); O.rp = sum('rp'); O.cost = O.p * WF_PIECE; O.rc = O.rp * WF_PIECE;
-    return { S, wayV:agg(way).v, wayExp:S.pending.dv + S.ofd.dv + S.hold.dv, out:O };
+    const R = { pending:WF_RATE.ofd, ofd:WF_RATE.ofd, hold:WF_RATE.hold, undel:0 };   // Pending + مع المندوب 55% · هولد 20% · الاندلفرد كله راجع
+    const K = ['pending', 'ofd', 'hold', 'undel'];
+    const blank = r => ({ n:0, v:0, p:0, cost:0, r, dv:0, dp:0, dc:0, rp:0, rc:0 });
+    const G = {}; WF_G.forEach(([g]) => { G[g] = {}; K.forEach(k => G[g][k] = blank(R[k])); G[g].tot = blank(null); });
+    const O = blank(null), way = blank(null);
+    W.list.forEach(o => { let k = c(o); if(k === 'undelivered'){ if(isRet(o)) return; k = 'undel'; } if(!K.includes(k)) return;
+      const b = brandOf(o), g = grpOf(b); if(!G[g]) return;
+      const x = { o, b, g, v:price(o) }; x.p = pieces(o, b); x.cost = goodsCost(x);
+      const r = R[k];
+      [G[g][k], G[g].tot, O].concat(k !== 'undel' ? [way] : []).forEach(t => { t.n++; t.v += x.v; t.p += x.p; t.cost += x.cost;
+        t.dv += x.v * r; t.dp += x.p * r; t.dc += x.cost * r; t.rp += x.p * (1 - r); t.rc += x.cost * (1 - r); }); });
+    return { G, wayV:way.v, wayExp:way.dv, out:O };
   }
   const canEdit = () => me().is_admin || /فادي|فادى|fady/i.test((me().full_name || '') + ' ' + (me().username || ''));
   function view(){
@@ -17152,22 +17158,24 @@ table.cs tr.cs-open td{background:#fff7dd}
       ${card('#c0392b', fmt(debts) + ' ج', '🧾 ديونا', `${(W.debts || []).length} بند — بتتكتب تحت`)}
     </div>`;
     if(C){
-      const pct = r => fmt(r * 100) + '%';
-      const row = (l, x, extra) => `<tr><td class="lbl">${l}</td><td>${fmt(x.n)}</td><td>${fmt(x.p)}</td><td>${fmt(x.v)} ج</td><td>${fmt(x.cost)} ج</td>
+      const pct = r => r == null ? '' : fmt(r * 100) + '%';
+      const row = (l, x, extra, tot) => `<tr${tot ? ' class="total"' : ''}><td class="lbl">${l}</td><td>${fmt(x.n)}</td><td>${fmt(x.p)}</td><td>${fmt(x.v)} ج</td><td>${fmt(x.cost)} ج</td>
         <td>${pct(x.r)}</td><td style="color:#2f7d55"><b>${fmt(x.dv)} ج</b><br><small>${fmt(x.dp)} قطعة</small></td>
         <td style="color:#c0392b"><b>${fmt(x.rp)} قطعة</b><br><small>${fmt(x.rc)} ج بضاعة</small></td><td style="font-size:12.5px;color:var(--muted)">${extra || ''}</td></tr>`;
       const O = C.out;
-      h += `<div class="card"><h3>📦 لينا كام برا — ${fmt(O.n)} أوردر · ${fmt(O.p)} قطعة · ${fmt(O.v)} ج</h3>
+      const costTxt = { kidzzly:`القطع × ${WF_PIECE} ج`, italy:'الطقم = قطعة · تكلفته زي قسم الأرباح (من غير انسيال / بانسيال)' };
+      h += `<div class="card"><h3>📦 لينا كام برا (Kidzzly + الإيطالي) — ${fmt(O.n)} أوردر · ${fmt(O.p)} قطعة · ${fmt(O.v)} ج</h3>
         <div class="wf-k" style="grid-template-columns:repeat(3,1fr)">
-          ${card('#6b4f2a', fmt(O.cost) + ' ج', '🏷️ البضاعة اللي برا بكام', `${fmt(O.p)} قطعة × ${WF_PIECE} ج`)}
-          ${card('#2f7d55', fmt(O.dv) + ' ج', '✅ هيتسلم (فلوس)', `≈ ${fmt(O.dp)} قطعة — بسعر البيع`)}
-          ${card('#c0392b', fmt(O.rc) + ' ج', '↩️ بضاعة هترجع', `≈ ${fmt(O.rp)} قطعة × ${WF_PIECE} ج`)}
+          ${card('#6b4f2a', fmt(O.cost) + ' ج', '🏷️ البضاعة اللي برا بكام', WF_G.map(([g, l]) => `${l} ${fmt(C.G[g].tot.cost)}`).join(' · '))}
+          ${card('#2f7d55', fmt(O.dv) + ' ج', '✅ هيتسلم (فلوس)', WF_G.map(([g, l]) => `${l} ${fmt(C.G[g].tot.dv)}`).join(' · '))}
+          ${card('#c0392b', fmt(O.rc) + ' ج', '↩️ بضاعة هترجع', WF_G.map(([g, l]) => `${l} ${fmt(C.G[g].tot.rc)} (${fmt(C.G[g].tot.rp)} قطعة)`).join(' · '))}
         </div>
-        <div class="tablewrap"><table class="pr" style="width:100%"><tr><th>الحالة</th><th>أوردرات</th><th>قطع</th><th>القيمة (بيع)</th><th>البضاعة (قطع × ${WF_PIECE})</th><th>نسبة التسليم</th><th>✅ هيتسلم</th><th>↩️ هيرجع</th><th></th></tr>
-        ${row('⏳ Pending', C.S.pending)}${row('🛵 Out for Delivery (مع المندوب)', C.S.ofd)}${row('✋ Hold', C.S.hold)}
-        ${row('↩️ متسلموش ومجوش (Undelivered لسه مرجعش)', C.S.undel, 'كله راجع — تابعها مع QP')}
-        <tr class="total"><td>الإجمالي برا</td><td>${fmt(O.n)}</td><td>${fmt(O.p)}</td><td>${fmt(O.v)} ج</td><td>${fmt(O.cost)} ج</td><td></td><td>${fmt(O.dv)} ج</td><td>${fmt(O.rp)} قطعة · ${fmt(O.rc)} ج</td><td></td></tr></table></div>
-        <p style="font-size:12px;color:var(--muted);margin:6px 0 0">من أوردرات QP من ${esc(W.from || '')} لحد النهارده · القطع: الإيطالي الطقم = قطعة، والأطفال من تحليل المكونات · البضاعة = القطع × ${WF_PIECE} ج · بيتسلم من Pending + مع المندوب 55% ومن الهولد 20% والباقي بيرجع، والاندلفرد اللي لسه مرجعش كله راجع.</p></div>`;
+        ${WF_G.map(([g, l]) => { const X = C.G[g]; return `<h3 style="margin-top:14px">${l} — ${fmt(X.tot.n)} أوردر · ${fmt(X.tot.p)} قطعة <small style="font-weight:400;color:var(--muted)">(البضاعة: ${costTxt[g]})</small></h3>
+        <div class="tablewrap"><table class="pr" style="width:100%"><tr><th>الحالة</th><th>أوردرات</th><th>قطع</th><th>القيمة (بيع)</th><th>البضاعة</th><th>نسبة التسليم</th><th>✅ هيتسلم</th><th>↩️ هيرجع</th><th></th></tr>
+        ${row('⏳ Pending', X.pending)}${row('🛵 Out for Delivery (مع المندوب)', X.ofd)}${row('✋ Hold', X.hold)}
+        ${row('↩️ Undelivered لسه مرجعش', X.undel, 'كله راجع — تابعها مع QP')}
+        ${row('الإجمالي', X.tot, '', true)}</table></div>`; }).join('')}
+        <p style="font-size:12px;color:var(--muted);margin:6px 0 0">من أوردرات QP من ${esc(W.from || '')} لحد النهارده · Kidzzly والإيطالي بس (باقي البراندات مش داخلة) · بيتسلم من Pending + مع المندوب 55% ومن الهولد 20% والباقي بيرجع، والاندلفرد اللي لسه مرجعش كله راجع.</p></div>`;
     } else if(A() && A().hasCreds()) h += `<div class="card"><p class="none">⏳ بيجيب أوردرات QP...</p></div>`;
     // ⚙️ مصاريف التشغيل (بتتكتب بالإيد: رواتب، إيجار...) + 📦 المخزن (تقديري) — app_kv where_cfg = { ops:[{ id, name, amount }], stock }
     const ed = canEdit(), CF = W.cfg || {}, ops = CF.ops || [], opsT = ops.reduce((a, x) => a + num(x.amount), 0), stock = num(CF.stock), cashMan = CF.cash != null && CF.cash !== '' ? num(CF.cash) : null;
@@ -17189,7 +17197,7 @@ table.cs tr.cs-open td{background:#fff7dd}
       const T = W.cash, bk = T.back || { peter:0, fady:0 };
       const dP = num(T.peter) - num(bk.peter), dF = num(T.fady) - num(bk.fady), drawn = dP + dF;
       const O = C.out, wl = wallet || 0, cs = cashMan != null ? cashMan : (cash || 0);
-      const prof = O.dv - O.dp * WF_PIECE;
+      const prof = O.dv - O.dc;
       const have = cs + wl + C.wayExp + O.rc + stock, owe = opsT + debts, net = have - owe;
       const ln = (ic, l, v, sub, col) => `<div style="display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px dashed var(--line)"><div>${ic} ${l}${sub ? `<div style="font-size:12px;color:var(--muted)">${sub}</div>` : ''}</div><b style="white-space:nowrap;${col ? 'color:' + col : ''}">${v}</b></div>`;
       const G = '#2f7d55', Rd = '#c0392b';
@@ -17198,8 +17206,8 @@ table.cs tr.cs-open td{background:#fff7dd}
         <div style="font-weight:800;margin:10px 0 0">✅ اللي لينا</div>
         ${ln('🏦', 'الخزنة', fmt(cs) + ' ج', cashMan != null ? `الخزنة الحالية (مكتوبة بالإيد) — رصيد شيت الحسابات ${fmt(cash)} ج` : 'رصيد شيت 💼 الحسابات', G)}
         ${ln('👛', 'عند QP مجوش', fmt(wl) + ' ج', 'هتيجي مع التحويل الجاي', G)}
-        ${ln('🚚', 'هيتسلم من اللي برا', fmt(C.wayExp) + ' ج', `منهم بضاعة ≈ ${fmt(O.dp * WF_PIECE)} ج (${fmt(O.dp)} قطعة × ${WF_PIECE}) وأرباح ≈ ${fmt(prof)} ج (قبل الشحن) — خلال أسبوع لأسبوعين`, G)}
-        ${ln('↩️', 'بضاعة هترجع', fmt(O.rc) + ' ج', `≈ ${fmt(O.rp)} قطعة × ${WF_PIECE} ج`, G)}
+        ${ln('🚚', 'هيتسلم من اللي برا', fmt(C.wayExp) + ' ج', `${WF_G.map(([g, l]) => `${l} ${fmt(C.G[g].tot.dv)}`).join(' + ')} · منهم بضاعة ≈ ${fmt(O.dc)} ج وأرباح ≈ ${fmt(prof)} ج (قبل الشحن) — خلال أسبوع لأسبوعين`, G)}
+        ${ln('↩️', 'بضاعة هترجع', fmt(O.rc) + ' ج', WF_G.map(([g, l]) => `${l} ${fmt(C.G[g].tot.rc)} (≈ ${fmt(C.G[g].tot.rp)} قطعة)`).join(' · '), G)}
         ${ln('📦', 'المخزن (تقديري)', fmt(stock) + ' ج', '', G)}
         <div style="font-weight:800;margin:10px 0 0">❌ اللي علينا</div>
         ${ops.map(x => ln('⚙️', esc(x.name), fmt(x.amount) + ' ج', '', Rd)).join('') || ln('⚙️', 'مصاريف التشغيل', '0 ج', 'اكتبها فوق', Rd)}
