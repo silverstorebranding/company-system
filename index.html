@@ -17207,7 +17207,17 @@ table.cs tr.cs-open td{background:#fff7dd}
         <div style="display:flex;justify-content:space-between;gap:10px;padding:12px 0 2px;font-size:16px"><b>🧮 الصافي</b>
           <b style="font-size:22px;white-space:nowrap;color:${net < 0 ? Rd : G}">${fmt(net)} ج</b></div>
         <div style="font-size:12px;color:var(--muted)">= اللي لينا ${fmt(have)} − اللي علينا ${fmt(owe)} · منهم فلوس كاش جاية ${fmt(cs + wl + C.wayExp - owe)} ج والباقي بضاعة ${fmt(O.rc + stock)} ج</div>
-      </div></div>`;
+        ${ln('📦', 'بضاعة المخزن هتكون', fmt(O.rc + stock) + ' ج', `المخزن دلوقتي ${fmt(stock)} + اللي هيرجع ${fmt(O.rc)} (≈ ${fmt(O.rp)} قطعة)`, '#6b4f2a')}
+      </div>`;
+    // 🤝 الشركا 50% / 50%: نصيب كل واحد = (الصافي + اللي اتسحب) ÷ 2 · المتبقي = النصيب − اللي سحبه
+      const tot = net + drawn, share = tot / 2;
+      const P = [['👤 بيتر', dP], ['👤 فادي', dF]];
+      h += `<div style="margin-top:14px;font-weight:800">🤝 الشركا (50% / 50%)</div>
+        <div class="tablewrap"><table class="pr" style="width:100%"><tr><th></th><th>النصيب (50%)</th><th>سحب</th><th>المتبقي له</th></tr>
+        ${P.map(([n, d]) => `<tr><td class="lbl">${n}</td><td>${fmt(share)} ج</td><td>${fmt(d)} ج</td><td><b style="color:${share - d < 0 ? Rd : G}">${fmt(share - d)} ج</b></td></tr>`).join('')}
+        <tr class="total"><td>الإجمالي</td><td>${fmt(tot)} ج</td><td>${fmt(drawn)} ج</td><td>${fmt(net)} ج</td></tr></table></div>
+        <div style="font-size:12px;color:var(--muted);margin-top:4px">الإجمالي = الصافي ${fmt(net)} + اللي اتسحب ${fmt(drawn)} · السحب من شيت الحسابات للشهر ده بس</div>
+      </div>`;
     }
     // 🧾 الديون
 
