@@ -16894,9 +16894,10 @@ table.cs tr.cs-open td{background:#fff7dd}
   async function loadKD(m){
     const snap = await kvGet('kd_score_' + m).catch(() => null); const map = (snap && snap.map) || {};
     const by = { Kidzzly:0, Dream:0 }; let any = false;
-    // ⏳ أيام النهارده وامبارح وأول امبارح مش داخلة — أوردراتهم لسه بتتسلم
-    const cut = new Date(); cut.setDate(cut.getDate() - 2); const cutK = ymd(cut);
-    Object.values(map).forEach(r => { if(Array.isArray(r.list)) r.list.forEach(d => { if(by[d.b] != null && d.k < cutK){ by[d.b] += +d.missing || 0; any = true; } }); else { by.Kidzzly += +r.missing || 0; any = true; } });
+    // 📅 الناقص بتاع 3 أيام بس: اللي قبل النهارده وامبارح (يعني من 4 أيام لحد أول امبارح)
+    const day = n => { const d = new Date(); d.setDate(d.getDate() - n); return ymd(d); }, fromK = day(4), toK = day(2);
+    D.kdRange = [fromK, toK];
+    Object.values(map).forEach(r => { if(Array.isArray(r.list)) r.list.forEach(d => { if(by[d.b] != null && d.k >= fromK && d.k <= toK){ by[d.b] += +d.missing || 0; any = true; } }); else { by.Kidzzly += +r.missing || 0; any = true; } });
     D.kd = snap ? { at:snap.at, kid:by.Kidzzly, it:by.Dream, total:by.Kidzzly + by.Dream, ok:any || !Object.keys(map).length } : null;
   }
   const bar = (v, t) => `<div class="sqd-bar"><i style="width:${t ? Math.min(100, Math.round(v / t * 100)) : 0}%"></i></div>`;
@@ -16914,7 +16915,7 @@ table.cs tr.cs-open td{background:#fff7dd}
       <div class="sqd-t" style="--k:#b08d3a"><div class="n">${target == null ? '—' : fmt(target) + ' ج'}</div><div class="l">🛒 تارجت المبيعات (أوردرات جديدة)</div>
         <div class="s">${target == null ? 'مقدرناش نحسب التارجت.<br>' : ''}اتباع النهارده <b>${fmt(sales.v)}</b> ج (${fmt(sales.n)} أوردر)${target ? (sales.v >= target ? ' ✅' : ` · باقي <b>${fmt(target - sales.v)}</b> ج`) : ''}</div>${target ? bar(sales.v, target) : ''}</div>
       <div class="sqd-t" style="--k:#2f7d55"><div class="n">${renNeed == null ? '—' : fmt(renNeed)}</div><div class="l">♻️ لازم نجدد (100% من الناقص)</div>
-        <div class="s">${kd ? `الناقص لحد أول امبارح (من غير النهارده وامبارح وأول امبارح) عشان نوصل الهدف: 🧸 كيدزلي (60%) <b>${fmt(kd.kid)}</b> · 💍 إيطالي (40%) <b>${fmt(kd.it)}</b>${kd.at ? `<br><small>حسبة أيام التسليم: ${esc(new Date(kd.at).toLocaleString('ar-EG', { weekday:'short', hour:'2-digit', minute:'2-digit' }))}${D.kdBusy ? ' ⏳ بتتحدّث' : ''}</small>` : ''}` : (D.kdBusy ? '⏳ بنحسب الناقص...' : 'لسه أيام التسليم الشهر ده ماتحسبتش — افتح 🎯 أيام تحت الهدف.')}<br>اتجدد النهارده <b>${fmt(D.ren || 0)}</b>${renNeed ? ((D.ren || 0) >= renNeed ? ' ✅' : ` · باقي <b>${fmt(renNeed - (D.ren || 0))}</b>`) : ''}</div>${renNeed ? bar(D.ren || 0, renNeed) : ''}</div>
+        <div class="s">${kd ? `الناقص في آخر 3 أيام قبل النهارده وامبارح${D.kdRange ? ` (${esc(new Date(D.kdRange[0] + 'T12:00:00').toLocaleDateString('ar-EG', { day:'numeric', month:'short' }))} – ${esc(new Date(D.kdRange[1] + 'T12:00:00').toLocaleDateString('ar-EG', { day:'numeric', month:'short' }))})` : ''} عشان نوصل الهدف: 🧸 كيدزلي (60%) <b>${fmt(kd.kid)}</b> · 💍 إيطالي (40%) <b>${fmt(kd.it)}</b>${kd.at ? `<br><small>حسبة أيام التسليم: ${esc(new Date(kd.at).toLocaleString('ar-EG', { weekday:'short', hour:'2-digit', minute:'2-digit' }))}${D.kdBusy ? ' ⏳ بتتحدّث' : ''}</small>` : ''}` : (D.kdBusy ? '⏳ بنحسب الناقص...' : 'لسه أيام التسليم الشهر ده ماتحسبتش — افتح 🎯 أيام تحت الهدف.')}<br>اتجدد النهارده <b>${fmt(D.ren || 0)}</b>${renNeed ? ((D.ren || 0) >= renNeed ? ' ✅' : ` · باقي <b>${fmt(renNeed - (D.ren || 0))}</b>`) : ''}</div>${renNeed ? bar(D.ren || 0, renNeed) : ''}</div>
       <div class="sqd-t" style="--k:#8a4fb0"><div class="n">${fmt(rt.total)}</div><div class="l">🎯 أوردرات الريتارجت</div>
         <div class="s">بيدجات شغالة ريتارجت النهارده:
           <div style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0"><label>💍 إيطالي <input type="number" min="0" id="sqdIt" value="${rt.it}" style="width:54px;padding:3px 5px;border:1.5px solid var(--line);border-radius:6px;font-family:inherit"></label>
