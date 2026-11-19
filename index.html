@@ -16996,7 +16996,7 @@ table.cs tr.cs-open td{background:#fff7dd}
 
 /* =====================================================================
    📍 احنا فين؟ — فلوسنا فين (مبدئي — هنزوّد عليه)
-   - الأرباح من أول الشهر لحد النهارده (تقريبي: نسبة من قيمة اللي اتسلم — نفس نسب ربح المحفظة: إيطالي 15% · كيدزلي 30% · إرسال 40%)
+   - الأرباح من أول الشهر لحد النهارده — نفس حسبة قسم 💰 الأرباح بالظبط (بيشغّل التقرير نفسه في الخلفية)
    - لينا كام عند QP مجوش (المحفظة) · لينا كام لسه هيتسلموا (Pending / مع المندوب / هولد + المتوقع)
    - الاندلفرد اللي لسه مارجعش · لينا كام برا (أوردرات وقطع)
    - الخزنة (💼 الحسابات) · ديونا (بتتكتب بالإيد: app_kv where_debts = { list:[{ id, name, amount, note }] })
@@ -17009,7 +17009,6 @@ table.cs tr.cs-open td{background:#fff7dd}
   const num = v => { const x = parseFloat(String(v ?? '').replace(/[^\d.-]/g, '')); return isNaN(x) ? 0 : x; };
   const ymd = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   const isWF = () => (location.hash.replace('#/', '') || 'home').split('?')[0].split('/')[0] === 'where';
-  const PCT = { italy:0.15, kidzzly:0.30, bunny:0.30, ersal:0.40 };
   const GL = { italy:'💍 إيطالي', kidzzly:'🧸 كيدزلي', bunny:'🐰 Bunny', ersal:'📨 إرسال', socky:'🧦 سوكي', bloom:'🌸 بلوم', other:'❔ غيره' };
   const W = { busy:false, prog:'', err:'', at:null, sum:null, list:null, cash:null, debts:null };
   const A = () => window.QP && window.QP.api;
@@ -17035,6 +17034,7 @@ table.cs tr.cs-open td{background:#fff7dd}
           if(A().loadSquadPages) await A().loadSquadPages();
           W.list = await A().fetchRange(from, ymd(now), n => { W.prog = n + ' أوردر'; const e = document.getElementById('wfProg'); if(e) e.textContent = W.prog; });
           W.from = from; draw();
+          await calcProfits();
         })());
       }
       await Promise.all(jobs);
@@ -17042,21 +17042,41 @@ table.cs tr.cs-open td{background:#fff7dd}
     }catch(e){ W.err = e.message; }
     W.busy = false; draw();
   }
+  /* 💰 الأرباح بنفس حسبة قسم الأرباح بالظبط: بنشغّل تقرير الأرباح نفسه (من أول الشهر لحد النهارده — زرار "حتى النهارده")
+     في صفحة مخفية، ونقرا "إجمالي الأرباح (فعلي)" و"بعد التوقع" من نفس الخانات اللي بتظهر في قسم الأرباح */
+  async function calcProfits(){
+    if(typeof viewProfits !== 'function' || !window.QP || !window.QP.calcProfitsRange) return;
+    W.pr = { busy:true }; draw();
+    let host = document.getElementById('wfPrHost'); if(!host){ host = document.createElement('div'); host.id = 'wfPrHost'; host.style.display = 'none'; document.body.appendChild(host); }
+    try{
+      host.innerHTML = viewProfits();
+      const now = new Date(), from = ymd(now).slice(0, 8) + '01', to = ymd(now);
+      host.querySelector('#prAutoFrom').value = from; host.querySelector('#prAutoTo').value = to;
+      await window.QP.calcProfitsRange();
+      const st = (host.querySelector('#prAutoStatus') || {}).textContent || '';
+      if(!host.querySelector('#prResults') || host.querySelector('#prResults').style.display !== 'block') throw new Error(st || 'مقدرناش نحسب الأرباح.');
+      // نستنى عمولة البنات (بتيجي متأخر وبتعيد الحسبة) والإعلانات تتملى
+      for(let i = 0; i < 60 && (typeof prCommBusy !== 'undefined' && (prCommBusy || prCommTotal == null)); i++) await new Promise(r => setTimeout(r, 250));
+      await new Promise(r => setTimeout(r, 1500));
+      try{ prRecalc(); }catch(e){}
+      const tx = id => ((host.querySelector('#' + id) || {}).textContent || '').trim();
+      W.pr = { from, to, act:tx('prTotalProfit'), exp:tx('prTotalExpected'), brands:tx('prBrandsProfit'), branch:tx('prBranchProfit') };
+    }catch(e){ W.pr = { err:e.message }; }
+    host.remove(); draw();
+  }
   function calc(){
     if(!W.list) return null;
-    const ms = ymd(new Date()).slice(0, 8) + '01', c = k => A().category(k);
-    const st = { pending:[], ofd:[], hold:[], undel:[] }, prof = {}, mDel = [];
+    const c = k => A().category(k);
+    const st = { pending:[], ofd:[], hold:[], undel:[] };
     W.list.forEach(o => { const k = c(o), b = brandOf(o), x = { o, b, g:grpOf(b), v:price(o), p:0 }; x.p = pieces(o, b);
       if(k === 'pending') st.pending.push(x); else if(k === 'ofd') st.ofd.push(x); else if(k === 'hold') st.hold.push(x);
-      else if(k === 'undelivered' && !isRet(o)) st.undel.push(x);
-      else if(k === 'delivered' && ymd(new Date(o.order_date)) >= ms){ mDel.push(x); const P = prof[x.g] = prof[x.g] || { v:0, n:0 }; P.v += x.v; P.n++; } });
-    let profit = 0, unk = 0; Object.entries(prof).forEach(([g, P]) => { if(PCT[g] != null){ P.p = P.v * PCT[g]; profit += P.p; } else unk += P.v; });
+      else if(k === 'undelivered' && !isRet(o)) st.undel.push(x); });
     const agg = L => ({ n:L.length, v:L.reduce((a, x) => a + x.v, 0), p:L.reduce((a, x) => a + x.p, 0) });
     const rate = (x, k) => { try{ const r = prRatesFor(x.b || ''); return k === 'hold' ? r.hold : r.ofd; }catch(e){ return k === 'hold' ? 0.15 : 0.35; } };
     const exp = L => L.reduce((a, x) => a + x.v * rate(x, L === st.hold ? 'hold' : 'ofd'), 0);
     const S = { pending:agg(st.pending), ofd:agg(st.ofd), hold:agg(st.hold), undel:agg(st.undel) };
     const way = [...st.pending, ...st.ofd, ...st.hold], out = [...way, ...st.undel];
-    return { S, prof, profit, unk, mDel:agg(mDel), wayV:agg(way).v, wayExp:exp(st.pending) + exp(st.ofd) + exp(st.hold), out:agg(out) };
+    return { S, wayV:agg(way).v, wayExp:exp(st.pending) + exp(st.ofd) + exp(st.hold), out:agg(out) };
   }
   const canEdit = () => me().is_admin || /فادي|فادى|fady/i.test((me().full_name || '') + ' ' + (me().username || ''));
   function view(){
@@ -17070,7 +17090,7 @@ table.cs tr.cs-open td{background:#fff7dd}
     const card = (k, n, l, s) => `<div class="wf-c" style="--k:${k}"><div class="n">${n}</div><div class="l">${l}</div>${s ? `<div class="s">${s}</div>` : ''}</div>`;
     const monthTxt = new Date().toLocaleDateString('ar-EG', { month:'long' });
     h += `<div class="wf-k">
-      ${card('#2f7d55', C ? fmt(C.profit) + ' ج' : wait, `📈 أرباح ${esc(monthTxt)} لحد النهارده`, C ? `تقريبي من قيمة اللي اتسلم من أوردرات الشهر (${fmt(C.mDel.n)} أوردر · ${fmt(C.mDel.v)} ج)${C.unk ? ` · ${fmt(C.unk)} ج من براندات من غير نسبة ربح` : ''} — للدقيق: <a href="#/profits">💰 الأرباح</a>` : '')}
+      ${card('#2f7d55', W.pr && W.pr.act ? esc(W.pr.act) + ' ج' : W.pr && W.pr.err ? '—' : wait, `📈 أرباح ${esc(monthTxt)} لحد النهارده`, W.pr ? (W.pr.busy ? '⏳ بيحسب بنفس حسبة قسم الأرباح...' : W.pr.err ? '⚠️ ' + esc(W.pr.err) : `إجمالي الأرباح (فعلي) — نفس رقم <a href="#/profits">💰 الأرباح</a> من ${esc(W.pr.from)} لـ ${esc(W.pr.to)}<br>📈 بعد التوقع: <b>${esc(W.pr.exp)}</b> ج`) : '')}
       ${card('#1d4f91', wallet == null ? wait : fmt(wallet) + ' ج', '👛 لينا عند QP مجوش', W.sum && W.sum.walletN != null ? `${fmt(W.sum.walletN)} أوردر اتسلم وفلوسه لسه ماتحوّلتش` : '')}
       ${card('#b08d3a', C ? fmt(C.wayV) + ' ج' : wait, '🚚 لينا كام لسه هيتسلموا', C ? `Pending + مع المندوب + هولد · المتوقع يتسلم منهم ≈ <b>${fmt(C.wayExp)}</b> ج` : '')}
       ${card('#c0392b', fmt(debts) + ' ج', '🧾 ديونا', `${(W.debts || []).length} بند — بتتكتب تحت`)}
@@ -17083,9 +17103,6 @@ table.cs tr.cs-open td{background:#fff7dd}
         ${row('↩️ متسلموش ومجوش (Undelivered لسه مرجعش)', C.S.undel, 'بضاعة لازم ترجعلنا — تابعها مع QP')}
         <tr class="total"><td>الإجمالي برا</td><td>${fmt(C.out.n)}</td><td>${fmt(C.out.p)}</td><td>${fmt(C.out.v)} ج</td><td></td></tr></table></div>
         <p style="font-size:12px;color:var(--muted);margin:6px 0 0">من أوردرات QP من ${esc(W.from || '')} لحد النهارده · القطع: الإيطالي الطقم = قطعة، والأطفال من تحليل المكونات.</p></div>`;
-      h += `<div class="card"><h3>📈 الأرباح التقريبية لكل قسم (${esc(monthTxt)})</h3><div class="tablewrap"><table class="pr" style="width:100%"><tr><th>القسم</th><th>اتسلم</th><th>قيمة التسليمات</th><th>النسبة</th><th>الربح</th></tr>
-        ${Object.entries(C.prof).sort((a, b) => b[1].v - a[1].v).map(([g, P]) => `<tr><td class="lbl">${GL[g] || esc(g)}</td><td>${fmt(P.n)}</td><td>${fmt(P.v)} ج</td><td>${PCT[g] != null ? Math.round(PCT[g] * 100) + '%' : '—'}</td><td><b>${P.p != null ? fmt(P.p) + ' ج' : '—'}</b></td></tr>`).join('')}
-        <tr class="total"><td>الإجمالي</td><td>${fmt(C.mDel.n)}</td><td>${fmt(C.mDel.v)} ج</td><td></td><td>${fmt(C.profit)} ج</td></tr></table></div></div>`;
     } else if(A() && A().hasCreds()) h += `<div class="card"><p class="none">⏳ بيجيب أوردرات QP...</p></div>`;
     // 🏦 الصورة الكاملة
     if(C && wallet != null && cash != null) h += `<div class="card" style="border:2px solid var(--brass)"><h3>🧮 الصورة الكاملة</h3><div style="font-size:14.5px;line-height:2">
