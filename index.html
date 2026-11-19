@@ -15905,12 +15905,18 @@ table.gs tr.wk td.day{color:#c5221f}
     if(S.err) return h + `<div class="mono-note">${esc(S.err)}</div>` + (me().is_admin ? brandsCard() : '');
     if(!S.days) return h + `<p style="color:var(--muted)">⏳ بيجيب أوردرات الشهر من QP...</p>`;
     const T = B().target, bad = S.days.filter(d => d.rate < T), myId = me().id;
-    const tot = S.days.reduce((a, d) => a + d.L.length, 0), td = S.days.reduce((a, d) => a + d.del.length, 0);
+    // ⏳ آخر 4 أيام (النهارده و3 قبله) لسه شغالين — مش بيدخلوا في التوتال والنسبة عشان تبقى مظبوطة
+    const cutD = new Date(); cutD.setDate(cutD.getDate() - 3); const cutK = ymd(cutD), done = d => d.k < cutK;
+    const DD = S.days.filter(done), badD = bad.filter(done), badN = bad.filter(d => !done(d));
+    const tot = DD.reduce((a, d) => a + d.L.length, 0), td = DD.reduce((a, d) => a + d.del.length, 0);
+    const totN = S.days.filter(d => !done(d)).reduce((a, d) => a + d.L.length, 0);
     const ren = S.log.filter(x => x.type === 'renew' && x.brand === S.brand);
     h += scoreCard();
     if(me().is_admin) h += brandsCard();
-    h += `<div class="card" style="font-size:14px">${B().icon} <b>${B().name}</b> — الشهر: <b>${tot}</b> أوردر · اتسلم <b>${td}</b> (${tot ? Math.round(td / tot * 100) : 0}%) · <b style="color:#c0392b">${bad.length} يوم تحت ${pctT()}</b> · منهم <b style="color:#2f7d55">${bad.filter(d => d.closed).length} اتقفل</b> · ♻️ اتجدد <b>${ren.length}</b> (✅ اتسلم ${ren.filter(x => x.delivered).length})
-      ${S.agents && S.agents.length ? `<div style="margin-top:6px">${S.agents.map(a => `<span class="kd-btn" style="cursor:default">${esc(a.name)}: ${bad.filter(d => S.assign[d.k] === a.id).length} يوم · ناقص ${bad.filter(d => S.assign[d.k] === a.id).reduce((x, d) => x + d.need, 0)} · ♻️ ${ren.filter(x => x.agent_id === a.id).length} تجديد</span>`).join(' ')}</div>` : ''}</div>`;
+    h += `<div class="card" style="font-size:14px">${B().icon} <b>${B().name}</b> — الشهر (من غير آخر 4 أيام): <b>${tot}</b> أوردر · اتسلم <b>${td}</b> (<b>${tot ? Math.round(td / tot * 100) : 0}%</b>) · <b style="color:#c0392b">${badD.length} يوم تحت ${pctT()}</b> · منهم <b style="color:#2f7d55">${badD.filter(d => d.closed).length} اتقفل</b> · ♻️ اتجدد <b>${ren.length}</b> (✅ اتسلم ${ren.filter(x => x.delivered).length})
+      <div style="font-size:12.5px;color:var(--muted);margin-top:4px">⏳ آخر 4 أيام (من ${new Date(cutK + 'T12:00:00').toLocaleDateString('ar-EG', { day:'numeric', month:'short' })} لحد النهارده) لسه شغالين ومش داخلين في التوتال: ${totN} أوردر${badN.length ? ` · ${badN.length} يوم تحت ${pctT()} لحد دلوقتي` : ''}</div>
+      ${S.agents && S.agents.length ? `<div style="margin-top:6px">${S.agents.map(a => { const mine = L2 => L2.filter(d => S.assign[d.k] === a.id), nD = mine(badD), nN = mine(badN);
+        return `<span class="kd-btn" style="cursor:default">${esc(a.name)}: ${nD.length} يوم · ناقص <b>${nD.reduce((x, d) => x + d.need, 0)}</b>${nN.length ? ` <small style="color:var(--muted)">(+${nN.reduce((x, d) => x + d.need, 0)} في آخر 4 أيام)</small>` : ''} · ♻️ ${ren.filter(x => x.agent_id === a.id).length} تجديد</span>`; }).join(' ')}</div>` : ''}</div>`;
     const L = S.onlyBad ? bad : S.days;
     h += L.map(d => { const ok = d.rate >= T, a = S.assign[d.k];
       return `<div class="kd-row ${ok || d.closed ? 'ok' : ''} ${a === myId ? 'kd-mine' : ''}"><div class="kd-day"><b>${new Date(d.k + 'T12:00:00').toLocaleDateString('ar-EG', { weekday:'short', day:'numeric', month:'short' })}</b><small>${ok ? '✅ فوق ' + pctT() : d.closed ? '✅ اتقفل بالتجديدات' : '⚠️ فيه مشكلة'}</small></div>
