@@ -16877,6 +16877,10 @@ table.cs tr.cs-open td{background:#fff7dd}
       // ♻️ التجديدات النهارده
       const st = new Date(); st.setHours(0, 0, 0, 0);
       D.ren = logs.filter(x => x.type === 'renew' && x.at && new Date(x.at) >= st).length;
+      // 📞 اتابعو النهارده بس: أوردرات هولد/اندلفرد (مختلفة) اتعمل عليها ملاحظة أو تجديد أو جروب النهارده
+      const tH = new Set(), tU = new Set();
+      logs.forEach(x => { if(!x.serial || !x.at || new Date(x.at) < st) return; if(x.kind === 'hold') tH.add(String(x.serial)); else if(x.kind === 'und') tU.add(String(x.serial)); });
+      D.fuToday = { hold:tH.size, und:tU.size };
       // 🛒 مبيعات النهارده (Squad)
       try{ const { data } = await sb().from('orders').select('amount, status').gte('created_at', st.toISOString()).limit(3000);
         const L = (data || []).filter(o => !/cancel/i.test(String(o.status || ''))); D.sales = { n:L.length, v:L.reduce((a, o) => a + (Number(o.amount) || 0), 0) }; }catch(e){ D.sales = null; }
@@ -16914,9 +16918,10 @@ table.cs tr.cs-open td{background:#fff7dd}
     const fu = D.fu, spend = D.ads && D.ads.list ? D.ads.list.reduce((a, b) => a + (b.spend || 0), 0) : null, target = spend == null ? null : spend * R.mult;
     const kd = D.kd, renNeed = kd ? kd.total : null, sales = D.sales || { n:0, v:0 }, rt = D.rt || { it:0, kid:0, total:0 };
     const old = fu && fu.day !== ymd(new Date());
+    const ft = D.fuToday || { hold:0, und:0 }, ftN = ft.hold + ft.und;   // اللي اتابعوه النهارده بس
     h += `<div class="sqd-g">
       <div class="sqd-t" style="--k:#c0392b"><div class="n">${fu ? fmt(fu.holdNo + fu.undNo) : '—'}</div><div class="l">📞 هولد + اندلفرد ملهمش حالة</div>
-        <div class="s">${fu ? `ناقص متابعة: ✋ هولد <b>${fmt(fu.holdNo)}</b> من ${fmt(fu.hold)} · 💔 اندلفرد <b>${fmt(fu.undNo)}</b> من ${fmt(fu.und)}<br>اتابعو: ✋ <b>${fmt(fu.hold - fu.holdNo)}</b> · 💔 <b>${fmt(fu.und - fu.undNo)}</b><br>أوردرات آخر ${R.days} أيام${old ? `<br>⚠️ آخر تحديث ${esc(new Date(fu.at).toLocaleString('ar-EG', { weekday:'short', hour:'2-digit', minute:'2-digit' }))}` : ''}<br><a href="#/kidzzly-days">ابدأي المتابعة ←</a>` : 'محتاج حد يفتح Squad من جهاز عليه دخول QP عشان الرقم ده يتحسب.'}</div>${fu ? prog(fu.hold + fu.und - fu.holdNo - fu.undNo, fu.hold + fu.und) : ''}</div>
+        <div class="s">${fu ? `ناقص متابعة: ✋ هولد <b>${fmt(fu.holdNo)}</b> · 💔 اندلفرد <b>${fmt(fu.undNo)}</b><br>اتابعو النهارده: ✋ <b>${fmt(ft.hold)}</b> · 💔 <b>${fmt(ft.und)}</b><br>من أوردرات آخر ${R.days} أيام${old ? `<br>⚠️ آخر تحديث ${esc(new Date(fu.at).toLocaleString('ar-EG', { weekday:'short', hour:'2-digit', minute:'2-digit' }))}` : ''}<br><a href="#/kidzzly-days">ابدأي المتابعة ←</a>` : 'محتاج حد يفتح Squad من جهاز عليه دخول QP عشان الرقم ده يتحسب.'}</div>${fu ? prog(ftN, ftN + fu.holdNo + fu.undNo) : ''}</div>
       <div class="sqd-t" style="--k:#b08d3a"><div class="n">${target == null ? '—' : fmt(target) + ' ج'}</div><div class="l">🛒 تارجت المبيعات (أوردرات جديدة)</div>
         <div class="s">${target == null ? 'مقدرناش نحسب التارجت.<br>' : ''}اتباع النهارده <b>${fmt(sales.v)}</b> ج (${fmt(sales.n)} أوردر)</div>${target ? prog(sales.v, target, ' ج') : ''}</div>
       <div class="sqd-t" style="--k:#2f7d55"><div class="n">${renNeed == null ? '—' : fmt(renNeed)}</div><div class="l">♻️ لازم نجدد (100% من الناقص)</div>
@@ -16930,7 +16935,7 @@ table.cs tr.cs-open td{background:#fff7dd}
     </div>`;
     // 📊 البار المجمّع: متوسط نسبة الإنجاز في الأربع مهام (كل مهمة ليها نفس الوزن، ومحدش بيعدّي 100%) — المهمة اللي مطلوبها صفر مش بتدخل
     const parts = [];
-    if(fu && fu.hold + fu.und) parts.push(['📞 المتابعة', (fu.hold + fu.und - fu.holdNo - fu.undNo) / (fu.hold + fu.und)]);
+    if(fu && ftN + fu.holdNo + fu.undNo) parts.push(['📞 المتابعة', ftN / (ftN + fu.holdNo + fu.undNo)]);
     if(target) parts.push(['🛒 المبيعات', sales.v / target]);
     if(renNeed) parts.push(['♻️ التجديد', (D.ren || 0) / renNeed]);
     if(rt.total) parts.push(['🎯 الريتارجت', (rt.done || 0) / rt.total]);
