@@ -16823,9 +16823,9 @@ table.cs tr.cs-open td{background:#fff7dd}
    📋 مهام النهارده لخدمة العملاء — كارت فوق Squad بيتغير كل يوم:
    1) متابعة الهولد والاندلفرد (أوردرات آخر 7 أيام على QP) اللي لسه ملهمش أي حالة من خدمة العملاء
       (الحالة = ملاحظة / تجديد / اتبعت للجروب من 🎯 أيام تحت الهدف — سجل recov_*)
-   2) تارجت المبيعات = صرف الإعلانات امبارح (توتال كل الميديا باير من 📢 الإعلانات) × 2
-   3) التجديد المطلوب = 10% من الاندلفرد (اللي مستلمش) في آخر 7 أيام
-   4) الريتارجت: Kidzzly لو شغالة ريتارجت = 5 أوردرات · كل بيدج بلاتين (📨 إرسال فوكس) شغالة ريتارجت = 2 أوردر
+   2) تارجت المبيعات = صرف الإعلانات امبارح (توتال كل الميديا باير من 📢 الإعلانات) × 2 — بيظهر الرقم النهائي بس
+   3) لازم نجدد = 100% من الناقص لحد النهارده عشان أيام الشهر توصل 60% كيدزلي و 40% إيطالي (من kd_score_<شهر>)
+   4) الريتارجت: عدد البيدجات الشغالة النهارده بيتكتب بالإيد — إيطالي × 2 أوردر · أطفال × 5 أوردر (sq_daily_cfg.rt)
    - أرقام QP بتتحسب من أي جهاز عليه دخول QP وبتتحفظ (app_kv: sq_daily_fu) عشان الكل يشوفها
    - إعدادات الأدمن (Kidzzly شغالة ريتارجت؟): app_kv: sq_daily_cfg = { kidRT }
    ===================================================================== */
@@ -16835,7 +16835,7 @@ table.cs tr.cs-open td{background:#fff7dd}
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const fmt = n => Math.round(Number(n || 0)).toLocaleString('ar-EG');
   const ymd = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-  const R = { renewPct:0.10, kidRT:5, perPage:2, mult:2, days:7 };
+  const R = { kidPer:5, itPer:2, mult:2, days:7 };   // 🎯 الريتارجت: بيدج أطفال = 5 أوردر · بيدج إيطالي = 2
   const D = { day:null, at:0, busy:false, fu:null, ads:null, sales:null, ren:null, rt:null, cfg:{}, err:'' };
   async function kvGet(k){ const { data } = await sb().from('app_kv').select('value').eq('key', k).maybeSingle(); return data && data.value; }
   async function kvSet(k, v){ return sb().from('app_kv').upsert({ key:k, value:v, updated_at:new Date().toISOString(), updated_by_name: me().full_name || me().username || '' }); }
@@ -16867,11 +16867,13 @@ table.cs tr.cs-open td{background:#fff7dd}
     try{
       const now = new Date(), m = ymd(now).slice(0, 7), p = new Date(now); p.setDate(p.getDate() - R.days);
       const months = [...new Set([m, ymd(p).slice(0, 7)])];
-      const [cfg, logs, ef] = await Promise.all([kvGet('sq_daily_cfg').catch(() => null), logsFor(months), kvGet('ersal_focus').catch(() => null)]);
+      const [cfg, logs] = await Promise.all([kvGet('sq_daily_cfg').catch(() => null), logsFor(months)]);
       D.cfg = cfg || {};
-      // 4) الريتارجت
-      const pages = ((ef && ef.pages) || []).filter(x => x.rt).map(x => x.name);
-      D.rt = { kid:!!D.cfg.kidRT, pages, total:(D.cfg.kidRT ? R.kidRT : 0) + pages.length * R.perPage };
+      // 4) الريتارجت: عدد البيدجات الشغالة النهارده بيتكتب بالإيد (إيطالي × 2 · أطفال × 5) — بيتصفّر كل يوم جديد
+      const rtd = D.cfg.rt && D.cfg.rt.day === today ? D.cfg.rt : { it:0, kid:0 };
+      D.rt = { it:+rtd.it || 0, kid:+rtd.kid || 0, by:rtd.by || '', total:(+rtd.it || 0) * R.itPer + (+rtd.kid || 0) * R.kidPer };
+      // 3) التجديد: الناقص لحد النهارده عشان أيام الشهر توصل 60% كيدزلي و 40% إيطالي (من حسبة 🎯 أيام تحت الهدف)
+      await loadKD(m);
       // ♻️ التجديدات النهارده
       const st = new Date(); st.setHours(0, 0, 0, 0);
       D.ren = logs.filter(x => x.type === 'renew' && x.at && new Date(x.at) >= st).length;
@@ -16884,6 +16886,16 @@ table.cs tr.cs-open td{background:#fff7dd}
       D.day = today; D.at = Date.now();
     }catch(e){ D.err = e.message; }
     D.busy = false; draw();
+    // الأدمن على جهاز عليه QP: لو حسبة أيام التسليم مش من النهارده نحدّثها في الخلفية
+    const A = window.QP && window.QP.api, m = today.slice(0, 7);
+    if(me().is_admin && A && A.hasCreds() && window.KidDaysAPI && !D.kdBusy && (!D.kd || !D.kd.at || ymd(new Date(D.kd.at)) !== today)){
+      D.kdBusy = true; draw(); try{ await window.KidDaysAPI.refresh(m); await loadKD(m); }catch(e){} D.kdBusy = false; draw(); }
+  }
+  async function loadKD(m){
+    const snap = await kvGet('kd_score_' + m).catch(() => null); const map = (snap && snap.map) || {};
+    const by = { Kidzzly:0, Dream:0 }; let any = false;
+    Object.values(map).forEach(r => { if(Array.isArray(r.list)) r.list.forEach(d => { if(by[d.b] != null){ by[d.b] += +d.missing || 0; any = true; } }); else { by.Kidzzly += +r.missing || 0; any = true; } });
+    D.kd = snap ? { at:snap.at, kid:by.Kidzzly, it:by.Dream, total:by.Kidzzly + by.Dream, ok:any || !Object.keys(map).length } : null;
   }
   const bar = (v, t) => `<div class="sqd-bar"><i style="width:${t ? Math.min(100, Math.round(v / t * 100)) : 0}%"></i></div>`;
   function view(){
@@ -16892,18 +16904,20 @@ table.cs tr.cs-open td{background:#fff7dd}
       <button class="sqd-btn" id="sqdRe" style="margin-inline-start:auto">${D.busy ? '⏳' : '🔄'} حدّث</button></div>`;
     if(!D.day && D.busy) return h + '<div class="sq-loading">بنحسب مهام النهارده...</div></div>';
     const fu = D.fu, spend = D.ads && D.ads.list ? D.ads.list.reduce((a, b) => a + (b.spend || 0), 0) : null, target = spend == null ? null : spend * R.mult;
-    const renNeed = fu ? Math.ceil(fu.und * R.renewPct) : null, sales = D.sales || { n:0, v:0 }, rt = D.rt || { pages:[], total:0 };
+    const kd = D.kd, renNeed = kd ? kd.total : null, sales = D.sales || { n:0, v:0 }, rt = D.rt || { it:0, kid:0, total:0 };
     const old = fu && fu.day !== ymd(new Date());
     h += `<div class="sqd-g">
       <div class="sqd-t" style="--k:#c0392b"><div class="n">${fu ? fmt(fu.holdNo + fu.undNo) : '—'}</div><div class="l">📞 هولد + اندلفرد ملهمش حالة</div>
         <div class="s">${fu ? `✋ هولد <b>${fmt(fu.holdNo)}</b> من ${fmt(fu.hold)} · 💔 اندلفرد <b>${fmt(fu.undNo)}</b> من ${fmt(fu.und)}<br>أوردرات آخر ${R.days} أيام — اللي لسه مفيش عليها ملاحظة ولا تجديد من خدمة العملاء${old ? `<br>⚠️ آخر تحديث ${esc(new Date(fu.at).toLocaleString('ar-EG', { weekday:'short', hour:'2-digit', minute:'2-digit' }))}` : ''}<br><a href="#/kidzzly-days">ابدأي المتابعة ←</a>` : 'محتاج حد يفتح Squad من جهاز عليه دخول QP عشان الرقم ده يتحسب.'}</div></div>
       <div class="sqd-t" style="--k:#b08d3a"><div class="n">${target == null ? '—' : fmt(target) + ' ج'}</div><div class="l">🛒 تارجت المبيعات (أوردرات جديدة)</div>
-        <div class="s">${spend == null ? 'مقدرناش نجيب صرف الإعلانات.' : `صرف الإعلانات امبارح <b>${fmt(spend)}</b> ج × ${R.mult}`}<br>اتباع النهارده <b>${fmt(sales.v)}</b> ج (${fmt(sales.n)} أوردر)${target ? (sales.v >= target ? ' ✅' : ` · باقي <b>${fmt(target - sales.v)}</b> ج`) : ''}</div>${target ? bar(sales.v, target) : ''}</div>
-      <div class="sqd-t" style="--k:#2f7d55"><div class="n">${renNeed == null ? '—' : fmt(renNeed)}</div><div class="l">♻️ تجديد من الاندلفرد</div>
-        <div class="s">${fu ? `${Math.round(R.renewPct * 100)}% من ${fmt(fu.und)} أوردر مستلمش (آخر ${R.days} أيام)` : ''}<br>اتجدد النهارده <b>${fmt(D.ren || 0)}</b>${renNeed ? ((D.ren || 0) >= renNeed ? ' ✅' : ` · باقي <b>${fmt(renNeed - (D.ren || 0))}</b>`) : ''}</div>${renNeed ? bar(D.ren || 0, renNeed) : ''}</div>
+        <div class="s">${target == null ? 'مقدرناش نحسب التارجت.<br>' : ''}اتباع النهارده <b>${fmt(sales.v)}</b> ج (${fmt(sales.n)} أوردر)${target ? (sales.v >= target ? ' ✅' : ` · باقي <b>${fmt(target - sales.v)}</b> ج`) : ''}</div>${target ? bar(sales.v, target) : ''}</div>
+      <div class="sqd-t" style="--k:#2f7d55"><div class="n">${renNeed == null ? '—' : fmt(renNeed)}</div><div class="l">♻️ لازم نجدد (100% من الناقص)</div>
+        <div class="s">${kd ? `الناقص لحد النهارده عشان نوصل الهدف: 🧸 كيدزلي (60%) <b>${fmt(kd.kid)}</b> · 💍 إيطالي (40%) <b>${fmt(kd.it)}</b>${kd.at ? `<br><small>حسبة أيام التسليم: ${esc(new Date(kd.at).toLocaleString('ar-EG', { weekday:'short', hour:'2-digit', minute:'2-digit' }))}${D.kdBusy ? ' ⏳ بتتحدّث' : ''}</small>` : ''}` : (D.kdBusy ? '⏳ بنحسب الناقص...' : 'لسه أيام التسليم الشهر ده ماتحسبتش — افتح 🎯 أيام تحت الهدف.')}<br>اتجدد النهارده <b>${fmt(D.ren || 0)}</b>${renNeed ? ((D.ren || 0) >= renNeed ? ' ✅' : ` · باقي <b>${fmt(renNeed - (D.ren || 0))}</b>`) : ''}</div>${renNeed ? bar(D.ren || 0, renNeed) : ''}</div>
       <div class="sqd-t" style="--k:#8a4fb0"><div class="n">${fmt(rt.total)}</div><div class="l">🎯 أوردرات الريتارجت</div>
-        <div class="s">${rt.kid ? `🧸 Kidzzly شغالة ريتارجت = <b>${R.kidRT}</b> أوردر<br>` : '🧸 Kidzzly مفيهاش ريتارجت<br>'}${rt.pages.length ? `📨 ${rt.pages.length} بيدج بلاتين × ${R.perPage} = <b>${rt.pages.length * R.perPage}</b>: ${rt.pages.map(esc).join('، ')}` : '📨 مفيش بيدجات بلاتين شغالة ريتارجت'}
-        ${me().is_admin ? `<br><label style="cursor:pointer"><input type="checkbox" id="sqdKid" ${rt.kid ? 'checked' : ''}> Kidzzly شغالة ريتارجت</label>` : ''}</div></div>
+        <div class="s">بيدجات شغالة ريتارجت النهارده:
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0"><label>💍 إيطالي <input type="number" min="0" id="sqdIt" value="${rt.it}" style="width:54px;padding:3px 5px;border:1.5px solid var(--line);border-radius:6px;font-family:inherit"></label>
+          <label>🧸 أطفال <input type="number" min="0" id="sqdKd" value="${rt.kid}" style="width:54px;padding:3px 5px;border:1.5px solid var(--line);border-radius:6px;font-family:inherit"></label></div>
+          💍 ${fmt(rt.it)} × ${R.itPer} = <b>${fmt(rt.it * R.itPer)}</b> · 🧸 ${fmt(rt.kid)} × ${R.kidPer} = <b>${fmt(rt.kid * R.kidPer)}</b>${rt.by ? `<br><small>اتكتب بواسطة ${esc(rt.by)}</small>` : ''}</div></div>
     </div>`;
     if(D.err) h += `<div style="font-size:12px;color:#c0392b;margin-top:6px">⚠️ ${esc(D.err)}</div>`;
     return h + '</div>';
@@ -16912,7 +16926,11 @@ table.cs tr.cs-open td{background:#fff7dd}
     const el = document.getElementById('sq-daily'); if(!el) return;
     el.innerHTML = view();
     const re = document.getElementById('sqdRe'); if(re) re.onclick = () => load(true);
-    const k = document.getElementById('sqdKid'); if(k) k.onchange = async () => { D.cfg = Object.assign({}, D.cfg, { kidRT:k.checked }); try{ await kvSet('sq_daily_cfg', D.cfg); }catch(e){} load(true); };
+    ['sqdIt', 'sqdKd'].forEach(id => { const e = document.getElementById(id); if(e) e.onchange = async () => {
+      const it = Math.max(0, +document.getElementById('sqdIt').value || 0), kid = Math.max(0, +document.getElementById('sqdKd').value || 0);
+      D.cfg = Object.assign({}, D.cfg, { rt:{ day:ymd(new Date()), it, kid, by:me().full_name || me().username || '' } });
+      D.rt = { it, kid, by:D.cfg.rt.by, total:it * R.itPer + kid * R.kidPer };
+      try{ const cur = await kvGet('sq_daily_cfg') || {}; await kvSet('sq_daily_cfg', Object.assign(cur, { rt:D.cfg.rt })); }catch(e){} draw(); }; });
   }
   window.SquadDaily = { mount(){ draw(); load(false); } };
 })();
