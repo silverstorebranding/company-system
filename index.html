@@ -17216,7 +17216,7 @@ table.cs tr.cs-open td{background:#fff7dd}
   const LS = 'rf_reason_field';
   const now = new Date();
   const S = { from:ymd(now).slice(0, 8) + '01', to:ymd(now), list:null, busy:false, prog:'', err:'', kind:'both', brand:'all', field:null, cat:null, showAll:false };
-  try{ S.field = localStorage.getItem(LS) || null; }catch(e){}
+  try{ S.field = localStorage.getItem(LS) || null; S.pay = localStorage.getItem(LS + '_pay'); }catch(e){}
   // 🏷️ مجموعات الأسباب (بالكلمات اللي بتتكتب عادة)
   const CATS = [
     ['noans',  '📵 مبيردش / التليفون مقفول', /(لا ?ي?رد|مبيرد|ما ?بير?د|ماردش|مردش|مغلق|مقفول|خارج.?(نطاق|التغطية)|غير متاح|no.?answer|not.?answer|didn.?t answer|switch|unreach|busy|مشغول)/i],
@@ -17228,7 +17228,27 @@ table.cs tr.cs-open td{background:#fff7dd}
     ['dup',    '🔁 مكرر / طلب قبل كده',       /(مكرر|duplicate|طلب قبل|اتسلم قبل|استلم قبل|طلب تاني)/i],
   ];
   const catOf = t => { const s = String(t || '').trim(); if(!s) return 'empty'; const c = CATS.find(x => x[2].test(s)); return c ? c[0] : 'other'; };
-  const CAT_L = Object.fromEntries(CATS.map(c => [c[0], c[1]]).concat([['other', '❔ أسباب تانية'], ['empty', '⬜ مفيش سبب مكتوب']]));
+  const CAT_L = Object.fromEntries(CATS.map(c => [c[0], c[1]]).concat([['other', '❔ أسباب تانية'], ['empty', '⬜ مفيش سبب مكتوب'],
+    ['refPaid', '🚫💵 رفض الاستلام ودفع الشحن'], ['refNoPay', '🚫❌ رفض الاستلام ورفض يدفع الشحن']]));
+  /* 💵 رفض الاستلام بيتقسم لحالتين بس: دفع الشحن (أي مبلغ) / رفض يدفع الشحن
+     - لو فيه خانة في QP بالمبلغ اللي اتحصّل من العميل: أكبر من صفر = دفع الشحن
+     - لو مفيش: من كلام السبب (دفع / دافع الشحن = دفع · غير كده = رفض يدفع) */
+  const NOPAY_RE = /(مدفعش|ما ?دفعش|مش ?(هي|ه)?دفع|لم ي?دفع|رفض (ي?دفع|دفع|الشحن)|بدون (دفع|شحن)|without|no.?(ship|pay))/i;
+  const PAY_RE = /(دفع|دافع|اتدفع|اتحصل|حصل الشحن|paid|pay)/i;
+  const numV = v => { const x = parseFloat(String(v ?? '').replace(/[^\d.-]/g, '')); return isNaN(x) ? 0 : x; };
+  function paidShip(o, t){
+    if(S.pay && S.pay !== 'text') return numV(o[S.pay]) > 0;
+    const s = String(t || ''); return !NOPAY_RE.test(s) && PAY_RE.test(s);
+  }
+  // 🔎 خانات الأرقام اللي ممكن يكون فيها المبلغ اللي اتحصّل (من غير السعر والشحن والإجمالي)
+  const PAY_SKIP = /^(price|total_amount|total_fees|serial|order_serial|id|order_delivery_status|phone\d?|customer_phone|customer|branch|city|area|zone|qty|quantity|weight|government)$/i;
+  const PAY_KEY = /(collect|paid|cash|receiv|refund|حصل|ship_?paid|return_?fee|returned_?amount|amount)/i;
+  function payCands(L){
+    const c = {};
+    L.forEach(o => Object.entries(o).forEach(([k, v]) => { if(PAY_SKIP.test(k) || typeof v === 'boolean' || (typeof v === 'string' && !/^\s*-?[\d.,]+\s*$/.test(v)) || (typeof v !== 'string' && typeof v !== 'number')) return;
+      const x = c[k] = c[k] || { k, n:0, pos:0 }; x.n++; if(numV(v) > 0) x.pos++; }));
+    return Object.values(c).filter(x => PAY_KEY.test(x.k)).sort((a, b) => b.pos - a.pos);
+  }
   // 🔎 الخانات اللي ممكن يكون فيها السبب (نصوص) — من غير الخانات المعروفة
   const SKIP = /^(notes|shipment_contents|full_name|phone\d?|customer_phone|address|city|area|zone|serial|order_date|order_serial|returned_client_date|order_delivery_status|order_collect_status|price|total_amount|total_fees|created|updated|id|customer|branch|government|governorate|email)$/i;
   const REASON_KEY = /(reason|comment|remark|refus|reject|return|undeliver|feedback|سبب|ملاحظ|status_note|delivery_note|courier_note|note)/i;
@@ -17254,6 +17274,7 @@ table.cs tr.cs-open td{background:#fff7dd}
       // 📌 إيطالي و Kidzzly بس
       const keep = all.filter(o => KEEP.includes(BG(brandOf(o))));
       S.total = keep.length; S.list = keep.filter(isUnd);
+      S.payC = payCands(S.list); if(S.pay == null) S.pay = S.payC.length && S.payC[0].pos ? S.payC[0].k : 'text';
       const C = candidates(S.list); S.cands = C;
       if(!S.field || !C.some(c => c.k === S.field)) S.field = C.length ? C[0].k : null;
     }catch(e){ S.err = e.message; }
@@ -17262,7 +17283,8 @@ table.cs tr.cs-open td{background:#fff7dd}
   function rows(){
     return (S.list || []).filter(o => S.kind === 'both' || (S.kind === 'rej' ? isRej(o) : !isRej(o))).map(o => {
       const r = S.field ? strVal(o[S.field]) : '', b = brandOf(o);
-      return { o, r, c:catOf(r), b, g:BG(b) }; }).filter(x => S.brand === 'all' || x.g === S.brand);
+      let c = catOf(r); if(c === 'refuse') c = paidShip(o, r) ? 'refPaid' : 'refNoPay';
+      return { o, r, c, b, g:BG(b) }; }).filter(x => S.brand === 'all' || x.g === S.brand);
   }
   const pct = (a, b) => b ? Math.round(a / b * 100) + '%' : '—';
   const barH = (v, max, col) => `<div style="height:8px;background:var(--line);border-radius:5px;overflow:hidden;min-width:80px"><i style="display:block;height:100%;width:${max ? Math.round(v / max * 100) : 0}%;background:${col || '#c0392b'}"></i></div>`;
@@ -17278,7 +17300,9 @@ table.cs tr.cs-open td{background:#fff7dd}
     // 🔎 الخانة اللي فيها السبب
     const C = S.cands || [];
     h += `<div class="card" style="font-size:13.5px"><b>🔎 السبب بيتقرا من خانة:</b> <select id="rfFld" class="plainIn">${C.length ? C.map(c => `<option value="${esc(c.k)}" ${S.field === c.k ? 'selected' : ''}>${esc(c.k)} — مكتوب في ${fmt(c.n)} أوردر (مثال: ${esc(c.sample)})</option>`).join('') : '<option>مفيش خانات نصية</option>'}</select>
-      <div style="color:var(--muted);font-size:12.5px;margin-top:4px">السيستم بيختار لوحده الخانة اللي شكلها فيها السبب — لو الأسباب اللي تحت مش منطقية اختار خانة تانية من هنا (بتتحفظ على الجهاز ده).</div></div>`;
+      <div style="color:var(--muted);font-size:12.5px;margin-top:4px">السيستم بيختار لوحده الخانة اللي شكلها فيها السبب — لو الأسباب اللي تحت مش منطقية اختار خانة تانية من هنا (بتتحفظ على الجهاز ده).</div>
+      <div style="margin-top:8px"><b>💵 دفع الشحن ولا لأ (لرفض الاستلام):</b> <select id="rfPay" class="plainIn"><option value="text" ${S.pay === 'text' ? 'selected' : ''}>من كلام السبب (مكتوب فيه دفع / دافع الشحن)</option>${(S.payC || []).map(c => `<option value="${esc(c.k)}" ${S.pay === c.k ? 'selected' : ''}>من خانة ${esc(c.k)} — فيها مبلغ في ${fmt(c.pos)} أوردر</option>`).join('')}</select>
+      <div style="color:var(--muted);font-size:12.5px;margin-top:4px">${S.pay && S.pay !== 'text' ? 'لو المبلغ اللي اتحصّل في الخانة دي أكبر من صفر = دفع الشحن، غير كده = رفض يدفع.' : 'لو السبب مكتوب فيه إنه دفع الشحن (دفع / دافع / اتحصل) = دفع، غير كده = رفض يدفع. لو QP بيكتب المبلغ اللي اتحصّل في خانة، اختارها من هنا عشان يبقى أدق.'}</div></div></div>`;
     const R = rows(), n = R.length, rej = R.filter(x => isRej(x.o)).length;
     h += `<div class="wf-k" style="grid-template-columns:repeat(3,1fr)"><div class="wf-c" style="--k:#c0392b"><div class="n">${fmt(n)}</div><div class="l">أوردر مرفوض / مستلمش</div><div class="s">من ${fmt(S.total)} أوردر في المدة (${pct(n, S.total)})</div></div>
       <div class="wf-c" style="--k:#c04fb0"><div class="n">${fmt(rej)}</div><div class="l">🚫 Rejected (مرفوض)</div></div>
@@ -17316,6 +17340,7 @@ table.cs tr.cs-open td{background:#fff7dd}
     if($('rfGo')) $('rfGo').onclick = () => { if(!S.busy) load(); };
     if($('rfK')) $('rfK').onchange = e => { S.kind = e.target.value; draw(); };
     if($('rfB')) $('rfB').onchange = e => { S.brand = e.target.value; draw(); };
+    if($('rfPay')) $('rfPay').onchange = e => { S.pay = e.target.value; try{ localStorage.setItem(LS + '_pay', S.pay); }catch(er){} draw(); };
     if($('rfFld')) $('rfFld').onchange = e => { S.field = e.target.value; try{ localStorage.setItem(LS, S.field); }catch(er){} S.cat = null; draw(); };
     if($('rfAll')) $('rfAll').onclick = () => { S.showAll = !S.showAll; draw(); };
     main.querySelectorAll('[data-rfc]').forEach(tr => tr.onclick = () => { S.cat = S.cat === tr.dataset.rfc ? null : tr.dataset.rfc; draw(); });
