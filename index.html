@@ -17082,8 +17082,7 @@ table.cs tr.cs-open td{background:#fff7dd}
       else {
         jobs.push((async () => { try{ W.sum = await window.QP.getSummary(); }catch(e){ W.sum = { err:e.message }; } draw(); })());
         jobs.push((async () => {
-          const now = new Date(), f = new Date(now); f.setDate(f.getDate() - 60); const ms = ymd(now).slice(0, 8) + '01';
-          const from = ymd(f) < ms ? ymd(f) : ms;
+          const now = new Date(), from = ymd(now).slice(0, 8) + '01';   // الشهر اللي احنا فيه بس (من يوم 1 لحد النهارده)
           if(A().loadSquadPages) await A().loadSquadPages();
           W.list = await A().fetchRange(from, ymd(now), n => { W.prog = n + ' أوردر'; const e = document.getElementById('wfProg'); if(e) e.textContent = W.prog; });
           W.from = from; draw();
