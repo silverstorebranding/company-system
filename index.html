@@ -17172,6 +17172,31 @@ table.cs tr.cs-open td{background:#fff7dd}
     if(C && wallet != null && cash != null) h += `<div class="card" style="border:2px solid var(--brass)"><h3>🧮 الصورة الكاملة</h3><div style="font-size:14.5px;line-height:2">
       🏦 الخزنة <b>${fmt(cash)}</b> + 👛 عند QP <b>${fmt(wallet)}</b> + 🚚 المتوقع يتسلم <b>${fmt(C.wayExp)}</b> − 🧾 ديونا <b>${fmt(debts)}</b> = <b style="font-size:18px;color:${cash + wallet + C.wayExp - debts < 0 ? '#c0392b' : '#2f7d55'}">${fmt(cash + wallet + C.wayExp - debts)} ج</b></div></div>`;
     else if(cash != null) h += `<div class="card"><b>🏦 رصيد الخزنة (${esc(W.cash.month)}):</b> ${fmt(cash)} ج</div>`;
+    // 🧮 الخلاصة: سحبتوا كام · لسه برا كام (بضاعة + أرباح) وهتيجي امتى · عليكو رواتب وإيجار كام
+    if(C && W.cash){
+      const T = W.cash, bk = T.back || { peter:0, fady:0 };
+      const dP = num(T.peter) - num(bk.peter), dF = num(T.fady) - num(bk.fady), drawn = dP + dF;
+      const O = C.out, wl = wallet || 0;
+      const goods = O.cost, prof = O.dv - O.dp * WF_PIECE;                 // بضاعة اللي برا · ربح اللي هيتسلم (البيع − 110 للقطعة)
+      const comingCash = wl + C.wayExp;
+      const FX = (typeof PR_FIXED !== 'undefined' && PR_FIXED) || { salaries:0, rent:0 };
+      const salPaid = num(T.salary), salLeft = Math.max(0, num(FX.salaries) - salPaid), rent = num(FX.rent), owe = salLeft + rent + debts;
+      const net = comingCash - owe;
+      const ln = (ic, l, v, sub, col) => `<div style="display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px dashed var(--line)"><div>${ic} ${l}${sub ? `<div style="font-size:12px;color:var(--muted)">${sub}</div>` : ''}</div><b style="white-space:nowrap;${col ? 'color:' + col : ''}">${v}</b></div>`;
+      h += `<div class="card" style="border:2px solid #1f3d36"><h3>📋 الخلاصة — ${esc(monthTxt)}</h3><div style="font-size:14.5px">
+        ${ln('💸', 'انت وفادي سحبتوا', fmt(drawn) + ' ج', `بيتر ${fmt(dP)} · فادي ${fmt(dF)} — من شيت 💼 الحسابات (بعد خصم المصاريف اللي دفعتوها من جيبكم)`, '#5b4a7a')}
+        ${ln('📦', 'فكده لسه برا', fmt(comingCash) + ' ج فلوس + بضاعة راجعة ' + fmt(O.rc) + ' ج', `👛 عند QP ${fmt(wl)} + 🚚 هيتسلم من اللي برا ${fmt(C.wayExp)}`)}
+        ${ln('🏷️', 'بضاعة منهم بـ', fmt(goods) + ' ج', `${fmt(O.p)} قطعة برا × ${WF_PIECE} ج — هيتسلم منها ≈ ${fmt(O.dp)} قطعة والباقي ≈ ${fmt(O.rp)} قطعة راجعة`)}
+        ${ln('📈', 'وأرباح بـ', fmt(prof) + ' ج', 'ربح اللي هيتسلم = البيع − ' + WF_PIECE + ' ج للقطعة (قبل الشحن)', '#2f7d55')}
+        ${ln('⏱️', 'هتيجي خلال', 'أسبوع لأسبوعين', `👛 فلوس QP مع التحويل الجاي · Pending + مع المندوب ≈ أسبوع · الهولد ≈ أسبوعين`)}
+        ${ln('👥', 'لكن عليكو رواتب', fmt(salLeft) + ' ج', `رواتب الشهر ${fmt(FX.salaries)} − اتدفع ${fmt(salPaid)} (عمود رواتب في الحسابات)`, '#c0392b')}
+        ${ln('🏢', 'وإيجارات', fmt(rent) + ' ج', 'من المصاريف الثابتة في 💰 الأرباح', '#c0392b')}
+        ${debts ? ln('🧾', 'وديون', fmt(debts) + ' ج', '', '#c0392b') : ''}
+        <div style="display:flex;justify-content:space-between;gap:10px;padding:12px 0 2px;font-size:16px"><b>🧮 اللي هيفضل بعد ما ييجي اللي برا وتدفعوا اللي عليكو</b>
+          <b style="font-size:20px;white-space:nowrap;color:${net < 0 ? '#c0392b' : '#2f7d55'}">${fmt(net)} ج</b></div>
+        <div style="font-size:12px;color:var(--muted)">= (عند QP + هيتسلم) − (رواتب فاضلة + إيجار + ديون) · ومن غير الخزنة (${fmt(cash)} ج) والبضاعة الراجعة.</div>
+      </div></div>`;
+    }
     // 🧾 الديون
     const ed = canEdit();
     h += `<div class="card"><h3>🧾 ديونا — ${fmt(debts)} ج</h3>
