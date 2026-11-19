@@ -12875,9 +12875,12 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
       return `<div class="pagehead"><h1>📷 البوالص</h1><p>صوّر باركود البوالص: يا تمسحها من QP، يا تعمل منها شيت ببياناتها.</p></div><div class="up-wrap">` + delHtml() + '</div>';
     }
     let h = `<div class="pagehead"><h1>📤 رفع الأوردرات</h1><p>هات الأوردرات من Squad أو EasyOrders، راجعها في شيت QP، اتأكد من الـ notes، ووافق عشان تترفع على QP مباشرة وتظهر في Orders List.</p></div><div class="up-wrap">`;
+    // 👀 البراندات (Squad + مصادر EasyOrders) مستخبية تحت "شوف انت" — ظاهر بس الكل والبوالص عشان الزحمة
+    const inMore = S.src === 'squad' || SOURCES.some(x => x.key === S.src), moreOpen = S.moreOpen || inMore;
     h += `<div class="up-tabs"><button class="${S.src === 'all' ? 'on' : ''}" style="--bc:#2f7d55" data-upsrc="all">📦 الكل</button>
-      <button class="${S.src === 'squad' ? 'on' : ''}" style="--bc:#8a6a3a" data-upsrc="squad">🏆 Squad</button>
-      ${SOURCES.map(x => `<button class="${S.src === x.key ? 'on' : ''}" style="--bc:${esc(x.color || '#2b6cb0')}" data-upsrc="${esc(x.key)}">🌐 ${esc(x.label)}</button>`).join('')}
+      <button class="${inMore ? 'on' : ''}" style="--bc:#5b4a7a" data-upmore="1">👀 شوف انت ${moreOpen ? '▲' : '▼'}</button>
+      ${moreOpen ? `<button class="${S.src === 'squad' ? 'on' : ''}" style="--bc:#8a6a3a" data-upsrc="squad">🏆 Squad</button>
+      ${SOURCES.map(x => `<button class="${S.src === x.key ? 'on' : ''}" style="--bc:${esc(x.color || '#2b6cb0')}" data-upsrc="${esc(x.key)}">🌐 ${esc(x.label)}</button>`).join('')}` : ''}
       ${S.src === 'restore' || (S.store.restore && S.store.restore.rows && S.store.restore.rows.length) ? `<button class="${S.src === 'restore' ? 'on' : ''}" style="--bc:#2f7d55" data-upsrc="restore">♻️ اتمسحت</button>` : ''}
       ${canScan() ? `<button class="${S.src === 'delete' ? 'on' : ''}" style="--bc:#b3261e" data-upsrc="delete">📷 بوالص</button>` : ''}
       ${me().is_admin ? `<button class="${S.src === 'settings' ? 'on' : ''}" style="--bc:#555" data-upsrc="settings" title="إدارة المصادر">⚙️</button>` : ''}</div>`;
@@ -13537,6 +13540,8 @@ create policy "sheets: upload" on storage.objects for insert to authenticated wi
       if(isEasy(r.srcKey) || r.srcKey === 'squad'){ if(!confirm('تشيل الأوردر ده؟ هيتحسب إنه اتاخد ومش هيظهر تاني بعد الرفع.')) return; S.skipped.add(skipKey(r)); }
       S.rows.splice(Number(b.dataset.updel), 1); dupCheck(); draw(); if(isEasy(r.srcKey) || r.srcKey === 'squad') persistTaken(); if(r.urgentId) closeUrgent([r]); });
     document.querySelectorAll('[data-upsrc]').forEach(b => b.onclick = () => switchSrc(b.dataset.upsrc));
+    document.querySelectorAll('[data-upmore]').forEach(b => b.onclick = () => { const inMore = S.src === 'squad' || SOURCES.some(x => x.key === S.src);
+      if(inMore){ S.moreOpen = false; switchSrc('all'); } else { S.moreOpen = !S.moreOpen; draw(); } });
     if($('upEasyFetch')) $('upEasyFetch').onclick = fetchEasy;
     if($('xdOpen')) $('xdOpen').onclick = () => { XD.open = !XD.open; draw(); };
     if($('xdClose')) $('xdClose').onclick = () => { XD.open = false; draw(); };
