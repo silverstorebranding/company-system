@@ -17209,14 +17209,15 @@ table.cs tr.cs-open td{background:#fff7dd}
         <div style="font-size:12px;color:var(--muted)">= اللي لينا ${fmt(have)} − اللي علينا ${fmt(owe)} · منهم فلوس كاش جاية ${fmt(cs + wl + C.wayExp - owe)} ج والباقي بضاعة ${fmt(O.rc + stock)} ج</div>
         ${ln('📦', 'بضاعة المخزن هتكون', fmt(O.rc + stock) + ' ج', `المخزن دلوقتي ${fmt(stock)} + اللي هيرجع ${fmt(O.rc)} (≈ ${fmt(O.rp)} قطعة)`, '#6b4f2a')}
       </div>`;
-    // 🤝 الشركا 50% / 50%: نصيب كل واحد = (الصافي + اللي اتسحب) ÷ 2 · المتبقي = النصيب − اللي سحبه
-      const tot = net + drawn, share = tot / 2;
+    // 🤝 الشركا 50% / 50% — على الفلوس بس (البضاعة بضاعة ومش بتتقسم فلوس)
+      // الفلوس = (الخزنة + QP + هيتسلم − اللي علينا) + اللي اتسحب · نصيب كل واحد = النص · المتبقي = النصيب − اللي سحبه
+      const cashNet = cs + wl + C.wayExp - owe, tot = cashNet + drawn, share = tot / 2, goodsAll = O.rc + stock;
       const P = [['👤 بيتر', dP], ['👤 فادي', dF]];
-      h += `<div style="margin-top:14px;font-weight:800">🤝 الشركا (50% / 50%)</div>
-        <div class="tablewrap"><table class="pr" style="width:100%"><tr><th></th><th>النصيب (50%)</th><th>سحب</th><th>المتبقي له</th></tr>
-        ${P.map(([n, d]) => `<tr><td class="lbl">${n}</td><td>${fmt(share)} ج</td><td>${fmt(d)} ج</td><td><b style="color:${share - d < 0 ? Rd : G}">${fmt(share - d)} ج</b></td></tr>`).join('')}
-        <tr class="total"><td>الإجمالي</td><td>${fmt(tot)} ج</td><td>${fmt(drawn)} ج</td><td>${fmt(net)} ج</td></tr></table></div>
-        <div style="font-size:12px;color:var(--muted);margin-top:4px">الإجمالي = الصافي ${fmt(net)} + اللي اتسحب ${fmt(drawn)} · السحب من شيت الحسابات للشهر ده بس</div>
+      h += `<div style="margin-top:14px;font-weight:800;font-size:15px">🤝 المتبقي لكل واحد (50% / 50%) — فلوس بس</div>
+        <div class="tablewrap"><table class="pr" style="width:100%"><tr><th></th><th>نصيبه من الفلوس</th><th>سحب</th><th>💰 المتبقي له</th></tr>
+        ${P.map(([n, d]) => `<tr><td class="lbl">${n}</td><td>${fmt(share)} ج</td><td>${fmt(d)} ج</td><td><b style="font-size:16px;color:${share - d < 0 ? Rd : G}">${fmt(share - d)} ج</b></td></tr>`).join('')}
+        <tr class="total"><td>الإجمالي</td><td>${fmt(tot)} ج</td><td>${fmt(drawn)} ج</td><td>${fmt(cashNet)} ج</td></tr></table></div>
+        <div style="font-size:12px;color:var(--muted);margin-top:4px">الفلوس = الخزنة ${fmt(cs)} + عند QP ${fmt(wl)} + هيتسلم ${fmt(C.wayExp)} − اللي علينا ${fmt(owe)} = ${fmt(cashNet)} ، + اللي اتسحب ${fmt(drawn)} = ${fmt(tot)} ÷ 2 · السحب من شيت الحسابات للشهر ده · البضاعة (${fmt(goodsAll)} ج) مش داخلة — فاضلة بضاعة في المخزن.</div>
       </div>`;
     }
     // 🧾 الديون
