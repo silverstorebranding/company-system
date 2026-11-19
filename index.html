@@ -17286,7 +17286,7 @@ table.cs tr.cs-open td{background:#fff7dd}
       let c = catOf(r); if(c === 'refuse') c = paidShip(o, r) ? 'refPaid' : 'refNoPay';
       return { o, r, c, b, g:BG(b) }; }).filter(x => S.brand === 'all' || x.g === S.brand);
   }
-  const pct = (a, b) => b ? Math.round(a / b * 100) + '%' : '—';
+  const pct = (a, b) => { if(!b) return '—'; const x = a / b * 100; return (x > 0 && x < 1 ? x.toFixed(1) : Math.round(x)) + '%'; };
   const barH = (v, max, col) => `<div style="height:8px;background:var(--line);border-radius:5px;overflow:hidden;min-width:80px"><i style="display:block;height:100%;width:${max ? Math.round(v / max * 100) : 0}%;background:${col || '#c0392b'}"></i></div>`;
   function view(){
     let h = `<div class="pagehead"><h1>🚫 أسباب الرفض</h1><p>إحصائيات بأسباب الرفض وعدم الاستلام زي ما هي مكتوبة في QP — مجمّعة في مجموعات، للإيطالي و Kidzzly بس.</p></div>
@@ -17314,7 +17314,11 @@ table.cs tr.cs-open td{background:#fff7dd}
     const groups = [...new Set(R.map(x => x.g))].sort();
     h += `<div class="card"><h3>📊 الأسباب مجمّعة</h3><div class="tablewrap"><table class="pr" style="width:100%"><tr><th>السبب</th><th>العدد</th><th>النسبة</th><th></th>${groups.length > 1 ? groups.map(g => `<th>${esc(g)}</th>`).join('') : ''}</tr>
       ${CL.map(([c, L]) => `<tr style="cursor:pointer" data-rfc="${c}"><td class="lbl">${CAT_L[c]} ${S.cat === c ? '▲' : '▼'}</td><td><b>${fmt(L.length)}</b></td><td>${pct(L.length, n)}</td><td>${barH(L.length, mx)}</td>${groups.length > 1 ? groups.map(g => `<td>${fmt(L.filter(x => x.g === g).length)}</td>`).join('') : ''}</tr>
-        ${S.cat === c ? `<tr><td colspan="${4 + (groups.length > 1 ? groups.length : 0)}" style="text-align:right;background:var(--slate-l);font-size:12.5px">${(() => { const t = {}; L.forEach(x => { const k = x.r || '(فاضي)'; t[k] = (t[k] || 0) + 1; }); return Object.entries(t).sort((a, b) => b[1] - a[1]).slice(0, 40).map(([k, v]) => `<span style="display:inline-block;margin:2px 4px;padding:2px 8px;border-radius:8px;background:var(--panel);border:1px solid var(--line)">${esc(k)} <b>(${v})</b></span>`).join(''); })()}</td></tr>` : ''}`).join('')}
+        ${S.cat === c ? `<tr><td colspan="${4 + (groups.length > 1 ? groups.length : 0)}" style="background:var(--slate-l);padding:8px;white-space:normal">${(() => { const t = {}; L.forEach(x => { const k = (x.r || '(فاضي)').replace(/\s+/g, ' ').trim(); t[k] = (t[k] || 0) + 1; });
+          const TL = Object.entries(t).sort((a, b) => b[1] - a[1]);
+          // 📋 الأسباب تحت بعض: العدد · النسبة جوه المجموعة · النسبة من كل اللي متسلمش
+          return `<table style="width:100%;border-collapse:collapse;font-size:13px;background:var(--panel)"><tr style="background:var(--line)"><th style="text-align:right;padding:5px 8px">السبب زي ما هو في QP</th><th style="padding:5px 8px">العدد</th><th style="padding:5px 8px">% جوه المجموعة</th><th style="padding:5px 8px">% من كل اللي متسلمش</th></tr>
+            ${TL.map(([k, v]) => `<tr style="border-top:1px solid var(--line)"><td style="text-align:right;padding:5px 8px;white-space:normal">${esc(k)}</td><td style="text-align:center;padding:5px 8px"><b>${fmt(v)}</b></td><td style="text-align:center;padding:5px 8px">${pct(v, L.length)}</td><td style="text-align:center;padding:5px 8px">${pct(v, n)}</td></tr>`).join('')}</table>`; })()}</td></tr>` : ''}`).join('')}
       <tr class="total"><td>الإجمالي</td><td>${fmt(n)}</td><td>100%</td><td></td>${groups.length > 1 ? groups.map(g => `<td>${fmt(R.filter(x => x.g === g).length)}</td>`).join('') : ''}</tr></table></div>
       <p style="font-size:12px;color:var(--muted);margin:6px 0 0">دوس على أي مجموعة تشوف الأسباب جواها زي ما هي مكتوبة في QP.</p></div>`;
     // 📝 الأسباب زي ما هي (أكتر 25)
