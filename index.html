@@ -15621,12 +15621,14 @@ table.gs tr.wk td.day{color:#c5221f}
       return (data || []).flatMap(r => (r.value && r.value.list) || []); }catch(e){ return []; }
   }
   async function addLog(entry){
-    const month = entry.day.slice(0, 7), key = 'recov_' + me().id + '_' + month;
+    // 🔑 المفتاح باسم الحساب اللي داخل فعلاً (مش اللي الأدمن بيتفرج كأنه هو) — صلاحيات Supabase بتسمح لكل واحدة تكتب في بتاعها بس
+    let uid = me().id; try{ const { data } = await sb().auth.getSession(); if(data && data.session && data.session.user) uid = data.session.user.id; }catch(e){}
+    const month = entry.day.slice(0, 7), key = 'recov_' + uid + '_' + month;
     const { data } = await sb().from('app_kv').select('value').eq('key', key).maybeSingle();
     const list = (data && data.value && data.value.list) || [];
     list.push(entry);
     const { error } = await sb().from('app_kv').upsert({ key, value:{ list }, updated_at:new Date().toISOString(), updated_by_name: me().full_name || me().username || '' });
-    if(error) throw error;
+    if(error) throw /row-level security/i.test(error.message) ? new Error('الحساب ده مش مسموحله يكتب في سجل المتابعة (صلاحيات app_kv في Supabase). الأدمن محتاج يشغّل كود صلاحيات app_kv_recov.sql في Supabase مرة واحدة.') : error;
   }
   window.KidDaysLog = { add: addLog }; // بيستخدمه Squad لما الأوردر المتجدد يتسجل
   // 💰 مكافأة المتابعة (في Squad) بتطلب تحديث أرقام الشهر من هنا (محتاج دخول QP على الجهاز)
