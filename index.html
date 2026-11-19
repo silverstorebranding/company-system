@@ -17061,7 +17061,7 @@ table.cs tr.cs-open td{background:#fff7dd}
   const ymd = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   const isWF = () => (location.hash.replace('#/', '') || 'home').split('?')[0].split('/')[0] === 'where';
   const GL = { italy:'💍 إيطالي', kidzzly:'🧸 كيدزلي', bunny:'🐰 Bunny', ersal:'📨 إرسال', socky:'🧦 سوكي', bloom:'🌸 بلوم', other:'❔ غيره' };
-  const W = { busy:false, prog:'', err:'', at:null, sum:null, list:null, cash:null, debts:null };
+  const W = { busy:false, prog:'', err:'', at:null, sum:null, list:null, cash:null, debts:null, cfg:null };
   const A = () => window.QP && window.QP.api;
   const WF_PIECE = 110;                       // تكلفة القطعة (بضاعة) بالجنيه
   const WF_RATE = { ofd:0.55, hold:0.20 };    // نسبة اللي بيتسلم: Pending + مع المندوب / هولد
@@ -17077,6 +17077,7 @@ table.cs tr.cs-open td{background:#fff7dd}
       try{ await window.cbReady; }catch(e){}
       const jobs = [];
       jobs.push((async () => { try{ const { data } = await sb().from('app_kv').select('value').eq('key', 'where_debts').maybeSingle(); W.debts = (data && data.value && data.value.list) || []; }catch(e){ W.debts = W.debts || []; } draw(); })());
+      jobs.push((async () => { try{ const { data } = await sb().from('app_kv').select('value').eq('key', 'where_cfg').maybeSingle(); W.cfg = (data && data.value) || {}; }catch(e){ W.cfg = W.cfg || {}; } draw(); })());
       jobs.push((async () => { try{ W.cash = window.CashAPI ? await window.CashAPI.balance() : null; }catch(e){ W.cash = null; } draw(); })());
       if(!A() || !A().hasCreds()) W.err = 'محتاج دخول QP على الجهاز ده (من قسم 🚚 QP) عشان أرقام QP تظهر.';
       else {
@@ -17168,37 +17169,45 @@ table.cs tr.cs-open td{background:#fff7dd}
         <tr class="total"><td>الإجمالي برا</td><td>${fmt(O.n)}</td><td>${fmt(O.p)}</td><td>${fmt(O.v)} ج</td><td>${fmt(O.cost)} ج</td><td></td><td>${fmt(O.dv)} ج</td><td>${fmt(O.rp)} قطعة · ${fmt(O.rc)} ج</td><td></td></tr></table></div>
         <p style="font-size:12px;color:var(--muted);margin:6px 0 0">من أوردرات QP من ${esc(W.from || '')} لحد النهارده · القطع: الإيطالي الطقم = قطعة، والأطفال من تحليل المكونات · البضاعة = القطع × ${WF_PIECE} ج · بيتسلم من Pending + مع المندوب 55% ومن الهولد 20% والباقي بيرجع، والاندلفرد اللي لسه مرجعش كله راجع.</p></div>`;
     } else if(A() && A().hasCreds()) h += `<div class="card"><p class="none">⏳ بيجيب أوردرات QP...</p></div>`;
-    // 🏦 الصورة الكاملة
-    if(C && wallet != null && cash != null) h += `<div class="card" style="border:2px solid var(--brass)"><h3>🧮 الصورة الكاملة</h3><div style="font-size:14.5px;line-height:2">
-      🏦 الخزنة <b>${fmt(cash)}</b> + 👛 عند QP <b>${fmt(wallet)}</b> + 🚚 المتوقع يتسلم <b>${fmt(C.wayExp)}</b> − 🧾 ديونا <b>${fmt(debts)}</b> = <b style="font-size:18px;color:${cash + wallet + C.wayExp - debts < 0 ? '#c0392b' : '#2f7d55'}">${fmt(cash + wallet + C.wayExp - debts)} ج</b></div></div>`;
-    else if(cash != null) h += `<div class="card"><b>🏦 رصيد الخزنة (${esc(W.cash.month)}):</b> ${fmt(cash)} ج</div>`;
-    // 🧮 الخلاصة: سحبتوا كام · لسه برا كام (بضاعة + أرباح) وهتيجي امتى · عليكو رواتب وإيجار كام
+    // ⚙️ مصاريف التشغيل (بتتكتب بالإيد: رواتب، إيجار...) + 📦 المخزن (تقديري) — app_kv where_cfg = { ops:[{ id, name, amount }], stock }
+    const ed = canEdit(), CF = W.cfg || {}, ops = CF.ops || [], opsT = ops.reduce((a, x) => a + num(x.amount), 0), stock = num(CF.stock);
+    const inp = 'padding:7px 9px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit';
+    h += `<div class="card"><h3>⚙️ مصاريف التشغيل — ${fmt(opsT)} ج</h3>
+      ${ops.length ? `<div class="tablewrap"><table class="pr" style="width:100%"><tr><th>البند</th><th>المبلغ</th>${ed ? '<th></th>' : ''}</tr>
+        ${ops.map(x => `<tr><td class="lbl">${esc(x.name)}</td><td><b>${fmt(x.amount)} ج</b></td>${ed ? `<td><button class="mockbtn" data-wfopdel="${esc(x.id)}" style="color:#b3261e">🗑</button></td>` : ''}</tr>`).join('')}</table></div>` : '<p class="none" style="margin:4px 0">لسه مفيش — اكتب الرواتب والإيجار وأي مصروف تشغيل.</p>'}
+      ${ed ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><input id="wfOpN" placeholder="البند (رواتب / إيجار / ...)" style="flex:1;min-width:160px;${inp}">
+        <input id="wfOpA" inputmode="decimal" placeholder="المبلغ" style="width:120px;${inp}">
+        <button class="mockbtn" id="wfOpAdd" style="background:#1f3d36;border-color:#1f3d36;color:#fff">➕ أضف</button></div>` : ''}
+      <h3 style="margin-top:16px">📦 المخزن (تقديري) — ${fmt(stock)} ج</h3>
+      ${ed ? `<div style="display:flex;gap:8px;flex-wrap:wrap"><input id="wfSt" inputmode="decimal" placeholder="قيمة البضاعة اللي في المخزن" value="${stock || ''}" style="width:220px;${inp}">
+        <button class="mockbtn" id="wfStSave" style="background:#1f3d36;border-color:#1f3d36;color:#fff">💾 احفظ</button></div>` : ''}</div>`;
+    // 🧮 الصورة الكاملة
     if(C && W.cash){
       const T = W.cash, bk = T.back || { peter:0, fady:0 };
       const dP = num(T.peter) - num(bk.peter), dF = num(T.fady) - num(bk.fady), drawn = dP + dF;
-      const O = C.out, wl = wallet || 0;
-      const goods = O.cost, prof = O.dv - O.dp * WF_PIECE;                 // بضاعة اللي برا · ربح اللي هيتسلم (البيع − 110 للقطعة)
-      const comingCash = wl + C.wayExp;
-      const FX = (typeof PR_FIXED !== 'undefined' && PR_FIXED) || { salaries:0, rent:0 };
-      const salPaid = num(T.salary), salLeft = Math.max(0, num(FX.salaries) - salPaid), rent = num(FX.rent), owe = salLeft + rent + debts;
-      const net = comingCash - owe;
+      const O = C.out, wl = wallet || 0, cs = cash || 0;
+      const prof = O.dv - O.dp * WF_PIECE;
+      const have = cs + wl + C.wayExp + O.rc + stock, owe = opsT + debts, net = have - owe;
       const ln = (ic, l, v, sub, col) => `<div style="display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px dashed var(--line)"><div>${ic} ${l}${sub ? `<div style="font-size:12px;color:var(--muted)">${sub}</div>` : ''}</div><b style="white-space:nowrap;${col ? 'color:' + col : ''}">${v}</b></div>`;
-      h += `<div class="card" style="border:2px solid #1f3d36"><h3>📋 الخلاصة — ${esc(monthTxt)}</h3><div style="font-size:14.5px">
+      const G = '#2f7d55', Rd = '#c0392b';
+      h += `<div class="card" style="border:2px solid #1f3d36"><h3>🧮 الصورة الكاملة — ${esc(monthTxt)}</h3><div style="font-size:14.5px">
         ${ln('💸', 'انت وفادي سحبتوا', fmt(drawn) + ' ج', `بيتر ${fmt(dP)} · فادي ${fmt(dF)} — من شيت 💼 الحسابات (بعد خصم المصاريف اللي دفعتوها من جيبكم)`, '#5b4a7a')}
-        ${ln('📦', 'فكده لسه برا', fmt(comingCash) + ' ج فلوس + بضاعة راجعة ' + fmt(O.rc) + ' ج', `👛 عند QP ${fmt(wl)} + 🚚 هيتسلم من اللي برا ${fmt(C.wayExp)}`)}
-        ${ln('🏷️', 'بضاعة منهم بـ', fmt(goods) + ' ج', `${fmt(O.p)} قطعة برا × ${WF_PIECE} ج — هيتسلم منها ≈ ${fmt(O.dp)} قطعة والباقي ≈ ${fmt(O.rp)} قطعة راجعة`)}
-        ${ln('📈', 'وأرباح بـ', fmt(prof) + ' ج', 'ربح اللي هيتسلم = البيع − ' + WF_PIECE + ' ج للقطعة (قبل الشحن)', '#2f7d55')}
-        ${ln('⏱️', 'هتيجي خلال', 'أسبوع لأسبوعين', `👛 فلوس QP مع التحويل الجاي · Pending + مع المندوب ≈ أسبوع · الهولد ≈ أسبوعين`)}
-        ${ln('👥', 'لكن عليكو رواتب', fmt(salLeft) + ' ج', `رواتب الشهر ${fmt(FX.salaries)} − اتدفع ${fmt(salPaid)} (عمود رواتب في الحسابات)`, '#c0392b')}
-        ${ln('🏢', 'وإيجارات', fmt(rent) + ' ج', 'من المصاريف الثابتة في 💰 الأرباح', '#c0392b')}
-        ${debts ? ln('🧾', 'وديون', fmt(debts) + ' ج', '', '#c0392b') : ''}
-        <div style="display:flex;justify-content:space-between;gap:10px;padding:12px 0 2px;font-size:16px"><b>🧮 اللي هيفضل بعد ما ييجي اللي برا وتدفعوا اللي عليكو</b>
-          <b style="font-size:20px;white-space:nowrap;color:${net < 0 ? '#c0392b' : '#2f7d55'}">${fmt(net)} ج</b></div>
-        <div style="font-size:12px;color:var(--muted)">= (عند QP + هيتسلم) − (رواتب فاضلة + إيجار + ديون) · ومن غير الخزنة (${fmt(cash)} ج) والبضاعة الراجعة.</div>
+        <div style="font-weight:800;margin:10px 0 0">✅ اللي لينا</div>
+        ${ln('🏦', 'الخزنة', fmt(cs) + ' ج', '', G)}
+        ${ln('👛', 'عند QP مجوش', fmt(wl) + ' ج', 'هتيجي مع التحويل الجاي', G)}
+        ${ln('🚚', 'هيتسلم من اللي برا', fmt(C.wayExp) + ' ج', `منهم بضاعة ≈ ${fmt(O.dp * WF_PIECE)} ج (${fmt(O.dp)} قطعة × ${WF_PIECE}) وأرباح ≈ ${fmt(prof)} ج (قبل الشحن) — خلال أسبوع لأسبوعين`, G)}
+        ${ln('↩️', 'بضاعة هترجع', fmt(O.rc) + ' ج', `≈ ${fmt(O.rp)} قطعة × ${WF_PIECE} ج`, G)}
+        ${ln('📦', 'المخزن (تقديري)', fmt(stock) + ' ج', '', G)}
+        <div style="font-weight:800;margin:10px 0 0">❌ اللي علينا</div>
+        ${ops.map(x => ln('⚙️', esc(x.name), fmt(x.amount) + ' ج', '', Rd)).join('') || ln('⚙️', 'مصاريف التشغيل', '0 ج', 'اكتبها فوق', Rd)}
+        ${ln('🧾', 'ديون', fmt(debts) + ' ج', '', Rd)}
+        <div style="display:flex;justify-content:space-between;gap:10px;padding:12px 0 2px;font-size:16px"><b>🧮 الصافي</b>
+          <b style="font-size:22px;white-space:nowrap;color:${net < 0 ? Rd : G}">${fmt(net)} ج</b></div>
+        <div style="font-size:12px;color:var(--muted)">= اللي لينا ${fmt(have)} − اللي علينا ${fmt(owe)} · منهم فلوس كاش جاية ${fmt(cs + wl + C.wayExp - owe)} ج والباقي بضاعة ${fmt(O.rc + stock)} ج</div>
       </div></div>`;
     }
     // 🧾 الديون
-    const ed = canEdit();
+
     h += `<div class="card"><h3>🧾 ديونا — ${fmt(debts)} ج</h3>
       ${(W.debts || []).length ? `<div class="tablewrap"><table class="pr" style="width:100%"><tr><th>لمين</th><th>المبلغ</th><th>ملاحظات</th>${ed ? '<th></th>' : ''}</tr>
         ${W.debts.map(x => `<tr><td class="lbl">${esc(x.name)}</td><td><b>${fmt(x.amount)} ج</b></td><td style="font-size:13px">${esc(x.note || '—')}</td>${ed ? `<td><button class="mockbtn" data-wfdel="${esc(x.id)}" style="color:#b3261e">🗑</button></td>` : ''}</tr>`).join('')}</table></div>` : '<p class="none" style="margin:4px 0">مفيش ديون متسجلة.</p>'}
@@ -17214,10 +17223,16 @@ table.cs tr.cs-open td{background:#fff7dd}
     const { error } = await sb().from('app_kv').upsert({ key:'where_debts', value:{ list }, updated_at:new Date().toISOString(), updated_by_name: me().full_name || me().username || '' });
     if(error) throw error; W.debts = list; draw();
   }
+  async function cfgSave(fn){
+    const { data } = await sb().from('app_kv').select('value').eq('key', 'where_cfg').maybeSingle();
+    const c = (data && data.value) || {}; fn(c);
+    const { error } = await sb().from('app_kv').upsert({ key:'where_cfg', value:c, updated_at:new Date().toISOString(), updated_by_name: me().full_name || me().username || '' });
+    if(error) throw error; W.cfg = c; draw();
+  }
   function draw(){
     if(!isWF()) return;
     const main = document.getElementById('main'); if(!main) return;
-    const keep = {}; ['wfN', 'wfA', 'wfT'].forEach(id => { const e = document.getElementById(id); if(e) keep[id] = e.value; });
+    const keep = {}; ['wfN', 'wfA', 'wfT', 'wfOpN', 'wfOpA'].forEach(id => { const e = document.getElementById(id); if(e) keep[id] = e.value; });
     main.innerHTML = view();
     Object.entries(keep).forEach(([id, v]) => { const e = document.getElementById(id); if(e) e.value = v; });
     const $ = id => document.getElementById(id);
@@ -17226,6 +17241,13 @@ table.cs tr.cs-open td{background:#fff7dd}
       if(!name || !amount) return alert('اكتب لمين والمبلغ.');
       try{ await debtSave(L => L.push({ id:Date.now().toString(36), name, amount, note:$('wfT').value.trim(), at:new Date().toISOString(), by:me().full_name || me().username || '' }));
         ['wfN', 'wfA', 'wfT'].forEach(id => { const e = $(id); if(e) e.value = ''; }); }catch(e){ alert('مااتحفظش: ' + e.message); } };
+    if($('wfOpAdd')) $('wfOpAdd').onclick = async () => { const name = $('wfOpN').value.trim(), amount = num($('wfOpA').value);
+      if(!name || !amount) return alert('اكتب البند والمبلغ.');
+      try{ await cfgSave(c => (c.ops = c.ops || []).push({ id:Date.now().toString(36), name, amount }));
+        ['wfOpN', 'wfOpA'].forEach(id => { const e = $(id); if(e) e.value = ''; }); }catch(e){ alert('مااتحفظش: ' + e.message); } };
+    if($('wfStSave')) $('wfStSave').onclick = async () => { try{ await cfgSave(c => { c.stock = num($('wfSt').value); }); }catch(e){ alert('مااتحفظش: ' + e.message); } };
+    main.querySelectorAll('[data-wfopdel]').forEach(b => b.onclick = async () => { if(!confirm('تمسح البند ده؟')) return;
+      try{ await cfgSave(c => { c.ops = (c.ops || []).filter(x => x.id !== b.dataset.wfopdel); }); }catch(e){ alert('مااتمسحش: ' + e.message); } });
     main.querySelectorAll('[data-wfdel]').forEach(b => b.onclick = async () => { if(!confirm('تمسح الدين ده؟')) return;
       try{ await debtSave(L => { const i = L.findIndex(x => x.id === b.dataset.wfdel); if(i >= 0) L.splice(i, 1); }); }catch(e){ alert('مااتمسحش: ' + e.message); } });
   }
