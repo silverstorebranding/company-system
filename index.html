@@ -17243,6 +17243,7 @@ table.cs tr.cs-open td{background:#fff7dd}
   const isUnd = o => { try{ return A().category(o) === 'undelivered'; }catch(e){ return /^[56]$/.test(String(o.Order_Delivery_Status ?? '').trim()); } };
   function brandOf(o){ let b = null; try{ b = prGetBrand(o.notes); }catch(e){} if(b === 'squad'){ const x = A() && A().squadBrandOf ? A().squadBrandOf(o) : null; b = x || 'dream'; } return b || (String(o.notes || '').split('\n')[0].trim() || '—'); }
   const BG = b => /^(kidzzly|rs kids)$/.test(b) ? '🧸 Kidzzly' : /^(dream|dream wa|dream msg site|msg|fastplt|cara silver|cara silver un|cara wa|lo gel nails)$/.test(b) ? '💍 إيطالي' : b === 'ersal' ? '📨 إرسال' : b === 'bunny' ? '🐰 Bunny' : '🏷️ ' + b;
+  const KEEP = ['💍 إيطالي', '🧸 Kidzzly'];
   async function load(){
     if(!A() || !A().hasCreds()){ S.err = 'محتاج دخول QP على الجهاز ده (من قسم 🚚 QP).'; return draw(); }
     S.busy = true; S.err = ''; S.list = null; S.prog = ''; draw();
@@ -17250,7 +17251,9 @@ table.cs tr.cs-open td{background:#fff7dd}
       if(A().loadSquadPages) await A().loadSquadPages();
       try{ await window.cbReady; }catch(e){}
       const all = await (A().fetchRangeAll || A().fetchRange)(S.from, S.to, n => { S.prog = n + ' أوردر'; const e = document.getElementById('rfProg'); if(e) e.textContent = S.prog; });
-      S.total = all.length; S.list = all.filter(isUnd);
+      // 📌 إيطالي و Kidzzly بس
+      const keep = all.filter(o => KEEP.includes(BG(brandOf(o))));
+      S.total = keep.length; S.list = keep.filter(isUnd);
       const C = candidates(S.list); S.cands = C;
       if(!S.field || !C.some(c => c.k === S.field)) S.field = C.length ? C[0].k : null;
     }catch(e){ S.err = e.message; }
@@ -17264,12 +17267,12 @@ table.cs tr.cs-open td{background:#fff7dd}
   const pct = (a, b) => b ? Math.round(a / b * 100) + '%' : '—';
   const barH = (v, max, col) => `<div style="height:8px;background:var(--line);border-radius:5px;overflow:hidden;min-width:80px"><i style="display:block;height:100%;width:${max ? Math.round(v / max * 100) : 0}%;background:${col || '#c0392b'}"></i></div>`;
   function view(){
-    let h = `<div class="pagehead"><h1>🚫 أسباب الرفض</h1><p>إحصائيات بأسباب الرفض وعدم الاستلام زي ما هي مكتوبة في QP — مجمّعة في مجموعات، ومقسومة حسب البراند.</p></div>
+    let h = `<div class="pagehead"><h1>🚫 أسباب الرفض</h1><p>إحصائيات بأسباب الرفض وعدم الاستلام زي ما هي مكتوبة في QP — مجمّعة في مجموعات، للإيطالي و Kidzzly بس.</p></div>
       <div class="card" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         <label>من <input type="date" id="rfF" value="${S.from}" class="plainIn"></label><label>إلى <input type="date" id="rfT" value="${S.to}" class="plainIn"></label>
         <button class="mockbtn" id="rfGo">${S.busy ? '⏳ بيجيب...' : '🔄 هات من QP'}</button><span id="rfProg" style="font-size:13px;color:var(--muted)">${S.busy ? esc(S.prog) : ''}</span>
         <select id="rfK" class="plainIn">${[['both', 'المرفوض + الاندلفرد'], ['rej', '🚫 المرفوض بس (Rejected)'], ['und', '💔 الاندلفرد بس']].map(([k, l]) => `<option value="${k}" ${S.kind === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
-        ${S.list ? `<select id="rfB" class="plainIn"><option value="all">كل البراندات</option>${[...new Set(S.list.map(o => BG(brandOf(o))))].sort().map(g => `<option ${S.brand === g ? 'selected' : ''}>${esc(g)}</option>`).join('')}</select>` : ''}</div>`;
+        ${S.list ? `<select id="rfB" class="plainIn"><option value="all">كل البراندات</option>${KEEP.map(g => `<option ${S.brand === g ? 'selected' : ''}>${esc(g)}</option>`).join('')}</select>` : ''}</div>`;
     if(S.err) return h + `<div class="mono-note">${esc(S.err)}</div>`;
     if(!S.list) return h + (S.busy ? '<div class="card"><p class="none">⏳ بيجيب أوردرات المدة من QP...</p></div>' : '<div class="card"><p class="none">اختار المدة ودوس 🔄 هات من QP.</p></div>');
     // 🔎 الخانة اللي فيها السبب
