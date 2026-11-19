@@ -16855,7 +16855,7 @@ table.cs tr.cs-open td{background:#fff7dd}
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const fmt = n => Math.round(Number(n || 0)).toLocaleString('ar-EG');
   const ymd = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-  const R = { kidPer:5, itPer:2, mult:2, days:7 };   // 🎯 الريتارجت: بيدج أطفال = 5 أوردر · بيدج إيطالي = 2
+  const R = { kidPer:5, itPer:2, mult:2, days:7, renPct:0.10 };   // ♻️ التارجت = تجديد 10% من الناقص   // 🎯 الريتارجت: بيدج أطفال = 5 أوردر · بيدج إيطالي = 2
   const D = { day:null, at:0, busy:false, fu:null, ads:null, sales:null, ren:null, rt:null, cfg:{}, err:'' };
   async function kvGet(k){ const { data } = await sb().from('app_kv').select('value').eq('key', k).maybeSingle(); return data && data.value; }
   async function kvSet(k, v){ return sb().from('app_kv').upsert({ key:k, value:v, updated_at:new Date().toISOString(), updated_by_name: me().full_name || me().username || '' }); }
@@ -16937,7 +16937,7 @@ table.cs tr.cs-open td{background:#fff7dd}
       <button class="sqd-btn" id="sqdRe" style="margin-inline-start:auto">${D.busy ? '⏳' : '🔄'} حدّث</button></div>`;
     if(!D.day && D.busy) return h + '<div class="sq-loading">بنحسب مهام النهارده...</div></div>';
     const fu = D.fu, spend = D.ads && D.ads.list ? D.ads.list.reduce((a, b) => a + (b.spend || 0), 0) : null, target = spend == null ? null : spend * R.mult;
-    const kd = D.kd, renNeed = kd ? kd.total : null, sales = D.sales || { n:0, v:0 }, rt = D.rt || { it:0, kid:0, total:0 };
+    const kd = D.kd, renNeed = kd ? Math.ceil(kd.total * R.renPct) : null, sales = D.sales || { n:0, v:0 }, rt = D.rt || { it:0, kid:0, total:0 };
     // 💰 فوق: البنات التلاتة — الأيام وحققت كام وباقي كام، والمكافأة والخصم كل واحد لوحده (من غير صافي)
     const FB = 150, ppl = Object.values(D.kdMap || {}).filter(r => r.days && r.name).sort((a, b) => b.days - a.days).slice(0, 3);
     if(ppl.length) h += `<div class="sqd-g" style="grid-template-columns:repeat(${ppl.length},1fr);margin-bottom:10px">${ppl.map(r => { const ok = r.closed || 0, no = (r.days || 0) - ok;
@@ -16951,8 +16951,8 @@ table.cs tr.cs-open td{background:#fff7dd}
         <div class="s">${fu ? `ناقص متابعة: ✋ هولد <b>${fmt(fu.holdNo)}</b> · 💔 اندلفرد <b>${fmt(fu.undNo)}</b><br>اتابعو النهارده: ✋ <b>${fmt(ft.hold)}</b> · 💔 <b>${fmt(ft.und)}</b><br>من أوردرات آخر ${R.days} أيام${old ? `<br>⚠️ آخر تحديث ${esc(new Date(fu.at).toLocaleString('ar-EG', { weekday:'short', hour:'2-digit', minute:'2-digit' }))}` : ''}<br><a href="#/kidzzly-days">ابدأي المتابعة ←</a>` : 'محتاج حد يفتح Squad من جهاز عليه دخول QP عشان الرقم ده يتحسب.'}</div>${fu ? prog(ftN, ftN + fu.holdNo + fu.undNo) : ''}</div>
       <div class="sqd-t" style="--k:#b08d3a"><div class="n">${target == null ? '—' : fmt(target) + ' ج'}</div><div class="l">🛒 تارجت المبيعات (أوردرات جديدة)</div>
         <div class="s">${target == null ? 'مقدرناش نحسب التارجت.<br>' : ''}اتباع النهارده <b>${fmt(sales.v)}</b> ج (${fmt(sales.n)} أوردر)</div>${target ? prog(sales.v, target, ' ج') : ''}</div>
-      <div class="sqd-t" style="--k:#2f7d55"><div class="n">${renNeed == null ? '—' : fmt(renNeed)}</div><div class="l">♻️ لازم نجدد (100% من الناقص)</div>
-        <div class="s">${kd ? `الناقص في آخر 3 أيام قبل النهارده وامبارح${D.kdRange ? ` (${esc(new Date(D.kdRange[0] + 'T12:00:00').toLocaleDateString('ar-EG', { day:'numeric', month:'short' }))} – ${esc(new Date(D.kdRange[1] + 'T12:00:00').toLocaleDateString('ar-EG', { day:'numeric', month:'short' }))})` : ''} عشان نوصل الهدف: 🧸 كيدزلي (60%) <b>${fmt(kd.kid)}</b> · 💍 إيطالي (40%) <b>${fmt(kd.it)}</b><br>🧸 لو هدف كيدزلي 50% = <b>${fmt(kd.k50 || 0)}</b> · لو 45% = <b>${fmt(kd.k45 || 0)}</b>${kd.at ? `<br><small>حسبة أيام التسليم: ${esc(new Date(kd.at).toLocaleString('ar-EG', { weekday:'short', hour:'2-digit', minute:'2-digit' }))}${D.kdBusy ? ' ⏳ بتتحدّث' : ''}</small>` : ''}` : (D.kdBusy ? '⏳ بنحسب الناقص...' : 'لسه أيام التسليم الشهر ده ماتحسبتش — افتح 🎯 أيام تحت الهدف.')}</div>${renNeed != null ? prog(D.ren || 0, renNeed) : ''}</div>
+      <div class="sqd-t" style="--k:#2f7d55"><div class="n">${renNeed == null ? '—' : fmt(renNeed)}</div><div class="l">♻️ تجديد من الاندلفرد (${Math.round(R.renPct * 100)}% من الناقص)</div>
+        <div class="s">${kd ? `الناقص في آخر 3 أيام قبل النهارده وامبارح${D.kdRange ? ` (${esc(new Date(D.kdRange[0] + 'T12:00:00').toLocaleDateString('ar-EG', { day:'numeric', month:'short' }))} – ${esc(new Date(D.kdRange[1] + 'T12:00:00').toLocaleDateString('ar-EG', { day:'numeric', month:'short' }))})` : ''} عشان نوصل الهدف: <b>${fmt(kd.total)}</b> (🧸 كيدزلي 60% <b>${fmt(kd.kid)}</b> · 💍 إيطالي 40% <b>${fmt(kd.it)}</b>)<br>التارجت = ${Math.round(R.renPct * 100)}% منهم = <b>${fmt(renNeed)}</b> تجديد<br>🧸 لو هدف كيدزلي 50% = <b>${fmt(kd.k50 || 0)}</b> · لو 45% = <b>${fmt(kd.k45 || 0)}</b>${kd.at ? `<br><small>حسبة أيام التسليم: ${esc(new Date(kd.at).toLocaleString('ar-EG', { weekday:'short', hour:'2-digit', minute:'2-digit' }))}${D.kdBusy ? ' ⏳ بتتحدّث' : ''}</small>` : ''}` : (D.kdBusy ? '⏳ بنحسب الناقص...' : 'لسه أيام التسليم الشهر ده ماتحسبتش — افتح 🎯 أيام تحت الهدف.')}</div>${renNeed != null ? prog(D.ren || 0, renNeed) : ''}</div>
       <div class="sqd-t" style="--k:#8a4fb0"><div class="n">${fmt(rt.total)}</div><div class="l">🎯 أوردرات الريتارجت</div>
         <div class="s">بيدجات شغالة ريتارجت النهارده:
           <div style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0"><label>💍 إيطالي <input type="number" min="0" id="sqdIt" value="${rt.it}" style="width:54px;padding:3px 5px;border:1.5px solid var(--line);border-radius:6px;font-family:inherit"></label>
