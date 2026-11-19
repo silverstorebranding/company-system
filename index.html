@@ -17170,7 +17170,7 @@ table.cs tr.cs-open td{background:#fff7dd}
         <p style="font-size:12px;color:var(--muted);margin:6px 0 0">من أوردرات QP من ${esc(W.from || '')} لحد النهارده · القطع: الإيطالي الطقم = قطعة، والأطفال من تحليل المكونات · البضاعة = القطع × ${WF_PIECE} ج · بيتسلم من Pending + مع المندوب 55% ومن الهولد 20% والباقي بيرجع، والاندلفرد اللي لسه مرجعش كله راجع.</p></div>`;
     } else if(A() && A().hasCreds()) h += `<div class="card"><p class="none">⏳ بيجيب أوردرات QP...</p></div>`;
     // ⚙️ مصاريف التشغيل (بتتكتب بالإيد: رواتب، إيجار...) + 📦 المخزن (تقديري) — app_kv where_cfg = { ops:[{ id, name, amount }], stock }
-    const ed = canEdit(), CF = W.cfg || {}, ops = CF.ops || [], opsT = ops.reduce((a, x) => a + num(x.amount), 0), stock = num(CF.stock);
+    const ed = canEdit(), CF = W.cfg || {}, ops = CF.ops || [], opsT = ops.reduce((a, x) => a + num(x.amount), 0), stock = num(CF.stock), cashMan = CF.cash != null && CF.cash !== '' ? num(CF.cash) : null;
     const inp = 'padding:7px 9px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit';
     h += `<div class="card"><h3>⚙️ مصاريف التشغيل — ${fmt(opsT)} ج</h3>
       ${ops.length ? `<div class="tablewrap"><table class="pr" style="width:100%"><tr><th>البند</th><th>المبلغ</th>${ed ? '<th></th>' : ''}</tr>
@@ -17178,6 +17178,9 @@ table.cs tr.cs-open td{background:#fff7dd}
       ${ed ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><input id="wfOpN" placeholder="البند (رواتب / إيجار / ...)" style="flex:1;min-width:160px;${inp}">
         <input id="wfOpA" inputmode="decimal" placeholder="المبلغ" style="width:120px;${inp}">
         <button class="mockbtn" id="wfOpAdd" style="background:#1f3d36;border-color:#1f3d36;color:#fff">➕ أضف</button></div>` : ''}
+      <h3 style="margin-top:16px">🏦 الخزنة الحالية — ${cashMan != null ? fmt(cashMan) + ' ج' : 'من الشيت ' + fmt(cash) + ' ج'}</h3>
+      ${ed ? `<div style="display:flex;gap:8px;flex-wrap:wrap"><input id="wfCs" inputmode="decimal" placeholder="اللي في الخزنة فعلًا (فاضي = رصيد الشيت)" value="${cashMan != null ? cashMan : ''}" style="width:260px;${inp}">
+        <button class="mockbtn" id="wfCsSave" style="background:#1f3d36;border-color:#1f3d36;color:#fff">💾 احفظ</button></div>` : ''}
       <h3 style="margin-top:16px">📦 المخزن (تقديري) — ${fmt(stock)} ج</h3>
       ${ed ? `<div style="display:flex;gap:8px;flex-wrap:wrap"><input id="wfSt" inputmode="decimal" placeholder="قيمة البضاعة اللي في المخزن" value="${stock || ''}" style="width:220px;${inp}">
         <button class="mockbtn" id="wfStSave" style="background:#1f3d36;border-color:#1f3d36;color:#fff">💾 احفظ</button></div>` : ''}</div>`;
@@ -17185,7 +17188,7 @@ table.cs tr.cs-open td{background:#fff7dd}
     if(C && W.cash){
       const T = W.cash, bk = T.back || { peter:0, fady:0 };
       const dP = num(T.peter) - num(bk.peter), dF = num(T.fady) - num(bk.fady), drawn = dP + dF;
-      const O = C.out, wl = wallet || 0, cs = cash || 0;
+      const O = C.out, wl = wallet || 0, cs = cashMan != null ? cashMan : (cash || 0);
       const prof = O.dv - O.dp * WF_PIECE;
       const have = cs + wl + C.wayExp + O.rc + stock, owe = opsT + debts, net = have - owe;
       const ln = (ic, l, v, sub, col) => `<div style="display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px dashed var(--line)"><div>${ic} ${l}${sub ? `<div style="font-size:12px;color:var(--muted)">${sub}</div>` : ''}</div><b style="white-space:nowrap;${col ? 'color:' + col : ''}">${v}</b></div>`;
@@ -17193,7 +17196,7 @@ table.cs tr.cs-open td{background:#fff7dd}
       h += `<div class="card" style="border:2px solid #1f3d36"><h3>🧮 الصورة الكاملة — ${esc(monthTxt)}</h3><div style="font-size:14.5px">
         ${ln('💸', 'انت وفادي سحبتوا', fmt(drawn) + ' ج', `بيتر ${fmt(dP)} · فادي ${fmt(dF)} — من شيت 💼 الحسابات (بعد خصم المصاريف اللي دفعتوها من جيبكم)`, '#5b4a7a')}
         <div style="font-weight:800;margin:10px 0 0">✅ اللي لينا</div>
-        ${ln('🏦', 'الخزنة', fmt(cs) + ' ج', '', G)}
+        ${ln('🏦', 'الخزنة', fmt(cs) + ' ج', cashMan != null ? `الخزنة الحالية (مكتوبة بالإيد) — رصيد شيت الحسابات ${fmt(cash)} ج` : 'رصيد شيت 💼 الحسابات', G)}
         ${ln('👛', 'عند QP مجوش', fmt(wl) + ' ج', 'هتيجي مع التحويل الجاي', G)}
         ${ln('🚚', 'هيتسلم من اللي برا', fmt(C.wayExp) + ' ج', `منهم بضاعة ≈ ${fmt(O.dp * WF_PIECE)} ج (${fmt(O.dp)} قطعة × ${WF_PIECE}) وأرباح ≈ ${fmt(prof)} ج (قبل الشحن) — خلال أسبوع لأسبوعين`, G)}
         ${ln('↩️', 'بضاعة هترجع', fmt(O.rc) + ' ج', `≈ ${fmt(O.rp)} قطعة × ${WF_PIECE} ج`, G)}
@@ -17245,6 +17248,7 @@ table.cs tr.cs-open td{background:#fff7dd}
       if(!name || !amount) return alert('اكتب البند والمبلغ.');
       try{ await cfgSave(c => (c.ops = c.ops || []).push({ id:Date.now().toString(36), name, amount }));
         ['wfOpN', 'wfOpA'].forEach(id => { const e = $(id); if(e) e.value = ''; }); }catch(e){ alert('مااتحفظش: ' + e.message); } };
+    if($('wfCsSave')) $('wfCsSave').onclick = async () => { const v = $('wfCs').value.trim(); try{ await cfgSave(c => { c.cash = v === '' ? null : num(v); }); }catch(e){ alert('مااتحفظش: ' + e.message); } };
     if($('wfStSave')) $('wfStSave').onclick = async () => { try{ await cfgSave(c => { c.stock = num($('wfSt').value); }); }catch(e){ alert('مااتحفظش: ' + e.message); } };
     main.querySelectorAll('[data-wfopdel]').forEach(b => b.onclick = async () => { if(!confirm('تمسح البند ده؟')) return;
       try{ await cfgSave(c => { c.ops = (c.ops || []).filter(x => x.id !== b.dataset.wfopdel); }); }catch(e){ alert('مااتمسحش: ' + e.message); } });
