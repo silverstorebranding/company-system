@@ -11186,6 +11186,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
 .up-grp-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-weight:700;font-size:14px;margin:0 0 6px;color:#7a2a1f}
 .up-grp-h b{background:#fdecea;border-radius:10px;padding:0 8px}
 .up-chips{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}
+.rd-out{margin-top:10px;border:1.5px solid #b7791f;border-radius:10px;padding:8px 12px;background:#fffaf0}.rd-out summary{cursor:pointer;font-weight:700;font-size:13.5px}
 .rd-sum{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:12px}
 .rd-sum>div{display:flex;justify-content:space-between;align-items:center;gap:8px;border:2px solid var(--line);border-radius:12px;padding:10px 14px;background:#fff}
 .rd-sum>div span{font-size:13.5px;font-weight:700}.rd-sum>div small{font-weight:400;color:var(--muted);font-size:11.5px}
@@ -11937,6 +11938,18 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
       const pend = all.filter(q => isPendingQ(q) && ymd(new Date(q.order_date)) === day);
       RD.rest = pend.filter(q => !scanned.has(String(q.serial))).sort((a, b) => new Date(a.order_date) - new Date(b.order_date)).map(q => ({ q, res:'', err:'' }));
       RD.pendN = pend.length; RD.matched = pend.length - RD.rest.length; RD.scanN = X.list.length; RD.forDay = day;
+      // 🔍 البوالص اللي اتصورت ومش في Pending اليوم ده — ليه؟ (اترفعت يوم تاني / حالتها اتغيرت / مش على QP / اتصورت مرتين)
+      const pendSet = new Set(pend.map(q => String(q.serial))), allBy = new Map(all.map(q => [String(q.serial), q]));
+      const out = X.list.filter(x => !pendSet.has(String(x.serial)));
+      for(let i = 0; i < out.length; i++){ const x = out[i];
+        let q = allBy.get(String(x.serial)) || x.q;
+        if(!q){ RD.msg = `بيدوّر على ${i + 1} من ${out.length} بوليصة مش في اليوم ده...`; draw();
+          try{ q = await qpCall('order/' + encodeURIComponent(x.serial)); if(q && q.data && !q.serial) q = q.data; x.q = q; }catch(e){ x.err = /not found|404|No .* matches/i.test(e.message) ? 'مش موجودة في QP' : e.message; } }
+        x.why = !q ? (x.err || 'مش موجودة في QP') : !isPendingQ(q) ? 'حالتها على QP: ' + String(api.label(q) || q.status || '').replace(/\s*#\d+$/, '') + ' (مش Pending)'
+          : ymd(new Date(q.order_date)) !== day ? 'اترفعت يوم ' + ymd(new Date(q.order_date)) : 'مش في ليستة QP لليوم ده';
+      }
+      RD.out = out.map(x => ({ serial:x.serial, name:(x.q && x.q.full_name) || '', why:x.why }));
+      if(out.some(x => x.q)) scSave();
       RD.msg = `📦 يوم ${day}: ${pend.length} أوردر Pending على QP — منهم ${pend.length - RD.rest.length} اتمسحوا (جاهزين) و ${RD.rest.length} باقيين.`; RD.msgErr = false;
     }catch(e){ RD.msg = 'مقدرتش أجيب من QP: ' + e.message; RD.msgErr = true; }
     RD.loading = false; draw();
@@ -11995,6 +12008,10 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
           <div class="bad"><span>⏳ مرفوع ومتجهزش<br><small>${left.length !== rest.length ? `فاضل ${left.length} مااتمسحوش` : 'هيتمسحوا من QP'}</small></span><b>${rest.length}</b></div>
         </div>
         ${canDelete() ? `<div class="up-row" style="margin-top:10px"><button class="up-btn" id="upRdDel2" style="background:#b3261e;border-color:#b3261e;color:#fff;font-size:16px;padding:12px 22px" ${left.length && !RD.busy ? '' : 'disabled'}>${RD.busy ? '⏳ بيمسح...' : `🗑️ امسح الـ ${left.length} اللي متجهزوش من QP`}</button></div>` : ''}` : ''}
+      ${RD.rest && RD.out && RD.out.length ? `<details class="rd-out" open><summary>🔍 ${RD.out.length} بوليصة اتصورت بس مش في Pending يوم ${esc(RD.forDay || rdDay())} — ليه؟ (${Object.entries(RD.out.reduce((a, x) => { const k = x.why.replace(/ \d{4}-\d\d-\d\d$/, ' يوم تاني'); a[k] = (a[k] || 0) + 1; return a; }, {})).map(([k, n]) => esc(k) + ': ' + n).join(' · ')})</summary>
+        <div class="up-sheet" style="margin-top:8px;max-height:280px;overflow:auto"><table><thead><tr><th>رقم الشحنة</th><th>العميل</th><th>السبب</th></tr></thead><tbody>
+        ${RD.out.map(x => `<tr><td style="padding:5px 8px;direction:ltr;font-weight:700">${esc(x.serial)}</td><td style="padding:5px 8px">${esc(x.name)}</td><td style="padding:5px 8px">${esc(x.why)}</td></tr>`).join('')}
+        </tbody></table></div></details>` : ''}
       ${RD.rest && rest.length ? `<div class="up-sheet" style="margin-top:10px;max-height:360px;overflow:auto"><table><thead><tr><th>رقم الشحنة</th><th>العميل</th><th>الموبايل</th><th>المحتوى</th><th>السعر</th><th>notes</th><th>النتيجة</th><th></th></tr></thead><tbody>
         ${rest.map((x, i) => { const q = x.q; return `<tr ${x.res === 'ok' ? 'style="background:#eef8f1;opacity:.75"' : ''}>
           <td style="padding:6px 8px;direction:ltr;font-weight:700">${esc(q.serial)}</td><td style="padding:6px 8px">${esc(q.full_name || '')}</td>
