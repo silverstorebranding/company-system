@@ -12000,6 +12000,56 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
     { k:'not',  t:'⚠️ اتصوروا ومش Pending على QP',     c:'#b7791f', bg:'#fff4e5' },
     { k:'rest', t:'⏳ Pending على QP ومااتصوروش',       c:'#b3261e', bg:'#fdecea' } ];
   const rdList = k => k === 'in' ? (RD.inQ || []) : k === 'not' ? (RD.notQ || []) : (RD.rest || []);
+  /* 🔁 ارفعها تاني بسريال جديد: نفس بيانات الأوردر من QP → أوردر جديد، والقديم بيفضل زي ما هو */
+  const AGs = { busy:false, msg:'', msgErr:false };
+  async function againUpload(){
+    const rows = X.list.filter(x => x.q && !x.newSerial);
+    if(!rows.length) return;
+    if(!confirm(`هيترفع ${rows.length} أوردر جديد على QP بسريال جديد (بنفس بيانات البوالص دي).\nالأوردرات القديمة هتفضل على QP زي ما هي.\n\nتكمل؟`)) return;
+    AGs.busy = true; let ok = 0, fail = 0;
+    for(let i = 0; i < rows.length; i++){ const x = rows[i], q = x.q;
+      AGs.msg = `بيرفع ${i + 1} من ${rows.length}...`; AGs.msgErr = false; draw();
+      try{
+        const body = { full_name: String(q.full_name || '').trim(), phone: '0' + phoneOf(q.phone), address: String(q.address || '').trim(), total_amount: numOf(q.total_amount ?? q.price) || 0,
+          notes: String(q.notes || '').trim(), order_date: tzIso(), shipment_contents: String(q.shipment_contents || '').trim(), weight: String(q.weight || '1.00'), city: String(q.city || '').trim() };
+        let res;
+        try{ res = await qpCall('order', { method:'POST', body: JSON.stringify(body) }); }
+        catch(e1){ if(!/city|مدينه|مدينة/i.test(e1.message)) throw e1;   // المدينة مش متعرفة على QP → ابعت من غيرها
+           const b2 = { ...body }; delete b2.city; res = await qpCall('order', { method:'POST', body: JSON.stringify(b2) }); }
+        x.newSerial = String((res && (res.serial || res.order_serial || (res.data && res.data.serial) || res.id)) || '✔'); x.agErr = ''; ok++;
+      }catch(e){ x.agErr = e.message; fail++; }
+      draw();
+    }
+    AGs.busy = false; AGs.msgErr = !!fail;
+    AGs.msg = `✅ اترفع ${ok} أوردر جديد على QP${fail ? ` — و ${fail} QP رفضهم (السبب جنبهم)` : ''}. الأوردرات القديمة زي ما هي.`;
+    draw();
+  }
+  function againSheet(){
+    const L = X.list.filter(x => x.q); if(!L.length || !window.XLSX) return;
+    const ws = XLSX.utils.json_to_sheet(L.slice().reverse().map(x => { const q = x.q; return { 'السريال القديم':String(x.serial), 'السريال الجديد':x.newSerial ? String(x.newSerial) : '', 'العميل':q.full_name || '', 'الموبايل':phoneOf(q.phone), 'العنوان':q.address || '',
+      'المدينة':q.city || '', 'السعر':numOf(q.total_amount ?? q.price), 'notes':q.notes || '', 'المحتوى':q.shipment_contents || '', 'ملاحظة':x.agErr || '' }; }));
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'اترفعت تاني');
+    XLSX.writeFile(wb, `اترفعت تاني بسريال جديد ${ymd(new Date())} (${L.length}).xlsx`);
+  }
+  function againCard(){
+    const todo = X.list.filter(x => x.q && !x.newSerial).length, done = X.list.filter(x => x.newSerial).length, miss = X.list.filter(x => !x.loading && !x.q).length;
+    return `<div class="card"><h3>📋 البوالص (${X.list.length})${done ? ` — <span style="color:#2f7d55">اترفع منهم ${done}</span>` : ''}</h3>
+      ${AGs.msg ? `<div class="up-msg ${AGs.msgErr ? 'err' : 'ok'}">${esc(AGs.msg)}</div>` : ''}
+      <div class="up-sheet"><table><thead><tr><th>السريال القديم</th><th>العميل</th><th>الموبايل</th><th>العنوان</th><th>المحتوى</th><th>السعر</th><th>notes</th><th>السريال الجديد</th><th></th></tr></thead><tbody>
+      ${X.list.map((x, i) => { const q = x.q || {}; return `<tr ${x.newSerial ? 'style="background:#eef8f1"' : (!x.loading && !x.q) || x.agErr ? 'class="bad"' : ''}>
+        <td style="padding:6px 8px;direction:ltr;font-weight:700">${esc(x.serial)}</td><td style="padding:6px 8px">${esc(q.full_name || (x.loading ? '⏳' : x.err || ''))}</td>
+        <td style="padding:6px 8px;direction:ltr">${esc(q.phone || '')}</td><td style="padding:6px 8px;max-width:220px;white-space:normal">${esc(q.address || '')}${q.city ? ' — ' + esc(q.city) : ''}</td>
+        <td style="padding:6px 8px;max-width:240px;white-space:normal">${esc(q.shipment_contents || '')}</td><td style="padding:6px 8px">${esc(String(q.total_amount ?? q.price ?? '').replace(/\.00$/, ''))}</td>
+        <td style="padding:6px 8px">${esc(q.notes || '')}</td>
+        <td style="padding:6px 8px;direction:ltr;font-weight:700;color:#2f7d55">${x.newSerial ? '✅ ' + esc(x.newSerial) : x.agErr ? '<span style="color:#b3261e">❌ ' + esc(x.agErr) + '</span>' : ''}</td>
+        <td class="x">${x.newSerial ? '' : `<button data-delx="${i}" title="شيلها من الليستة">✕</button>`}</td></tr>`; }).join('')}
+      </tbody></table></div>
+      ${miss ? `<p style="font-size:12.5px;color:#b3261e;margin:8px 0 0">⚠️ ${miss} بوليصة مالقيتش بياناتها على QP — مش هتترفع.</p>` : ''}
+      <div class="up-row" style="margin-top:12px">
+        <button class="up-btn ok" id="upAgGo" ${todo && !AGs.busy ? '' : 'disabled'}>${AGs.busy ? '⏳ بيرفع...' : `🔁 ارفعهم تاني على QP بسريال جديد (${todo})`}</button>
+        <button class="up-btn" id="upAgSheet" ${X.list.some(x => x.q) ? '' : 'disabled'}>⬇️ نزّل شيت (القديم ← الجديد)</button>
+        <button class="up-btn" id="upDelClear">🧹 فضّي الليستة</button></div></div>`;
+  }
   function readyCard(){
     const rest = RD.rest || [], left = rest.filter(x => !x.res), okN = X.list.length;
     return `<div class="card"><h3>📦 الجاهزين والباقي</h3>
@@ -12143,7 +12193,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
   X.lists = {}; X.listMode = X.mode;
   const clean = L => (Array.isArray(L) ? L : []).filter(x => x && x.serial && !x.loading);
   try{ const sv = JSON.parse(localStorage.getItem(SCAN_LS) || 'null');
-    if(sv){ if(sv.mode && ['delete', 'sheet', 'exclude', 'ready', 'held'].includes(sv.mode)) X.mode = sv.mode;
+    if(sv){ if(sv.mode && ['delete', 'sheet', 'exclude', 'ready', 'held', 'again'].includes(sv.mode)) X.mode = sv.mode;
       if(sv.lists) Object.keys(sv.lists).forEach(k => X.lists[k] = clean(sv.lists[k]));
       else if(Array.isArray(sv.list)) X.lists[sv.mode || 'delete'] = clean(sv.list);
       X.list = X.lists[X.mode] || []; X.listMode = X.mode; } }catch(e){}
@@ -12152,7 +12202,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
   let scanSaved = '';
   function saveScanList(){
     try{ syncModeList(); const lists = { ...X.lists, [X.mode]: X.list }; Object.keys(lists).forEach(k => lists[k] = (lists[k] || []).filter(x => !x.loading));
-      const v = JSON.stringify({ mode:['delete', 'sheet', 'exclude', 'ready', 'held'].includes(X.mode) ? X.mode : undefined, lists, at:Date.now() });
+      const v = JSON.stringify({ mode:['delete', 'sheet', 'exclude', 'ready', 'held', 'again'].includes(X.mode) ? X.mode : undefined, lists, at:Date.now() });
       if(v !== scanSaved){ localStorage.setItem(SCAN_LS, v); scanSaved = v; } }catch(e){}
   }
   const isPendingQ = q => { const st = String(q.Order_Delivery_Status ?? q.status ?? '').trim().toLowerCase(); return st === '1' || st === 'pending'; };
@@ -12503,7 +12553,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
     if(!X.scanning && !X.list.length) return '';
     const ok = X.list.filter(x => x.q).length, bad = X.list.filter(x => !x.loading && !x.q).length, pend = X.list.filter(x => x.q && isPendingQ(x.q)).length, last = X.list[0];
     return `<div class="scan-cnt"><span class="n">${X.list.length}</span><span>${X.mode === 'exclude' ? 'بوليصة هتتأجل لبكرة' : 'بوليصة اتصوّرت'}</span>
-      ${X.mode === 'sheet' || X.mode === 'held' || X.mode === 'exclude' ? '' : `<span class="pill ok">${pend} ${X.mode === 'ready' ? 'Pending على QP' : 'هتتمسح'}</span>`}${bad ? `<span class="pill bad">${bad} مش لاقيها</span>` : ''}
+      ${X.mode === 'sheet' || X.mode === 'held' || X.mode === 'exclude' || X.mode === 'again' ? '' : `<span class="pill ok">${pend} ${X.mode === 'ready' ? 'Pending على QP' : 'هتتمسح'}</span>`}${bad ? `<span class="pill bad">${bad} مش لاقيها</span>` : ''}
       ${last ? `<span class="last">آخر واحدة: <b>${esc(last.serial)}</b>${last.q ? ' — ' + esc(last.q.full_name || '') : (last.loading ? ' ⏳' : '')}</span>` : ''}</div>`;
   }
 
@@ -12516,21 +12566,22 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
         ${canDelete() ? `<button class="${X.mode === 'delete' ? 'on' : ''}" style="--bc:#b3261e" data-xmode="delete">🗑️ امسحها من QP</button>` : ''}
         <button class="${X.mode === 'sheet' ? 'on' : ''}" style="--bc:#2b6cb0" data-xmode="sheet">📄 اعمل منها شيت</button>
         <button class="${HELD ? 'on' : ''}" style="--bc:#b7791f" data-xmode="held">📦 معايا بوالصها ومتجهزتش</button>
+        <button class="${X.mode === 'again' ? 'on' : ''}" style="--bc:#2b6cb0" data-xmode="again">🔁 ارفعها تاني بسريال جديد</button>
         <button class="${X.mode === 'ready' ? 'on' : ''}" style="--bc:#2f7d55" data-xmode="ready">✅ الجاهزين ← شيت + امسح الباقي</button>
         <button class="${X.mode === 'restore' ? 'on' : ''}" style="--bc:#2f7d55" data-xmode="restore">♻️ رجّع اللي اتمسح</button>
         <button class="${X.mode === 'exclude' ? 'on' : ''}" style="--bc:#6b46c1" data-xmode="exclude">⏭️ شيت Pending من غيرهم</button></div>`;
     if(X.mode === 'restore') return h + restoreHtml();
-    const EX = X.mode === 'exclude', RDY = X.mode === 'ready';
+    const EX = X.mode === 'exclude', RDY = X.mode === 'ready', AG = X.mode === 'again';
     h += `
-<div class="card"><h3>${HELD ? '📦 أوردرات بوالصها معايا ومتجهزتش' : RDY ? '✅ الأوردرات اللي اتجهزت ← شيت لـ QP + امسح الباقي' : EX ? '⏭️ بوالص مش جاهزة — شيت الـ Pending من غيرها' : SH ? '📄 بوالص ← شيت' : '🗑️ مسح بوالص من QP'}</h3>
-      <p style="margin:0 0 10px;font-size:13.5px;color:var(--muted)">${HELD ? 'ليستة لوحدها (مش بتختلط بالجاهزين) — صوّر بوالص الأوردرات اللي معاك ومتجهزتش، وهتلاقيها تحت بكل بياناتها من QP، ونزّلها شيت.' : RDY ? '1) امسح باركود بوالص الأوردرات <b>اللي اتجهزت</b> (أو اكتب أرقامها). 2) نزّل شيت الجاهزين وابعته لـ QP. 3) هات الباقي (Pending ومااتمسحش) وامسحه من QP.' : EX ? 'صوّري بوالص الأوردرات اللي <b>لسه ماتجهزتش</b> (أو اكتبي أرقامها)، وبعدين نزّلي شيت الـ Pending من QP <b>من غيرها</b>. البوالص دي <b>مش بتتمسح من QP</b> — هتفضل Pending وتطلع بكرة عادي.' : SH ? 'صوّر باركود البوالص (أو اكتب أرقامها) — السيستم بيجيب بيانات كل بوليصة من QP: العميل، الموبايل، العنوان، المحتوى، السعر، الـ notes والحالة — وتنزّلهم في شيت.' : (me().is_admin ? '' : '🔐 معاك صلاحية مسح البوالص. ') + 'امسح باركود البوالص اللي أوردراتها ماتجهزتش، راجع الليستة، وبعدين امسحهم من QP مرة واحدة. QP بيمسح الأوردرات اللي لسه <b>Pending</b> بس.'}</p>
+<div class="card"><h3>${AG ? '🔁 ارفع أوردرات تاني على QP بسريال جديد' : HELD ? '📦 أوردرات بوالصها معايا ومتجهزتش' : RDY ? '✅ الأوردرات اللي اتجهزت ← شيت لـ QP + امسح الباقي' : EX ? '⏭️ بوالص مش جاهزة — شيت الـ Pending من غيرها' : SH ? '📄 بوالص ← شيت' : '🗑️ مسح بوالص من QP'}</h3>
+      <p style="margin:0 0 10px;font-size:13.5px;color:var(--muted)">${AG ? 'صوّر بوالص الأوردرات (أو اكتب أرقامها) — السيستم بيجيب بياناتها من QP، وتدوس "ارفعهم تاني" فيتعمل لكل واحد أوردر <b>جديد بسريال جديد</b> بنفس البيانات. <b>الأوردر القديم بيفضل على QP زي ما هو</b> ومش بيتلمس.' : HELD ? 'ليستة لوحدها (مش بتختلط بالجاهزين) — صوّر بوالص الأوردرات اللي معاك ومتجهزتش، وهتلاقيها تحت بكل بياناتها من QP، ونزّلها شيت.' : RDY ? '1) امسح باركود بوالص الأوردرات <b>اللي اتجهزت</b> (أو اكتب أرقامها). 2) نزّل شيت الجاهزين وابعته لـ QP. 3) هات الباقي (Pending ومااتمسحش) وامسحه من QP.' : EX ? 'صوّري بوالص الأوردرات اللي <b>لسه ماتجهزتش</b> (أو اكتبي أرقامها)، وبعدين نزّلي شيت الـ Pending من QP <b>من غيرها</b>. البوالص دي <b>مش بتتمسح من QP</b> — هتفضل Pending وتطلع بكرة عادي.' : SH ? 'صوّر باركود البوالص (أو اكتب أرقامها) — السيستم بيجيب بيانات كل بوليصة من QP: العميل، الموبايل، العنوان، المحتوى، السعر، الـ notes والحالة — وتنزّلهم في شيت.' : (me().is_admin ? '' : '🔐 معاك صلاحية مسح البوالص. ') + 'امسح باركود البوالص اللي أوردراتها ماتجهزتش، راجع الليستة، وبعدين امسحهم من QP مرة واحدة. QP بيمسح الأوردرات اللي لسه <b>Pending</b> بس.'}</p>
       <div class="up-row">
         ${X.scanning ? '<button class="up-btn" id="upScanStop">⏹️ وقّف الكاميرا</button>' : '<button class="up-btn pri" id="upScanStart">📷 امسح البوالص بالكاميرا</button>'}
         <label class="up-file">📸 صوّر البوليصة<input type="file" id="upPhoto" accept="image/*" capture="environment"></label>
         <input id="upSerial" placeholder="أو اكتب رقم الشحنة (أو أكتر من رقم)" style="max-width:260px;padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;direction:ltr">
         <button class="up-btn" id="upSerialAdd">➕ ضيف</button>
         ${X.list.length && !RDY ? `<button class="up-btn" id="upScanNew" style="background:#fff4e5;border-color:#b7791f">🆕 ابدأ مسح جديد (فضّي الـ ${X.list.length})</button>` : ''}
-        <label style="font-size:13px;${SH || EX || RDY ? 'display:none' : ''}">السبب الافتراضي <select id="upDelReason" style="padding:7px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit">${DEL_REASONS.map(r => `<option ${X.reason === r ? 'selected' : ''}>${r}</option>`).join('')}</select></label>
+        <label style="font-size:13px;${SH || EX || RDY || AG ? 'display:none' : ''}">السبب الافتراضي <select id="upDelReason" style="padding:7px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit">${DEL_REASONS.map(r => `<option ${X.reason === r ? 'selected' : ''}>${r}</option>`).join('')}</select></label>
       </div>
       ${scanCounter()}
       <div id="upScanBox" style="${X.scanning ? 'display:block;margin-top:12px;width:100%;max-width:460px;min-height:240px;border-radius:12px;overflow:hidden;background:#000' : 'display:none'}"></div>
@@ -12539,7 +12590,8 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
     </div>`;
     if(EX) h += ppCard();
     if(RDY){ if(!SC.loaded && !SC.loading && sbc()) scLoad(); h += readyCard(); }
-    if(X.list.length){
+    if(AG){ if(X.list.length) h += againCard(); }
+    else if(X.list.length){
       h += `<div class="card"><h3>📋 ${EX ? 'البوالص المؤجلة لبكرة' : RDY ? 'البوالص الجاهزة' : 'البوالص'} (${X.list.length})</h3>
         <div class="up-sheet"><table><thead><tr><th>رقم الشحنة</th><th>العميل</th><th>الموبايل</th><th>المحتوى</th><th>السعر</th><th>notes</th><th>الحالة في QP</th>${SH || EX || RDY ? '' : '<th>السبب</th><th>النتيجة</th>'}<th></th></tr></thead><tbody>
         ${X.list.map((x, i) => { const q = x.q || {}, pend = x.q && isPendingQ(q);
@@ -13787,6 +13839,8 @@ create policy "sheets: upload" on storage.objects for insert to authenticated wi
     if($('upBackScan')) $('upBackScan').onclick = e => { e.preventDefault(); X.mode = 'restore'; switchSrc('delete'); };
     if($('upScanSheet')) $('upScanSheet').onclick = scanSheet;
     if($('upRdFetch')) $('upRdFetch').onclick = rdFetch;
+    if($('upAgGo')) $('upAgGo').onclick = againUpload;
+    if($('upAgSheet')) $('upAgSheet').onclick = againSheet;
     if($('upScanNew')) $('upScanNew').onclick = () => { if(!confirm(`تفضّي الـ ${X.list.length} بوليصة اللي في التاب ده وتبدأ مسح جديد؟ (الجاهزين مش هيتلمسوا)`)) return; X.list = []; X.msg = ''; draw(); };
     if($('upRdClear')) $('upRdClear').onclick = () => { if(X.list.length && !confirm(`تفضّي الليستة (${X.list.length} بوليصة) وتبدأ من جديد؟ هتتفضى من كل الموبايلات.`)) return; RD.rest = null; RD.msg = ''; X.msg = ''; scClear(); };
     if($('upRdSync')) $('upRdSync').onclick = () => { SC.loaded = false; scLoad(); };
