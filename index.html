@@ -530,6 +530,7 @@ body:has(#vaBanner){padding-top:38px}
       <a class="navlink" href="#/delivery-rates">📊 نسب التسليمات</a>
       <a class="navlink" href="#/refusals">🚫 أسباب الرفض</a>
       <a class="navlink" href="#/urgent">🚨 أوردرات عاجلة <span class="ib-badge" id="urgBadge"></span></a>
+      <a class="navlink" href="#/prepaid">🛵 مناديب الدفع المقدم <span class="ib-badge" id="ppBadge"></span></a>
     </div>
     <div class="grp"><div class="grp-title">الأقسام</div>
       <div id="deptlinks"></div>
@@ -6221,7 +6222,9 @@ async function exportToSheet(btn) {
       { key:'breakdown', label:'🧩 تحليل مكونات الطلبات', routes:['breakdown'] },
       { key:'ersal_focus', label:'📨 إرسال فوكس', routes:['ersal-focus'] },
       { key:'kidzzly_days', label:'🎯 أيام تحت هدف التسليم', routes:['kidzzly-days'] },
-      { key:'refusals', label:'🚫 أسباب الرفض', routes:['refusals'] } ]},
+      { key:'refusals', label:'🚫 أسباب الرفض', routes:['refusals'] },
+      { key:'prepaid', label:'🛵 أوردراتي (مندوب دفع مقدم)', routes:['prepaid'] },
+      { key:'prepaid_admin', label:'🛵 مناديب الدفع المقدم (متابعة كل المناديب)', routes:['prepaid'] } ]},
     { title:'الرئيسية', items:[
       { key:'home',       label:'🏠 الرئيسية',             routes:['home'] },
       { key:'whatnow',    label:'❓ أعمل إيه دلوقتي؟',     routes:['whatnow'] },
@@ -11138,6 +11141,13 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
 .up-btn{padding:10px 18px;border:1.5px solid var(--line);border-radius:9px;background:var(--panel);color:var(--ink);font-family:inherit;font-size:14.5px;font-weight:700;cursor:pointer}
 .up-btn.pri{background:var(--brass);border-color:var(--brass);color:#fff}
 .up-btn.ok{background:#2f7d55;border-color:#2f7d55;color:#fff}
+.pp-up{border:2px solid #2b6cb0}
+.pp-up h3 b{background:#2b6cb0;color:#fff;border-radius:20px;padding:1px 10px;font-size:13px;margin-inline-start:6px}
+.pp-list{max-height:420px;overflow:auto;border:1px solid var(--line);border-radius:9px}
+.pp-li{display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border-bottom:1px solid var(--line);font-size:13.5px;cursor:pointer}
+.pp-li:last-child{border-bottom:none}
+.pp-li input{margin-top:4px;width:17px;height:17px;flex:none}
+.pp-li small{color:var(--muted)}
 .up-btn:disabled{opacity:.45;cursor:not-allowed}
 .up-float{position:fixed;left:18px;top:50%;transform:translateY(-50%);z-index:900;white-space:nowrap;display:flex;flex-direction:column;align-items:center;gap:2px;padding:12px 20px;border:none;border-radius:14px;background:#2f7d55;color:#fff;font-family:inherit;font-size:15.5px;font-weight:700;cursor:default;pointer-events:none;user-select:none;box-shadow:0 6px 20px rgba(0,0,0,.25)}
 .up-float b{font-size:19px}
@@ -12843,6 +12853,74 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
       <div class="up-row" style="margin-top:14px"><button class="up-btn ok" id="urgSend" ${U.sending ? 'disabled' : ''}>${U.sending ? '⏳' : '📨 ابعتهم'}</button><button class="up-btn" id="urgCancel">إلغاء</button></div></div></div>`;
   }
 
+  /* =====================================================================
+     🛵 مناديب الدفع المقدم: أوردرات مدينة نصر ومصر الجديدة بتتبعت لمندوب بدل QP
+     - بتظهر في كارت فوق الشيت، تختار المندوب وتدوس ابعت ← بتتشال من الشيت وتتحسب إنها اتاخدت
+     - المندوب بيشوفها في قسم 🛵 مناديب الدفع المقدم ويعلّم اتسلم / ماتسلمش
+     ===================================================================== */
+  const PPD = { couriers:null, sending:false, off:new Set(), to:'', missing:false };
+  const PP_RE = /مدينه\s*نصر|(^|[\s,،\-\/(])م\s*\.?\s*نصر(?=$|[\s,،\-\/)])|مصر\s*(ال)?جديده|هليوبوليس|nasr\s*-?\s*city|heliopolis|masr\s*el\s*(gedida|gdida|gedeeda)|new\s*cairo\s*heliopolis/i;
+  const isPPArea = r => PP_RE.test(normAr((r.address || '') + ' ' + (r.city || '')));
+  const ppRows = () => (S.rows || []).filter(r => !r.serial && isPPArea(r));
+  async function ppCouriers(force){
+    if(PPD.couriers && !force) return PPD.couriers;
+    const { data } = await sbc().from('profiles').select('id, username, full_name, allowed_sections');
+    PPD.couriers = (data || []).filter(p => Array.isArray(p.allowed_sections) && p.allowed_sections.includes('prepaid'))
+      .map(p => ({ id:p.id, name:p.full_name || p.username || 'مندوب' })).sort((a, b) => a.name.localeCompare(b.name, 'ar'));
+    if(PPD.couriers.length === 1) PPD.to = PPD.couriers[0].id;
+    return PPD.couriers;
+  }
+  function prepaidCard(){
+    const L = ppRows(); if(!L.length) return '';
+    if(!PPD.couriers){ ppCouriers().then(() => { if(isUP()) draw(); }).catch(() => {}); }
+    const pick = L.filter(r => !PPD.off.has(r)), sum = pick.reduce((a, r) => a + (numOf(r.amount) || 0), 0);
+    const C = PPD.couriers || [];
+    return `<div class="card pp-up"><h3>🛵 أوردرات مناديب الدفع المقدم <b>${L.length}</b> <span style="font-weight:400;font-size:13px;color:var(--muted)">${L.reduce((a, r) => a + (numOf(r.amount) || 0), 0).toLocaleString('ar-EG')} ج</span></h3>
+      <p style="margin:0 0 10px;font-size:13px;color:var(--muted)">أوردرات مدينة نصر ومصر الجديدة — <b>مش بتترفع على QP ومش في شيت QP</b>. اختار المندوب ودوس ابعت، وهتروح لقسم <b>🛵 مناديب الدفع المقدم</b>. (لو في أوردر مش عايزه يروح دلوقتي شيل علامته — هيفضل هنا.)</p>
+      ${PPD.missing ? `<div class="up-msg err">جدول مناديب الدفع المقدم لسه مش متعمل في Supabase — ${me().is_admin ? 'افتح قسم 🛵 مناديب الدفع المقدم وانسخ الـ SQL وشغّله.' : 'كلّم الأدمن.'}</div>` : ''}
+      <div class="pp-list">${L.map(r => { const i = S.rows.indexOf(r); return `<label class="pp-li"><input type="checkbox" data-ppchk="${i}" ${PPD.off.has(r) ? '' : 'checked'}>
+        <span><b>${esc(r.name || '—')}</b> · <span dir="ltr">${esc(phoneOf(r.phone) ? '0' + phoneOf(r.phone) : r.phone)}</span> · ${esc(r.amount || '')} ج<br><small>📍 ${esc(r.address || '')}${r.city ? ' — ' + esc(r.city) : ''}</small>${contentsOf(r) ? `<br><small>📦 ${esc(contentsOf(r))}</small>` : ''}<br><small style="color:#2b6cb0">${esc(r.srcKey === 'squad' ? '🏆 Squad · ' + (r.page || '') : srcLabel(r.srcKey))}</small></span></label>`; }).join('')}</div>
+      <div class="up-row" style="margin-top:10px;align-items:center">
+        ${!PPD.couriers ? '<span style="color:var(--muted)">⏳ بيحمّل المناديب...</span>' : C.length ? `<select id="ppTo" style="padding:9px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;min-width:180px"><option value="">— اختار المندوب —</option>${C.map(p => `<option value="${esc(p.id)}" ${PPD.to === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select>
+          <button class="up-btn ok" id="ppSend" ${PPD.sending || !pick.length ? 'disabled' : ''}>${PPD.sending ? '⏳ بيبعت...' : `🛵 ابعت ${pick.length} أوردر للمندوب (${sum.toLocaleString('ar-EG')} ج)`}</button>`
+          : `<span class="up-msg err" style="margin:0">مفيش مناديب لسه — المندوب يعمل حساب جديد، والأدمن يفتحله صلاحية "🛵 أوردراتي (مندوب دفع مقدم)" من ⚙️ الحسابات والصلاحيات.</span> <button class="up-btn" id="ppReload" style="padding:6px 12px;font-size:13px">🔄</button>`}
+      </div></div>`;
+  }
+  async function sendPrepaid(){
+    const rows = ppRows().filter(r => !PPD.off.has(r));
+    const to = (PPD.couriers || []).find(p => p.id === PPD.to);
+    if(!to) return flash('اختار المندوب الأول.', true);
+    if(!rows.length) return flash('مفيش أوردرات متعلّمة.', true);
+    PPD.sending = true; draw();
+    const batch = Date.now().toString(36), by = me().full_name || me().username || '';
+    // ما نبعتش نفس الأوردر مرتين (آخر 10 أيام)
+    let have = new Set();
+    try{ const since = new Date(); since.setDate(since.getDate() - 10);
+      const { data } = await sbc().from('prepaid_orders').select('row_key').in('row_key', rows.map(urgKey)).gte('created_at', since.toISOString());
+      have = new Set((data || []).map(x => x.row_key)); }catch(e){}
+    const fresh = rows.filter(r => !have.has(urgKey(r)));
+    const recs = fresh.map(r => ({ batch, order_date: ymd(new Date()), courier_id:to.id, courier_name:to.name, status:'pending',
+      customer_name:String(r.name || '').trim(), phone: phoneOf(r.phone) ? '0' + phoneOf(r.phone) : String(r.phone || ''), phone2: r.phone2 ? '0' + phoneOf(r.phone2) : null,
+      address:String(r.address || '').trim(), city:r.city || null, amount: numOf(r.amount), contents: contentsOf(r) || null, notes: finalNote(r) || null,
+      src_label: r.srcKey === 'squad' ? '🏆 Squad · ' + (r.page || '') : srcLabel(r.srcKey), agent: r.agent || null, row_key: urgKey(r),
+      sent_by: me().id, sent_by_name: by }));
+    if(recs.length){
+      const { error } = await sbc().from('prepaid_orders').insert(recs);
+      if(error){ PPD.sending = false; PPD.missing = /prepaid_orders|relation|schema cache|does not exist/i.test(error.message); draw();
+        return flash(PPD.missing ? 'جدول مناديب الدفع المقدم مش متعمل في Supabase — شغّل ملف prepaid_orders.sql.' : 'ماتبعتش: ' + error.message, true); }
+      const total = recs.reduce((a, x) => a + (Number(x.amount) || 0), 0);
+      try{ await sbc().from('inbox').insert({ kind:'task', from_id:me().id, from_name:by, to_id:to.id, to_name:to.name,
+        title:`🛵 عندك ${recs.length} أوردر جديد للتوصيل`, body:`${recs.length} أوردر (مدينة نصر / مصر الجديدة) — إجمالي ${total.toLocaleString('ar-EG')} ج.\nافتح قسم 🛵 مناديب الدفع المقدم، وعلّم كل أوردر اتسلم ولا لأ.` }); }catch(e){}
+    }
+    // بتتشال من الشيت وتتحسب إنها اتاخدت (مش هترجع تاني ومش هتترفع على QP)
+    rows.forEach(r => { if(isEasy(r.srcKey) || r.srcKey === 'squad') S.skipped.add(skipKey(r)); PPD.off.delete(r); });
+    S.rows = S.rows.filter(r => !rows.includes(r)); dupCheck();
+    PPD.sending = false;
+    persistTaken();
+    if(rows.some(r => r.urgentId)) closeUrgent(rows);
+    flash(`🛵 اتبعت ${recs.length} أوردر لـ ${to.name}${rows.length > recs.length ? ` (و ${rows.length - recs.length} كانوا اتبعتوله قبل كده فاتشالوا بس)` : ''} — وراحوا لقسم 🛵 مناديب الدفع المقدم.`);
+  }
+
   /* 🔁 الأوردرات اللي اترفعت بالفعل على QP (من السيستم أو مانوال على السايت) في آخر 3 أيام بتتشال لوحدها
      بنقارن بالموبايل، وبنشيل الأوردر بس لو اللي على QP اتعمل **بعد** وقت الأوردر (يعني هو نفسه اترفع) —
      لو العميلة ليها أوردر قديم على QP قبل الأوردر ده، يبقى ده أوردر جديد ويفضل */
@@ -13177,7 +13255,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
   const problemsOf = r => [...r.errs, ...(finalNote(r) ? [] : ['notes فاضية']), ...(r.upErr ? ['❌ QP: ' + r.upErr] : []), ...(isDupPending(r) ? ['⚠️ مرفوع في QP قبل كده'] : [])];
   // 🏆 أوردرات Squad دايماً في الجاهزين (من غير خانات المشاكل) — خدمة العملاء مسؤولة عنها
   // ✔ forceOk = إنت وافقت يترفع برغم المشاكل (من زرار "✔ ارفعه" جنب الأوردر)
-  const isReady = r => !r.serial && (r.srcKey === 'squad' || r.forceOk || !problemsOf(r).length);
+  const isReady = r => !r.serial && !isPPArea(r) && (r.srcKey === 'squad' || r.forceOk || !problemsOf(r).length);
   const readyRows = () => (S.rows || []).filter(isReady);
   const srcLabel = k => k === 'squad' ? '🏆 Squad' : k === 'restore' ? '♻️ اتمسحت قبل كده' : ((srcOf(k) || {}).label || k);
 
@@ -13352,15 +13430,17 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
       <div class="up-chips">${NOTE_SUGGEST.map(n => `<button type="button" data-upnote="${esc(n)}">${esc(n)}</button>`).join('')}</div></div>`;
 
     // 3) الشيت
-    const bad = S.rows.filter(r => r.errs.length).length, total = S.rows.reduce((a, r) => a + (numOf(r.amount) || 0), 0);
+    const QR = S.rows.filter(r => r.serial || !isPPArea(r));   // 🛵 أوردرات مناديب الدفع المقدم مش في شيت QP
+    const bad = QR.filter(r => r.errs.length).length, total = QR.reduce((a, r) => a + (numOf(r.amount) || 0), 0);
     // 🔁 مقارنة بالمرفوع على QP في آخر 3 أيام (مانوال أو من السيستم)
     if(S.rows && S.rows.length){ const dN = S.rows.filter(r => !r.serial && r.qpDup && r.qpDup.length && !r.dupOk).length;
       h += `<div class="card qpcmp ${dN ? 'bad' : ''}"><b>🔁 مقارنة بـ QP (آخر ${DUP_DAYS} أيام):</b> ${D.loading ? '⏳ بيقارن...' : !D.done ? 'لسه ماتقارنش — <button class="up-btn" id="qpcmpGo" style="padding:4px 10px;font-size:12.5px">🔎 قارن دلوقتي</button>'
         : dN ? `<b style="color:#b3261e">${dN} أوردر من اللي جبتهم اترفعوا قبل كده على QP</b> (من السيستم أو مانوال على السايت) <button class="up-btn" id="qpcmpDel" style="padding:5px 12px;font-size:13px;background:#b7791f;border-color:#b7791f;color:#fff">🧹 شيلهم ومايرجعوش تاني</button>` : '✅ مفيش ولا أوردر من اللي جبتهم مرفوع قبل كده على QP'}</div>`; }
     h += daysCard() + droppedCard();
+    h += prepaidCard();
     h += urgentBar() + urgPickHtml();
     h += `<div class="card"><h3>3️⃣ الشيت زي ما هيترفع على QP</h3>
-      <div class="up-kpis"><div><b>${S.rows.length}</b><span>أوردر</span></div><div><b>${total.toLocaleString('ar-EG')} ج</b><span>الإجمالي</span></div>
+      <div class="up-kpis"><div><b>${QR.length}</b><span>أوردر</span></div><div><b>${total.toLocaleString('ar-EG')} ج</b><span>الإجمالي</span></div>
         <div><b style="color:${bad ? '#b3261e' : '#2f7d55'}">${bad ? bad : '✔'}</b><span>${bad ? 'فيهم مشاكل' : 'كله تمام'}</span></div>
         ${D.done ? (() => { const n = S.rows.filter(r => !r.serial && r.qpDup && r.qpDup.length).length; return `<div><b style="color:${n ? '#b7791f' : '#2f7d55'}">${n || '✔'}</b><span>${n ? 'مرفوعين في QP قبل كده' : 'مفيش تكرار في QP'}</span></div>`; })() : ''}</div>
       <div class="up-row" style="margin:0 0 8px">${D.msg ? `<span style="font-size:13px;color:${/⚠️|مقدرتش|لازم/.test(D.msg) ? '#b7791f' : 'var(--muted)'}">${esc(D.msg)}</span>` : ''}
@@ -13381,7 +13461,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
           <td class="qpd">${r.serial ? '' : (r.qpDup && r.qpDup.length ? r.qpDup.slice(0, 2).map(q => `<div>⚠️ مرفوع: <b>${esc(q.serial)}</b> · ${new Date(q.date).toLocaleDateString('ar-EG', { day:'numeric', month:'short' })} · ${esc(String(q.price || '').replace(/\.00$/, ''))} ج · ${esc(q.st)}</div>`).join('') + (r.qpDup.length > 2 ? `<div>+ ${r.qpDup.length - 2} كمان</div>` : '') + (r.dupOk ? '<div class="ok">✔ هيترفع برضه</div>' : `<button class="up-btn" data-dupok="${i}" style="padding:2px 8px;font-size:11.5px;margin-top:3px">✔ ارفعه برضه</button>`) : (D.done ? '<span class="ok">✔ جديد</span>' : (D.loading ? '⏳' : '')))}</td>
           <td class="err">${r.serial ? `<span style="color:#2f7d55;font-weight:700">✅ اترفع ${esc(r.serial)}</span>` : (r.forceOk && problemsOf(r).length ? '<b style="color:#2f7d55">✔ وافقت يترفع:</b> ' : '') + esc(problemsOf(r).filter(x => !/مرفوع في QP قبل كده/.test(x)).join('، '))}</td>
           <td class="x">${r.serial ? '' : `${!isReady(r) ? `<button data-upforce="${i}" class="up-force" title="موافق يترفع برغم المشكلة — هيطلع فوق مع الجاهزين">✔ ارفعه</button>` : ''}${r.forceOk ? `<button data-upunforce="${i}" title="رجّعه للمشاكل">↩</button>` : ''}${!isReady(r) && !(r.urgent && r.urgent.status === 'open') ? `<button data-urgone="${i}" title="ابعته لحد يصلّحه (أوردرات عاجلة)">🚨</button>` : ''}<button data-updel="${i}" title="امسح الأوردر ده">✕</button>`}</td></tr>`;
-        const idx = S.rows.map((r, i) => ({ r, i }));
+        const idx = S.rows.map((r, i) => ({ r, i })).filter(x => x.r.serial || !isPPArea(x.r));
         const ready = idx.filter(x => isReady(x.r)), probs = idx.filter(x => !x.r.serial && !isReady(x.r)), done = idx.filter(x => x.r.serial);
         let t = `<h4 class="up-sec ok">✅ جاهزة للرفع على QP <b>${ready.length}</b> <span>${ready.reduce((a, x) => a + (numOf(x.r.amount) || 0), 0).toLocaleString('ar-EG')} ج</span></h4>`;
         t += ready.length ? `<div class="up-sheet"><table>${head}<tbody>${ready.map(x => rowHtml(x.r, x.i)).join('')}</tbody></table></div>` : '<p class="up-empty">مفيش أوردرات جاهزة لسه — صلّح اللي تحت وهتطلع هنا لوحدها.</p>';
@@ -13433,7 +13513,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
       <p style="font-size:12px;color:var(--muted);margin:8px 0 0">في الرفع المباشر بيتبعت تاريخ ووقت الرفع كـ order date ووزن 1 كجم، وفي الشيت اللي بيتنزّل بيتسابوا فاضيين زي شيت QP. المدينة اختيارية: بتتختار لوحدها لو مكتوبة في العنوان، ولو مش موجودة الأوردر بيترفع من غيرها.${S.rows.some(r => r.agent) ? ' الموظفة والمصدر اللي في الكوبي مش بيدخلوا الشيت.' : ''}</p></div>`;
 
     // 4) الموافقة
-    const R = readyRows(), probN = S.rows.filter(r => !r.serial && !isReady(r)).length;
+    const R = readyRows(), probN = S.rows.filter(r => !r.serial && !isPPArea(r) && !isReady(r)).length;
     const canSend = R.length && qpCities && !S.sending;
     h += `<div class="card"><h3>4️⃣ الموافقة والرفع على QP</h3>
       ${probN ? `<p style="color:#b7791f;margin:0 0 10px;font-size:14px">⚠️ فيه ${probN} أوردر فيهم مشاكل — مش هيترفعوا دلوقتي. هيترفع الجاهزين بس (${R.length}).</p>` : ''}
@@ -13993,11 +14073,16 @@ create policy "sheets: upload" on storage.objects for insert to authenticated wi
     if($('qpcmpDel')) $('qpcmpDel').onclick = () => { const b = $('upDupDel'); if(b) b.click(); };
     // 🚨 أوردرات عاجلة
     document.querySelectorAll('[data-urgone]').forEach(b => b.onclick = () => sendUrgent([S.rows[Number(b.dataset.urgone)]]));
-    if($('urgAll')) $('urgAll').onclick = () => sendUrgent(S.rows.filter(r => !r.serial && !isReady(r)));
+    if($('urgAll')) $('urgAll').onclick = () => sendUrgent(S.rows.filter(r => !r.serial && !isPPArea(r) && !isReady(r)));
     if($('urgTo')) $('urgTo').onchange = e => { S.urgPick.to = e.target.value; };
     if($('urgNote')) $('urgNote').oninput = e => { S.urgPick.note = e.target.value; };
     if($('urgSend')) $('urgSend').onclick = confirmUrgent;
     if($('urgCancel')) $('urgCancel').onclick = () => { S.urgPick = null; draw(); };
+    // 🛵 مناديب الدفع المقدم
+    document.querySelectorAll('[data-ppchk]').forEach(c => c.onchange = () => { const r = S.rows[Number(c.dataset.ppchk)]; if(!r) return; if(c.checked) PPD.off.delete(r); else PPD.off.add(r); draw(); });
+    if($('ppTo')) $('ppTo').onchange = e => { PPD.to = e.target.value; };
+    if($('ppSend')) $('ppSend').onclick = sendPrepaid;
+    if($('ppReload')) $('ppReload').onclick = () => ppCouriers(true).then(draw);
     if($('urgModal')) $('urgModal').onclick = e => { if(e.target.id === 'urgModal'){ S.urgPick = null; draw(); } };
     if($('urgMerge')) $('urgMerge').onclick = mergeUrgent;
     if($('urgRefresh')) $('urgRefresh').onclick = () => loadUrgent().then(draw);
@@ -15148,6 +15233,201 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
   window.addEventListener('hashchange', () => { if(isUG()) setTimeout(mount, 0); });
   const w = setInterval(() => { if(me().id && sb()){ clearInterval(w); badge(); if(isUG()) mount(); setInterval(badge, 60000); } }, 700);
   window.Urgent = { count: async () => { const { count } = await sb().from('urgent_orders').select('id', { count:'exact', head:true }).eq('assigned_to', me().id).eq('status', 'open'); return count || 0; } };
+})();
+</script>
+
+<style>
+/* 🛵 مناديب الدفع المقدم */
+.pp-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(105px,1fr));gap:10px;margin-bottom:14px}
+.pp-kpi{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.pp-kpi .n{font-size:21px;font-weight:800}.pp-kpi .l{font-size:12.5px;color:var(--muted)}
+.pp-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.pp-tabs button{padding:8px 14px;border:1px solid var(--line);border-radius:20px;background:var(--panel);color:var(--ink);font-family:inherit;font-size:13.5px;font-weight:600;cursor:pointer}
+.pp-tabs button.on{background:var(--brass-d);border-color:var(--brass-d);color:#fff}
+.pp-filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;align-items:center}
+.pp-filters select,.pp-filters input{padding:8px 10px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:14px;background:var(--panel);color:var(--ink)}
+.pp-day{margin-bottom:18px}
+.pp-dayh{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:14px;padding:8px 12px;background:var(--slate-l);border-radius:10px;margin-bottom:8px;position:sticky;top:0;z-index:2}
+.pp-dayh b{font-size:15.5px}
+.pp-card{background:var(--panel);border:1px solid var(--line);border-inline-start:5px solid #d69e2e;border-radius:10px;padding:11px 13px;margin-bottom:9px}
+.pp-card.delivered{border-inline-start-color:#2f7d55}
+.pp-card.failed{border-inline-start-color:#c0392b}
+.pp-top{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px}
+.pp-top .nm{font-size:16px;font-weight:700}
+.pp-top .amt{margin-inline-start:auto;font-size:16px;font-weight:800;color:var(--brass-d)}
+.pp-st{display:inline-block;padding:2px 10px;border-radius:20px;font-size:12px;font-weight:700;background:#fff4d6;color:#8a5a00}
+.pp-st.delivered{background:#e3f3e8;color:#23784a}.pp-st.failed{background:#fdecea;color:#a3271a}
+.pp-line{font-size:14px;margin:3px 0;line-height:1.55}
+.pp-line .k{color:var(--muted);font-size:12.5px}
+.pp-meta{font-size:12px;color:var(--muted);margin-top:6px}
+.pp-act{display:flex;gap:7px;flex-wrap:wrap;margin-top:9px}
+.pp-btn{padding:8px 13px;border:1.5px solid var(--line);border-radius:9px;background:var(--panel);color:var(--ink);font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:4px}
+.pp-btn.ok{background:#2f7d55;border-color:#2f7d55;color:#fff}
+.pp-btn.no{background:#fdecea;border-color:#e6b4ad;color:#a3271a}
+.pp-btn.sm{padding:5px 10px;font-size:12.5px}
+.pp-msg{padding:10px 14px;border-radius:9px;margin-bottom:12px;background:#e3f3e8;color:#23784a}
+.pp-msg.err{background:#fdecea;color:#a3271a}
+.pp-sql{direction:ltr;text-align:left;white-space:pre-wrap;font-size:12px;background:var(--slate-l);padding:10px;border-radius:8px;max-height:260px;overflow:auto}
+.pp-cour{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px}
+.pp-cour button{padding:8px 12px;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--ink);font-family:inherit;font-size:13px;cursor:pointer;text-align:start}
+.pp-cour button.on{border-color:var(--brass-d);box-shadow:0 0 0 2px var(--brass-d) inset}
+.pp-cour small{display:block;color:var(--muted);font-size:11.5px}
+</style>
+<script>
+/* =====================================================================
+   🛵 مناديب الدفع المقدم
+   - الأوردرات بتيجي من 📤 رفع الأوردرات (عناوين مدينة نصر ومصر الجديدة) — جدول prepaid_orders
+   - المندوب (صلاحية "prepaid"): يشوف أوردراته بس، مجمّعة بالأيام، ويعلّم ✅ اتسلم / ❌ ماتسلمش
+   - المتابعة (أدمن أو صلاحية "prepaid_admin"): يشوف كل المناديب، يغيّر المندوب، يمسح
+   ===================================================================== */
+(function(){
+  const sb = () => window.__sbClient || (window.AuthGate && window.AuthGate.sb);
+  const me = () => (window.AuthGate && window.AuthGate.me && window.AuthGate.me()) || {};
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const isPP = () => (location.hash.replace('#/', '') || 'home').split('/')[0] === 'prepaid';
+  const isMgr = () => { const m = me(); return !!(m.is_admin || (Array.isArray(m.allowed_sections) && m.allowed_sections.includes('prepaid_admin'))); };
+  const ymd = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  const money = n => (Number(n) || 0).toLocaleString('ar-EG') + ' ج';
+  const ST = { pending:'⏳ لسه', delivered:'✅ اتسلم', failed:'❌ ماتسلمش' };
+  const S = { list:null, missing:false, msg:'', msgErr:false, tab:'pending', day:'', courier:'', days:30, couriers:null };
+
+
+  async function load(){
+    const m = me(); if(!m.id || !sb()) return;
+    const since = new Date(); since.setDate(since.getDate() - S.days);
+    let q = sb().from('prepaid_orders').select('*').gte('order_date', ymd(since)).order('order_date', { ascending:false }).order('id', { ascending:true }).limit(3000);
+    if(!isMgr()) q = q.eq('courier_id', m.id);
+    const { data, error } = await q;
+    if(error){ S.missing = /prepaid_orders|relation|schema cache|does not exist/i.test(error.message); S.list = []; if(!S.missing){ S.msg = error.message; S.msgErr = true; } draw(); return; }
+    S.missing = false; S.list = data || [];
+    if(isMgr() && !S.couriers) await loadCouriers();
+    draw(); badge();
+  }
+  async function loadCouriers(){
+    const { data } = await sb().from('profiles').select('id, username, full_name, allowed_sections');
+    S.couriers = (data || []).filter(p => Array.isArray(p.allowed_sections) && p.allowed_sections.includes('prepaid'))
+      .map(p => ({ id:p.id, name:p.full_name || p.username || 'مندوب' })).sort((a, b) => a.name.localeCompare(b.name, 'ar'));
+  }
+  async function badge(){
+    const m = me(), b = document.getElementById('ppBadge'); if(!m.id || !sb() || !b) return;
+    if(!(Array.isArray(m.allowed_sections) && m.allowed_sections.includes('prepaid'))){ b.classList.remove('on'); return; }
+    const { count } = await sb().from('prepaid_orders').select('id', { count:'exact', head:true }).eq('courier_id', m.id).eq('status', 'pending');
+    b.textContent = count || ''; b.classList.toggle('on', !!count);
+  }
+  const flash = (t, err) => { S.msg = t; S.msgErr = !!err; draw(); setTimeout(() => { if(S.msg === t){ S.msg = ''; draw(); } }, 6000); };
+
+  async function setStatus(id, status, note){
+    const { data, error } = await sb().rpc('prepaid_set_status', { p_id:id, p_status:status, p_note:note || null });
+    if(error) return flash('ماتحفظش: ' + error.message, true);
+    if(!data) return flash('ماتحفظش — الأوردر ده مش بتاعك.', true);
+    const o = S.list.find(x => x.id === id);
+    if(o){ o.status = status; o.status_note = status === 'pending' ? null : (note || null); o.status_at = status === 'pending' ? null : new Date().toISOString(); o.status_by_name = status === 'pending' ? null : (me().full_name || me().username || ''); }
+    flash(status === 'delivered' ? `✅ "${o ? o.customer_name : ''}" اتسلم.` : status === 'failed' ? `❌ اتسجل إن "${o ? o.customer_name : ''}" ماتسلمش.` : '↩ رجع لسه.');
+    badge();
+  }
+  async function reassign(id, cid){
+    const c = (S.couriers || []).find(x => x.id === cid); if(!c) return;
+    const { data, error } = await sb().from('prepaid_orders').update({ courier_id:c.id, courier_name:c.name }).eq('id', id).select('id');
+    if(error || !data || !data.length) return flash('ماتغيّرش: ' + (error ? error.message : 'مفيش صلاحية'), true);
+    const o = S.list.find(x => x.id === id); if(o){ o.courier_id = c.id; o.courier_name = c.name; }
+    flash(`🔁 الأوردر اتنقل لـ ${c.name}.`);
+  }
+  async function del(id){
+    const o = S.list.find(x => x.id === id);
+    if(!confirm(`تمسح أوردر "${o ? o.customer_name : ''}" من مناديب الدفع المقدم؟`)) return;
+    const { data, error } = await sb().from('prepaid_orders').delete().eq('id', id).select('id');
+    if(error || !data || !data.length) return flash('ماتمسحش: ' + (error ? error.message : 'مفيش صلاحية'), true);
+    S.list = S.list.filter(x => x.id !== id); flash('🗑️ اتمسح.');
+  }
+
+  const dayLabel = d => { const t = ymd(new Date()), y = new Date(); y.setDate(y.getDate() - 1);
+    const nm = new Date(d + 'T12:00:00').toLocaleDateString('ar-EG', { weekday:'long', day:'numeric', month:'long' });
+    return d === t ? `النهارده · ${nm}` : d === ymd(y) ? `امبارح · ${nm}` : nm; };
+  const tel = p => String(p || '').replace(/\D/g, '').replace(/^20(?=1\d{9}$)/, '').replace(/^0?/, '0');
+  const tm = iso => iso ? new Date(iso).toLocaleString('ar-EG', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }) : '';
+
+  function card(o){
+    const mgr = isMgr(), mine = o.courier_id === me().id, can = mine || mgr, ph = tel(o.phone), ph2 = o.phone2 ? tel(o.phone2) : '';
+    return `<div class="pp-card ${o.status}">
+      <div class="pp-top"><span class="pp-st ${o.status}">${ST[o.status] || o.status}</span><span class="nm">${esc(o.customer_name || '—')}</span><span class="amt">${money(o.amount)}</span></div>
+      <div class="pp-line"><span class="k">📞</span> <a href="tel:${esc(ph)}" dir="ltr" style="font-weight:700">${esc(ph)}</a>${ph2 ? ` · <a href="tel:${esc(ph2)}" dir="ltr">${esc(ph2)}</a>` : ''}</div>
+      <div class="pp-line"><span class="k">📍</span> ${esc(o.address || '—')}${o.city ? ` — ${esc(o.city)}` : ''}</div>
+      ${o.contents ? `<div class="pp-line"><span class="k">📦</span> ${esc(o.contents)}</div>` : ''}
+      ${mgr && (o.notes || o.src_label) ? `<div class="pp-line"><span class="k">🏷️</span> ${esc([o.notes, o.src_label, o.agent ? '👤 ' + o.agent : ''].filter(Boolean).join(' · '))}</div>` : ''}
+      ${o.status !== 'pending' ? `<div class="pp-line" style="font-size:13px">${o.status === 'failed' ? '❌' : '✅'} ${o.status_note ? '<b>' + esc(o.status_note) + '</b> · ' : ''}<span class="k">${esc(o.status_by_name || '')} ${esc(tm(o.status_at))}</span></div>` : ''}
+      <div class="pp-meta">${mgr ? `🛵 ${esc(o.courier_name || '')} · ` : ''}اتبعت ${esc(tm(o.created_at))}${o.sent_by_name ? ' من ' + esc(o.sent_by_name) : ''}</div>
+      <div class="pp-act">
+        ${can && o.status !== 'delivered' ? `<button class="pp-btn ok" data-ppst="delivered" data-id="${o.id}">✅ اتسلم</button>` : ''}
+        ${can && o.status !== 'failed' ? `<button class="pp-btn no" data-ppst="failed" data-id="${o.id}">❌ ماتسلمش</button>` : ''}
+        ${can && o.status !== 'pending' ? `<button class="pp-btn sm" data-ppst="pending" data-id="${o.id}">↩ رجّعه لسه</button>` : ''}
+        <a class="pp-btn sm" target="_blank" rel="noopener" href="https://wa.me/2${esc(ph)}">💬 واتساب</a>
+        <a class="pp-btn sm" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent((o.address || '') + ' ' + (o.city || '') + ' القاهرة')}">🗺️ الخريطة</a>
+        ${mgr && S.couriers && S.couriers.length ? `<select class="pp-btn sm" data-ppre="${o.id}" title="غيّر المندوب"><option value="">🔁 غيّر المندوب</option>${S.couriers.filter(c => c.id !== o.courier_id).map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('')}</select>` : ''}
+        ${mgr ? `<button class="pp-btn sm" data-ppdel="${o.id}" title="امسح">🗑️</button>` : ''}
+      </div></div>`;
+  }
+
+  function view(){
+    const mgr = isMgr();
+    let h = `<div class="pagehead"><h1>🛵 مناديب الدفع المقدم</h1><p>${mgr ? 'أوردرات مدينة نصر ومصر الجديدة اللي اتبعتت للمناديب من 📤 رفع الأوردرات، وحالة كل أوردر.' : 'دي أوردراتك. كل أوردر بيومه — بعد ما توصّل علّم ✅ اتسلم، ولو مااتسلمش علّم ❌ واكتب السبب.'}</p></div>`;
+    if(S.missing) return h + `<div class="pp-msg err">جدول مناديب الدفع المقدم لسه مش متعمل في Supabase.${me().is_admin ? ' شغّل ملف <b>prepaid_orders.sql</b> (موجود في الريبو) في Supabase → SQL Editor مرة واحدة.' : ' كلّم الأدمن.'}</div>`;
+    if(S.msg) h += `<div class="pp-msg ${S.msgErr ? 'err' : ''}">${esc(S.msg)}</div>`;
+    if(!S.list) return h + '<p style="color:var(--muted)">⏳ بيحمّل...</p>';
+
+    // فلترة بالمندوب (للمتابعة) ثم الأيام
+    let L = S.list;
+    if(mgr && S.courier) L = L.filter(o => o.courier_id === S.courier);
+    if(mgr){
+      const per = {}; S.list.forEach(o => { const k = o.courier_id; (per[k] = per[k] || { name:o.courier_name || '—', n:0, p:0, d:0, f:0, amt:0 }); per[k].n++; per[k][o.status === 'delivered' ? 'd' : o.status === 'failed' ? 'f' : 'p']++; if(o.status === 'delivered') per[k].amt += Number(o.amount) || 0; });
+      const ks = Object.keys(per);
+      if(ks.length > 1 || S.courier) h += `<div class="pp-cour"><button class="${S.courier ? '' : 'on'}" data-ppcour="">👥 كل المناديب<small>${S.list.length} أوردر</small></button>${ks.map(k => `<button class="${S.courier === k ? 'on' : ''}" data-ppcour="${esc(k)}">🛵 ${esc(per[k].name)}<small>${per[k].n} · ✅${per[k].d} · ❌${per[k].f} · ⏳${per[k].p}</small></button>`).join('')}</div>`;
+    }
+    const days = [...new Set(L.map(o => o.order_date))].sort().reverse();
+    if(S.day && !days.includes(S.day)) S.day = '';
+    const LD = S.day ? L.filter(o => o.order_date === S.day) : L;
+    const cnt = k => LD.filter(o => o.status === k).length;
+    const sumD = LD.filter(o => o.status === 'delivered').reduce((a, o) => a + (Number(o.amount) || 0), 0);
+    h += `<div class="pp-kpis">
+      <div class="pp-kpi"><div class="n">${LD.length}</div><div class="l">أوردر</div></div>
+      <div class="pp-kpi"><div class="n" style="color:#8a5a00">${cnt('pending')}</div><div class="l">⏳ لسه</div></div>
+      <div class="pp-kpi"><div class="n" style="color:#2f7d55">${cnt('delivered')}</div><div class="l">✅ اتسلم</div></div>
+      <div class="pp-kpi"><div class="n" style="color:#c0392b">${cnt('failed')}</div><div class="l">❌ ماتسلمش</div></div>
+      <div class="pp-kpi"><div class="n">${money(sumD)}</div><div class="l">قيمة اللي اتسلم</div></div></div>`;
+    h += `<div class="pp-tabs">${[['pending', '⏳ لسه'], ['delivered', '✅ اتسلم'], ['failed', '❌ ماتسلمش'], ['all', '📋 الكل']].map(([k, l]) => `<button class="${S.tab === k ? 'on' : ''}" data-pptab="${k}">${l} (${k === 'all' ? LD.length : cnt(k)})</button>`).join('')}</div>
+      <div class="pp-filters"><label style="font-size:13px;color:var(--muted)">📅 اليوم:</label><select id="ppDay"><option value="">كل الأيام</option>${days.map(d => `<option value="${d}" ${S.day === d ? 'selected' : ''}>${esc(dayLabel(d))} (${L.filter(o => o.order_date === d).length})</option>`).join('')}</select>
+        <select id="ppRange">${[[7, 'آخر أسبوع'], [30, 'آخر 30 يوم'], [90, 'آخر 3 شهور'], [365, 'آخر سنة']].map(([n, l]) => `<option value="${n}" ${S.days === n ? 'selected' : ''}>${l}</option>`).join('')}</select>
+        <button class="pp-btn sm" id="ppRefresh">🔄 تحديث</button></div>`;
+    const V = S.tab === 'all' ? LD : LD.filter(o => o.status === S.tab);
+    if(!V.length) return h + `<div class="card"><p style="color:var(--muted);margin:0">${S.tab === 'pending' ? 'مفيش أوردرات لسه مستنية 👌' : 'مفيش أوردرات هنا.'}</p></div>`;
+    const by = {}; V.forEach(o => (by[o.order_date] = by[o.order_date] || []).push(o));
+    Object.keys(by).sort().reverse().forEach(d => {
+      const A = L.filter(o => o.order_date === d), X = by[d];
+      h += `<div class="pp-day"><div class="pp-dayh"><b>📅 ${esc(dayLabel(d))}</b><span>${A.length} أوردر · ✅ ${A.filter(o => o.status === 'delivered').length} · ❌ ${A.filter(o => o.status === 'failed').length} · ⏳ ${A.filter(o => o.status === 'pending').length}</span><span style="margin-inline-start:auto">${money(X.reduce((a, o) => a + (Number(o.amount) || 0), 0))}</span></div>${X.map(card).join('')}</div>`;
+    });
+    return h;
+  }
+  function draw(){
+    if(!isPP()) return;
+    const main = document.getElementById('main'); if(!main) return;
+    const y = scrollY; main.innerHTML = view(); scrollTo(0, y);
+    main.querySelectorAll('[data-pptab]').forEach(b => b.onclick = () => { S.tab = b.dataset.pptab; draw(); });
+    main.querySelectorAll('[data-ppcour]').forEach(b => b.onclick = () => { S.courier = b.dataset.ppcour; draw(); });
+    const dd = main.querySelector('#ppDay'); if(dd) dd.onchange = () => { S.day = dd.value; draw(); };
+    const rg = main.querySelector('#ppRange'); if(rg) rg.onchange = () => { S.days = Number(rg.value); S.list = null; draw(); load(); };
+    const rf = main.querySelector('#ppRefresh'); if(rf) rf.onclick = () => load();
+    main.querySelectorAll('[data-ppst]').forEach(b => b.onclick = () => {
+      const id = Number(b.dataset.id), st = b.dataset.ppst;
+      if(st === 'failed'){ const r = prompt('ماتسلمش ليه؟ (مثلاً: العميل مش بيرد / رفض الاستلام / أجّل لبكره)'); if(r === null) return; setStatus(id, st, r.trim() || 'ماتسلمش'); }
+      else setStatus(id, st);
+    });
+    main.querySelectorAll('[data-ppre]').forEach(s => s.onchange = () => { if(s.value) reassign(Number(s.dataset.ppre), s.value); });
+    main.querySelectorAll('[data-ppdel]').forEach(b => b.onclick = () => del(Number(b.dataset.ppdel)));
+  }
+  function mount(){ document.querySelectorAll('#sidebar a.navlink').forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#/prepaid')); draw(); load(); }
+  const _render = render;
+  render = function(){ _render.apply(this, arguments); if(isPP()) mount(); };
+  window.addEventListener('hashchange', () => { if(isPP()) setTimeout(mount, 0); });
+  const w = setInterval(() => { if(me().id && sb()){ clearInterval(w); badge(); if(isPP()) mount(); setInterval(badge, 60000); } }, 700);
 })();
 </script>
 
