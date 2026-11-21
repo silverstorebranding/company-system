@@ -12234,6 +12234,32 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
     row.err = !api || !api.hasCreds() ? (e1 && !/not found|404|No .* matches/i.test(e1.message) ? e1.message + ' — ' : '') + 'مالقيتهاش (اعمل دخول QP من قسم 🚚 QP عشان أدوّر في كل الأوردرات)'
       : 'مش موجودة في QP';
   }
+  /* 📂 شيت فيه أرقام بوالص → كلها تتضاف للليستة وتتجاب بياناتها من QP
+     بيدوّر على عمود اسمه serial / رقم الشحنة / بوليصة، ولو مفيش بياخد أي خانة فيها رقم شحنة (6-9 أرقام) */
+  async function importSerialSheet(file){
+    if(!file || !window.XLSX) return;
+    let serials = [];
+    try{
+      const wb = XLSX.read(await file.arrayBuffer(), { type:'array' });
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header:1, raw:false, defval:'' });
+      let hr = -1, col = -1;
+      for(let i = 0; i < Math.min(rows.length, 10) && col < 0; i++) rows[i].forEach((c, j) => { if(col < 0 && /serial|سريال|رقم الشحن|بوليص|البوليصه|awb/i.test(String(c))){ hr = i; col = j; } });
+      if(col >= 0) serials = rows.slice(hr + 1).map(r => serialFrom(r[col])).filter(Boolean);
+      else rows.forEach(r => r.forEach(c => { const t = digits(String(c)).trim(); if(/^\d{6,9}$/.test(t)) serials.push(t); }));
+    }catch(e){ X.msg = 'مقدرتش أقرا الشيت: ' + e.message; X.msgErr = true; draw(); return; }
+    serials = [...new Set(serials)];
+    const have = new Set(X.list.map(x => String(x.serial))), add = serials.filter(sr => !have.has(sr));
+    if(!add.length){ X.msg = serials.length ? `كل الـ ${serials.length} بوليصة اللي في الشيت موجودين في الليستة أصلاً.` : 'مالقيتش أرقام بوالص في الشيت (لازم عمود اسمه serial أو رقم الشحنة).'; X.msgErr = !serials.length; draw(); return; }
+    const rows = add.map(sr => ({ serial:sr, loading:true, reason:X.reason, q:null, err:'', res:'', at:Date.now(), by: me().full_name || me().username || '', fromSheet:true }));
+    X.list = rows.concat(X.list); X.sheetN = add.length;
+    let done = 0; const queue = rows.slice();
+    const worker = async () => { while(queue.length){ const r = queue.shift(); await qpLookup(r); r.loading = false; done++; X.msg = `بيدوّر على البوالص في QP... ${done} من ${rows.length}`; X.msgErr = false; draw(); } };
+    await Promise.all([1, 2, 3, 4, 5].map(worker));
+    const found = rows.filter(r => r.q), pend = found.filter(r => isPendingQ(r.q));
+    X.msg = `📂 الشيت فيه ${add.length} بوليصة — لقيت ${found.length} على QP — منهم ${pend.length} Pending` + (found.length - pend.length ? ` و ${found.length - pend.length} مش Pending (مش هيتمسحوا)` : '') + (rows.length - found.length ? ` — و ${rows.length - found.length} مالقيتهاش` : '') + '.';
+    X.msgErr = false; draw();
+    if(X.mode === 'ready'){ scBackup(); scSave(); }
+  }
   async function addSerial(raw){
     if(X.mode === 'pickup') return pkAdd(raw);
     if(X.mode === 'send') return sdAdd(raw);
@@ -12575,7 +12601,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
     if(!X.scanning && !X.list.length) return '';
     const ok = X.list.filter(x => x.q).length, bad = X.list.filter(x => !x.loading && !x.q).length, pend = X.list.filter(x => x.q && isPendingQ(x.q)).length, last = X.list[0];
     return `<div class="scan-cnt"><span class="n">${X.list.length}</span><span>${X.mode === 'exclude' ? 'بوليصة هتتأجل لبكرة' : 'بوليصة اتصوّرت'}</span>
-      ${X.mode === 'sheet' || X.mode === 'held' || X.mode === 'exclude' || X.mode === 'again' ? '' : `<span class="pill ok">${pend} ${X.mode === 'ready' ? 'Pending على QP' : 'هتتمسح'}</span>`}${bad ? `<span class="pill bad">${bad} مش لاقيها</span>` : ''}
+      ${X.mode === 'sheet' || X.mode === 'held' || X.mode === 'exclude' || X.mode === 'again' ? '' : `<span class="pill ok">${pend} ${X.mode === 'ready' ? 'Pending على QP' : 'Pending — هتتمسح'}</span>`}${X.mode === 'delete' && ok - pend > 0 ? `<span class="pill bad">${ok - pend} مش Pending</span>` : ''}${bad ? `<span class="pill bad">${bad} مش لاقيها</span>` : ''}
       ${last ? `<span class="last">آخر واحدة: <b>${esc(last.serial)}</b>${last.q ? ' — ' + esc(last.q.full_name || '') : (last.loading ? ' ⏳' : '')}</span>` : ''}</div>`;
   }
 
@@ -12602,6 +12628,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
         <label class="up-file">📸 صوّر البوليصة<input type="file" id="upPhoto" accept="image/*" capture="environment"></label>
         <input id="upSerial" placeholder="أو اكتب رقم الشحنة (أو أكتر من رقم)" style="max-width:260px;padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;direction:ltr">
         <button class="up-btn" id="upSerialAdd">➕ ضيف</button>
+        <label class="up-file" style="${X.mode === 'delete' ? 'background:#fdecea;border-color:#b3261e' : ''}">📂 ارفع شيت فيه البوالص<input type="file" id="upSerialFile" accept=".xlsx,.xls,.csv"></label>
         ${X.list.length && !RDY ? `<button class="up-btn" id="upScanNew" style="background:#fff4e5;border-color:#b7791f">🆕 ابدأ مسح جديد (فضّي الـ ${X.list.length})</button>` : ''}
         <label style="font-size:13px;${SH || EX || RDY || AG ? 'display:none' : ''}">السبب الافتراضي <select id="upDelReason" style="padding:7px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit">${DEL_REASONS.map(r => `<option ${X.reason === r ? 'selected' : ''}>${r}</option>`).join('')}</select></label>
       </div>
@@ -13839,6 +13866,7 @@ create policy "sheets: upload" on storage.objects for insert to authenticated wi
     document.querySelectorAll('[data-pksheet]').forEach(b => b.onclick = () => pkSheet(b.dataset.pksheet));
     if($('upScanStop')) $('upScanStop').onclick = stopScan;
     if($('upPhoto')) $('upPhoto').onchange = e => scanPhoto(e.target.files[0]);
+    if($('upSerialFile')) $('upSerialFile').onchange = e => { const f = e.target.files[0]; e.target.value = ''; importSerialSheet(f); };
     const addTyped = async () => { const el = $('upSerial'); if(!el) return; const vals = digits(el.value).match(/\d{6,12}/g) || []; el.value = ''; if(!vals.length) return; try{ await connect(); }catch(e){} for(const v of vals) await addSerial(v); };
     if($('upSerialAdd')) $('upSerialAdd').onclick = addTyped;
     if($('upSerial')) $('upSerial').onkeydown = e => { if(e.key === 'Enter'){ e.preventDefault(); addTyped(); } };
