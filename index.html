@@ -11186,6 +11186,11 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
 .up-grp-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-weight:700;font-size:14px;margin:0 0 6px;color:#7a2a1f}
 .up-grp-h b{background:#fdecea;border-radius:10px;padding:0 8px}
 .up-chips{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}
+.rd-sum{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:12px}
+.rd-sum>div{display:flex;justify-content:space-between;align-items:center;gap:8px;border:2px solid var(--line);border-radius:12px;padding:10px 14px;background:#fff}
+.rd-sum>div span{font-size:13.5px;font-weight:700}.rd-sum>div small{font-weight:400;color:var(--muted);font-size:11.5px}
+.rd-sum>div b{font-size:28px}.rd-sum .ok{border-color:#2f7d55}.rd-sum .ok b{color:#2f7d55}.rd-sum .bad{border-color:#b3261e}.rd-sum .bad b{color:#b3261e}
+@media (max-width:640px){.rd-sum{grid-template-columns:1fr}}
 .up-chips a{border:1.5px solid #f1c7c2;color:#7a2a1f;background:#fff;border-radius:20px;padding:4px 12px;font-size:13px;font-weight:700;text-decoration:none}
 .up-chips a b{margin-inline-start:4px}
 .up-grp-h span{font-weight:500;font-size:12px;color:var(--muted)}
@@ -11931,6 +11936,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
       const scanned = new Set(X.list.map(x => String(x.serial)));
       const pend = all.filter(q => isPendingQ(q) && ymd(new Date(q.order_date)) === day);
       RD.rest = pend.filter(q => !scanned.has(String(q.serial))).sort((a, b) => new Date(a.order_date) - new Date(b.order_date)).map(q => ({ q, res:'', err:'' }));
+      RD.pendN = pend.length; RD.matched = pend.length - RD.rest.length; RD.scanN = X.list.length; RD.forDay = day;
       RD.msg = `📦 يوم ${day}: ${pend.length} أوردر Pending على QP — منهم ${pend.length - RD.rest.length} اتمسحوا (جاهزين) و ${RD.rest.length} باقيين.`; RD.msgErr = false;
     }catch(e){ RD.msg = 'مقدرتش أجيب من QP: ' + e.message; RD.msgErr = true; }
     RD.loading = false; draw();
@@ -11979,11 +11985,16 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
       </div>
       <div class="up-row" style="margin-top:10px">
         <label style="font-size:13.5px">الأوردرات اللي اترفعت يوم <input type="date" id="upRdDay" value="${esc(rdDay())}" style="padding:7px 9px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit"></label>
-        <button class="up-btn" id="upRdFetch" ${RD.loading ? 'disabled' : ''}>${RD.loading ? '⏳ بيجيب...' : '🔎 هات الباقي (Pending ومااتمسحش)'}</button>
-        ${RD.rest && canDelete() ? `<button class="up-btn" id="upRdDel" style="background:#b3261e;border-color:#b3261e;color:#fff" ${left.length && !RD.busy ? '' : 'disabled'}>${RD.busy ? '⏳ بيمسح...' : `🗑️ امسح الباقي من QP (${left.length})`}</button>` : ''}
+        <button class="up-btn" id="upRdFetch" ${RD.loading ? 'disabled' : ''}>${RD.loading ? '⏳ بيجيب...' : '🔎 احسب: مرفوع Pending − الجاهز'}</button>
         ${RD.rest && !canDelete() ? '<span style="font-size:12.5px;color:var(--muted)">🔐 مسح البوالص من QP محتاج صلاحية "مسح بوالص من QP".</span>' : ''}
       </div>
       ${RD.msg ? `<div class="up-msg ${RD.msgErr ? 'err' : 'ok'}">${esc(RD.msg)}</div>` : ''}
+      ${RD.rest ? `<div class="rd-sum">
+          <div><span>📦 مرفوع Pending على QP<br><small>يوم ${esc(RD.forDay || rdDay())}</small></span><b>${RD.pendN}</b></div>
+          <div class="ok"><span>✅ الشيت الجاهز<br><small>اتصوروا${RD.scanN !== RD.matched ? ` — منهم ${RD.matched} من اليوم ده` : ''}</small></span><b>${RD.scanN}</b></div>
+          <div class="bad"><span>⏳ مرفوع ومتجهزش<br><small>${left.length !== rest.length ? `فاضل ${left.length} مااتمسحوش` : 'هيتمسحوا من QP'}</small></span><b>${rest.length}</b></div>
+        </div>
+        ${canDelete() ? `<div class="up-row" style="margin-top:10px"><button class="up-btn" id="upRdDel2" style="background:#b3261e;border-color:#b3261e;color:#fff;font-size:16px;padding:12px 22px" ${left.length && !RD.busy ? '' : 'disabled'}>${RD.busy ? '⏳ بيمسح...' : `🗑️ امسح الـ ${left.length} اللي متجهزوش من QP`}</button></div>` : ''}` : ''}
       ${RD.rest && rest.length ? `<div class="up-sheet" style="margin-top:10px;max-height:360px;overflow:auto"><table><thead><tr><th>رقم الشحنة</th><th>العميل</th><th>الموبايل</th><th>المحتوى</th><th>السعر</th><th>notes</th><th>النتيجة</th><th></th></tr></thead><tbody>
         ${rest.map((x, i) => { const q = x.q; return `<tr ${x.res === 'ok' ? 'style="background:#eef8f1;opacity:.75"' : ''}>
           <td style="padding:6px 8px;direction:ltr;font-weight:700">${esc(q.serial)}</td><td style="padding:6px 8px">${esc(q.full_name || '')}</td>
@@ -13714,7 +13725,7 @@ create policy "sheets: upload" on storage.objects for insert to authenticated wi
     if($('upRdClear')) $('upRdClear').onclick = () => { if(X.list.length && !confirm(`تفضّي الليستة (${X.list.length} بوليصة) وتبدأ من جديد؟ هتتفضى من كل الموبايلات.`)) return; RD.rest = null; RD.msg = ''; X.msg = ''; scClear(); };
     if($('upRdSync')) $('upRdSync').onclick = () => { SC.loaded = false; scLoad(); };
     if($('upRdRestore')) $('upRdRestore').onclick = scRestore;
-    if($('upRdDel')) $('upRdDel').onclick = rdDelete;
+    if($('upRdDel2')) $('upRdDel2').onclick = rdDelete;
     document.querySelectorAll('[data-rdkeep]').forEach(b => b.onclick = () => { RD.rest.splice(Number(b.dataset.rdkeep), 1); draw(); });
     if($('upExDay')) $('upExDay').onchange = e => { QD.day = e.target.value || ymd(new Date()); QD.dayTouched = !!e.target.value && e.target.value !== ymd(new Date()); };
     if($('upPPGo')) $('upPPGo').onclick = exportPendingNext;
