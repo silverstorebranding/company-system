@@ -15362,12 +15362,14 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
     [...pat].forEach((w, i) => { w = Number(w); if(i % 2 === 0) bars += `<rect x="${x}" y="0" width="${w}" height="40"/>`; x += w; });
     return `<svg viewBox="0 0 ${x + 10} 40" preserveAspectRatio="none" style="width:100%;height:14mm">${bars}</svg>`;
   }
+  // ملاحظات البوليصة: البراند بس (من غير Easy / Squad / إيموجي)
+  const wbNote = o => String(o.notes || o.src_label || '').replace(/[🏆🌐]/gu, '').replace(/\bsquad\s*·?\s*/i, '').replace(/\s*\beasy\b/ig, '').trim();
   function printWaybills(ids){
     const L = S.list.filter(o => ids.includes(o.id)).sort((a, b) => a.order_date.localeCompare(b.order_date) || a.id - b.id);
     if(!L.length) return flash('علّم الأوردرات اللي عايز تطبعها الأول.', true);
     const e = esc, dt = d => new Date(d + 'T12:00:00').toLocaleDateString('ar-EG', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
     const bill = (o, i) => `<div class="wb">
-      <div class="hd"><div class="t"><b>🛵 بوليصة توصيل</b><span>مناديب الدفع المقدم</span></div>
+      <div class="hd"><div class="t"><b>🛵 بوليصة توصيل</b><span>شركة النسر</span></div>
         <div class="no"><div class="n">#${o.id}</div>${barcode('PP' + o.id)}</div>
         <div class="dt"><b>${e(dt(o.order_date))}</b><span>${i + 1} / ${L.length}</span></div></div>
       <div class="bd">
@@ -15376,7 +15378,7 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
           <div class="r"><span>الموبايل</span><b class="big" dir="ltr">${e(tel(o.phone))}${o.phone2 ? '  /  ' + e(tel(o.phone2)) : ''}</b></div>
           <div class="r"><span>العنوان</span><b class="${String(o.address || '').length > 160 ? 'long' : ''}">${e(o.address || '—')}${o.city ? ' — ' + e(o.city) : ''}</b></div>
           <div class="r"><span>المحتوى</span><b class="${String(o.contents || '').length > 140 ? 'long' : ''}">${e(o.contents || '—')}</b></div>
-          ${o.notes || o.src_label ? `<div class="r"><span>ملاحظات</span><b class="sm">${e([o.notes, o.src_label].filter(Boolean).join(' · '))}</b></div>` : ''}
+          ${wbNote(o) ? `<div class="r"><span>ملاحظات</span><b class="sm">${e(wbNote(o))}</b></div>` : ''}
         </div>
         <div class="amt"><span>المبلغ</span><b>${(Number(o.amount) || 0).toLocaleString('ar-EG')}</b><span>جنيه</span></div>
       </div>
