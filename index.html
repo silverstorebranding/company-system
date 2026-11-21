@@ -15360,7 +15360,7 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
     const pat = v.concat(chk, 106).map(i => C128[i]).join('');
     let x = 10, bars = '';
     [...pat].forEach((w, i) => { w = Number(w); if(i % 2 === 0) bars += `<rect x="${x}" y="0" width="${w}" height="40"/>`; x += w; });
-    return `<svg viewBox="0 0 ${x + 10} 40" preserveAspectRatio="none" style="width:100%;height:13mm">${bars}</svg>`;
+    return `<svg viewBox="0 0 ${x + 10} 40" preserveAspectRatio="none" style="width:100%;height:14mm">${bars}</svg>`;
   }
   function printWaybills(ids){
     const L = S.list.filter(o => ids.includes(o.id)).sort((a, b) => a.order_date.localeCompare(b.order_date) || a.id - b.id);
@@ -15374,8 +15374,8 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
         <div class="info">
           <div class="r"><span>المستلم</span><b class="big">${e(o.customer_name || '—')}</b></div>
           <div class="r"><span>الموبايل</span><b class="big" dir="ltr">${e(tel(o.phone))}${o.phone2 ? '  /  ' + e(tel(o.phone2)) : ''}</b></div>
-          <div class="r"><span>العنوان</span><b>${e(o.address || '—')}${o.city ? ' — ' + e(o.city) : ''}</b></div>
-          <div class="r"><span>المحتوى</span><b>${e(o.contents || '—')}</b></div>
+          <div class="r"><span>العنوان</span><b class="${String(o.address || '').length > 160 ? 'long' : ''}">${e(o.address || '—')}${o.city ? ' — ' + e(o.city) : ''}</b></div>
+          <div class="r"><span>المحتوى</span><b class="${String(o.contents || '').length > 140 ? 'long' : ''}">${e(o.contents || '—')}</b></div>
           ${o.notes || o.src_label ? `<div class="r"><span>ملاحظات</span><b class="sm">${e([o.notes, o.src_label].filter(Boolean).join(' · '))}</b></div>` : ''}
         </div>
         <div class="amt"><span>المبلغ</span><b>${(Number(o.amount) || 0).toLocaleString('ar-EG')}</b><span>جنيه</span></div>
@@ -15385,20 +15385,21 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
     const html = `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>بوالص الدفع المقدم</title><style>
       @page{size:A4;margin:8mm}
       *{box-sizing:border-box}body{margin:0;font-family:'Segoe UI',Tahoma,Arial,sans-serif;color:#000;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-      .wb{height:92mm;border:2px solid #000;border-radius:3mm;padding:3mm 4mm;margin-bottom:5mm;display:flex;flex-direction:column;page-break-inside:avoid;position:relative}
-      .wb:nth-child(3n){margin-bottom:0;page-break-after:always}.wb:last-child{page-break-after:auto}
-      .wb:not(:nth-child(3n)):not(:last-child)::after{content:'✂ - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -';position:absolute;bottom:-4.6mm;right:0;left:0;font-size:8pt;color:#888;overflow:hidden;white-space:nowrap;direction:ltr}
-      .hd{display:grid;grid-template-columns:1fr 62mm 1fr;gap:3mm;align-items:center;border-bottom:1.5px solid #000;padding-bottom:2mm}
-      .hd .t b{display:block;font-size:14pt}.hd .t span,.hd .dt span{font-size:9pt;color:#444}
-      .hd .no{text-align:center}.hd .no .n{font-size:15pt;font-weight:800;letter-spacing:1px;direction:ltr}
-      .hd .dt{text-align:left}.hd .dt b{display:block;font-size:10pt}
-      .bd{flex:1;display:grid;grid-template-columns:1fr 34mm;gap:3mm;padding-top:2mm;min-height:0}
-      .info .r{display:grid;grid-template-columns:19mm 1fr;gap:2mm;padding:1.1mm 0;border-bottom:1px dotted #999;font-size:10.5pt;line-height:1.35}
-      .info .r span{color:#444;font-size:9pt;padding-top:.6mm}.info .big{font-size:13pt}.info .sm{font-size:9pt;font-weight:500}
-      .amt{border:2px solid #000;border-radius:2mm;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}
-      .amt b{font-size:22pt;line-height:1.1}.amt span{font-size:9pt}
-      .ft{display:flex;justify-content:space-between;gap:3mm;border-top:1.5px solid #000;padding-top:2mm;font-size:9pt}
-    </style></head><body>${L.map(bill).join('')}</body></html>`;
+      .wb{border:2px solid #000;border-radius:3mm;padding:3.5mm 4.5mm;display:flex;flex-direction:column;page-break-inside:avoid;break-inside:avoid}
+      .cut{border-top:1.5px dashed #777;margin:4mm 0;position:relative;height:0;page-break-after:auto}
+      .cut::before{content:'✂';position:absolute;top:-3.2mm;right:6mm;background:#fff;padding:0 2mm;font-size:10pt;color:#555}
+      .hd{display:grid;grid-template-columns:1fr 66mm 1fr;gap:3mm;align-items:center;border-bottom:1.5px solid #000;padding-bottom:2.5mm}
+      .hd .t b{display:block;font-size:17pt}.hd .t span,.hd .dt span{font-size:11pt;color:#333}
+      .hd .no{text-align:center}.hd .no .n{font-size:19pt;font-weight:800;letter-spacing:1px;direction:ltr}
+      .hd .dt{text-align:left}.hd .dt b{display:block;font-size:12.5pt}
+      .bd{display:grid;grid-template-columns:1fr 38mm;gap:4mm;padding-top:2.5mm;align-items:start}
+      .info .r{display:grid;grid-template-columns:22mm 1fr;gap:2.5mm;padding:1.6mm 0;border-bottom:1px dotted #888;font-size:13pt;line-height:1.45;word-break:break-word}
+      .info .r:last-child{border-bottom:none}
+      .info .r span{color:#333;font-size:11pt;padding-top:.8mm}.info .big{font-size:16pt}.info .sm{font-size:11pt;font-weight:600}.info .long{font-size:11.5pt}
+      .amt{border:2.5px solid #000;border-radius:2.5mm;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:5mm 2mm;position:sticky;top:0}
+      .amt b{font-size:30pt;line-height:1.1}.amt span{font-size:12pt}
+      .ft{display:flex;justify-content:space-between;gap:4mm;border-top:1.5px solid #000;margin-top:2.5mm;padding-top:2.5mm;font-size:11.5pt}
+    </style></head><body>${L.map(bill).join('<div class="cut"></div>')}</body></html>`;
     let f = document.getElementById('ppPrintFrame'); if(f) f.remove();
     f = document.createElement('iframe'); f.id = 'ppPrintFrame'; f.style.cssText = 'position:fixed;width:0;height:0;border:0;left:-9999px';
     document.body.appendChild(f);
