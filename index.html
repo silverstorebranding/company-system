@@ -5088,12 +5088,12 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
 
   /* ---------- جلب الأوردرات على صفحات (دالة قابلة لإعادة الاستخدام) ----------
      بترجّع مصفوفة الأوردرات للمدة المطلوبة، وبتنادي onProg(count, pct) كل صفحة */
-  async function qpFetchRange(from, to, onProg, rejected){
+  async function qpFetchRange(from, to, onProg, rejected, status){
     const all = [];
     const fromT = new Date(from + 'T00:00:00').getTime();
     const toT   = new Date(to   + 'T23:59:59').getTime();
     for(let page = 1; page <= QP_MAX_PAGES; page++){
-      const url = QP_ORDERS_EP + '?rejected=' + (rejected ? 1 : 0) + '&printO=All&status=&order_serial=&full_name=&phone_number=&city=' +
+      const url = QP_ORDERS_EP + '?rejected=' + (rejected ? 1 : 0) + '&printO=All&status=' + (status || '') + '&order_serial=&full_name=&phone_number=&city=' +
         '&order_date=' + from + '&to_date=' + to + '&page=' + page + '&page_size=' + QP_PAGE_SIZE;
       const j = await qpApiGet(url);
       const rows = j.results || [];
@@ -5874,6 +5874,8 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
     api: {
       hasCreds: () => !!creds,
       fetchRange: (from, to, onProg) => qpFetchRange(from, to, onProg),
+      // 📦 الـ Pending بس (status=1) — ولو QP تجاهل الفلتر بنفلتر إحنا بعدها
+      fetchPending: (from, to, onProg) => qpFetchRange(from, to, onProg, false, '1'),
       // 📞 للمقارنة: كل الأوردرات حتى المرفوضة (QP بيخبّي المرفوض في الليستة العادية)
       fetchRangeAll: async (from, to, onProg) => { const a = await qpFetchRange(from, to, onProg, false); let b = [];
         try{ b = await qpFetchRange(from, to, n => onProg && onProg(a.length + n), true); }catch(e){}
@@ -11934,10 +11936,11 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
     if(!api || !api.hasCreds()){ RD.msg = 'لازم تكون عامل دخول QP من قسم 🚚 QP على الجهاز ده.'; RD.msgErr = true; draw(); return; }
     RD.loading = true; RD.msg = ''; draw();
     try{
-      const day = rdDay();
-      const all = await api.fetchRange(day, day, n => { RD.msg = `بيجيب أوردرات QP... ${n} أوردر`; RD.msgErr = false; draw(); });
+      // 📦 كل الـ Pending على QP (آخر 60 يوم) — من غير تقسيم بالأيام
+      const day = 'الكل', from = ymd(new Date(Date.now() - 60 * 86400000)), to = ymd(new Date());
+      const all = await (api.fetchPending || api.fetchRange)(from, to, n => { RD.msg = `بيجيب الـ Pending من QP... ${n} أوردر`; RD.msgErr = false; draw(); });
       const scanned = new Set(X.list.map(x => String(x.serial)));
-      const pend = all.filter(q => isPendingQ(q) && ymd(new Date(q.order_date)) === day);
+      const pend = all.filter(q => isPendingQ(q));
       RD.rest = pend.filter(q => !scanned.has(String(q.serial))).sort((a, b) => new Date(a.order_date) - new Date(b.order_date)).map(q => ({ q, res:'', err:'' }));
       RD.pendN = pend.length; RD.matched = pend.length - RD.rest.length; RD.scanN = X.list.length; RD.forDay = day;
       // 🔍 البوالص اللي اتصورت ومش في Pending اليوم ده — ليه؟ (اترفعت يوم تاني / حالتها اتغيرت / مش على QP / اتصورت مرتين)
@@ -11948,7 +11951,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
         if(!q){ RD.msg = `بيدوّر على ${i + 1} من ${out.length} بوليصة مش في اليوم ده...`; draw();
           try{ q = await qpCall('order/' + encodeURIComponent(x.serial)); if(q && q.data && !q.serial) q = q.data; x.q = q; }catch(e){ x.err = /not found|404|No .* matches/i.test(e.message) ? 'مش موجودة في QP' : e.message; } }
         x.why = !q ? (x.err || 'مش موجودة في QP') : !isPendingQ(q) ? 'حالتها على QP: ' + String(api.label(q) || q.status || '').replace(/\s*#\d+$/, '') + ' (مش Pending)'
-          : ymd(new Date(q.order_date)) !== day ? 'اترفعت يوم ' + ymd(new Date(q.order_date)) : 'مش في ليستة QP لليوم ده';
+          : 'Pending بس اترفعت من أكتر من 60 يوم (' + ymd(new Date(q.order_date)) + ')';
       }
       RD.out = out.map(x => ({ serial:x.serial, name:(x.q && x.q.full_name) || '', why:x.why }));
       // 📄 للشيتات: (أ) اتصوروا وموجودين Pending على QP (أي يوم) — (ب) اتصوروا ومش Pending على QP — (ج) Pending اليوم ده ومااتصوروش
@@ -11958,7 +11961,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
         if(q && isPendingQ(q)) RD.inQ.push({ serial:x.serial, q, why: pendBy.has(String(x.serial)) ? '' : x.why });
         else RD.notQ.push({ serial:x.serial, q:q || null, why:x.why || (x.err || 'مش موجودة في QP') }); });
       if(out.some(x => x.q)) scSave();
-      RD.msg = `📦 يوم ${day}: ${pend.length} أوردر Pending على QP — منهم ${pend.length - RD.rest.length} اتمسحوا (جاهزين) و ${RD.rest.length} باقيين.`; RD.msgErr = false;
+      RD.msg = `📦 إجمالي الـ Pending على QP: ${pend.length} أوردر — منهم ${pend.length - RD.rest.length} اتصوروا (جاهزين) و ${RD.rest.length} متجهزوش.`; RD.msgErr = false;
     }catch(e){ RD.msg = 'مقدرتش أجيب من QP: ' + e.message; RD.msgErr = true; }
     RD.loading = false; draw();
   }
@@ -11967,7 +11970,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
     if(!rows.length) return;
     const scanned = new Set(X.list.map(x => String(x.serial)));
     if(rows.some(x => scanned.has(String(x.q.serial)))){ RD.msg = '⚠️ فيه بوالص اتمسحت بالكاميرا بعد ما جبت الباقي — دوس "🔎 هات الباقي" تاني الأول.'; RD.msgErr = true; draw(); return; }
-    if(!confirm(`هيتمسح من QP نهائيًا ${rows.length} أوردر (الباقي اللي ماتجهزش يوم ${rdDay()}).\n\nتكمل؟`)) return;
+    if(!confirm(`هيتمسح من QP نهائيًا ${rows.length} أوردر (كل الـ Pending اللي مااتصورش — من كل الأيام).\n\nتكمل؟`)) return;
     RD.busy = true; draw();
     const done = [];
     for(const x of rows){
@@ -12005,8 +12008,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
         ${X.list.length || RD.rest ? `<button class="up-btn" id="upRdClear" style="background:#fff4e5;border-color:#b7791f">🧹 ابدأ من جديد (فضّي الـ ${X.list.length} بوليصة)</button>` : ''}
       </div>
       <div class="up-row" style="margin-top:10px">
-        <label style="font-size:13.5px">الأوردرات اللي اترفعت يوم <input type="date" id="upRdDay" value="${esc(rdDay())}" style="padding:7px 9px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit"></label>
-        <button class="up-btn" id="upRdFetch" ${RD.loading ? 'disabled' : ''}>${RD.loading ? '⏳ بيجيب...' : '🔎 احسب: مرفوع Pending − الجاهز'}</button>
+        <button class="up-btn" id="upRdFetch" ${RD.loading ? 'disabled' : ''}>${RD.loading ? '⏳ بيجيب...' : (RD.rest ? '🔄 احسب تاني' : '🔎 احسب: كل الـ Pending على QP − الجاهز')}</button>
         ${RD.rest && !canDelete() ? '<span style="font-size:12.5px;color:var(--muted)">🔐 مسح البوالص من QP محتاج صلاحية "مسح بوالص من QP".</span>' : ''}
       </div>
       ${RD.msg ? `<div class="up-msg ${RD.msgErr ? 'err' : 'ok'}">${esc(RD.msg)}</div>` : ''}
@@ -12017,12 +12019,12 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
         <button class="up-btn" data-rdsheet="rest" style="background:#fdecea;border-color:#b3261e" ${RD.loading ? 'disabled' : ''}>⬇️ Pending على QP ومااتصوروش${RD.rest ? ` (${rest.filter(x => x.res !== 'ok').length})` : ''}</button>
       </div>
       ${RD.rest ? `<div class="rd-sum">
-          <div><span>📦 مرفوع Pending على QP<br><small>يوم ${esc(RD.forDay || rdDay())}</small></span><b>${RD.pendN}</b></div>
-          <div class="ok"><span>✅ الشيت الجاهز<br><small>اتصوروا${RD.scanN !== RD.matched ? ` — منهم ${RD.matched} من اليوم ده` : ''}</small></span><b>${RD.scanN}</b></div>
+          <div><span>📦 إجمالي الـ Pending على QP<br><small>كل الأيام</small></span><b>${RD.pendN}</b></div>
+          <div class="ok"><span>✅ الشيت الجاهز<br><small>اتصوروا${RD.scanN !== RD.matched ? ` — منهم ${RD.matched} Pending على QP` : ''}</small></span><b>${RD.scanN}</b></div>
           <div class="bad"><span>⏳ مرفوع ومتجهزش<br><small>${left.length !== rest.length ? `فاضل ${left.length} مااتمسحوش` : 'هيتمسحوا من QP'}</small></span><b>${rest.length}</b></div>
         </div>
         ${canDelete() ? `<div class="up-row" style="margin-top:10px"><button class="up-btn" id="upRdDel2" style="background:#b3261e;border-color:#b3261e;color:#fff;font-size:16px;padding:12px 22px" ${left.length && !RD.busy ? '' : 'disabled'}>${RD.busy ? '⏳ بيمسح...' : `🗑️ امسح الـ ${left.length} اللي متجهزوش من QP`}</button></div>` : ''}` : ''}
-      ${RD.rest && RD.out && RD.out.length ? `<details class="rd-out" open><summary>🔍 ${RD.out.length} بوليصة اتصورت بس مش في Pending يوم ${esc(RD.forDay || rdDay())} — ليه؟ (${Object.entries(RD.out.reduce((a, x) => { const k = x.why.replace(/ \d{4}-\d\d-\d\d$/, ' يوم تاني'); a[k] = (a[k] || 0) + 1; return a; }, {})).map(([k, n]) => esc(k) + ': ' + n).join(' · ')})</summary>
+      ${RD.rest && RD.out && RD.out.length ? `<details class="rd-out" open><summary>🔍 ${RD.out.length} بوليصة اتصورت بس مش Pending على QP — ليه؟ (${Object.entries(RD.out.reduce((a, x) => { const k = x.why.replace(/ \d{4}-\d\d-\d\d$/, ' يوم تاني'); a[k] = (a[k] || 0) + 1; return a; }, {})).map(([k, n]) => esc(k) + ': ' + n).join(' · ')})</summary>
         <div class="up-sheet" style="margin-top:8px;max-height:280px;overflow:auto"><table><thead><tr><th>رقم الشحنة</th><th>العميل</th><th>السبب</th></tr></thead><tbody>
         ${RD.out.map(x => `<tr><td style="padding:5px 8px;direction:ltr;font-weight:700">${esc(x.serial)}</td><td style="padding:5px 8px">${esc(x.name)}</td><td style="padding:5px 8px">${esc(x.why)}</td></tr>`).join('')}
         </tbody></table></div></details>` : ''}
@@ -12102,7 +12104,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
     for(let i = 2; i <= aoa.length; i++){ ['B', 'D'].forEach(c => { const v = ws[c + i]; if(v){ v.t = 's'; v.v = String(v.v); v.z = '@'; } }); }
     ws['!cols'] = [{ wch:3 }, { wch:11 }, { wch:22 }, { wch:13 }, { wch:45 }, { wch:12 }, { wch:16 }, { wch:18 }, { wch:40 }, { wch:8 }, { wch:12 }, { wch:16 }, { wch:28 }];
     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Sheet3');
-    XLSX.writeFile(wb, `${name} ${RD.forDay || ymd(new Date())} (${L.length}).xlsx`);
+    XLSX.writeFile(wb, `${name} ${ymd(new Date())} (${L.length}).xlsx`);
   }
   async function scanSheet(){
     if(!X.list.length || !window.XLSX) return;
@@ -13766,7 +13768,6 @@ create policy "sheets: upload" on storage.objects for insert to authenticated wi
     if($('upRestQ')) $('upRestQ').oninput = e => { X.q = e.target.value; clearTimeout(X.qt); X.qt = setTimeout(() => { draw(); const el = document.getElementById('upRestQ'); if(el){ el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }, 350); };
     if($('upBackScan')) $('upBackScan').onclick = e => { e.preventDefault(); X.mode = 'restore'; switchSrc('delete'); };
     if($('upScanSheet')) $('upScanSheet').onclick = scanSheet;
-    if($('upRdDay')) $('upRdDay').onchange = e => { RD.day = e.target.value; RD.rest = null; RD.msg = ''; draw(); };
     if($('upRdFetch')) $('upRdFetch').onclick = rdFetch;
     if($('upRdClear')) $('upRdClear').onclick = () => { if(X.list.length && !confirm(`تفضّي الليستة (${X.list.length} بوليصة) وتبدأ من جديد؟ هتتفضى من كل الموبايلات.`)) return; RD.rest = null; RD.msg = ''; X.msg = ''; scClear(); };
     if($('upRdSync')) $('upRdSync').onclick = () => { SC.loaded = false; scLoad(); };
