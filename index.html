@@ -11124,6 +11124,11 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
 .up-btn.pri{background:var(--brass);border-color:var(--brass);color:#fff}
 .up-btn.ok{background:#2f7d55;border-color:#2f7d55;color:#fff}
 .up-btn:disabled{opacity:.45;cursor:not-allowed}
+.up-float{position:fixed;bottom:18px;inset-inline-start:18px;z-index:900;display:flex;flex-direction:column;align-items:center;gap:2px;padding:12px 20px;border:none;border-radius:14px;background:#2f7d55;color:#fff;font-family:inherit;font-size:15.5px;font-weight:700;cursor:pointer;box-shadow:0 6px 20px rgba(0,0,0,.25)}
+.up-float b{font-size:19px}
+.up-float small{font-size:12px;font-weight:400;opacity:.9}
+.up-float:disabled{background:#8a8a8a;cursor:not-allowed}
+.up-force{background:#2f7d55!important;color:#fff!important;border-radius:6px;padding:3px 8px!important;font-size:12px!important;white-space:nowrap}
 .up-ask{border:2px solid #e0a020;background:#fff8e6;border-radius:12px;padding:16px 18px;margin:16px 0}
 .up-ask.done{border-color:#2f7d55;background:#eef8f1}
 .up-ask h3{margin:0 0 6px;font-size:17px}
@@ -12786,7 +12791,8 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
   const isDupPending = r => !r.serial && r.qpDup && r.qpDup.length && !r.dupOk;
   const problemsOf = r => [...r.errs, ...(finalNote(r) ? [] : ['notes فاضية']), ...(r.upErr ? ['❌ QP: ' + r.upErr] : []), ...(isDupPending(r) ? ['⚠️ مرفوع في QP قبل كده'] : [])];
   // 🏆 أوردرات Squad دايماً في الجاهزين (من غير خانات المشاكل) — خدمة العملاء مسؤولة عنها
-  const isReady = r => !r.serial && (r.srcKey === 'squad' || !problemsOf(r).length);
+  // ✔ forceOk = إنت وافقت يترفع برغم المشاكل (من زرار "✔ ارفعه" جنب الأوردر)
+  const isReady = r => !r.serial && (r.srcKey === 'squad' || r.forceOk || !problemsOf(r).length);
   const readyRows = () => (S.rows || []).filter(isReady);
   const srcLabel = k => k === 'squad' ? '🏆 Squad' : k === 'restore' ? '♻️ اتمسحت قبل كده' : ((srcOf(k) || {}).label || k);
 
@@ -12855,7 +12861,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
         }
         r.serial = String((res && (res.serial || res.order_serial || (res.data && res.data.serial) || res.id)) || '✔');
         r.upErr = ''; ok++;
-      }catch(e){ r.upErr = e.message; fail++; }
+      }catch(e){ r.upErr = e.message; r.forceOk = false; fail++; }
     }
     S.sending = false; S.prog = '';
     if(ok && !S.periodMode && (isEasy(S.src) || S.src === 'all')){ try{ await advancePtr(); }catch(e){} }
@@ -12988,8 +12994,8 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
           <td><input data-upf="${i}.contentsFull" value="${esc(contentsOf(r))}" style="min-width:220px"></td>
           <td>${qpCities ? `<select data-upcity="${i}" style="border:none;padding:6px;font-family:Arial;font-size:13px;background:transparent;min-width:100px"><option value="">— اختار —</option>${qpCities.map(c => `<option ${c.name === r.city ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select>` : `<input data-upf="${i}.city" value="${esc(r.city)}" style="min-width:80px">`}</td>
           <td class="qpd">${r.serial ? '' : (r.qpDup && r.qpDup.length ? r.qpDup.slice(0, 2).map(q => `<div>⚠️ مرفوع: <b>${esc(q.serial)}</b> · ${new Date(q.date).toLocaleDateString('ar-EG', { day:'numeric', month:'short' })} · ${esc(String(q.price || '').replace(/\.00$/, ''))} ج · ${esc(q.st)}</div>`).join('') + (r.qpDup.length > 2 ? `<div>+ ${r.qpDup.length - 2} كمان</div>` : '') + (r.dupOk ? '<div class="ok">✔ هيترفع برضه</div>' : `<button class="up-btn" data-dupok="${i}" style="padding:2px 8px;font-size:11.5px;margin-top:3px">✔ ارفعه برضه</button>`) : (D.done ? '<span class="ok">✔ جديد</span>' : (D.loading ? '⏳' : '')))}</td>
-          <td class="err">${r.serial ? `<span style="color:#2f7d55;font-weight:700">✅ اترفع ${esc(r.serial)}</span>` : esc(problemsOf(r).filter(x => !/مرفوع في QP قبل كده/.test(x)).join('، '))}</td>
-          <td class="x">${r.serial ? '' : `${!isReady(r) && !(r.urgent && r.urgent.status === 'open') ? `<button data-urgone="${i}" title="ابعته لحد يصلّحه (أوردرات عاجلة)">🚨</button>` : ''}<button data-updel="${i}" title="امسح الأوردر ده">✕</button>`}</td></tr>`;
+          <td class="err">${r.serial ? `<span style="color:#2f7d55;font-weight:700">✅ اترفع ${esc(r.serial)}</span>` : (r.forceOk && problemsOf(r).length ? '<b style="color:#2f7d55">✔ وافقت يترفع:</b> ' : '') + esc(problemsOf(r).filter(x => !/مرفوع في QP قبل كده/.test(x)).join('، '))}</td>
+          <td class="x">${r.serial ? '' : `${!isReady(r) ? `<button data-upforce="${i}" class="up-force" title="موافق يترفع برغم المشكلة — هيطلع فوق مع الجاهزين">✔ ارفعه</button>` : ''}${r.forceOk ? `<button data-upunforce="${i}" title="رجّعه للمشاكل">↩</button>` : ''}${!isReady(r) && !(r.urgent && r.urgent.status === 'open') ? `<button data-urgone="${i}" title="ابعته لحد يصلّحه (أوردرات عاجلة)">🚨</button>` : ''}<button data-updel="${i}" title="امسح الأوردر ده">✕</button>`}</td></tr>`;
         const idx = S.rows.map((r, i) => ({ r, i }));
         const ready = idx.filter(x => isReady(x.r)), probs = idx.filter(x => !x.r.serial && !isReady(x.r)), done = idx.filter(x => x.r.serial);
         let t = `<h4 class="up-sec ok">✅ جاهزة للرفع على QP <b>${ready.length}</b> <span>${ready.reduce((a, x) => a + (numOf(x.r.amount) || 0), 0).toLocaleString('ar-EG')} ج</span></h4>`;
@@ -13045,6 +13051,8 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
         <button class="up-btn" id="upExport" ${R.length ? '' : 'disabled'}>⬇️ نزّل شيت الجاهزين بس</button>
       </div>
       <p style="font-size:12.5px;color:var(--muted);margin:10px 0 0">${R.length ? 'الأوردرات بتتعمل في QP على طول وهتلاقيها في Orders List. ' : (probN ? 'صلّح الأوردرات اللي فيها مشاكل وهتطلع في الجاهزين. ' : '✅ كل الأوردرات اترفعت. ')}${!qpCities ? 'لازم الاتصال بـ QP يشتغل الأول (فوق). ' : ''}اللي يترفع بيتعلّم بالأخضر ومش بيترفع تاني.</p></div>`;
+    // 🚀 زرار عايم ثابت في الصفحة: عدد اللي هيترفعوا، وبيزيد لما توافق على أوردر من المشاكل
+    h += `<button class="up-float" id="upFloatSend" ${canSend ? '' : 'disabled'} title="${canSend ? '' : (!R.length ? 'مفيش أوردرات جاهزة' : !qpCities ? 'لازم تكون عامل دخول QP' : '')}">${S.sending ? '⏳ ' + esc(S.prog) : `🚀 ارفع على QP <b>${R.length}</b> أوردر`}${R.length ? `<small>${R.reduce((a, r) => a + (numOf(r.amount) || 0), 0).toLocaleString('ar-EG')} ج</small>` : ''}</button>`;
     return h + splitCard() + histHtml() + ptrBottom() + '</div>';
   }
   function easyStep1(){
@@ -13508,6 +13516,9 @@ create policy "sheets: upload" on storage.objects for insert to authenticated wi
       dupCheck(); draw();
     };
     if($('upSend')) $('upSend').onclick = sendToQP;
+    if($('upFloatSend')) $('upFloatSend').onclick = sendToQP;
+    document.querySelectorAll('[data-upforce]').forEach(b => b.onclick = () => { const r = S.rows[Number(b.dataset.upforce)]; r.forceOk = true; r.dupOk = true; flash(`✔ "${r.name || 'الأوردر'}" طلع فوق مع الجاهزين وهيترفع برغم المشكلة.`); });
+    document.querySelectorAll('[data-upunforce]').forEach(b => b.onclick = () => { const r = S.rows[Number(b.dataset.upunforce)]; r.forceOk = false; draw(); });
     // 🗑️ مسح بوالص
     if($('upScanStart')) $('upScanStart').onclick = startScan;
     // 📦 مراجعة البيكب
