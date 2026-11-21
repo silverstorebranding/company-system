@@ -12122,13 +12122,14 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
     }catch(e){ EXD.msg = 'مقدرتش أجيب من QP: ' + e.message; EXD.msgErr = true; }
     EXD.loading = false; draw();
   }
-  const exTargets = () => EXD.pend ? X.list.filter(x => EXD.pend.has(String(x.serial)) && x.res !== 'ok') : [];
+  // اللي هيتمسح: المؤجلين اللي Pending (من الإجمالي لو اتحسب، وإلا من حالة كل بوليصة اللي اتجابت وقت التصوير/الشيت)
+  const exTargets = () => X.list.filter(x => x.res !== 'ok' && (EXD.pend ? EXD.pend.has(String(x.serial)) : (x.q && isPendingQ(x.q))));
   async function exDelete(){
     const rows = exTargets(); if(!rows.length) return;
-    if(!confirm(`هيتمسح من QP نهائيًا ${rows.length} أوردر (المؤجلين اللي اتصوروا).\nإجمالي الـ Pending: ${EXD.total} ← هيتبقى ${EXD.total - rows.length}.\n\nتكمل؟`)) return;
+    if(!confirm(`هيتمسح من QP نهائيًا ${rows.length} أوردر Pending (المؤجلين).` + (EXD.pend ? `\nإجمالي الـ Pending: ${EXD.total} ← هيتبقى ${EXD.total - rows.length}.` : '') + `\n\nتكمل؟`)) return;
     EXD.busy = true; const done = [];
     for(const x of rows){
-      try{ await qpCall('order/' + encodeURIComponent(x.serial), { method:'DELETE' }); x.res = 'ok'; done.push(x); EXD.pend.delete(String(x.serial)); EXD.total--; }
+      try{ await qpCall('order/' + encodeURIComponent(x.serial), { method:'DELETE' }); x.res = 'ok'; done.push(x); if(EXD.pend){ EXD.pend.delete(String(x.serial)); EXD.total--; } }
       catch(e){ x.res = 'err'; x.err = e.message; }
       EXD.msg = `🗑️ بيمسح... ${done.length} من ${rows.length}`; EXD.msgErr = false; draw();
     }
@@ -12138,23 +12139,24 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
         X.log = add.concat(X.log || []).slice(0, 500);
         await sbc().from('app_kv').upsert({ key:DEL_LOG_KV, value:{ list:X.log }, updated_at:new Date().toISOString(), updated_by_name:by }); }catch(e){} }
     const fail = rows.length - done.length; EXD.busy = false; EXD.msgErr = !!fail;
-    EXD.msg = `🗑️ اتمسح ${done.length} أوردر من QP — الـ Pending بقى ${EXD.total}.${fail ? ` و ${fail} QP رفض مسحهم: ` + rows.filter(x => x.res === 'err').slice(0, 5).map(x => x.serial + ' (' + x.err + ')').join('، ') : ''}`;
+    EXD.msg = `🗑️ اتمسح ${done.length} أوردر من QP` + (EXD.pend ? ` — الـ Pending بقى ${EXD.total}` : '') + `.${fail ? ` و ${fail} QP رفض مسحهم: ` + rows.filter(x => x.res === 'err').slice(0, 5).map(x => x.serial + ' (' + x.err + ')').join('، ') : ''}`;
     draw();
   }
   function exDelCard(){
     if(!X.list.length) return `<div class="card" style="border:2px solid #b3261e"><h3>🗑️ امسح المؤجلين من الـ Pending على QP</h3><p style="margin:0;font-size:13.5px;color:var(--muted)">صوّر بوالص الأوردرات المؤجلة (اللي ماتجهزتش) فوق، وهيظهرلك هنا عددهم وزرار تمسحهم من QP.</p></div>`;
     if(!canDelete()) return `<div class="card" style="border:2px solid #b3261e"><h3>🗑️ امسح المؤجلين من الـ Pending على QP</h3><p style="margin:0;font-size:13.5px;color:#b3261e">🔐 مسح البوالص من QP محتاج صلاحية "🗑️ مسح بوالص من QP" — الأدمن يديهالك من صلاحيات الموظفين.</p></div>`;
-    const T = exTargets(), notP = EXD.pend ? X.list.filter(x => !EXD.pend.has(String(x.serial)) && x.res !== 'ok').length : 0;
+    const T = exTargets(), notP = X.list.filter(x => x.res !== 'ok' && !x.loading && !T.includes(x)).length;
+    if(!EXD.pend && !EXD.loading && !EXD.tried && window.QP && window.QP.api && window.QP.api.hasCreds()){ EXD.tried = true; setTimeout(exCalc, 0); }   // يحسب الإجمالي لوحده
     return `<div class="card" style="border:2px solid #b3261e"><h3>🗑️ امسح المؤجلين من الـ Pending على QP</h3>
       ${EXD.pend ? `<div class="rd-sum">
           <div><span>📦 إجمالي الـ Pending على QP<br><small>دلوقتي</small></span><b>${EXD.total}</b></div>
           <div class="bad"><span>🗑️ هيتمسح<br><small>المؤجلين اللي اتصوروا وPending${notP ? ` (${notP} مش Pending مش هيتمسحوا)` : ''}</small></span><b>${T.length}</b></div>
           <div class="ok"><span>✅ هيتبقى Pending<br><small>بعد المسح</small></span><b>${EXD.total - T.length}</b></div>
-        </div>` : `<p style="margin:0;font-size:13.5px;color:var(--muted)">دوس "احسب" عشان أجيب إجمالي الـ Pending من QP وأقولك هيتمسح كام وهيتبقى كام.</p>`}
+        </div>` : `<p style="margin:0;font-size:14px">🗑️ هيتمسح <b style="font-size:18px;color:#b3261e">${T.length}</b> أوردر Pending${notP ? ` <small style="color:var(--muted)">(${notP} مش Pending أو مالقيتهاش — مش هيتمسحوا)</small>` : ''}${EXD.loading ? ' — ⏳ بيجيب إجمالي الـ Pending من QP...' : ' — دوس "احسب" عشان أقولك الإجمالي وهيتبقى كام'}</p>`}
       ${EXD.msg ? `<div class="up-msg ${EXD.msgErr ? 'err' : 'ok'}">${esc(EXD.msg)}</div>` : ''}
       <div class="up-row" style="margin-top:10px">
         <button class="up-btn" id="upExCalc" ${EXD.loading || EXD.busy ? 'disabled' : ''}>${EXD.loading ? '⏳ بيحسب...' : EXD.pend ? '🔄 احسب تاني' : '🔎 احسب'}</button>
-        ${EXD.pend ? `<button class="up-btn" id="upExDel" style="background:#b3261e;border-color:#b3261e;color:#fff;font-size:15px;padding:11px 20px" ${T.length && !EXD.busy && !EXD.loading ? '' : 'disabled'}>${EXD.busy ? '⏳ بيمسح...' : `🗑️ امسح الـ ${T.length} من QP (الـ Pending هيبقى ${EXD.total - T.length})`}</button>` : ''}
+        <button class="up-btn" id="upExDel" style="background:#b3261e;border-color:#b3261e;color:#fff;font-size:15px;padding:11px 20px" ${T.length && !EXD.busy ? '' : 'disabled'}>${EXD.busy ? '⏳ بيمسح...' : `🗑️ امسح الـ ${T.length} من QP${EXD.pend ? ` (الـ Pending هيبقى ${EXD.total - T.length})` : ''}`}</button>
       </div></div>`;
   }
   function ppCard(){
