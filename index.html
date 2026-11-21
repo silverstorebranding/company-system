@@ -12142,7 +12142,8 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
     draw();
   }
   function exDelCard(){
-    if(!X.list.length || !canDelete()) return '';
+    if(!X.list.length) return `<div class="card" style="border:2px solid #b3261e"><h3>🗑️ امسح المؤجلين من الـ Pending على QP</h3><p style="margin:0;font-size:13.5px;color:var(--muted)">صوّر بوالص الأوردرات المؤجلة (اللي ماتجهزتش) فوق، وهيظهرلك هنا عددهم وزرار تمسحهم من QP.</p></div>`;
+    if(!canDelete()) return `<div class="card" style="border:2px solid #b3261e"><h3>🗑️ امسح المؤجلين من الـ Pending على QP</h3><p style="margin:0;font-size:13.5px;color:#b3261e">🔐 مسح البوالص من QP محتاج صلاحية "🗑️ مسح بوالص من QP" — الأدمن يديهالك من صلاحيات الموظفين.</p></div>`;
     const T = exTargets(), notP = EXD.pend ? X.list.filter(x => !EXD.pend.has(String(x.serial)) && x.res !== 'ok').length : 0;
     return `<div class="card" style="border:2px solid #b3261e"><h3>🗑️ امسح المؤجلين من الـ Pending على QP</h3>
       ${EXD.pend ? `<div class="rd-sum">
@@ -12689,7 +12690,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
       ${X.scanning ? '<p style="font-size:12.5px;color:var(--muted);margin:6px 0 0">وجّه الكاميرا على الباركود اللي على البوليصة — أول ما يتقري هتسمع بيب وتنزل في الليستة. عدّي البوالص واحدة ورا التانية.</p>' : ''}
       ${X.msg ? `<div class="up-msg ${X.msgErr ? 'err' : 'ok'}">${esc(X.msg)}</div>` : ''}
     </div>`;
-    if(EX) h += ppCard() + exDelCard();
+    if(EX) h += exDelCard() + ppCard();
     if(RDY){ if(!SC.loaded && !SC.loading && sbc()) scLoad(); h += readyCard(); }
     if(AG){ if(X.list.length) h += againCard(); }
     else if(X.list.length){
