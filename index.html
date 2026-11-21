@@ -11791,7 +11791,22 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
   const qSlim = q => q ? { serial:q.serial, full_name:q.full_name, phone:q.phone, address:q.address, total_amount:q.total_amount, price:q.price, notes:q.notes, order_date:q.order_date,
     shipment_contents:q.shipment_contents, weight:q.weight, city:q.city, status:q.status, Order_Delivery_Status:q.Order_Delivery_Status } : null;
   async function scRead(){ const { data, error } = await sbc().from('app_kv').select('value').eq('key', PP_KV).maybeSingle(); if(error) throw error; return (data && data.value) || {}; }
+  // 🛟 نسخة احتياطية على الجهاز من آخر ليستة كان فيها بوالص — قبل أي دمج أو تفضية، عشان لو حاجة اتشالت بالغلط ترجع
+  const SC_BAK = 'upScanBackup';
+  function scBackup(){ try{ const L = X.list.filter(x => !x.loading); if(!L.length) return; const old = JSON.parse(localStorage.getItem(SC_BAK) || 'null');
+    if(old && old.list && old.list.length > L.length && Date.now() - old.at < 3 * 86400000 && L.every(x => old.list.some(y => String(y.serial) === String(x.serial)))) return;   // ماتكتبش ليستة أصغر فوق أكبر منها
+    localStorage.setItem(SC_BAK, JSON.stringify({ at:Date.now(), list:L })); }catch(e){} }
+  function scBackupGet(){ try{ const b = JSON.parse(localStorage.getItem(SC_BAK) || 'null'); return b && b.list && b.list.length ? b : null; }catch(e){ return null; } }
+  function scRestore(){
+    const b = scBackupGet(); if(!b) return;
+    const have = new Set(X.list.map(x => String(x.serial))), add = b.list.filter(x => !have.has(String(x.serial)));
+    if(!add.length){ X.msg = 'كل البوالص اللي في النسخة الاحتياطية موجودة في الليستة أصلاً.'; X.msgErr = false; draw(); return; }
+    if(!confirm(`هيرجع ${add.length} بوليصة من النسخة الاحتياطية (${new Date(b.at).toLocaleString('ar-EG', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' })}). تكمل؟`)) return;
+    const now = Date.now(); X.list = add.map(x => ({ ...x, at: now, loading:false, res:'', err:'' })).concat(X.list);
+    SC.clearedAt = Math.min(SC.clearedAt || 0, now - 1); X.msg = `↩️ رجعت ${add.length} بوليصة.`; X.msgErr = false; draw(); scSave(true);
+  }
   function scMerge(remote){
+    scBackup();
     const r = remote.scan || {}; SC.clearedAt = Math.max(SC.clearedAt || 0, r.clearedAt || 0); SC.at = r.at || SC.at; SC.by = r.by || SC.by;
     const m = new Map();
     (r.list || []).concat(X.list).forEach(x => { if(!x || !x.serial || x.loading) return; if(x.at && x.at < SC.clearedAt) return; if(!x.at && SC.clearedAt && !(r.list || []).some(y => y.serial === x.serial)) return;
@@ -11821,7 +11836,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
     draw();
   }
   async function scClear(){
-    SC.clearedAt = Date.now(); X.list = [];
+    scBackup(); SC.clearedAt = Date.now(); X.list = [];
     try{ const v = await scRead(); const by = me().full_name || me().username || '';
       await sbc().from('app_kv').upsert({ key:PP_KV, value:{ ...v, scan:{ list:[], clearedAt:SC.clearedAt, at:new Date().toISOString(), by } }, updated_at:new Date().toISOString(), updated_by_name:by }); SC.err = ''; }
     catch(e){ SC.err = 'مااتفضتش على السيستم: ' + e.message; }
@@ -11955,7 +11970,9 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
         <span>✅ اتمسحوا (جاهزين): <b style="font-size:18px;color:#2f7d55">${X.list.length}</b></span>
         ${RD.rest ? `<span>⏳ الباقي على QP: <b style="font-size:18px;color:#b3261e">${left.length}</b></span>` : ''}
         <span style="font-size:12.5px;color:${SC.err ? '#b3261e' : 'var(--muted)'}">${SC.loading ? '☁️ بيجيب البوالص المحفوظة...' : SC.err ? '⚠️ ' + esc(SC.err) : `☁️ محفوظة على السيستم — تقدر تفتحها من أي موبايل${SC.by ? ` · آخر تحديث: ${esc(SC.by)} ${SC.at ? new Date(SC.at).toLocaleString('ar-EG', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }) : ''}` : ''}`}</span>
-        <button class="up-btn" id="upRdSync" style="padding:4px 10px;font-size:12px">🔄 حدّث</button></div>
+        <button class="up-btn" id="upRdSync" style="padding:4px 10px;font-size:12px">🔄 حدّث</button>
+        ${(() => { const b = scBackupGet(); if(!b) return ''; const have = new Set(X.list.map(x => String(x.serial))); const n = b.list.filter(x => !have.has(String(x.serial))).length;
+          return n ? `<button class="up-btn" id="upRdRestore" style="padding:4px 10px;font-size:12px;background:#e8f1fb;border-color:#2b6cb0">↩️ رجّع ${n} بوليصة اتشالت (نسخة احتياطية على الجهاز ده)</button>` : ''; })()}</div>
       <div class="up-row" style="margin-top:10px">
         <button class="up-btn ok" id="upScanSheet" ${okN ? '' : 'disabled'}>⬇️ نزّل شيت الجاهزين (${okN}) — ابعته لـ QP</button>
         ${X.list.length || RD.rest ? `<button class="up-btn" id="upRdClear" style="background:#fff4e5;border-color:#b7791f">🧹 ابدأ من جديد (فضّي الـ ${X.list.length} بوليصة)</button>` : ''}
@@ -12088,7 +12105,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
     try{ row.q = await qpCall('order/' + encodeURIComponent(serial)); if(row.q && row.q.data && !row.q.serial) row.q = row.q.data; }
     catch(e){ row.err = /not found|404|No .* matches/i.test(e.message) ? 'مش موجودة في QP' : e.message; }
     row.loading = false; draw();
-    if(X.mode === 'ready') scSave();
+    if(X.mode === 'ready'){ scBackup(); scSave(); }
   }
   async function loadDelScanner(){
     if(window.Html5Qrcode) return;
@@ -13696,6 +13713,7 @@ create policy "sheets: upload" on storage.objects for insert to authenticated wi
     if($('upRdFetch')) $('upRdFetch').onclick = rdFetch;
     if($('upRdClear')) $('upRdClear').onclick = () => { if(X.list.length && !confirm(`تفضّي الليستة (${X.list.length} بوليصة) وتبدأ من جديد؟ هتتفضى من كل الموبايلات.`)) return; RD.rest = null; RD.msg = ''; X.msg = ''; scClear(); };
     if($('upRdSync')) $('upRdSync').onclick = () => { SC.loaded = false; scLoad(); };
+    if($('upRdRestore')) $('upRdRestore').onclick = scRestore;
     if($('upRdDel')) $('upRdDel').onclick = rdDelete;
     document.querySelectorAll('[data-rdkeep]').forEach(b => b.onclick = () => { RD.rest.splice(Number(b.dataset.rdkeep), 1); draw(); });
     if($('upExDay')) $('upExDay').onchange = e => { QD.day = e.target.value || ymd(new Date()); QD.dayTouched = !!e.target.value && e.target.value !== ymd(new Date()); };
