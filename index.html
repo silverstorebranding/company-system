@@ -11797,7 +11797,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
      - التخزين: app_kv بمفتاح up_postponed = { list:[{ serial, name, phone, amount, day, at, by, sentDay }] }
      ===================================================================== */
   const PP_KV = 'up_postponed';
-  const PP = { list:null, include:true, show:false };
+  const PP = { list:null, include:true, show:false, allPend:true };   // allPend: الشيت = كل الـ Pending على QP (مش يوم واحد) − اللي اتصوروا
   async function loadPP(force){
     if(PP.list && !force) return PP.list;
     try{ const { data } = await sbc().from('app_kv').select('*').eq('key', PP_KV).maybeSingle(); PP.list = (data && data.value && data.value.list) || []; }catch(e){ PP.list = PP.list || []; }
@@ -11882,8 +11882,10 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
       const today = ymd(new Date()), day = ppDay();
       const due = PP.include ? ppDue() : [];
       const minDay = [day].concat(due.map(x => x.day)).sort()[0];
-      const lim = ymd(new Date(Date.now() - 30 * 86400000)), from = minDay < lim ? lim : minDay, to = day > today ? day : today;
-      const all = await api.fetchRange(from, to, n => { X.msg = `بيجيب أوردرات QP... ${n} أوردر`; draw(); });
+      const lim = ymd(new Date(Date.now() - 30 * 86400000)), to = day > today ? day : today;
+      const from = PP.allPend ? ymd(new Date(Date.now() - 60 * 86400000)) : (minDay < lim ? lim : minDay);
+      const all = PP.allPend ? await (api.fetchPending || api.fetchRange)(from, to, n => { X.msg = `بيجيب كل الـ Pending من QP... ${n} أوردر`; draw(); })
+        : await api.fetchRange(from, to, n => { X.msg = `بيجيب أوردرات QP... ${n} أوردر`; draw(); });
       const isP = q => String(q.Order_Delivery_Status ?? '').trim() === '1';
       const pendBy = new Map(all.filter(isP).map(q => [String(q.serial), q]));
       const dayRows = [...pendBy.values()].filter(q => ymd(new Date(q.order_date)) === day);
@@ -11892,7 +11894,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
       const gone = due.filter(x => !pendBy.has(String(x.serial)));
       // ⏭️ اللي اتصوروا النهارده (الليستة + اللي اتسجلوا مؤجلين النهارده قبل كده) بيتشالوا من الشيت
       const scanned = new Set(X.list.map(x => String(x.serial)).concat(ppToday().map(x => String(x.serial))));
-      const pool = dayRows.concat(ppRows);
+      const pool = PP.allPend ? [...pendBy.values()] : dayRows.concat(ppRows);
       const list = pool.filter(q => !scanned.has(String(q.serial))).sort((a, b) => new Date(a.order_date) - new Date(b.order_date));
       const removed = pool.length - list.length;
       const scanNotPend = X.list.filter(x => !pendBy.has(String(x.serial))).length;
@@ -11918,7 +11920,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
       }
       const dueIn = ppRows.filter(q => sentSet.has(String(q.serial))).length;
       X.msg = (list.length ? `✅ اتنزّل شيت فيه ${list.length} أوردر` : '⚠️ مفيش أوردرات تطلع في الشيت') +
-        ` = ${dayRows.length} اترفعوا يوم ${day}` + (PP.include ? ` + ${ppRows.length} مؤجلين من قبل كده` : '') + ` − ${removed} اتصوروا (مؤجلين لبكرة).` +
+        (PP.allPend ? ` = ${pool.length} Pending على QP (كل الأيام) − ${removed} اتصوروا.` : ` = ${dayRows.length} اترفعوا يوم ${day}` + (PP.include ? ` + ${ppRows.length} مؤجلين من قبل كده` : '') + ` − ${removed} اتصوروا (مؤجلين لبكرة).`) +
         ` 📦 اتسجل ${ppToday().length} مؤجل لبكرة.` + (dueIn < ppRows.length ? ` (${ppRows.length - dueIn} من المؤجلين القدام اتأجلوا تاني)` : '') +
         (gone.length ? ` ${gone.length} مؤجل قديم اتشال من السجل عشان حالته على QP مابقتش Pending.` : '') +
         (scanNotPend ? ` ⚠️ ${scanNotPend} بوليصة من اللي اتصوروا مش Pending على QP، فماتسجلتش مؤجلة.` : '');
@@ -12112,12 +12114,15 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
     const due = ppDue(), y = ymd(new Date(Date.now() - 86400000)), fromY = due.filter(x => x.day === y).length, td = ppToday();
     return `<div class="card"><h3 style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">📦 شيت Pending لـ QP
         <button class="up-btn" id="upPPShow" style="padding:5px 12px;font-size:12.5px">${PP.show ? 'اخفي' : '👀 شوف'} المؤجلين</button></h3>
-      <div class="up-row" style="font-size:14px;gap:16px">
+      <div class="up-row" style="font-size:14.5px;gap:16px;margin-bottom:8px">
+        <label><input type="radio" name="upPPMode" value="all" ${PP.allPend ? 'checked' : ''}> <b>📦 كل الـ Pending على QP</b> (كل الأيام)</label>
+        <label><input type="radio" name="upPPMode" value="day" ${PP.allPend ? '' : 'checked'}> أوردرات يوم واحد + المؤجلين</label></div>
+      <div class="up-row" style="font-size:14px;gap:16px;${PP.allPend ? 'display:none' : ''}">
         <label><input type="checkbox" id="upPPInc" ${PP.include ? 'checked' : ''}> ضيف <b style="font-size:17px;color:#6b46c1">${due.length}</b> أوردر مؤجل لسه ماطلعش${due.length ? ` <small style="color:var(--muted)">(${fromY} من امبارح${due.length - fromY ? ` + ${due.length - fromY} أقدم` : ''})</small>` : ''}</label>
         ${td.length ? `<span>⏭️ اتأجل النهارده لبكرة: <b>${td.length}</b></span>` : ''}</div>
       <div class="up-row" style="margin-top:10px">
-        <label style="font-size:13.5px">أوردرات اترفعت يوم <input type="date" id="upExDay" value="${esc(ppDay())}" style="padding:7px 9px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit"></label>
-        <button class="up-btn ok" id="upPPGo" ${QD.loading ? 'disabled' : ''}>${QD.loading ? '⏳ بيجيب...' : `⬇️ نزّل الشيت: أوردرات اليوم${PP.include && due.length ? ` + ${due.length} مؤجل` : ''}${X.list.length ? ` − ${X.list.length} اتصوروا` : ''}`}</button>
+        <label style="font-size:13.5px;${PP.allPend ? 'display:none' : ''}">أوردرات اترفعت يوم <input type="date" id="upExDay" value="${esc(ppDay())}" style="padding:7px 9px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit"></label>
+        <button class="up-btn ok" id="upPPGo" ${QD.loading ? 'disabled' : ''}>${QD.loading ? '⏳ بيجيب...' : (PP.allPend ? `⬇️ نزّل الشيت: كل الـ Pending على QP${X.list.length ? ` − ${X.list.length} اتصوروا` : ''}` : `⬇️ نزّل الشيت: أوردرات اليوم${PP.include && due.length ? ` + ${due.length} مؤجل` : ''}${X.list.length ? ` − ${X.list.length} اتصوروا` : ''}`)}</button>
         ${X.list.length ? '<button class="up-btn" id="upDelClear">🧹 فضّي الليستة</button>' : ''}</div>
       ${X.list.length ? `<div class="up-row" style="margin-top:8px;font-size:13px;color:var(--muted)">البوالص اللي في الليستة تحت دي اتصوّرت <b>امبارح</b> ومش النهارده؟
         <button class="up-btn" id="upPPYest" style="padding:5px 12px;font-size:12.5px">↩️ دول مؤجلين من امبارح — ضيفهم لشيت النهارده (${X.list.length})</button></div>` : ''}
@@ -13909,6 +13914,7 @@ create policy "sheets: upload" on storage.objects for insert to authenticated wi
     document.querySelectorAll('[data-rdkeep]').forEach(b => b.onclick = () => { RD.rest.splice(Number(b.dataset.rdkeep), 1); draw(); });
     if($('upExDay')) $('upExDay').onchange = e => { QD.day = e.target.value || ymd(new Date()); QD.dayTouched = !!e.target.value && e.target.value !== ymd(new Date()); };
     if($('upPPGo')) $('upPPGo').onclick = exportPendingNext;
+    document.querySelectorAll('input[name="upPPMode"]').forEach(r => r.onchange = () => { PP.allPend = r.value === 'all'; draw(); });
     if($('upPPYest')) $('upPPYest').onclick = ppAddYesterday;
     if($('upPPInc')) $('upPPInc').onchange = e => { PP.include = e.target.checked; draw(); };
     if($('upPPShow')) $('upPPShow').onclick = () => { PP.show = !PP.show; draw(); };
