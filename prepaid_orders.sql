@@ -7,7 +7,7 @@ create table if not exists public.prepaid_orders (
   created_at timestamptz not null default now(),
   order_date date not null default current_date,       -- يوم الأوردر (اليوم اللي اتبعت فيه للمندوب)
   batch text,
-  courier_id uuid not null,                             -- المندوب (profiles.id)
+  courier_id uuid,                                      -- المسؤول (profiles.id) — فاضي لو لسه ماعملش حساب
   courier_name text,
   customer_name text, phone text, phone2 text,
   address text, city text, amount numeric,
@@ -33,7 +33,7 @@ drop policy if exists "prepaid: update" on public.prepaid_orders;
 drop policy if exists "prepaid: delete" on public.prepaid_orders;
 -- المندوب يشوف أوردراته بس — والمتابعين واللي بيرفعوا الأوردرات يشوفوا الكل
 create policy "prepaid: read" on public.prepaid_orders for select to authenticated
-  using (courier_id = auth.uid() or public.app_has_section('prepaid_admin') or public.app_has_section('qp_upload'));
+  using (courier_id = auth.uid() or public.app_has_section('prepaid') or public.app_has_section('prepaid_admin') or public.app_has_section('qp_upload'));
 -- الإرسال من 📤 رفع الأوردرات
 create policy "prepaid: insert" on public.prepaid_orders for insert to authenticated
   with check (public.app_has_section('prepaid_admin') or public.app_has_section('qp_upload'));
@@ -46,15 +46,20 @@ create policy "prepaid: delete" on public.prepaid_orders for delete to authentic
 -- ✅ المندوب يغيّر الحالة بس (اتسلم / ماتسلمش / لسه) لأوردراته — مايقدرش يعدّل أي بيانات تانية
 create or replace function public.prepaid_set_status(p_id bigint, p_status text, p_note text default null) returns boolean
 language plpgsql security definer set search_path = public as $$
-declare n int;
+declare n int; nm text; is_c boolean;
 begin
   if p_status not in ('pending','delivered','failed') then raise exception 'bad status'; end if;
+  -- is_c = المسؤول نفسه (معاه صلاحية prepaid) — مش الأدمن
+  select coalesce(full_name, username), coalesce(to_jsonb(allowed_sections) ? 'prepaid', false) into nm, is_c from public.profiles where id = auth.uid();
   update public.prepaid_orders set
     status = p_status,
     status_note = case when p_status = 'pending' then null else nullif(trim(coalesce(p_note, '')), '') end,
     status_at = case when p_status = 'pending' then null else now() end,
-    status_by_name = case when p_status = 'pending' then null else (select coalesce(full_name, username) from public.profiles where id = auth.uid()) end
-  where id = p_id and (courier_id = auth.uid() or public.app_has_section('prepaid_admin'));
+    status_by_name = case when p_status = 'pending' then null else nm end,
+    -- الأوردر اللي اتبعت قبل ما المسؤول يعمل حساب بيتسجل باسمه أول ما يعلّم عليه
+    courier_id = coalesce(courier_id, case when is_c then auth.uid() end),
+    courier_name = coalesce(courier_name, case when is_c then nm end)
+  where id = p_id and (courier_id = auth.uid() or public.app_has_section('prepaid') or public.app_has_section('prepaid_admin'));
   get diagnostics n = row_count;
   return n > 0;
 end $$;
