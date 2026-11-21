@@ -11189,6 +11189,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
 .up-chips a{border:1.5px solid #f1c7c2;color:#7a2a1f;background:#fff;border-radius:20px;padding:4px 12px;font-size:13px;font-weight:700;text-decoration:none}
 .up-chips a b{margin-inline-start:4px}
 .up-grp-h span{font-weight:500;font-size:12px;color:var(--muted)}
+.up-grp-h .up-grpdel{margin-inline-start:auto;padding:4px 12px;font-size:12.5px;background:#c0392b;border-color:#c0392b;color:#fff}
 .up-sheet tr.up-gap td{height:6px;padding:0;background:#f1c7c2;border:none}
 .up-done{margin-top:14px}.up-done summary{cursor:pointer;font-weight:700;color:#2f7d55;padding:6px 0}
 .up-sheet tr.dup td.rn{background:#f6d77a}
@@ -13039,7 +13040,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
               ${readyRows().length ? `<button class="up-btn ok" data-dupact="send" style="padding:6px 14px">🚀 ارفع الباقي الجاهز (${readyRows().length})</button>` : ''}</div>`;
           }
           G.filter(g => g.list.length).forEach(g => {
-            t += `<div class="up-grp" id="upg-${g.k}" style="${g.c ? 'border:2px solid ' + g.c : ''}"><div class="up-grp-h" style="${g.c ? 'color:' + g.c : ''}">${g.t} <b>${g.list.length}</b><span>${g.hint}</span></div>${g.tools || ''}
+            t += `<div class="up-grp" id="upg-${g.k}" style="${g.c ? 'border:2px solid ' + g.c : ''}"><div class="up-grp-h" style="${g.c ? 'color:' + g.c : ''}">${g.t} <b>${g.list.length}</b><span>${g.hint}</span><button class="up-btn up-grpdel" data-grpdel="${g.list.map(x => x.i).join(',')}" data-grpname="${esc(g.t)}">🗑️ امسح كل اللي هنا (${g.list.length})</button></div>${g.tools || ''}
               <div class="up-sheet"><table>${head}<tbody>${g.list.map((x, j) => { let row = rowHtml(x.r, x.i);
                 // فاصل بين كل رقم متكرر والتاني
                 if(g.k === 'phone' && j > 0 && phoneOf(g.list[j - 1].r.phone) !== phoneOf(x.r.phone)) row = '<tr class="up-gap"><td colspan="13"></td></tr>' + row;
@@ -13631,6 +13632,17 @@ create policy "sheets: upload" on storage.objects for insert to authenticated wi
       $('upNote').onchange = () => draw();
     }
     document.querySelectorAll('[data-upnote]').forEach(b => b.onclick = () => { S.note = b.dataset.upnote; draw(); });
+    // 🗑️ امسح كل أوردرات نوع مشكلة واحد مرة واحدة
+    document.querySelectorAll('[data-grpdel]').forEach(b => b.onclick = () => {
+      const rows = b.dataset.grpdel.split(',').map(Number).map(i => S.rows[i]).filter(r => r && !r.serial);
+      if(!rows.length) return;
+      if(!confirm(`هيتمسح ${rows.length} أوردر من "${b.dataset.grpname}" ومش هيظهروا تاني. تكمل؟`)) return;
+      rows.forEach(r => { if(isEasy(r.srcKey) || r.srcKey === 'squad') S.skipped.add(skipKey(r)); });
+      S.rows = S.rows.filter(r => !rows.includes(r)); dupCheck();
+      const urg = rows.filter(r => r.urgentId); if(urg.length) closeUrgent(urg);
+      if(rows.some(r => isEasy(r.srcKey) || r.srcKey === 'squad')) persistTaken();
+      flash(`🗑️ اتمسح ${rows.length} أوردر — الباقي ${S.rows.filter(r => !r.serial).length}.`);
+    });
     document.querySelectorAll('[data-updel]').forEach(b => b.onclick = () => {
       const r = S.rows[Number(b.dataset.updel)];
       if(isEasy(r.srcKey) || r.srcKey === 'squad'){ if(!confirm('تشيل الأوردر ده؟ هيتحسب إنه اتاخد ومش هيظهر تاني بعد الرفع.')) return; S.skipped.add(skipKey(r)); }
