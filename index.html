@@ -12704,7 +12704,8 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
   function check(r){
     const e = [];
     if(!String(r.name).trim()) e.push('الاسم فاضي');
-    if(!/^1[0125]\d{8}$/.test(phoneOf(r.phone))) e.push(String(r.phone || '').trim() ? `الموبايل غلط (اتقرى: ${phoneOf(r.phone) || '—'} — لازم 11 رقم يبدأ بـ 010/011/012/015)` : 'الموبايل فاضي');
+    // 📞 الموبايل سليم لو: بيبدأ بـ 0 وعدده 11 رقم، أو من غير الـ 0 وعدده 10 أرقام (phoneOf بيشيل الـ 0 و +20 فالاتنين بيبقوا 10)
+    if(!/^[1-9]\d{9}$/.test(phoneOf(r.phone))) e.push(String(r.phone || '').trim() ? `الموبايل غلط (اتقرى: ${phoneOf(r.phone) || '—'} — لو بيبدأ بـ 0 لازم 11 رقم، ومن غير 0 لازم 10 أرقام)` : 'الموبايل فاضي');
     if(!String(r.address).trim()) e.push('العنوان فاضي');
     if(!(numOf(r.amount) > 0)) e.push('السعر غلط');
     r.errs = e;
