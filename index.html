@@ -11187,6 +11187,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
 .up-grp-h b{background:#fdecea;border-radius:10px;padding:0 8px}
 .up-chips{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}
 .rd-out{margin-top:10px;border:1.5px solid #b7791f;border-radius:10px;padding:8px 12px;background:#fffaf0}.rd-out summary{cursor:pointer;font-weight:700;font-size:13.5px}
+.rd-dl{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
 .rd-sum{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:12px}
 .rd-sum>div{display:flex;justify-content:space-between;align-items:center;gap:8px;border:2px solid var(--line);border-radius:12px;padding:10px 14px;background:#fff}
 .rd-sum>div span{font-size:13.5px;font-weight:700}.rd-sum>div small{font-weight:400;color:var(--muted);font-size:11.5px}
@@ -11949,6 +11950,12 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
           : ymd(new Date(q.order_date)) !== day ? 'اترفعت يوم ' + ymd(new Date(q.order_date)) : 'مش في ليستة QP لليوم ده';
       }
       RD.out = out.map(x => ({ serial:x.serial, name:(x.q && x.q.full_name) || '', why:x.why }));
+      // 📄 للشيتات: (أ) اتصوروا وموجودين Pending على QP (أي يوم) — (ب) اتصوروا ومش Pending على QP — (ج) Pending اليوم ده ومااتصوروش
+      const pendBy = new Map(pend.map(q => [String(q.serial), q]));
+      RD.inQ = []; RD.notQ = [];
+      X.list.forEach(x => { const q = pendBy.get(String(x.serial)) || allBy.get(String(x.serial)) || x.q;
+        if(q && isPendingQ(q)) RD.inQ.push({ serial:x.serial, q, why: pendBy.has(String(x.serial)) ? '' : x.why });
+        else RD.notQ.push({ serial:x.serial, q:q || null, why:x.why || (x.err || 'مش موجودة في QP') }); });
       if(out.some(x => x.q)) scSave();
       RD.msg = `📦 يوم ${day}: ${pend.length} أوردر Pending على QP — منهم ${pend.length - RD.rest.length} اتمسحوا (جاهزين) و ${RD.rest.length} باقيين.`; RD.msgErr = false;
     }catch(e){ RD.msg = 'مقدرتش أجيب من QP: ' + e.message; RD.msgErr = true; }
@@ -12006,6 +12013,11 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
           <div><span>📦 مرفوع Pending على QP<br><small>يوم ${esc(RD.forDay || rdDay())}</small></span><b>${RD.pendN}</b></div>
           <div class="ok"><span>✅ الشيت الجاهز<br><small>اتصوروا${RD.scanN !== RD.matched ? ` — منهم ${RD.matched} من اليوم ده` : ''}</small></span><b>${RD.scanN}</b></div>
           <div class="bad"><span>⏳ مرفوع ومتجهزش<br><small>${left.length !== rest.length ? `فاضل ${left.length} مااتمسحوش` : 'هيتمسحوا من QP'}</small></span><b>${rest.length}</b></div>
+        </div>
+        <div class="rd-dl">
+          <button class="up-btn ok" data-rdsheet="in" ${RD.inQ && RD.inQ.length ? '' : 'disabled'}>⬇️ اتصوروا وموجودين Pending على QP (${(RD.inQ || []).length})</button>
+          <button class="up-btn" data-rdsheet="not" style="background:#fff4e5;border-color:#b7791f" ${RD.notQ && RD.notQ.length ? '' : 'disabled'}>⬇️ اتصوروا ومش Pending على QP (${(RD.notQ || []).length})</button>
+          <button class="up-btn" data-rdsheet="rest" style="background:#fdecea;border-color:#b3261e" ${rest.length ? '' : 'disabled'}>⬇️ Pending على QP ومااتصوروش (${rest.length})</button>
         </div>
         ${canDelete() ? `<div class="up-row" style="margin-top:10px"><button class="up-btn" id="upRdDel2" style="background:#b3261e;border-color:#b3261e;color:#fff;font-size:16px;padding:12px 22px" ${left.length && !RD.busy ? '' : 'disabled'}>${RD.busy ? '⏳ بيمسح...' : `🗑️ امسح الـ ${left.length} اللي متجهزوش من QP`}</button></div>` : ''}` : ''}
       ${RD.rest && RD.out && RD.out.length ? `<details class="rd-out" open><summary>🔍 ${RD.out.length} بوليصة اتصورت بس مش في Pending يوم ${esc(RD.forDay || rdDay())} — ليه؟ (${Object.entries(RD.out.reduce((a, x) => { const k = x.why.replace(/ \d{4}-\d\d-\d\d$/, ' يوم تاني'); a[k] = (a[k] || 0) + 1; return a; }, {})).map(([k, n]) => esc(k) + ': ' + n).join(' · ')})</summary>
@@ -12075,6 +12087,21 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
   // 📄 بوالص → شيت: لأي حد معاه مسح البوالص أو رفع الأوردرات
   const canScan = () => { const m = me(); return canDelete() || !!(Array.isArray(m.allowed_sections) && m.allowed_sections.includes('qp_upload')); };
   // 📄 شيت بيانات البوالص اللي اتصورت (بأعمدة شيت QP + الحالة)
+  // 📄 شيت بنفس شكل شيت QP لأي ليستة { serial, q, why }
+  function rdSheet(L, name){
+    if(!L.length || !window.XLSX) return;
+    const api = window.QP && window.QP.api, why = L.some(x => x.why);
+    const H = [null, 'serial', 'full name', 'phone', 'address', 'total amount', 'notes', 'order date', 'shipment contents', 'weight', 'city', 'status'].concat(why ? ['ملاحظة'] : []);
+    const aoa = [H].concat(L.map(x => { const q = x.q || {};
+      return [null, String(q.serial ?? x.serial), q.full_name || '', q.phone ? phoneOf(q.phone) : '', q.address || '', q.total_amount != null || q.price != null ? numOf(q.total_amount ?? q.price) : '', q.notes || '',
+        q.order_date ? new Date(q.order_date).toLocaleString('en-GB', { hour12:false }) : '', q.shipment_contents || '', q.weight != null ? numOf(q.weight) : '', q.city || '',
+        x.q ? (api ? String(api.label(q) || '').replace(/\s*#\d+$/, '') : (q.status || '')) : 'مش موجودة في QP'].concat(why ? [x.why || ''] : []); }));
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    for(let i = 2; i <= aoa.length; i++){ ['B', 'D'].forEach(c => { const v = ws[c + i]; if(v){ v.t = 's'; v.v = String(v.v); v.z = '@'; } }); }
+    ws['!cols'] = [{ wch:3 }, { wch:11 }, { wch:22 }, { wch:13 }, { wch:45 }, { wch:12 }, { wch:16 }, { wch:18 }, { wch:40 }, { wch:8 }, { wch:12 }, { wch:16 }, { wch:28 }];
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Sheet3');
+    XLSX.writeFile(wb, `${name} ${RD.forDay || ymd(new Date())} (${L.length}).xlsx`);
+  }
   async function scanSheet(){
     if(!X.list.length || !window.XLSX) return;
     // البوالص اللي بياناتها ماتجابتش (مثلاً الموبايل ماكانش عامل دخول QP) → نجيبها دلوقتي
@@ -13743,6 +13770,10 @@ create policy "sheets: upload" on storage.objects for insert to authenticated wi
     if($('upRdSync')) $('upRdSync').onclick = () => { SC.loaded = false; scLoad(); };
     if($('upRdRestore')) $('upRdRestore').onclick = scRestore;
     if($('upRdDel2')) $('upRdDel2').onclick = rdDelete;
+    document.querySelectorAll('[data-rdsheet]').forEach(b => b.onclick = () => { const k = b.dataset.rdsheet;
+      if(k === 'in') rdSheet(RD.inQ || [], 'جاهزين وموجودين Pending على QP');
+      else if(k === 'not') rdSheet(RD.notQ || [], 'اتصوروا ومش Pending على QP');
+      else rdSheet((RD.rest || []).filter(x => x.res !== 'ok').map(x => ({ serial:x.q.serial, q:x.q, why:'' })), 'Pending على QP ومااتصوروش'); });
     document.querySelectorAll('[data-rdkeep]').forEach(b => b.onclick = () => { RD.rest.splice(Number(b.dataset.rdkeep), 1); draw(); });
     if($('upExDay')) $('upExDay').onchange = e => { QD.day = e.target.value || ymd(new Date()); QD.dayTouched = !!e.target.value && e.target.value !== ymd(new Date()); };
     if($('upPPGo')) $('upPPGo').onclick = exportPendingNext;
