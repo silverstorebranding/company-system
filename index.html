@@ -5880,6 +5880,19 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
       fetchRangeAll: async (from, to, onProg) => { const a = await qpFetchRange(from, to, onProg, false); let b = [];
         try{ b = await qpFetchRange(from, to, n => onProg && onProg(a.length + n), true); }catch(e){}
         const seen = new Set(); return a.concat(b).filter(o => { if(seen.has(o.serial)) return false; seen.add(o.serial); return true; }); },
+      // 🔎 أوردر واحد برقم الشحنة من ليستة QP — أي حالة (Pending أو لأ، ومرفوض كمان)
+      findSerial: async serial => {
+        const sr = String(serial).trim(), to = new Date(), from = new Date(Date.now() - 400 * 86400000);
+        const ymdQ = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+        for(const dates of [['', ''], [ymdQ(from), ymdQ(to)]]) for(const rej of [0, 1]){
+          try{
+            const j = await qpApiGet(QP_ORDERS_EP + '?rejected=' + rej + '&printO=All&status=&order_serial=' + encodeURIComponent(sr) + '&full_name=&phone_number=&city=&order_date=' + dates[0] + '&to_date=' + dates[1] + '&page=1&page_size=20');
+            const hit = (j.results || []).find(o => String(o.serial) === sr);
+            if(hit) return hit;
+          }catch(e){}
+        }
+        return null;
+      },
       category: o => catOf(o),
       label: o => qpStatus(o.Order_Delivery_Status).label,
       loadSquadPages: () => loadSquadPages(),
@@ -11951,7 +11964,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
       for(let i = 0; i < out.length; i++){ const x = out[i];
         let q = allBy.get(String(x.serial)) || x.q;
         if(!q){ RD.msg = `بيدوّر على ${i + 1} من ${out.length} بوليصة مش في اليوم ده...`; draw();
-          try{ q = await qpCall('order/' + encodeURIComponent(x.serial)); if(q && q.data && !q.serial) q = q.data; x.q = q; }catch(e){ x.err = /not found|404|No .* matches/i.test(e.message) ? 'مش موجودة في QP' : e.message; } }
+          await qpLookup(x); q = x.q; }
         x.why = !q ? (x.err || 'مش موجودة في QP') : !isPendingQ(q) ? 'حالتها على QP: ' + String(api.label(q) || q.status || '').replace(/\s*#\d+$/, '') + ' (مش Pending)'
           : 'Pending بس اترفعت من أكتر من 60 يوم (' + ymd(new Date(q.order_date)) + ')';
       }
@@ -12046,6 +12059,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
       </tbody></table></div>
       ${miss ? `<p style="font-size:12.5px;color:#b3261e;margin:8px 0 0">⚠️ ${miss} بوليصة مالقيتش بياناتها على QP — مش هتترفع.</p>` : ''}
       <div class="up-row" style="margin-top:12px">
+        ${miss ? `<button class="up-btn" id="upAgRetry" ${AGs.busy ? 'disabled' : ''}>🔄 هات بيانات الـ ${miss} من QP تاني</button>` : ''}
         <button class="up-btn ok" id="upAgGo" ${todo && !AGs.busy ? '' : 'disabled'}>${AGs.busy ? '⏳ بيرفع...' : `🔁 ارفعهم تاني على QP بسريال جديد (${todo})`}</button>
         <button class="up-btn" id="upAgSheet" ${X.list.some(x => x.q) ? '' : 'disabled'}>⬇️ نزّل شيت (القديم ← الجديد)</button>
         <button class="up-btn" id="upDelClear">🧹 فضّي الليستة</button></div></div>`;
@@ -12167,7 +12181,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
     const miss = X.list.filter(x => !x.q);
     if(miss.length && window.QP && window.QP.api && window.QP.api.hasCreds()){
       for(let i = 0; i < miss.length; i++){ X.msg = `بيجيب بيانات ${i + 1} من ${miss.length} بوليصة من QP...`; X.msgErr = false; draw();
-        try{ let q = await qpCall('order/' + encodeURIComponent(miss[i].serial)); if(q && q.data && !q.serial) q = q.data; miss[i].q = q; miss[i].err = ''; }catch(e){ miss[i].err = e.message; } }
+        await qpLookup(miss[i]); }
       if(X.mode === 'ready') scSave(true);
     }
     const L = X.list.map(x => x.q ? x : { ...x, q:{ serial:x.serial } });
@@ -12211,6 +12225,15 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
     try{ const c = new (window.AudioContext || window.webkitAudioContext)(), o = c.createOscillator(), g = c.createGain();
       o.frequency.value = ok ? 1200 : 300; o.type = 'square'; g.gain.value = 0.08; o.connect(g); g.connect(c.destination); o.start(); o.stop(c.currentTime + (ok ? 0.12 : 0.3)); }catch(e){}
   }
+  // 🔎 بيانات بوليصة من QP: الأول من الـ API العادي، ولو مالقاهاش (مثلاً مش Pending) من ليستة أوردرات QP بأي حالة
+  async function qpLookup(row){
+    let e1 = null;
+    try{ let q = await qpCall('order/' + encodeURIComponent(row.serial)); if(q && q.data && !q.serial) q = q.data; if(q && (q.serial || q.full_name)){ row.q = q; row.err = ''; return; } }catch(e){ e1 = e; }
+    const api = window.QP && window.QP.api;
+    if(api && api.hasCreds() && api.findSerial){ try{ const q = await api.findSerial(row.serial); if(q){ row.q = q; row.err = ''; return; } }catch(e){} }
+    row.err = !api || !api.hasCreds() ? (e1 && !/not found|404|No .* matches/i.test(e1.message) ? e1.message + ' — ' : '') + 'مالقيتهاش (اعمل دخول QP من قسم 🚚 QP عشان أدوّر في كل الأوردرات)'
+      : 'مش موجودة في QP';
+  }
   async function addSerial(raw){
     if(X.mode === 'pickup') return pkAdd(raw);
     if(X.mode === 'send') return sdAdd(raw);
@@ -12226,8 +12249,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
     if(X.list.some(x => x.serial === serial)){ X.msg = `البوليصة ${serial} موجودة في الليستة أصلاً.`; X.msgErr = true; beep(false); draw(); return; }
     const row = { serial, loading:true, reason: X.reason, q:null, err:'', res:'', at:Date.now(), by: me().full_name || me().username || '' };
     X.list.unshift(row); X.msg = ''; beep(true); draw();
-    try{ row.q = await qpCall('order/' + encodeURIComponent(serial)); if(row.q && row.q.data && !row.q.serial) row.q = row.q.data; }
-    catch(e){ row.err = /not found|404|No .* matches/i.test(e.message) ? 'مش موجودة في QP' : e.message; }
+    await qpLookup(row);
     row.loading = false; draw();
     if(X.mode === 'ready'){ scBackup(); scSave(); }
   }
@@ -13840,6 +13862,9 @@ create policy "sheets: upload" on storage.objects for insert to authenticated wi
     if($('upScanSheet')) $('upScanSheet').onclick = scanSheet;
     if($('upRdFetch')) $('upRdFetch').onclick = rdFetch;
     if($('upAgGo')) $('upAgGo').onclick = againUpload;
+    if($('upAgRetry')) $('upAgRetry').onclick = async () => { const L = X.list.filter(x => !x.loading && !x.q); AGs.busy = true;
+      for(let i = 0; i < L.length; i++){ AGs.msg = `بيدوّر على ${i + 1} من ${L.length}...`; AGs.msgErr = false; L[i].loading = true; draw(); await qpLookup(L[i]); L[i].loading = false; }
+      const n = L.filter(x => x.q).length; AGs.busy = false; AGs.msg = `✅ لقيت ${n} من ${L.length}.`; AGs.msgErr = n < L.length; draw(); };
     if($('upAgSheet')) $('upAgSheet').onclick = againSheet;
     if($('upScanNew')) $('upScanNew').onclick = () => { if(!confirm(`تفضّي الـ ${X.list.length} بوليصة اللي في التاب ده وتبدأ مسح جديد؟ (الجاهزين مش هيتلمسوا)`)) return; X.list = []; X.msg = ''; draw(); };
     if($('upRdClear')) $('upRdClear').onclick = () => { if(X.list.length && !confirm(`تفضّي الليستة (${X.list.length} بوليصة) وتبدأ من جديد؟ هتتفضى من كل الموبايلات.`)) return; RD.rest = null; RD.msg = ''; X.msg = ''; scClear(); };
