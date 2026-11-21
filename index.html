@@ -15268,6 +15268,16 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
 .pp-cour button{padding:8px 12px;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--ink);font-family:inherit;font-size:13px;cursor:pointer;text-align:start}
 .pp-cour button.on{border-color:var(--brass-d);box-shadow:0 0 0 2px var(--brass-d) inset}
 .pp-cour small{display:block;color:var(--muted);font-size:11.5px}
+.pp-tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 12px;background:var(--panel);border:1px solid var(--line);border-radius:10px;margin-bottom:10px;position:sticky;top:0;z-index:3}
+.pp-tools .lbl{font-size:13px;color:var(--muted)}
+.pp-sizes{display:flex;border:1px solid var(--line);border-radius:9px;overflow:hidden}
+.pp-sizes button{padding:6px 12px;border:none;background:var(--panel);color:var(--ink);font-family:inherit;font-weight:700;cursor:pointer;border-inline-start:1px solid var(--line)}
+.pp-sizes button:first-child{border-inline-start:none}.pp-sizes button.on{background:var(--brass-d);color:#fff}
+.pp-btn:disabled{opacity:.45;cursor:default}
+.pp-pager{display:flex;gap:10px;align-items:center;justify-content:center;margin:0 0 12px;font-size:13px;color:var(--muted)}
+.pp-chk{width:20px;height:20px;flex:none;cursor:pointer;accent-color:var(--brass-d)}
+.pp-card.sel{box-shadow:0 0 0 2px var(--brass-d)}
+.pp-dayh{position:static}
 </style>
 <script>
 /* =====================================================================
@@ -15285,9 +15295,10 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
   const ymd = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   const money = n => (Number(n) || 0).toLocaleString('ar-EG') + ' ج';
   const ST = { pending:'⏳ لسه', delivered:'✅ اتسلم', failed:'❌ ماتسلمش' };
-  const S = { list:null, missing:false, msg:'', msgErr:false, tab:'pending', day:'', courier:'', days:30, couriers:null };
+  const S = { list:null, missing:false, msg:'', msgErr:false, tab:'pending', day:'', courier:'', days:30, couriers:null, sel:new Set(), size:25, page:0 };
 
 
+  try{ const v = localStorage.getItem('ppSize'); if(v !== null && [10, 25, 50, 0].includes(Number(v))) S.size = Number(v); }catch(e){}
   async function load(){
     const m = me(); if(!m.id || !sb()) return;
     const since = new Date(); since.setDate(since.getDate() - S.days);
@@ -15341,10 +15352,65 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
   const tel = p => String(p || '').replace(/\D/g, '').replace(/^20(?=1\d{9}$)/, '').replace(/^0?/, '0');
   const tm = iso => iso ? new Date(iso).toLocaleString('ar-EG', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }) : '';
 
+  /* 🖨️ طباعة البوالص — 3 بوالص في ورقة A4 (فيها خط قص) + باركود برقم الأوردر */
+  const C128 = '212222 222122 222221 121223 121322 131222 122213 122312 132212 221213 221312 231212 112232 122132 122231 113222 123122 123221 223211 221132 221231 213212 223112 312131 311222 321122 321221 312212 322112 322211 212123 212321 232121 111323 131123 131321 112313 132113 132311 211313 231113 231311 112133 112331 132131 113123 113321 133121 313121 211331 231131 213113 213311 213131 311123 311321 331121 312113 312311 332111 314111 221411 431111 111224 111422 121124 121421 141122 141221 112214 112412 122114 122411 142112 142211 241211 221114 413111 241112 134111 111242 121142 121241 114212 124112 124211 411212 421112 421211 212141 214121 412121 111143 111341 131141 114113 114311 411113 411311 113141 114131 311141 411131 211412 211214 211232 2331112'.split(' ');
+  function barcode(txt){
+    const v = [104].concat([...String(txt)].map(c => c.charCodeAt(0) - 32));
+    const chk = v.reduce((a, x, i) => a + x * (i || 1), 0) % 103;
+    const pat = v.concat(chk, 106).map(i => C128[i]).join('');
+    let x = 10, bars = '';
+    [...pat].forEach((w, i) => { w = Number(w); if(i % 2 === 0) bars += `<rect x="${x}" y="0" width="${w}" height="40"/>`; x += w; });
+    return `<svg viewBox="0 0 ${x + 10} 40" preserveAspectRatio="none" style="width:100%;height:13mm">${bars}</svg>`;
+  }
+  function printWaybills(ids){
+    const L = S.list.filter(o => ids.includes(o.id)).sort((a, b) => a.order_date.localeCompare(b.order_date) || a.id - b.id);
+    if(!L.length) return flash('علّم الأوردرات اللي عايز تطبعها الأول.', true);
+    const e = esc, dt = d => new Date(d + 'T12:00:00').toLocaleDateString('ar-EG', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
+    const bill = (o, i) => `<div class="wb">
+      <div class="hd"><div class="t"><b>🛵 بوليصة توصيل</b><span>مناديب الدفع المقدم</span></div>
+        <div class="no"><div class="n">#${o.id}</div>${barcode('PP' + o.id)}</div>
+        <div class="dt"><b>${e(dt(o.order_date))}</b><span>${i + 1} / ${L.length}</span></div></div>
+      <div class="bd">
+        <div class="info">
+          <div class="r"><span>المستلم</span><b class="big">${e(o.customer_name || '—')}</b></div>
+          <div class="r"><span>الموبايل</span><b class="big" dir="ltr">${e(tel(o.phone))}${o.phone2 ? '  /  ' + e(tel(o.phone2)) : ''}</b></div>
+          <div class="r"><span>العنوان</span><b>${e(o.address || '—')}${o.city ? ' — ' + e(o.city) : ''}</b></div>
+          <div class="r"><span>المحتوى</span><b>${e(o.contents || '—')}</b></div>
+          ${o.notes || o.src_label ? `<div class="r"><span>ملاحظات</span><b class="sm">${e([o.notes, o.src_label].filter(Boolean).join(' · '))}</b></div>` : ''}
+        </div>
+        <div class="amt"><span>المبلغ</span><b>${(Number(o.amount) || 0).toLocaleString('ar-EG')}</b><span>جنيه</span></div>
+      </div>
+      <div class="ft"><div>توقيع المستلم: ..................................</div><div>المندوب: ${e(o.courier_name || '..........................')}</div><div>وقت التسليم: ............</div></div>
+    </div>`;
+    const html = `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>بوالص الدفع المقدم</title><style>
+      @page{size:A4;margin:8mm}
+      *{box-sizing:border-box}body{margin:0;font-family:'Segoe UI',Tahoma,Arial,sans-serif;color:#000;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+      .wb{height:92mm;border:2px solid #000;border-radius:3mm;padding:3mm 4mm;margin-bottom:5mm;display:flex;flex-direction:column;page-break-inside:avoid;position:relative}
+      .wb:nth-child(3n){margin-bottom:0;page-break-after:always}.wb:last-child{page-break-after:auto}
+      .wb:not(:nth-child(3n)):not(:last-child)::after{content:'✂ - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -';position:absolute;bottom:-4.6mm;right:0;left:0;font-size:8pt;color:#888;overflow:hidden;white-space:nowrap;direction:ltr}
+      .hd{display:grid;grid-template-columns:1fr 62mm 1fr;gap:3mm;align-items:center;border-bottom:1.5px solid #000;padding-bottom:2mm}
+      .hd .t b{display:block;font-size:14pt}.hd .t span,.hd .dt span{font-size:9pt;color:#444}
+      .hd .no{text-align:center}.hd .no .n{font-size:15pt;font-weight:800;letter-spacing:1px;direction:ltr}
+      .hd .dt{text-align:left}.hd .dt b{display:block;font-size:10pt}
+      .bd{flex:1;display:grid;grid-template-columns:1fr 34mm;gap:3mm;padding-top:2mm;min-height:0}
+      .info .r{display:grid;grid-template-columns:19mm 1fr;gap:2mm;padding:1.1mm 0;border-bottom:1px dotted #999;font-size:10.5pt;line-height:1.35}
+      .info .r span{color:#444;font-size:9pt;padding-top:.6mm}.info .big{font-size:13pt}.info .sm{font-size:9pt;font-weight:500}
+      .amt{border:2px solid #000;border-radius:2mm;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}
+      .amt b{font-size:22pt;line-height:1.1}.amt span{font-size:9pt}
+      .ft{display:flex;justify-content:space-between;gap:3mm;border-top:1.5px solid #000;padding-top:2mm;font-size:9pt}
+    </style></head><body>${L.map(bill).join('')}</body></html>`;
+    let f = document.getElementById('ppPrintFrame'); if(f) f.remove();
+    f = document.createElement('iframe'); f.id = 'ppPrintFrame'; f.style.cssText = 'position:fixed;width:0;height:0;border:0;left:-9999px';
+    document.body.appendChild(f);
+    const d = f.contentWindow.document; d.open(); d.write(html); d.close();
+    setTimeout(() => { try{ f.contentWindow.focus(); f.contentWindow.print(); }catch(err){ const w = window.open('', '_blank'); if(w){ w.document.write(html); w.document.close(); w.print(); } } }, 400);
+    flash(`🖨️ بيطبع ${L.length} بوليصة.`);
+  }
+
   function card(o){
     const mgr = isMgr(), can = true, ph = tel(o.phone), ph2 = o.phone2 ? tel(o.phone2) : '';
-    return `<div class="pp-card ${o.status}">
-      <div class="pp-top"><span class="pp-st ${o.status}">${ST[o.status] || o.status}</span><span class="nm">${esc(o.customer_name || '—')}</span><span class="amt">${money(o.amount)}</span></div>
+    return `<div class="pp-card ${o.status} ${S.sel.has(o.id) ? 'sel' : ''}">
+      <div class="pp-top"><input type="checkbox" class="pp-chk" data-ppsel="${o.id}" ${S.sel.has(o.id) ? 'checked' : ''} title="علّم للطباعة"><span class="pp-st ${o.status}">${ST[o.status] || o.status}</span><span class="nm">${esc(o.customer_name || '—')}</span><span class="amt">${money(o.amount)}</span></div>
       <div class="pp-line"><span class="k">📞</span> <a href="tel:${esc(ph)}" dir="ltr" style="font-weight:700">${esc(ph)}</a>${ph2 ? ` · <a href="tel:${esc(ph2)}" dir="ltr">${esc(ph2)}</a>` : ''}</div>
       <div class="pp-line"><span class="k">📍</span> ${esc(o.address || '—')}${o.city ? ` — ${esc(o.city)}` : ''}</div>
       ${o.contents ? `<div class="pp-line"><span class="k">📦</span> ${esc(o.contents)}</div>` : ''}
@@ -15394,20 +15460,33 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
         <button class="pp-btn sm" id="ppRefresh">🔄 تحديث</button></div>`;
     const V = S.tab === 'all' ? LD : LD.filter(o => o.status === S.tab);
     if(!V.length) return h + `<div class="card"><p style="color:var(--muted);margin:0">${S.tab === 'pending' ? 'مفيش أوردرات لسه مستنية 👌' : 'مفيش أوردرات هنا.'}</p></div>`;
-    const by = {}; V.forEach(o => (by[o.order_date] = by[o.order_date] || []).push(o));
+    // 🖨️ عدد الأوردرات في الصفحة + التعليم + الطباعة
+    const VS = V.slice().sort((a, b) => b.order_date.localeCompare(a.order_date) || a.id - b.id);
+    const size = S.size || VS.length, pages = Math.max(1, Math.ceil(VS.length / size));
+    if(S.page >= pages) S.page = pages - 1;
+    const PG = VS.slice(S.page * size, S.page * size + size);
+    const selN = [...S.sel].filter(id => S.list.some(o => o.id === id)).length, allOn = PG.length && PG.every(o => S.sel.has(o.id));
+    const pager = pages > 1 ? `<div class="pp-pager"><button class="pp-btn sm" data-pppage="${S.page - 1}" ${S.page ? '' : 'disabled'}>→ اللي قبل</button><span>صفحة ${S.page + 1} من ${pages} · ${S.page * size + 1}–${S.page * size + PG.length} من ${VS.length}</span><button class="pp-btn sm" data-pppage="${S.page + 1}" ${S.page < pages - 1 ? '' : 'disabled'}>اللي بعد ←</button></div>` : '';
+    h += `<div class="pp-tools">
+      <span class="lbl">اعرض:</span><div class="pp-sizes">${[10, 25, 50, 0].map(n => `<button class="${S.size === n ? 'on' : ''}" data-ppsize="${n}">${n || 'الكل'}</button>`).join('')}</div>
+      <button class="pp-btn sm" id="ppSelAll">${allOn ? '☐ شيل علامة الظاهرين' : `☑️ علّم الظاهرين (${PG.length})`}</button>
+      ${selN ? `<button class="pp-btn sm" id="ppSelNone">✖ شيل كل العلامات</button>` : ''}
+      <button class="pp-btn ok" id="ppPrint" ${selN ? '' : 'disabled'} style="margin-inline-start:auto">🖨️ اطبع البوالص (${selN})</button></div>` + pager;
+    const by = {}; PG.forEach(o => (by[o.order_date] = by[o.order_date] || []).push(o));
     Object.keys(by).sort().reverse().forEach(d => {
       const A = L.filter(o => o.order_date === d), X = by[d];
-      h += `<div class="pp-day"><div class="pp-dayh"><b>📅 ${esc(dayLabel(d))}</b><span>${A.length} أوردر · ✅ ${A.filter(o => o.status === 'delivered').length} · ❌ ${A.filter(o => o.status === 'failed').length} · ⏳ ${A.filter(o => o.status === 'pending').length}</span><span style="margin-inline-start:auto">${money(X.reduce((a, o) => a + (Number(o.amount) || 0), 0))}</span></div>${X.map(card).join('')}</div>`;
+      h += `<div class="pp-day"><div class="pp-dayh"><button class="pp-btn sm" data-ppselday="${d}" title="علّم أوردرات اليوم ده">${X.every(o => S.sel.has(o.id)) ? '☑️' : '☐'}</button><b>📅 ${esc(dayLabel(d))}</b><span>${A.length} أوردر · ✅ ${A.filter(o => o.status === 'delivered').length} · ❌ ${A.filter(o => o.status === 'failed').length} · ⏳ ${A.filter(o => o.status === 'pending').length}</span><span style="margin-inline-start:auto">${money(X.reduce((a, o) => a + (Number(o.amount) || 0), 0))}</span></div>${X.map(card).join('')}</div>`;
     });
+    h += pager;
     return h;
   }
   function draw(){
     if(!isPP()) return;
     const main = document.getElementById('main'); if(!main) return;
     const y = scrollY; main.innerHTML = view(); scrollTo(0, y);
-    main.querySelectorAll('[data-pptab]').forEach(b => b.onclick = () => { S.tab = b.dataset.pptab; draw(); });
-    main.querySelectorAll('[data-ppcour]').forEach(b => b.onclick = () => { S.courier = b.dataset.ppcour; draw(); });
-    const dd = main.querySelector('#ppDay'); if(dd) dd.onchange = () => { S.day = dd.value; draw(); };
+    main.querySelectorAll('[data-pptab]').forEach(b => b.onclick = () => { S.tab = b.dataset.pptab; S.page = 0; draw(); });
+    main.querySelectorAll('[data-ppcour]').forEach(b => b.onclick = () => { S.courier = b.dataset.ppcour; S.page = 0; draw(); });
+    const dd = main.querySelector('#ppDay'); if(dd) dd.onchange = () => { S.day = dd.value; S.page = 0; draw(); };
     const rg = main.querySelector('#ppRange'); if(rg) rg.onchange = () => { S.days = Number(rg.value); S.list = null; draw(); load(); };
     const rf = main.querySelector('#ppRefresh'); if(rf) rf.onclick = () => load();
     main.querySelectorAll('[data-ppst]').forEach(b => b.onclick = () => {
@@ -15417,6 +15496,14 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
     });
     main.querySelectorAll('[data-ppre]').forEach(s => s.onchange = () => { if(s.value) reassign(Number(s.dataset.ppre), s.value); });
     main.querySelectorAll('[data-ppdel]').forEach(b => b.onclick = () => del(Number(b.dataset.ppdel)));
+    main.querySelectorAll('[data-ppsel]').forEach(c => c.onchange = () => { const id = Number(c.dataset.ppsel); if(c.checked) S.sel.add(id); else S.sel.delete(id); draw(); });
+    main.querySelectorAll('[data-ppsize]').forEach(b => b.onclick = () => { S.size = Number(b.dataset.ppsize); S.page = 0; try{ localStorage.setItem('ppSize', S.size); }catch(e){} draw(); });
+    main.querySelectorAll('[data-pppage]').forEach(b => b.onclick = () => { S.page = Number(b.dataset.pppage); draw(); scrollTo(0, 0); });
+    const pageIds = () => [...main.querySelectorAll('[data-ppsel]')].map(c => Number(c.dataset.ppsel));
+    const sa = main.querySelector('#ppSelAll'); if(sa) sa.onclick = () => { const ids = pageIds(), on = ids.every(id => S.sel.has(id)); ids.forEach(id => on ? S.sel.delete(id) : S.sel.add(id)); draw(); };
+    const sn = main.querySelector('#ppSelNone'); if(sn) sn.onclick = () => { S.sel.clear(); draw(); };
+    main.querySelectorAll('[data-ppselday]').forEach(b => b.onclick = () => { const ids = [...main.querySelectorAll('.pp-day')].find(x => x.contains(b)).querySelectorAll('[data-ppsel]'); const L2 = [...ids].map(c => Number(c.dataset.ppsel)), on = L2.every(id => S.sel.has(id)); L2.forEach(id => on ? S.sel.delete(id) : S.sel.add(id)); draw(); });
+    const pr = main.querySelector('#ppPrint'); if(pr) pr.onclick = () => printWaybills([...S.sel]);
   }
   function mount(){ document.querySelectorAll('#sidebar a.navlink').forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#/prepaid')); draw(); load(); }
   const _render = render;
