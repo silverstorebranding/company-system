@@ -514,6 +514,7 @@ body:has(#vaBanner){padding-top:38px}
     </div>
     <div class="grp"><div class="grp-title">المالية</div>
       <a class="navlink" href="#/where">📍 احنا فين؟</a>
+      <a class="navlink" href="#/orders-map">🗺️ خريطة الأوردرات</a>
       <a class="navlink" href="#/profits">💰 الأرباح</a>
       <a class="navlink" href="#/payroll">💵 الرواتب</a>
       <a class="navlink" href="#/transfers">💳 التحويلات</a>
@@ -6207,6 +6208,7 @@ async function exportToSheet(btn) {
       { key:'qp_delete', label:'🗑️ مسح بوالص من QP', routes:['qp-delete'] },
       { key:'pickup_review', label:'📦 مراجعة البيكب', routes:['pickup'] },
       { key:'where', label:'📍 احنا فين؟ (فلوسنا فين)', routes:['where'] },
+      { key:'orders_map', label:'🗺️ خريطة الأوردرات', routes:['orders-map'] },
       { key:'profits', label:'💰 الأرباح',    routes:['profits'] },
       { key:'payroll', label:'💵 الرواتب', routes:['payroll'] },
       { key:'transfers', label:'💳 التحويلات (إنستاباي / فودافون كاش)', routes:['transfers'] },
@@ -15513,6 +15515,203 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
   render = function(){ _render.apply(this, arguments); if(isPP()) mount(); };
   window.addEventListener('hashchange', () => { if(isPP()) setTimeout(mount, 0); });
   const w = setInterval(() => { if(me().id && sb()){ clearInterval(w); badge(); if(isPP()) mount(); setInterval(badge, 60000); } }, 700);
+})();
+</script>
+
+<style>
+/* 🗺️ خريطة الأوردرات */
+.om-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:12px;background:var(--panel);border:1px solid var(--line);border-radius:12px;margin-bottom:14px}
+.om-modes{display:flex;border:1px solid var(--line);border-radius:9px;overflow:hidden}
+.om-modes button{padding:8px 13px;border:none;background:var(--panel);color:var(--ink);font-family:inherit;font-size:13.5px;font-weight:700;cursor:pointer;border-inline-start:1px solid var(--line)}
+.om-modes button:first-child{border-inline-start:none}.om-modes button.on{background:var(--brass-d);color:#fff}
+.om-bar input{padding:7px 9px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:14px;background:var(--panel);color:var(--ink)}
+.om-btn{padding:8px 14px;border:1.5px solid var(--line);border-radius:9px;background:var(--panel);color:var(--ink);font-family:inherit;font-size:13.5px;font-weight:700;cursor:pointer}
+.om-btn.pri{background:var(--brass-d);border-color:var(--brass-d);color:#fff}
+.om-msg{padding:10px 14px;border-radius:9px;margin-bottom:12px;background:#fff8e6;color:#6b4e12;font-size:14px}
+.om-msg.err{background:#fdecea;color:#a3271a}
+.om-tot{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
+.om-k{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:12px 14px}
+.om-k .n{font-size:26px;font-weight:800;line-height:1.1}.om-k .l{font-size:13px;color:var(--muted);margin-top:2px}
+.om-k .s{font-size:12px;color:var(--muted)}
+.om-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px;margin-bottom:16px}
+.om-src{background:var(--panel);border:1px solid var(--line);border-top:5px solid var(--c,#8a6d3b);border-radius:12px;padding:12px 14px}
+.om-src h4{margin:0 0 10px;font-size:16px;display:flex;align-items:center;gap:8px}
+.om-src h4 small{margin-inline-start:auto;font-size:12px;color:var(--muted);font-weight:500}
+.om-row{display:grid;grid-template-columns:78px 1fr 42px;gap:8px;align-items:center;font-size:13.5px;margin-bottom:7px}
+.om-row b{font-size:17px;text-align:left;direction:ltr}
+.om-track{height:9px;background:var(--slate-l);border-radius:6px;overflow:hidden}
+.om-track i{display:block;height:100%;background:var(--c,#8a6d3b);border-radius:6px}
+.om-row.qp .om-track i{opacity:.7}.om-row.dl .om-track i{background:#2f7d55}.om-row.pp .om-track i{background:#2b6cb0}
+.om-pct{font-size:12px;color:var(--muted);margin-top:4px}
+.om-tbl{width:100%;border-collapse:collapse;font-size:13.5px;background:var(--panel)}
+.om-tbl th,.om-tbl td{padding:7px 9px;border-bottom:1px solid var(--line);text-align:center;white-space:nowrap}
+.om-tbl th{background:var(--slate-l);font-size:12.5px;color:var(--muted);position:sticky;top:0}
+.om-tbl td:first-child,.om-tbl th:first-child{text-align:right}
+.om-c3{display:inline-flex;gap:4px;align-items:center}.om-c3>*{min-width:26px;padding:1px 5px;border-radius:6px;text-align:center}
+.om-c3 b{background:var(--slate-l)}.om-c3 .q{background:#f3ede0;color:#6b4e12;font-size:12.5px}.om-c3 .d{background:#e3f3e8;color:#23784a;font-size:12.5px}
+.om-tbl tr.sum td{font-weight:800;background:var(--slate-l)}
+.om-wrap{overflow:auto;border:1px solid var(--line);border-radius:10px;max-height:520px}
+</style>
+<script>
+/* =====================================================================
+   🗺️ خريطة الأوردرات — لكل مصدر: جه كام أوردر · راح QP كام · اتسلم كام (+ راح لمناديب الدفع المقدم)
+   - الوارد: Squad من جدول orders · كل مصدر EasyOrders من easy_orders (عمود source) — Squad منفصل تمامًا
+   - QP: أوردرات QP اللي اتعملت في الفترة، وبنعرف مصدر كل واحد بالموبايل (مش بالـ notes)
+     فأوردر Squad مكتوب عليه kidzzly بيتحسب Squad
+   - اتسلم = من اللي راحوا QP في الفترة، حالته دلوقتي "اتسلم"
+   ===================================================================== */
+(function(){
+  const sb = () => window.__sbClient || (window.AuthGate && window.AuthGate.sb);
+  const me = () => (window.AuthGate && window.AuthGate.me && window.AuthGate.me()) || {};
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const isOM = () => (location.hash.replace('#/', '') || 'home').split('/')[0] === 'orders-map';
+  const ymd = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  const today = () => ymd(new Date());
+  const fmt = n => (Number(n) || 0).toLocaleString('ar-EG');
+  const pct = (a, b) => b ? Math.round(a / b * 100) : 0;
+  const ph = s => { let t = String(s || '').replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/\D/g, ''); if(t.startsWith('00')) t = t.slice(2); if(t.startsWith('20') && t.length >= 12) t = t.slice(2); t = t.replace(/^0+/, ''); return /^1[0125]\d{8}$/.test(t) ? t : ''; };
+  const isCancel = st => /cancel|ملغ/i.test(String(st || ''));
+  const DEF_SRC = [{ key:'dream', label:'Dream Easy', color:'#2b6cb0' }, { key:'care', label:'Care Easy', color:'#b0457a' }, { key:'kidzzly', label:'Kidzzly Easy', color:'#4f8fd8' }, { key:'socky', label:'Socky Easy', color:'#3f9b74' }];
+  const SQUAD = { key:'squad', label:'🏆 Squad', color:'#8a6d3b' };
+
+  const S = { mode:'mtd', day:today(), month:today().slice(0, 7), from:today().slice(0, 8) + '01', to:today(), loading:false, msg:'', err:'', data:null, srcs:null, cache:{} };
+
+  function range(){
+    if(S.mode === 'day') return [S.day, S.day];
+    if(S.mode === 'mtd') return [today().slice(0, 8) + '01', today()];
+    if(S.mode === 'month'){ const [y, m] = S.month.split('-').map(Number); const last = ymd(new Date(y, m, 0)); return [S.month + '-01', last > today() ? today() : last]; }
+    return S.from <= S.to ? [S.from, S.to] : [S.to, S.from];
+  }
+  const startIso = d => new Date(d + 'T00:00:00').toISOString();
+  const endIso = d => new Date(d + 'T23:59:59.999').toISOString();
+  const dayOf = iso => { const d = new Date(iso); return isNaN(d) ? '' : ymd(d); };
+
+  async function pages(build){
+    let out = [], off = 0;
+    for(;;){ const { data, error } = await build().range(off, off + 999); if(error) throw error; out = out.concat(data || []); if(!data || data.length < 1000 || out.length > 60000) break; off += 1000; }
+    return out;
+  }
+  async function loadSources(){
+    if(S.srcs) return S.srcs;
+    let list = DEF_SRC;
+    try{ const { data } = await sb().from('app_kv').select('value').eq('key', 'easy_sources').maybeSingle(); if(data && data.value && Array.isArray(data.value.list) && data.value.list.length) list = data.value.list; }catch(e){}
+    S.srcs = [SQUAD].concat(list.map(s => ({ key:s.key, label:s.label || s.key, color:s.color || '#666' })));
+    return S.srcs;
+  }
+
+  async function run(){
+    const [from, to] = range(), ck = from + '|' + to;
+    if(S.cache[ck] && Date.now() - S.cache[ck].at < 5 * 60000){ S.data = S.cache[ck]; draw(); return; }
+    S.loading = true; S.err = ''; S.msg = '⏳ بيجيب أوردرات Squad و EasyOrders...'; draw();
+    try{
+      const srcs = await loadSources();
+      // 🔎 بنجيب الوارد من قبل الفترة بأسبوع عشان نعرف مصدر أوردرات QP اللي اترفعت متأخر
+      const pre = new Date(from + 'T00:00:00'); pre.setDate(pre.getDate() - 7);
+      const [sq, ez, pp] = await Promise.all([
+        pages(() => sb().from('orders').select('customer_phone, created_at').gte('created_at', pre.toISOString()).lte('created_at', endIso(to)).order('created_at', { ascending:true })),
+        pages(() => sb().from('easy_orders').select('source, received_at, status, payload').gte('received_at', pre.toISOString()).lte('received_at', endIso(to)).order('seq', { ascending:true })),
+        sb().from('prepaid_orders').select('src_label, order_date, phone').gte('order_date', from).lte('order_date', to).limit(20000).then(r => r.data || []).catch(() => [])
+      ]);
+      // الوارد: { src, at, phones }
+      const inc = [];
+      sq.forEach(o => inc.push({ src:'squad', at:o.created_at, phones:[ph(o.customer_phone)].filter(Boolean) }));
+      ez.forEach(x => { const p = x.payload || {}, st = x.status || p.status;
+        inc.push({ src: x.source || 'dream', at: x.received_at || p.created_at, cancel: isCancel(st), phones:[p.phone, p.phone2, p.second_phone, p.alt_phone].map(ph).filter(Boolean) }); });
+      const known = new Set(srcs.map(s => s.key));
+      inc.forEach(x => { if(!known.has(x.src)){ known.add(x.src); srcs.push({ key:x.src, label:x.src, color:'#666' }); } });
+      const byPhone = {};
+      inc.forEach(x => x.phones.forEach(p => (byPhone[p] = byPhone[p] || []).push(x)));
+
+      // QP
+      let qp = [], qpErr = '';
+      const api = window.QP && window.QP.api;
+      if(!api || !api.hasCreds()) qpErr = 'مش متسجل دخول على QP — ادخل قسم 🚚 QP وسجّل دخول عشان أرقام QP والتسليم تظهر.';
+      else{ S.msg = '⏳ بيجيب أوردرات QP...'; draw();
+        try{ qp = await (api.fetchRangeAll || api.fetchRange)(from, to, n => { S.msg = `⏳ بيجيب أوردرات QP... ${n} أوردر`; draw(); }); }catch(e){ qpErr = 'مقدرناش نجيب أوردرات QP: ' + e.message; } }
+
+      // لكل أوردر QP: المصدر = آخر أوردر وارد بنفس الموبايل قبل ما يترفع (أو بعده بيوم بالكتير)
+      const srcOfQP = q => {
+        const t = new Date(q.order_date).getTime();
+        const C = [...new Set([q.phone, q.phone2, q.customer_phone, q.phone_number].map(ph).filter(Boolean).flatMap(p => byPhone[p] || []))];
+        if(!C.length) return 'unknown';
+        const before = C.filter(x => new Date(x.at).getTime() <= t + 86400000).sort((a, b) => new Date(b.at) - new Date(a.at));
+        return (before[0] || C.sort((a, b) => new Date(a.at) - new Date(b.at))[0]).src;
+      };
+      const isDel = q => { try{ return api.category(q) === 'delivered'; }catch(e){ return String(q.Order_Delivery_Status) === '3'; } };
+      const ppSrc = lbl => { const l = String(lbl || ''); if(/squad/i.test(l)) return 'squad'; const s = srcs.find(x => x.key !== 'squad' && (x.label === l || l.includes(x.label))); return s ? s.key : 'unknown'; };
+
+      // التجميع: لكل مصدر ولكل يوم
+      const blank = () => ({ inc:0, cancel:0, qp:0, del:0, pp:0 });
+      const T = {}, D = {};
+      const add = (src, day, k, n = 1) => { (T[src] = T[src] || blank())[k] += n; const dd = (D[day] = D[day] || {}); (dd[src] = dd[src] || blank())[k] += n; };
+      inc.forEach(x => { const d = dayOf(x.at); if(d < from || d > to) return; add(x.src, d, 'inc'); if(x.cancel) add(x.src, d, 'cancel'); });
+      qp.forEach(q => { const d = dayOf(q.order_date); if(!d || d < from || d > to) return; const s = srcOfQP(q); add(s, d, 'qp'); if(isDel(q)) add(s, d, 'del'); });
+      pp.forEach(o => add(ppSrc(o.src_label), o.order_date, 'pp'));
+      if(T.unknown && !srcs.some(s => s.key === 'unknown')) srcs.push({ key:'unknown', label:'❔ مانوال / مش معروف', color:'#999' });
+      S.data = { at:Date.now(), from, to, T, D, qpErr, qpN:qp.length };
+      S.cache[ck] = S.data;
+    }catch(e){ S.err = 'حصلت مشكلة: ' + e.message; }
+    S.loading = false; S.msg = ''; draw();
+  }
+
+  function view(){
+    const [from, to] = range();
+    let h = `<div class="pagehead"><h1>🗺️ خريطة الأوردرات</h1><p>لكل مصدر: جه كام أوردر، وراح QP كام، واتسلم كام. Squad منفصل عن مصادر EasyOrders — وأوردرات QP بتتنسب لمصدرها بالموبايل مش بالـ notes.</p></div>`;
+    h += `<div class="om-bar"><div class="om-modes">${[['day', 'يوم'], ['mtd', 'من أول الشهر للنهارده'], ['month', 'شهر'], ['range', 'من - لـ']].map(([k, l]) => `<button class="${S.mode === k ? 'on' : ''}" data-ommode="${k}">${l}</button>`).join('')}</div>
+      ${S.mode === 'day' ? `<input type="date" id="omDay" value="${S.day}" max="${today()}"><button class="om-btn" data-omshift="-1">→ امبارح</button><button class="om-btn" data-omshift="1" ${S.day >= today() ? 'disabled' : ''}>بكره ←</button>`
+        : S.mode === 'month' ? `<input type="month" id="omMonth" value="${S.month}" max="${today().slice(0, 7)}">`
+        : S.mode === 'range' ? `<input type="date" id="omFrom" value="${S.from}" max="${today()}"> لـ <input type="date" id="omTo" value="${S.to}" max="${today()}">` : ''}
+      <button class="om-btn pri" id="omGo" ${S.loading ? 'disabled' : ''}>${S.loading ? '⏳' : '🔄 اعرض'}</button>
+      <span style="font-size:12.5px;color:var(--muted)">${from === to ? from : from + ' ← ' + to}</span></div>`;
+    if(S.msg) h += `<div class="om-msg">${esc(S.msg)}</div>`;
+    if(S.err) h += `<div class="om-msg err">${esc(S.err)}</div>`;
+    const X = S.data;
+    if(!X || X.from !== from || X.to !== to) return h + (S.loading ? '' : '<div class="card"><p style="margin:0;color:var(--muted)">دوس 🔄 اعرض.</p></div>');
+    if(X.qpErr) h += `<div class="om-msg err">${esc(X.qpErr)}</div>`;
+    const srcs = (S.srcs || []).filter(s => X.T[s.key]);
+    const sum = k => Object.values(X.T).reduce((a, t) => a + t[k], 0);
+    const I = sum('inc'), Q = sum('qp'), Dl = sum('del'), PP = sum('pp');
+    h += `<div class="om-tot">
+      <div class="om-k"><div class="n">${fmt(I)}</div><div class="l">📥 جه أوردر</div>${sum('cancel') ? `<div class="s">منهم ${fmt(sum('cancel'))} ملغي من EasyOrders</div>` : ''}</div>
+      <div class="om-k"><div class="n">${fmt(Q)}</div><div class="l">🚚 راح QP</div><div class="s">${pct(Q, I)}% من اللي جه</div></div>
+      <div class="om-k"><div class="n" style="color:#2f7d55">${fmt(Dl)}</div><div class="l">✅ اتسلم عند QP</div><div class="s">${pct(Dl, Q)}% من اللي راح QP</div></div>
+      ${PP ? `<div class="om-k"><div class="n" style="color:#2b6cb0">${fmt(PP)}</div><div class="l">🛵 راح لمناديب الدفع المقدم</div></div>` : ''}</div>`;
+    if(!srcs.length) return h + '<div class="card"><p style="margin:0;color:var(--muted)">مفيش أوردرات في الفترة دي.</p></div>';
+    const mx = Math.max(1, ...srcs.map(s => Math.max(X.T[s.key].inc, X.T[s.key].qp)));
+    const bar = (cls, lbl, n) => `<div class="om-row ${cls}"><span>${lbl}</span><div class="om-track"><i style="width:${Math.round(n / mx * 100)}%"></i></div><b>${fmt(n)}</b></div>`;
+    h += `<div class="om-grid">${srcs.map(s => { const t = X.T[s.key]; return `<div class="om-src" style="--c:${esc(s.color)}"><h4>${esc(s.label)}<small>${t.inc ? pct(t.qp, t.inc) + '% راح QP' : ''}</small></h4>
+      ${bar('in', '📥 جه', t.inc)}${bar('qp', '🚚 راح QP', t.qp)}${bar('dl', '✅ اتسلم', t.del)}${t.pp ? bar('pp', '🛵 مناديب', t.pp) : ''}
+      <div class="om-pct">${t.qp ? `نسبة التسليم ${pct(t.del, t.qp)}%` : ''}${t.cancel ? ` · ${fmt(t.cancel)} ملغي` : ''}</div></div>`; }).join('')}</div>`;
+    // جدول بالأيام
+    const days = Object.keys(X.D).sort().reverse();
+    if(days.length > 1){
+      const cell = (t) => t ? `<span class="om-c3"><b title="جه">${fmt(t.inc)}</b><span class="q" title="راح QP">${fmt(t.qp)}</span><span class="d" title="اتسلم">${fmt(t.del)}</span></span>` : '—';
+      h += `<div class="card"><h3>📅 بالأيام <span class="om-c3" style="font-weight:400;font-size:12.5px"><b>جه</b><span class="q">راح QP</span><span class="d">اتسلم</span></span></h3><div class="om-wrap"><table class="om-tbl"><thead><tr><th>اليوم</th>${srcs.map(s => `<th style="color:${esc(s.color)}">${esc(s.label)}</th>`).join('')}<th>الإجمالي</th></tr></thead><tbody>
+        ${days.map(d => { const r = X.D[d], tt = { inc:0, qp:0, del:0 }; srcs.forEach(s => { const t = r[s.key]; if(t){ tt.inc += t.inc; tt.qp += t.qp; tt.del += t.del; } });
+          return `<tr><td>${esc(new Date(d + 'T12:00:00').toLocaleDateString('ar-EG', { weekday:'short', day:'numeric', month:'short' }))}</td>${srcs.map(s => `<td>${cell(r[s.key])}</td>`).join('')}<td>${cell(tt)}</td></tr>`; }).join('')}
+        <tr class="sum"><td>الإجمالي</td>${srcs.map(s => `<td>${cell(X.T[s.key])}</td>`).join('')}<td>${cell({ inc:I, qp:Q, del:Dl })}</td></tr></tbody></table></div></div>`;
+    }
+    h += `<p style="font-size:12px;color:var(--muted)">📥 جه = الأوردرات اللي اتسجلت في Squad أو وصلت من EasyOrders في الفترة. 🚚 راح QP = أوردرات QP اللي اتعملت في الفترة (حتى المرفوضة)، ومصدر كل واحد بيتعرف من الموبايل. ✅ اتسلم = من اللي راحوا QP في الفترة، حالته دلوقتي اتسلم. ❔ مانوال = أوردرات على QP ملهاش أوردر وارد بنفس الموبايل.</p>`;
+    return h;
+  }
+  function draw(){
+    if(!isOM()) return;
+    const main = document.getElementById('main'); if(!main) return;
+    const y = scrollY; main.innerHTML = view(); scrollTo(0, y);
+    const $ = id => main.querySelector('#' + id);
+    main.querySelectorAll('[data-ommode]').forEach(b => b.onclick = () => { S.mode = b.dataset.ommode; draw(); if(S.mode !== 'range') run(); });
+    main.querySelectorAll('[data-omshift]').forEach(b => b.onclick = () => { const d = new Date(S.day + 'T12:00:00'); d.setDate(d.getDate() + Number(b.dataset.omshift)); const v = ymd(d); if(v > today()) return; S.day = v; run(); });
+    if($('omDay')) $('omDay').onchange = e => { if(e.target.value){ S.day = e.target.value; run(); } };
+    if($('omMonth')) $('omMonth').onchange = e => { if(e.target.value){ S.month = e.target.value; run(); } };
+    if($('omFrom')) $('omFrom').onchange = e => { S.from = e.target.value; };
+    if($('omTo')) $('omTo').onchange = e => { S.to = e.target.value; };
+    if($('omGo')) $('omGo').onclick = () => { S.cache = {}; run(); };
+  }
+  function mount(){ document.querySelectorAll('#sidebar a.navlink').forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#/orders-map')); draw(); if(!S.data && !S.loading) run(); }
+  const _render = render;
+  render = function(){ _render.apply(this, arguments); if(isOM()) mount(); };
+  window.addEventListener('hashchange', () => { if(isOM()) setTimeout(mount, 0); });
+  const w = setInterval(() => { if(me().id && sb()){ clearInterval(w); if(isOM()) mount(); } }, 700);
 })();
 </script>
 
