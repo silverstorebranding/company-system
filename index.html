@@ -11781,8 +11781,51 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
   }
   async function savePP(){
     const by = me().full_name || me().username || '';
-    const { error } = await sbc().from('app_kv').upsert({ key:PP_KV, value:{ list:PP.list }, updated_at:new Date().toISOString(), updated_by_name:by });
+    let cur = {}; try{ const { data } = await sbc().from('app_kv').select('value').eq('key', PP_KV).maybeSingle(); cur = (data && data.value) || {}; }catch(e){}
+    const { error } = await sbc().from('app_kv').upsert({ key:PP_KV, value:{ ...cur, list:PP.list }, updated_at:new Date().toISOString(), updated_by_name:by });
     if(error) throw error;
+  }
+  /* ☁️ بوالص تاب "✅ الجاهزين" بتتحفظ على السيستم (مش على الموبايل بس) — أي موبايل يفتح التاب يشوفها وينزّل شيتها
+     التخزين: نفس صف up_postponed في الحقل scan = { list:[{ serial, at, by, q }], clearedAt, at, by } */
+  const SC = { loaded:false, loading:false, at:'', by:'', clearedAt:0, err:'', t:null };
+  const qSlim = q => q ? { serial:q.serial, full_name:q.full_name, phone:q.phone, address:q.address, total_amount:q.total_amount, price:q.price, notes:q.notes, order_date:q.order_date,
+    shipment_contents:q.shipment_contents, weight:q.weight, city:q.city, status:q.status, Order_Delivery_Status:q.Order_Delivery_Status } : null;
+  async function scRead(){ const { data, error } = await sbc().from('app_kv').select('value').eq('key', PP_KV).maybeSingle(); if(error) throw error; return (data && data.value) || {}; }
+  function scMerge(remote){
+    const r = remote.scan || {}; SC.clearedAt = Math.max(SC.clearedAt || 0, r.clearedAt || 0); SC.at = r.at || SC.at; SC.by = r.by || SC.by;
+    const m = new Map();
+    (r.list || []).concat(X.list).forEach(x => { if(!x || !x.serial || x.loading) return; if(x.at && x.at < SC.clearedAt) return; if(!x.at && SC.clearedAt && !(r.list || []).some(y => y.serial === x.serial)) return;
+      const o = m.get(String(x.serial)); if(!o || (!o.q && x.q)) m.set(String(x.serial), { serial:String(x.serial), at:x.at || (o && o.at) || 0, by:x.by || (o && o.by) || '', q:x.q || (o && o.q) || null, reason:x.reason || X.reason, err:'', res:'' }); });
+    const local = new Set(X.list.map(x => String(x.serial)));
+    X.list = [...m.values()].sort((a, b) => (b.at || 0) - (a.at || 0));
+    return X.list.some(x => !local.has(x.serial));
+  }
+  async function scLoad(){
+    if(SC.loading) return; SC.loading = true;
+    try{ const v = await scRead(); const before = X.list.length; scMerge(v); SC.loaded = true; SC.err = '';
+      const rem = ((v.scan || {}).list || []).length; if(X.list.length !== rem) scSave(true); }
+    catch(e){ SC.err = e.message; }
+    SC.loading = false; draw();
+  }
+  function scSave(now){ clearTimeout(SC.t); SC.t = setTimeout(scSaveNow, now ? 0 : 1500); }
+  async function scSaveNow(){
+    if(X.mode !== 'ready') return;
+    try{
+      const v = await scRead(); scMerge(v);
+      const by = me().full_name || me().username || '';
+      SC.at = new Date().toISOString(); SC.by = by;
+      const scan = { list: X.list.filter(x => !x.loading).map(x => ({ serial:x.serial, at:x.at || 0, by:x.by || '', q:qSlim(x.q) })), clearedAt:SC.clearedAt || 0, at:SC.at, by };
+      const { error } = await sbc().from('app_kv').upsert({ key:PP_KV, value:{ ...v, scan }, updated_at:SC.at, updated_by_name:by });
+      if(error) throw error; SC.err = '';
+    }catch(e){ SC.err = 'مااتحفظتش على السيستم: ' + e.message; }
+    draw();
+  }
+  async function scClear(){
+    SC.clearedAt = Date.now(); X.list = [];
+    try{ const v = await scRead(); const by = me().full_name || me().username || '';
+      await sbc().from('app_kv').upsert({ key:PP_KV, value:{ ...v, scan:{ list:[], clearedAt:SC.clearedAt, at:new Date().toISOString(), by } }, updated_at:new Date().toISOString(), updated_by_name:by }); SC.err = ''; }
+    catch(e){ SC.err = 'مااتفضتش على السيستم: ' + e.message; }
+    draw();
   }
   // المؤجلين اللي يطلعوا في شيت النهارده: من أيام قبل النهارده، ولسه ماطلعوش في شيت (أو طلعوا في شيت النهارده نفسه)
   const ppDue = () => { const t = ymd(new Date()); return (PP.list || []).filter(x => x.day < t && (!x.sentDay || x.sentDay === t)); };
@@ -11906,11 +11949,13 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
     draw();
   }
   function readyCard(){
-    const rest = RD.rest || [], left = rest.filter(x => !x.res), okN = X.list.filter(x => x.q).length;
+    const rest = RD.rest || [], left = rest.filter(x => !x.res), okN = X.list.length;
     return `<div class="card"><h3>📦 الجاهزين والباقي</h3>
       <div class="up-row" style="gap:16px;font-size:14px">
         <span>✅ اتمسحوا (جاهزين): <b style="font-size:18px;color:#2f7d55">${X.list.length}</b></span>
-        ${RD.rest ? `<span>⏳ الباقي على QP: <b style="font-size:18px;color:#b3261e">${left.length}</b></span>` : ''}</div>
+        ${RD.rest ? `<span>⏳ الباقي على QP: <b style="font-size:18px;color:#b3261e">${left.length}</b></span>` : ''}
+        <span style="font-size:12.5px;color:${SC.err ? '#b3261e' : 'var(--muted)'}">${SC.loading ? '☁️ بيجيب البوالص المحفوظة...' : SC.err ? '⚠️ ' + esc(SC.err) : `☁️ محفوظة على السيستم — تقدر تفتحها من أي موبايل${SC.by ? ` · آخر تحديث: ${esc(SC.by)} ${SC.at ? new Date(SC.at).toLocaleString('ar-EG', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }) : ''}` : ''}`}</span>
+        <button class="up-btn" id="upRdSync" style="padding:4px 10px;font-size:12px">🔄 حدّث</button></div>
       <div class="up-row" style="margin-top:10px">
         <button class="up-btn ok" id="upScanSheet" ${okN ? '' : 'disabled'}>⬇️ نزّل شيت الجاهزين (${okN}) — ابعته لـ QP</button>
         ${X.list.length || RD.rest ? `<button class="up-btn" id="upRdClear" style="background:#fff4e5;border-color:#b7791f">🧹 ابدأ من جديد (فضّي الـ ${X.list.length} بوليصة)</button>` : ''}
@@ -11985,9 +12030,17 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
   // 📄 بوالص → شيت: لأي حد معاه مسح البوالص أو رفع الأوردرات
   const canScan = () => { const m = me(); return canDelete() || !!(Array.isArray(m.allowed_sections) && m.allowed_sections.includes('qp_upload')); };
   // 📄 شيت بيانات البوالص اللي اتصورت (بأعمدة شيت QP + الحالة)
-  function scanSheet(){
-    const L = X.list.filter(x => x.q);
-    if(!L.length || !window.XLSX) return;
+  async function scanSheet(){
+    if(!X.list.length || !window.XLSX) return;
+    // البوالص اللي بياناتها ماتجابتش (مثلاً الموبايل ماكانش عامل دخول QP) → نجيبها دلوقتي
+    const miss = X.list.filter(x => !x.q);
+    if(miss.length && window.QP && window.QP.api && window.QP.api.hasCreds()){
+      for(let i = 0; i < miss.length; i++){ X.msg = `بيجيب بيانات ${i + 1} من ${miss.length} بوليصة من QP...`; X.msgErr = false; draw();
+        try{ let q = await qpCall('order/' + encodeURIComponent(miss[i].serial)); if(q && q.data && !q.serial) q = q.data; miss[i].q = q; miss[i].err = ''; }catch(e){ miss[i].err = e.message; } }
+      if(X.mode === 'ready') scSave(true);
+    }
+    const L = X.list.map(x => x.q ? x : { ...x, q:{ serial:x.serial } });
+    const noData = X.list.filter(x => !x.q).length;
     const api = window.QP && window.QP.api;
     const H = [null, 'serial', 'full name', 'phone', 'address', 'total amount', 'notes', 'order date', 'shipment contents', 'weight', 'city', 'status'];
     const aoa = [H].concat(L.slice().reverse().map(x => { const q = x.q;
@@ -11999,7 +12052,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
     ws['!cols'] = [{ wch:3 }, { wch:11 }, { wch:22 }, { wch:13 }, { wch:45 }, { wch:12 }, { wch:16 }, { wch:18 }, { wch:40 }, { wch:8 }, { wch:12 }, { wch:16 }];
     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Sheet3');
     XLSX.writeFile(wb, `بوالص ${ymd(new Date())} (${L.length}).xlsx`);
-    X.msg = `✅ اتنزّل شيت فيه ${L.length} بوليصة.`; X.msgErr = false; draw();
+    X.msg = `✅ اتنزّل شيت فيه ${L.length} بوليصة.` + (noData ? ` ⚠️ ${noData} منهم برقم الشحنة بس (مقدرتش أجيب بياناتهم من QP — اعمل دخول QP على الجهاز ده ونزّل تاني).` : ''); X.msgErr = !!noData; draw();
   }
   const DEL_REASONS = ['المنتج مش موجود', 'العميل لغى', 'أوردر متكرر', 'غلط في البيانات', 'سبب تاني'];
   const X = { mode:'delete', list:[], scanning:false, scanner:null, busy:false, msg:'', msgErr:false, notify:true, cancelSquad:false, log:null, lastCode:'', lastAt:0, reason:DEL_REASONS[0] };
@@ -12030,11 +12083,12 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
     const serial = serialFrom(raw);
     if(!serial){ X.msg = 'مش قادر أقرا رقم شحنة من: ' + String(raw).slice(0, 40); X.msgErr = true; beep(false); draw(); return; }
     if(X.list.some(x => x.serial === serial)){ X.msg = `البوليصة ${serial} موجودة في الليستة أصلاً.`; X.msgErr = true; beep(false); draw(); return; }
-    const row = { serial, loading:true, reason: X.reason, q:null, err:'', res:'' };
+    const row = { serial, loading:true, reason: X.reason, q:null, err:'', res:'', at:Date.now(), by: me().full_name || me().username || '' };
     X.list.unshift(row); X.msg = ''; beep(true); draw();
     try{ row.q = await qpCall('order/' + encodeURIComponent(serial)); if(row.q && row.q.data && !row.q.serial) row.q = row.q.data; }
     catch(e){ row.err = /not found|404|No .* matches/i.test(e.message) ? 'مش موجودة في QP' : e.message; }
     row.loading = false; draw();
+    if(X.mode === 'ready') scSave();
   }
   async function loadDelScanner(){
     if(window.Html5Qrcode) return;
@@ -12390,7 +12444,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
       ${X.msg ? `<div class="up-msg ${X.msgErr ? 'err' : 'ok'}">${esc(X.msg)}</div>` : ''}
     </div>`;
     if(EX) h += ppCard();
-    if(RDY) h += readyCard();
+    if(RDY){ if(!SC.loaded && !SC.loading && sbc()) scLoad(); h += readyCard(); }
     if(X.list.length){
       h += `<div class="card"><h3>📋 ${EX ? 'البوالص المؤجلة لبكرة' : RDY ? 'البوالص الجاهزة' : 'البوالص'} (${X.list.length})</h3>
         <div class="up-sheet"><table><thead><tr><th>رقم الشحنة</th><th>العميل</th><th>الموبايل</th><th>المحتوى</th><th>السعر</th><th>notes</th><th>الحالة في QP</th>${SH || EX || RDY ? '' : '<th>السبب</th><th>النتيجة</th>'}<th></th></tr></thead><tbody>
@@ -13622,11 +13676,13 @@ create policy "sheets: upload" on storage.objects for insert to authenticated wi
     if($('upSerial')) $('upSerial').onkeydown = e => { if(e.key === 'Enter'){ e.preventDefault(); addTyped(); } };
     if($('upDelReason')) $('upDelReason').onchange = e => { X.reason = e.target.value; };
     document.querySelectorAll('[data-delr]').forEach(el => el.onchange = () => { X.list[Number(el.dataset.delr)].reason = el.value; });
-    document.querySelectorAll('[data-delx]').forEach(b => b.onclick = () => { X.list.splice(Number(b.dataset.delx), 1); draw(); });
+    document.querySelectorAll('[data-delx]').forEach(b => b.onclick = async () => { const x = X.list[Number(b.dataset.delx)];
+      X.list.splice(Number(b.dataset.delx), 1); draw();
+      if(X.mode === 'ready' && x){ try{ const v = await scRead(); const sc = v.scan || {}; sc.list = (sc.list || []).filter(y => String(y.serial) !== String(x.serial)); await sbc().from('app_kv').upsert({ key:PP_KV, value:{ ...v, scan:sc }, updated_at:new Date().toISOString(), updated_by_name: me().full_name || me().username || '' }); }catch(e){} } });
     if($('upDelNotify')) $('upDelNotify').onchange = e => { X.notify = e.target.checked; };
     if($('upDelCancel')) $('upDelCancel').onchange = e => { X.cancelSquad = e.target.checked; };
     if($('upDelGo')) $('upDelGo').onclick = deleteFromQP;
-    if($('upDelClear')) $('upDelClear').onclick = () => { if(X.list.length && !confirm('تفضّي الليستة؟')) return; X.list = []; X.msg = ''; draw(); };
+    if($('upDelClear')) $('upDelClear').onclick = () => { if(X.list.length && !confirm('تفضّي الليستة؟')) return; X.msg = ''; if(X.mode === 'ready'){ RD.rest = null; scClear(); return; } X.list = []; draw(); };
     if($('upDelLogX')) $('upDelLogX').onclick = () => delSheet(X.log || []);
     document.querySelectorAll('[data-xmode]').forEach(b => b.onclick = () => { if(X.scanning) stopScan(); X.mode = b.dataset.xmode; X.msg = ''; draw(); });
     document.querySelectorAll('[data-rpick]').forEach(cb => cb.onchange = () => { const k = cb.dataset.rpick; if(cb.checked) X.pick.add(k); else X.pick.delete(k); draw(); });
@@ -13638,7 +13694,8 @@ create policy "sheets: upload" on storage.objects for insert to authenticated wi
     if($('upScanSheet')) $('upScanSheet').onclick = scanSheet;
     if($('upRdDay')) $('upRdDay').onchange = e => { RD.day = e.target.value; RD.rest = null; RD.msg = ''; draw(); };
     if($('upRdFetch')) $('upRdFetch').onclick = rdFetch;
-    if($('upRdClear')) $('upRdClear').onclick = () => { if(X.list.length && !confirm(`تفضّي الليستة (${X.list.length} بوليصة) وتبدأ من جديد؟`)) return; X.list = []; RD.rest = null; RD.msg = ''; X.msg = ''; draw(); };
+    if($('upRdClear')) $('upRdClear').onclick = () => { if(X.list.length && !confirm(`تفضّي الليستة (${X.list.length} بوليصة) وتبدأ من جديد؟ هتتفضى من كل الموبايلات.`)) return; RD.rest = null; RD.msg = ''; X.msg = ''; scClear(); };
+    if($('upRdSync')) $('upRdSync').onclick = () => { SC.loaded = false; scLoad(); };
     if($('upRdDel')) $('upRdDel').onclick = rdDelete;
     document.querySelectorAll('[data-rdkeep]').forEach(b => b.onclick = () => { RD.rest.splice(Number(b.dataset.rdkeep), 1); draw(); });
     if($('upExDay')) $('upExDay').onchange = e => { QD.day = e.target.value || ymd(new Date()); QD.dayTouched = !!e.target.value && e.target.value !== ymd(new Date()); };
