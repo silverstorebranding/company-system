@@ -12858,7 +12858,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
      - بتظهر في كارت فوق الشيت، تختار المندوب وتدوس ابعت ← بتتشال من الشيت وتتحسب إنها اتاخدت
      - المندوب بيشوفها في قسم 🛵 مناديب الدفع المقدم ويعلّم اتسلم / ماتسلمش
      ===================================================================== */
-  const PPD = { couriers:null, sending:false, off:new Set(), to:'', missing:false };
+  const PPD = { couriers:null, sending:false, off:new Set(), missing:false };
   const PP_RE = /مدينه\s*نصر|(^|[\s,،\-\/(])م\s*\.?\s*نصر(?=$|[\s,،\-\/)])|مصر\s*(ال)?جديده|هليوبوليس|nasr\s*-?\s*city|heliopolis|masr\s*el\s*(gedida|gdida|gedeeda)|new\s*cairo\s*heliopolis/i;
   const isPPArea = r => PP_RE.test(normAr((r.address || '') + ' ' + (r.city || '')));
   const ppRows = () => (S.rows || []).filter(r => !r.serial && isPPArea(r));
@@ -12867,7 +12867,6 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
     const { data } = await sbc().from('profiles').select('id, username, full_name, allowed_sections');
     PPD.couriers = (data || []).filter(p => Array.isArray(p.allowed_sections) && p.allowed_sections.includes('prepaid'))
       .map(p => ({ id:p.id, name:p.full_name || p.username || 'مندوب' })).sort((a, b) => a.name.localeCompare(b.name, 'ar'));
-    if(PPD.couriers.length === 1) PPD.to = PPD.couriers[0].id;
     return PPD.couriers;
   }
   function prepaidCard(){
@@ -12876,20 +12875,19 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
     const pick = L.filter(r => !PPD.off.has(r)), sum = pick.reduce((a, r) => a + (numOf(r.amount) || 0), 0);
     const C = PPD.couriers || [];
     return `<div class="card pp-up"><h3>🛵 أوردرات مناديب الدفع المقدم <b>${L.length}</b> <span style="font-weight:400;font-size:13px;color:var(--muted)">${L.reduce((a, r) => a + (numOf(r.amount) || 0), 0).toLocaleString('ar-EG')} ج</span></h3>
-      <p style="margin:0 0 10px;font-size:13px;color:var(--muted)">أوردرات مدينة نصر ومصر الجديدة — <b>مش بتترفع على QP ومش في شيت QP</b>. اختار المندوب ودوس ابعت، وهتروح لقسم <b>🛵 مناديب الدفع المقدم</b>. (لو في أوردر مش عايزه يروح دلوقتي شيل علامته — هيفضل هنا.)</p>
+      <p style="margin:0 0 10px;font-size:13px;color:var(--muted)">أوردرات مدينة نصر ومصر الجديدة — <b>مش بتترفع على QP ومش في شيت QP</b>. دوس الزرار وهتروح لقسم <b>🛵 مناديب الدفع المقدم</b>. (لو في أوردر مش عايزه يروح دلوقتي شيل علامته — هيفضل هنا.)</p>
       ${PPD.missing ? `<div class="up-msg err">جدول مناديب الدفع المقدم لسه مش متعمل في Supabase — ${me().is_admin ? 'افتح قسم 🛵 مناديب الدفع المقدم وانسخ الـ SQL وشغّله.' : 'كلّم الأدمن.'}</div>` : ''}
       <div class="pp-list">${L.map(r => { const i = S.rows.indexOf(r); return `<label class="pp-li"><input type="checkbox" data-ppchk="${i}" ${PPD.off.has(r) ? '' : 'checked'}>
         <span><b>${esc(r.name || '—')}</b> · <span dir="ltr">${esc(phoneOf(r.phone) ? '0' + phoneOf(r.phone) : r.phone)}</span> · ${esc(r.amount || '')} ج<br><small>📍 ${esc(r.address || '')}${r.city ? ' — ' + esc(r.city) : ''}</small>${contentsOf(r) ? `<br><small>📦 ${esc(contentsOf(r))}</small>` : ''}<br><small style="color:#2b6cb0">${esc(r.srcKey === 'squad' ? '🏆 Squad · ' + (r.page || '') : srcLabel(r.srcKey))}</small></span></label>`; }).join('')}</div>
       <div class="up-row" style="margin-top:10px;align-items:center">
-        ${!PPD.couriers ? '<span style="color:var(--muted)">⏳ بيحمّل المناديب...</span>' : C.length ? `<select id="ppTo" style="padding:9px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;min-width:180px"><option value="">— اختار المندوب —</option>${C.map(p => `<option value="${esc(p.id)}" ${PPD.to === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select>
-          <button class="up-btn ok" id="ppSend" ${PPD.sending || !pick.length ? 'disabled' : ''}>${PPD.sending ? '⏳ بيبعت...' : `🛵 ابعت ${pick.length} أوردر للمندوب (${sum.toLocaleString('ar-EG')} ج)`}</button>`
-          : `<span class="up-msg err" style="margin:0">مفيش مناديب لسه — المندوب يعمل حساب جديد، والأدمن يفتحله صلاحية "🛵 أوردراتي (مندوب دفع مقدم)" من ⚙️ الحسابات والصلاحيات.</span> <button class="up-btn" id="ppReload" style="padding:6px 12px;font-size:13px">🔄</button>`}
+        <button class="up-btn ok" id="ppSend" ${PPD.sending || !pick.length ? 'disabled' : ''} style="background:#2b6cb0;border-color:#2b6cb0">${PPD.sending ? '⏳ بيبعت...' : `🛵 ودّيهم لقسم الدفع المقدم (${pick.length} أوردر · ${sum.toLocaleString('ar-EG')} ج)`}</button>
+        ${PPD.couriers && PPD.couriers.length ? `<span style="font-size:12.5px;color:var(--muted)">المسؤول: <b>${esc(PPD.couriers.map(c => c.name).join('، '))}</b></span>` : PPD.couriers ? '<span style="font-size:12.5px;color:var(--muted)">المسؤول لسه ماعملش حساب — الأوردرات هتستناه في القسم وأول ما يدخل هيلاقيها كلها.</span>' : ''}
       </div></div>`;
   }
   async function sendPrepaid(){
     const rows = ppRows().filter(r => !PPD.off.has(r));
-    const to = (PPD.couriers || []).find(p => p.id === PPD.to);
-    if(!to) return flash('اختار المندوب الأول.', true);
+    await ppCouriers().catch(() => {});
+    const to = (PPD.couriers || []).length === 1 ? PPD.couriers[0] : null;   // مسؤول واحد عن القسم — لو لسه مفيش حساب الأوردرات بتتبعت للقسم وتستناه
     if(!rows.length) return flash('مفيش أوردرات متعلّمة.', true);
     PPD.sending = true; draw();
     const batch = Date.now().toString(36), by = me().full_name || me().username || '';
@@ -12899,7 +12897,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
       const { data } = await sbc().from('prepaid_orders').select('row_key').in('row_key', rows.map(urgKey)).gte('created_at', since.toISOString());
       have = new Set((data || []).map(x => x.row_key)); }catch(e){}
     const fresh = rows.filter(r => !have.has(urgKey(r)));
-    const recs = fresh.map(r => ({ batch, order_date: ymd(new Date()), courier_id:to.id, courier_name:to.name, status:'pending',
+    const recs = fresh.map(r => ({ batch, order_date: ymd(new Date()), courier_id: to ? to.id : null, courier_name: to ? to.name : null, status:'pending',
       customer_name:String(r.name || '').trim(), phone: phoneOf(r.phone) ? '0' + phoneOf(r.phone) : String(r.phone || ''), phone2: r.phone2 ? '0' + phoneOf(r.phone2) : null,
       address:String(r.address || '').trim(), city:r.city || null, amount: numOf(r.amount), contents: contentsOf(r) || null, notes: finalNote(r) || null,
       src_label: r.srcKey === 'squad' ? '🏆 Squad · ' + (r.page || '') : srcLabel(r.srcKey), agent: r.agent || null, row_key: urgKey(r),
@@ -12909,7 +12907,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
       if(error){ PPD.sending = false; PPD.missing = /prepaid_orders|relation|schema cache|does not exist/i.test(error.message); draw();
         return flash(PPD.missing ? 'جدول مناديب الدفع المقدم مش متعمل في Supabase — شغّل ملف prepaid_orders.sql.' : 'ماتبعتش: ' + error.message, true); }
       const total = recs.reduce((a, x) => a + (Number(x.amount) || 0), 0);
-      try{ await sbc().from('inbox').insert({ kind:'task', from_id:me().id, from_name:by, to_id:to.id, to_name:to.name,
+      for(const c of (PPD.couriers || [])) try{ await sbc().from('inbox').insert({ kind:'task', from_id:me().id, from_name:by, to_id:c.id, to_name:c.name,
         title:`🛵 عندك ${recs.length} أوردر جديد للتوصيل`, body:`${recs.length} أوردر (مدينة نصر / مصر الجديدة) — إجمالي ${total.toLocaleString('ar-EG')} ج.\nافتح قسم 🛵 مناديب الدفع المقدم، وعلّم كل أوردر اتسلم ولا لأ.` }); }catch(e){}
     }
     // بتتشال من الشيت وتتحسب إنها اتاخدت (مش هترجع تاني ومش هتترفع على QP)
@@ -12918,7 +12916,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
     PPD.sending = false;
     persistTaken();
     if(rows.some(r => r.urgentId)) closeUrgent(rows);
-    flash(`🛵 اتبعت ${recs.length} أوردر لـ ${to.name}${rows.length > recs.length ? ` (و ${rows.length - recs.length} كانوا اتبعتوله قبل كده فاتشالوا بس)` : ''} — وراحوا لقسم 🛵 مناديب الدفع المقدم.`);
+    flash(`🛵 اتبعت ${recs.length} أوردر لقسم الدفع المقدم${to ? ` (المسؤول: ${to.name})` : ''}${rows.length > recs.length ? ` (و ${rows.length - recs.length} كانوا اتبعتوا قبل كده فاتشالوا بس)` : ''}.`);
   }
 
   /* 🔁 الأوردرات اللي اترفعت بالفعل على QP (من السيستم أو مانوال على السايت) في آخر 3 أيام بتتشال لوحدها
@@ -14080,9 +14078,7 @@ create policy "sheets: upload" on storage.objects for insert to authenticated wi
     if($('urgCancel')) $('urgCancel').onclick = () => { S.urgPick = null; draw(); };
     // 🛵 مناديب الدفع المقدم
     document.querySelectorAll('[data-ppchk]').forEach(c => c.onchange = () => { const r = S.rows[Number(c.dataset.ppchk)]; if(!r) return; if(c.checked) PPD.off.delete(r); else PPD.off.add(r); draw(); });
-    if($('ppTo')) $('ppTo').onchange = e => { PPD.to = e.target.value; };
     if($('ppSend')) $('ppSend').onclick = sendPrepaid;
-    if($('ppReload')) $('ppReload').onclick = () => ppCouriers(true).then(draw);
     if($('urgModal')) $('urgModal').onclick = e => { if(e.target.id === 'urgModal'){ S.urgPick = null; draw(); } };
     if($('urgMerge')) $('urgMerge').onclick = mergeUrgent;
     if($('urgRefresh')) $('urgRefresh').onclick = () => loadUrgent().then(draw);
@@ -15296,7 +15292,6 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
     const m = me(); if(!m.id || !sb()) return;
     const since = new Date(); since.setDate(since.getDate() - S.days);
     let q = sb().from('prepaid_orders').select('*').gte('order_date', ymd(since)).order('order_date', { ascending:false }).order('id', { ascending:true }).limit(3000);
-    if(!isMgr()) q = q.eq('courier_id', m.id);
     const { data, error } = await q;
     if(error){ S.missing = /prepaid_orders|relation|schema cache|does not exist/i.test(error.message); S.list = []; if(!S.missing){ S.msg = error.message; S.msgErr = true; } draw(); return; }
     S.missing = false; S.list = data || [];
@@ -15311,7 +15306,7 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
   async function badge(){
     const m = me(), b = document.getElementById('ppBadge'); if(!m.id || !sb() || !b) return;
     if(!(Array.isArray(m.allowed_sections) && m.allowed_sections.includes('prepaid'))){ b.classList.remove('on'); return; }
-    const { count } = await sb().from('prepaid_orders').select('id', { count:'exact', head:true }).eq('courier_id', m.id).eq('status', 'pending');
+    const { count } = await sb().from('prepaid_orders').select('id', { count:'exact', head:true }).eq('status', 'pending');
     b.textContent = count || ''; b.classList.toggle('on', !!count);
   }
   const flash = (t, err) => { S.msg = t; S.msgErr = !!err; draw(); setTimeout(() => { if(S.msg === t){ S.msg = ''; draw(); } }, 6000); };
@@ -15347,7 +15342,7 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
   const tm = iso => iso ? new Date(iso).toLocaleString('ar-EG', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }) : '';
 
   function card(o){
-    const mgr = isMgr(), mine = o.courier_id === me().id, can = mine || mgr, ph = tel(o.phone), ph2 = o.phone2 ? tel(o.phone2) : '';
+    const mgr = isMgr(), can = true, ph = tel(o.phone), ph2 = o.phone2 ? tel(o.phone2) : '';
     return `<div class="pp-card ${o.status}">
       <div class="pp-top"><span class="pp-st ${o.status}">${ST[o.status] || o.status}</span><span class="nm">${esc(o.customer_name || '—')}</span><span class="amt">${money(o.amount)}</span></div>
       <div class="pp-line"><span class="k">📞</span> <a href="tel:${esc(ph)}" dir="ltr" style="font-weight:700">${esc(ph)}</a>${ph2 ? ` · <a href="tel:${esc(ph2)}" dir="ltr">${esc(ph2)}</a>` : ''}</div>
@@ -15355,7 +15350,7 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
       ${o.contents ? `<div class="pp-line"><span class="k">📦</span> ${esc(o.contents)}</div>` : ''}
       ${mgr && (o.notes || o.src_label) ? `<div class="pp-line"><span class="k">🏷️</span> ${esc([o.notes, o.src_label, o.agent ? '👤 ' + o.agent : ''].filter(Boolean).join(' · '))}</div>` : ''}
       ${o.status !== 'pending' ? `<div class="pp-line" style="font-size:13px">${o.status === 'failed' ? '❌' : '✅'} ${o.status_note ? '<b>' + esc(o.status_note) + '</b> · ' : ''}<span class="k">${esc(o.status_by_name || '')} ${esc(tm(o.status_at))}</span></div>` : ''}
-      <div class="pp-meta">${mgr ? `🛵 ${esc(o.courier_name || '')} · ` : ''}اتبعت ${esc(tm(o.created_at))}${o.sent_by_name ? ' من ' + esc(o.sent_by_name) : ''}</div>
+      <div class="pp-meta">${mgr && o.courier_name ? `🛵 ${esc(o.courier_name)} · ` : ''}اتبعت ${esc(tm(o.created_at))}${o.sent_by_name ? ' من ' + esc(o.sent_by_name) : ''}</div>
       <div class="pp-act">
         ${can && o.status !== 'delivered' ? `<button class="pp-btn ok" data-ppst="delivered" data-id="${o.id}">✅ اتسلم</button>` : ''}
         ${can && o.status !== 'failed' ? `<button class="pp-btn no" data-ppst="failed" data-id="${o.id}">❌ ماتسلمش</button>` : ''}
@@ -15376,11 +15371,11 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
 
     // فلترة بالمندوب (للمتابعة) ثم الأيام
     let L = S.list;
-    if(mgr && S.courier) L = L.filter(o => o.courier_id === S.courier);
+    if(mgr && S.courier) L = L.filter(o => (o.courier_id || '-') === S.courier);
     if(mgr){
-      const per = {}; S.list.forEach(o => { const k = o.courier_id; (per[k] = per[k] || { name:o.courier_name || '—', n:0, p:0, d:0, f:0, amt:0 }); per[k].n++; per[k][o.status === 'delivered' ? 'd' : o.status === 'failed' ? 'f' : 'p']++; if(o.status === 'delivered') per[k].amt += Number(o.amount) || 0; });
+      const per = {}; S.list.forEach(o => { const k = o.courier_id || ''; (per[k] = per[k] || { name:o.courier_name || 'القسم (لسه من غير مسؤول)', n:0, p:0, d:0, f:0, amt:0 }); per[k].n++; per[k][o.status === 'delivered' ? 'd' : o.status === 'failed' ? 'f' : 'p']++; if(o.status === 'delivered') per[k].amt += Number(o.amount) || 0; });
       const ks = Object.keys(per);
-      if(ks.length > 1 || S.courier) h += `<div class="pp-cour"><button class="${S.courier ? '' : 'on'}" data-ppcour="">👥 كل المناديب<small>${S.list.length} أوردر</small></button>${ks.map(k => `<button class="${S.courier === k ? 'on' : ''}" data-ppcour="${esc(k)}">🛵 ${esc(per[k].name)}<small>${per[k].n} · ✅${per[k].d} · ❌${per[k].f} · ⏳${per[k].p}</small></button>`).join('')}</div>`;
+      if(ks.length > 1 || S.courier) h += `<div class="pp-cour"><button class="${S.courier ? '' : 'on'}" data-ppcour="">👥 كل المناديب<small>${S.list.length} أوردر</small></button>${ks.map(k => `<button class="${S.courier === (k || '-') ? 'on' : ''}" data-ppcour="${esc(k || '-')}">🛵 ${esc(per[k].name)}<small>${per[k].n} · ✅${per[k].d} · ❌${per[k].f} · ⏳${per[k].p}</small></button>`).join('')}</div>`;
     }
     const days = [...new Set(L.map(o => o.order_date))].sort().reverse();
     if(S.day && !days.includes(S.day)) S.day = '';
