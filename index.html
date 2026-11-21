@@ -12139,10 +12139,20 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
   const X = { mode:'delete', list:[], scanning:false, scanner:null, busy:false, msg:'', msgErr:false, notify:true, cancelSquad:false, log:null, lastCode:'', lastAt:0, reason:DEL_REASONS[0] };
   // 💾 ليستة البوالص اللي اتصورت بتتحفظ على الجهاز — عشان ماتختفيش لو الصفحة اتقفلت أو اتعملها Refresh (بتفضل لحد "تفضّي الليستة")
   const SCAN_LS = 'upScanList';
-  try{ const sv = JSON.parse(localStorage.getItem(SCAN_LS) || 'null'); if(sv && Array.isArray(sv.list)){ X.list = sv.list.filter(x => x && x.serial && !x.loading); if(sv.mode && ['delete', 'sheet', 'exclude', 'ready'].includes(sv.mode)) X.mode = sv.mode; } }catch(e){}
+  // 🗂️ كل تاب ليه ليستة بوالص لوحده (X.lists) — عشان مسح جديد في تاب مايختلطش بالجاهزين مثلاً
+  X.lists = {}; X.listMode = X.mode;
+  const clean = L => (Array.isArray(L) ? L : []).filter(x => x && x.serial && !x.loading);
+  try{ const sv = JSON.parse(localStorage.getItem(SCAN_LS) || 'null');
+    if(sv){ if(sv.mode && ['delete', 'sheet', 'exclude', 'ready', 'held'].includes(sv.mode)) X.mode = sv.mode;
+      if(sv.lists) Object.keys(sv.lists).forEach(k => X.lists[k] = clean(sv.lists[k]));
+      else if(Array.isArray(sv.list)) X.lists[sv.mode || 'delete'] = clean(sv.list);
+      X.list = X.lists[X.mode] || []; X.listMode = X.mode; } }catch(e){}
+  // لما التاب يتغيّر (من أي حتة) الليستة بتتبدّل معاه
+  function syncModeList(){ if(X.listMode === X.mode) return; X.lists[X.listMode] = X.list; X.list = X.lists[X.mode] || []; X.listMode = X.mode; }
   let scanSaved = '';
   function saveScanList(){
-    try{ const v = JSON.stringify({ mode:['delete', 'sheet', 'exclude', 'ready'].includes(X.mode) ? X.mode : undefined, list:X.list.filter(x => !x.loading), at:Date.now() });
+    try{ syncModeList(); const lists = { ...X.lists, [X.mode]: X.list }; Object.keys(lists).forEach(k => lists[k] = (lists[k] || []).filter(x => !x.loading));
+      const v = JSON.stringify({ mode:['delete', 'sheet', 'exclude', 'ready', 'held'].includes(X.mode) ? X.mode : undefined, lists, at:Date.now() });
       if(v !== scanSaved){ localStorage.setItem(SCAN_LS, v); scanSaved = v; } }catch(e){}
   }
   const isPendingQ = q => { const st = String(q.Order_Delivery_Status ?? q.status ?? '').trim().toLowerCase(); return st === '1' || st === 'pending'; };
@@ -12493,30 +12503,33 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
     if(!X.scanning && !X.list.length) return '';
     const ok = X.list.filter(x => x.q).length, bad = X.list.filter(x => !x.loading && !x.q).length, pend = X.list.filter(x => x.q && isPendingQ(x.q)).length, last = X.list[0];
     return `<div class="scan-cnt"><span class="n">${X.list.length}</span><span>${X.mode === 'exclude' ? 'بوليصة هتتأجل لبكرة' : 'بوليصة اتصوّرت'}</span>
-      ${X.mode === 'sheet' || X.mode === 'exclude' ? '' : `<span class="pill ok">${pend} هتتمسح</span>`}${bad ? `<span class="pill bad">${bad} مش لاقيها</span>` : ''}
+      ${X.mode === 'sheet' || X.mode === 'held' || X.mode === 'exclude' ? '' : `<span class="pill ok">${pend} ${X.mode === 'ready' ? 'Pending على QP' : 'هتتمسح'}</span>`}${bad ? `<span class="pill bad">${bad} مش لاقيها</span>` : ''}
       ${last ? `<span class="last">آخر واحدة: <b>${esc(last.serial)}</b>${last.q ? ' — ' + esc(last.q.full_name || '') : (last.loading ? ' ⏳' : '')}</span>` : ''}</div>`;
   }
 
   function delHtml(){
     if(!canScan()) return `<div class="up-msg err">الصفحة دي محتاجة صلاحية "🗑️ مسح بوالص من QP" أو "📤 رفع الأوردرات" — كلّم الأدمن.</div>`;
     if(!canDelete() && X.mode === 'delete') X.mode = 'sheet';
-    const ok = X.list.filter(x => x.q && !x.res && isPendingQ(x.q)).length, SH = X.mode === 'sheet';
+    syncModeList();
+    const HELD = X.mode === 'held', ok = X.list.filter(x => x.q && !x.res && isPendingQ(x.q)).length, SH = X.mode === 'sheet' || HELD;
     let h = `<div class="up-tabs" style="margin-bottom:10px">
-        ${canDelete() ? `<button class="${!SH ? 'on' : ''}" style="--bc:#b3261e" data-xmode="delete">🗑️ امسحها من QP</button>` : ''}
-        <button class="${SH ? 'on' : ''}" style="--bc:#2b6cb0" data-xmode="sheet">📄 اعمل منها شيت</button>
+        ${canDelete() ? `<button class="${X.mode === 'delete' ? 'on' : ''}" style="--bc:#b3261e" data-xmode="delete">🗑️ امسحها من QP</button>` : ''}
+        <button class="${X.mode === 'sheet' ? 'on' : ''}" style="--bc:#2b6cb0" data-xmode="sheet">📄 اعمل منها شيت</button>
+        <button class="${HELD ? 'on' : ''}" style="--bc:#b7791f" data-xmode="held">📦 معايا بوالصها ومتجهزتش</button>
         <button class="${X.mode === 'ready' ? 'on' : ''}" style="--bc:#2f7d55" data-xmode="ready">✅ الجاهزين ← شيت + امسح الباقي</button>
         <button class="${X.mode === 'restore' ? 'on' : ''}" style="--bc:#2f7d55" data-xmode="restore">♻️ رجّع اللي اتمسح</button>
         <button class="${X.mode === 'exclude' ? 'on' : ''}" style="--bc:#6b46c1" data-xmode="exclude">⏭️ شيت Pending من غيرهم</button></div>`;
     if(X.mode === 'restore') return h + restoreHtml();
     const EX = X.mode === 'exclude', RDY = X.mode === 'ready';
     h += `
-<div class="card"><h3>${RDY ? '✅ الأوردرات اللي اتجهزت ← شيت لـ QP + امسح الباقي' : EX ? '⏭️ بوالص مش جاهزة — شيت الـ Pending من غيرها' : SH ? '📄 بوالص ← شيت' : '🗑️ مسح بوالص من QP'}</h3>
-      <p style="margin:0 0 10px;font-size:13.5px;color:var(--muted)">${RDY ? '1) امسح باركود بوالص الأوردرات <b>اللي اتجهزت</b> (أو اكتب أرقامها). 2) نزّل شيت الجاهزين وابعته لـ QP. 3) هات الباقي (Pending ومااتمسحش) وامسحه من QP.' : EX ? 'صوّري بوالص الأوردرات اللي <b>لسه ماتجهزتش</b> (أو اكتبي أرقامها)، وبعدين نزّلي شيت الـ Pending من QP <b>من غيرها</b>. البوالص دي <b>مش بتتمسح من QP</b> — هتفضل Pending وتطلع بكرة عادي.' : SH ? 'صوّر باركود البوالص (أو اكتب أرقامها) — السيستم بيجيب بيانات كل بوليصة من QP: العميل، الموبايل، العنوان، المحتوى، السعر، الـ notes والحالة — وتنزّلهم في شيت.' : (me().is_admin ? '' : '🔐 معاك صلاحية مسح البوالص. ') + 'امسح باركود البوالص اللي أوردراتها ماتجهزتش، راجع الليستة، وبعدين امسحهم من QP مرة واحدة. QP بيمسح الأوردرات اللي لسه <b>Pending</b> بس.'}</p>
+<div class="card"><h3>${HELD ? '📦 أوردرات بوالصها معايا ومتجهزتش' : RDY ? '✅ الأوردرات اللي اتجهزت ← شيت لـ QP + امسح الباقي' : EX ? '⏭️ بوالص مش جاهزة — شيت الـ Pending من غيرها' : SH ? '📄 بوالص ← شيت' : '🗑️ مسح بوالص من QP'}</h3>
+      <p style="margin:0 0 10px;font-size:13.5px;color:var(--muted)">${HELD ? 'ليستة لوحدها (مش بتختلط بالجاهزين) — صوّر بوالص الأوردرات اللي معاك ومتجهزتش، وهتلاقيها تحت بكل بياناتها من QP، ونزّلها شيت.' : RDY ? '1) امسح باركود بوالص الأوردرات <b>اللي اتجهزت</b> (أو اكتب أرقامها). 2) نزّل شيت الجاهزين وابعته لـ QP. 3) هات الباقي (Pending ومااتمسحش) وامسحه من QP.' : EX ? 'صوّري بوالص الأوردرات اللي <b>لسه ماتجهزتش</b> (أو اكتبي أرقامها)، وبعدين نزّلي شيت الـ Pending من QP <b>من غيرها</b>. البوالص دي <b>مش بتتمسح من QP</b> — هتفضل Pending وتطلع بكرة عادي.' : SH ? 'صوّر باركود البوالص (أو اكتب أرقامها) — السيستم بيجيب بيانات كل بوليصة من QP: العميل، الموبايل، العنوان، المحتوى، السعر، الـ notes والحالة — وتنزّلهم في شيت.' : (me().is_admin ? '' : '🔐 معاك صلاحية مسح البوالص. ') + 'امسح باركود البوالص اللي أوردراتها ماتجهزتش، راجع الليستة، وبعدين امسحهم من QP مرة واحدة. QP بيمسح الأوردرات اللي لسه <b>Pending</b> بس.'}</p>
       <div class="up-row">
         ${X.scanning ? '<button class="up-btn" id="upScanStop">⏹️ وقّف الكاميرا</button>' : '<button class="up-btn pri" id="upScanStart">📷 امسح البوالص بالكاميرا</button>'}
         <label class="up-file">📸 صوّر البوليصة<input type="file" id="upPhoto" accept="image/*" capture="environment"></label>
         <input id="upSerial" placeholder="أو اكتب رقم الشحنة (أو أكتر من رقم)" style="max-width:260px;padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;direction:ltr">
         <button class="up-btn" id="upSerialAdd">➕ ضيف</button>
+        ${X.list.length && !RDY ? `<button class="up-btn" id="upScanNew" style="background:#fff4e5;border-color:#b7791f">🆕 ابدأ مسح جديد (فضّي الـ ${X.list.length})</button>` : ''}
         <label style="font-size:13px;${SH || EX || RDY ? 'display:none' : ''}">السبب الافتراضي <select id="upDelReason" style="padding:7px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit">${DEL_REASONS.map(r => `<option ${X.reason === r ? 'selected' : ''}>${r}</option>`).join('')}</select></label>
       </div>
       ${scanCounter()}
@@ -13774,6 +13787,7 @@ create policy "sheets: upload" on storage.objects for insert to authenticated wi
     if($('upBackScan')) $('upBackScan').onclick = e => { e.preventDefault(); X.mode = 'restore'; switchSrc('delete'); };
     if($('upScanSheet')) $('upScanSheet').onclick = scanSheet;
     if($('upRdFetch')) $('upRdFetch').onclick = rdFetch;
+    if($('upScanNew')) $('upScanNew').onclick = () => { if(!confirm(`تفضّي الـ ${X.list.length} بوليصة اللي في التاب ده وتبدأ مسح جديد؟ (الجاهزين مش هيتلمسوا)`)) return; X.list = []; X.msg = ''; draw(); };
     if($('upRdClear')) $('upRdClear').onclick = () => { if(X.list.length && !confirm(`تفضّي الليستة (${X.list.length} بوليصة) وتبدأ من جديد؟ هتتفضى من كل الموبايلات.`)) return; RD.rest = null; RD.msg = ''; X.msg = ''; scClear(); };
     if($('upRdSync')) $('upRdSync').onclick = () => { SC.loaded = false; scLoad(); };
     if($('upRdRestore')) $('upRdRestore').onclick = scRestore;
