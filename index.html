@@ -11895,6 +11895,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
       // ⏭️ اللي اتصوروا النهارده (الليستة + اللي اتسجلوا مؤجلين النهارده قبل كده) بيتشالوا من الشيت
       const scanned = new Set(X.list.map(x => String(x.serial)).concat(ppToday().map(x => String(x.serial))));
       const pool = PP.allPend ? [...pendBy.values()] : dayRows.concat(ppRows);
+      if(PP.allPend){ EXD.total = pendBy.size; EXD.pend = new Set(pendBy.keys()); EXD.at = Date.now(); }
       const list = pool.filter(q => !scanned.has(String(q.serial))).sort((a, b) => new Date(a.order_date) - new Date(b.order_date));
       const removed = pool.length - list.length;
       const scanNotPend = X.list.filter(x => !pendBy.has(String(x.serial))).length;
@@ -12108,6 +12109,52 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
             ${v.k === 'rest' ? `<td class="x">${x.res ? '' : `<button data-rdkeep="${RD.rest.indexOf(x)}" title="سيبه على QP (مش هيتمسح)">✕</button>`}</td>` : ''}</tr>`; }).join('')}
           </tbody></table></div>` : '<p class="up-empty">مفيش أوردرات من النوع ده.</p>'}</div>`; })() : ''}
     </div>`;
+  }
+  /* 🗑️ امسح المؤجلين (اللي اتصوروا في التاب ده) من الـ Pending على QP — بيقول الإجمالي وهيتمسح كام وهيتبقى كام */
+  const EXD = { total:null, pend:null, at:0, loading:false, busy:false, msg:'', msgErr:false };
+  async function exCalc(){
+    const api = window.QP && window.QP.api;
+    if(!api || !api.hasCreds()){ EXD.msg = '⚠️ لازم تكون عامل دخول QP من قسم 🚚 QP على الجهاز ده.'; EXD.msgErr = true; draw(); return; }
+    EXD.loading = true; EXD.msg = ''; draw();
+    try{
+      const all = await (api.fetchPending || api.fetchRange)(ymd(new Date(Date.now() - 60 * 86400000)), ymd(new Date()), n => { EXD.msg = `بيجيب كل الـ Pending من QP... ${n}`; EXD.msgErr = false; draw(); });
+      const P = all.filter(q => isPendingQ(q)); EXD.total = P.length; EXD.pend = new Set(P.map(q => String(q.serial))); EXD.at = Date.now(); EXD.msg = '';
+    }catch(e){ EXD.msg = 'مقدرتش أجيب من QP: ' + e.message; EXD.msgErr = true; }
+    EXD.loading = false; draw();
+  }
+  const exTargets = () => EXD.pend ? X.list.filter(x => EXD.pend.has(String(x.serial)) && x.res !== 'ok') : [];
+  async function exDelete(){
+    const rows = exTargets(); if(!rows.length) return;
+    if(!confirm(`هيتمسح من QP نهائيًا ${rows.length} أوردر (المؤجلين اللي اتصوروا).\nإجمالي الـ Pending: ${EXD.total} ← هيتبقى ${EXD.total - rows.length}.\n\nتكمل؟`)) return;
+    EXD.busy = true; const done = [];
+    for(const x of rows){
+      try{ await qpCall('order/' + encodeURIComponent(x.serial), { method:'DELETE' }); x.res = 'ok'; done.push(x); EXD.pend.delete(String(x.serial)); EXD.total--; }
+      catch(e){ x.res = 'err'; x.err = e.message; }
+      EXD.msg = `🗑️ بيمسح... ${done.length} من ${rows.length}`; EXD.msgErr = false; draw();
+    }
+    if(done.length){ const by = me().full_name || me().username || '';
+      try{ if(X.log === null) await loadDelLog();
+        const add = done.map(x => { const q = x.q || {}; return { serial:String(x.serial), name:q.full_name || '', phone:q.phone || '', address:q.address || '', city:q.city || '', amount:q.total_amount ?? q.price ?? '', notes:q.notes || '', contents:q.shipment_contents || '', reason:'اتأجل (ماتجهزش)', agent:'', by, at:new Date().toISOString() }; });
+        X.log = add.concat(X.log || []).slice(0, 500);
+        await sbc().from('app_kv').upsert({ key:DEL_LOG_KV, value:{ list:X.log }, updated_at:new Date().toISOString(), updated_by_name:by }); }catch(e){} }
+    const fail = rows.length - done.length; EXD.busy = false; EXD.msgErr = !!fail;
+    EXD.msg = `🗑️ اتمسح ${done.length} أوردر من QP — الـ Pending بقى ${EXD.total}.${fail ? ` و ${fail} QP رفض مسحهم: ` + rows.filter(x => x.res === 'err').slice(0, 5).map(x => x.serial + ' (' + x.err + ')').join('، ') : ''}`;
+    draw();
+  }
+  function exDelCard(){
+    if(!X.list.length || !canDelete()) return '';
+    const T = exTargets(), notP = EXD.pend ? X.list.filter(x => !EXD.pend.has(String(x.serial)) && x.res !== 'ok').length : 0;
+    return `<div class="card" style="border:2px solid #b3261e"><h3>🗑️ امسح المؤجلين من الـ Pending على QP</h3>
+      ${EXD.pend ? `<div class="rd-sum">
+          <div><span>📦 إجمالي الـ Pending على QP<br><small>دلوقتي</small></span><b>${EXD.total}</b></div>
+          <div class="bad"><span>🗑️ هيتمسح<br><small>المؤجلين اللي اتصوروا وPending${notP ? ` (${notP} مش Pending مش هيتمسحوا)` : ''}</small></span><b>${T.length}</b></div>
+          <div class="ok"><span>✅ هيتبقى Pending<br><small>بعد المسح</small></span><b>${EXD.total - T.length}</b></div>
+        </div>` : `<p style="margin:0;font-size:13.5px;color:var(--muted)">دوس "احسب" عشان أجيب إجمالي الـ Pending من QP وأقولك هيتمسح كام وهيتبقى كام.</p>`}
+      ${EXD.msg ? `<div class="up-msg ${EXD.msgErr ? 'err' : 'ok'}">${esc(EXD.msg)}</div>` : ''}
+      <div class="up-row" style="margin-top:10px">
+        <button class="up-btn" id="upExCalc" ${EXD.loading || EXD.busy ? 'disabled' : ''}>${EXD.loading ? '⏳ بيحسب...' : EXD.pend ? '🔄 احسب تاني' : '🔎 احسب'}</button>
+        ${EXD.pend ? `<button class="up-btn" id="upExDel" style="background:#b3261e;border-color:#b3261e;color:#fff;font-size:15px;padding:11px 20px" ${T.length && !EXD.busy && !EXD.loading ? '' : 'disabled'}>${EXD.busy ? '⏳ بيمسح...' : `🗑️ امسح الـ ${T.length} من QP (الـ Pending هيبقى ${EXD.total - T.length})`}</button>` : ''}
+      </div></div>`;
   }
   function ppCard(){
     if(PP.list === null){ loadPP().then(draw); return '<div class="card"><p class="up-empty">⏳ بيحمّل المؤجلين...</p></div>'; }
@@ -12642,7 +12689,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
       ${X.scanning ? '<p style="font-size:12.5px;color:var(--muted);margin:6px 0 0">وجّه الكاميرا على الباركود اللي على البوليصة — أول ما يتقري هتسمع بيب وتنزل في الليستة. عدّي البوالص واحدة ورا التانية.</p>' : ''}
       ${X.msg ? `<div class="up-msg ${X.msgErr ? 'err' : 'ok'}">${esc(X.msg)}</div>` : ''}
     </div>`;
-    if(EX) h += ppCard();
+    if(EX) h += ppCard() + exDelCard();
     if(RDY){ if(!SC.loaded && !SC.loading && sbc()) scLoad(); h += readyCard(); }
     if(AG){ if(X.list.length) h += againCard(); }
     else if(X.list.length){
@@ -13914,6 +13961,8 @@ create policy "sheets: upload" on storage.objects for insert to authenticated wi
     document.querySelectorAll('[data-rdkeep]').forEach(b => b.onclick = () => { RD.rest.splice(Number(b.dataset.rdkeep), 1); draw(); });
     if($('upExDay')) $('upExDay').onchange = e => { QD.day = e.target.value || ymd(new Date()); QD.dayTouched = !!e.target.value && e.target.value !== ymd(new Date()); };
     if($('upPPGo')) $('upPPGo').onclick = exportPendingNext;
+    if($('upExCalc')) $('upExCalc').onclick = exCalc;
+    if($('upExDel')) $('upExDel').onclick = exDelete;
     document.querySelectorAll('input[name="upPPMode"]').forEach(r => r.onchange = () => { PP.allPend = r.value === 'all'; draw(); });
     if($('upPPYest')) $('upPPYest').onclick = ppAddYesterday;
     if($('upPPInc')) $('upPPInc').onchange = e => { PP.include = e.target.checked; draw(); };
