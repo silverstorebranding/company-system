@@ -11124,10 +11124,10 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
 .up-btn.pri{background:var(--brass);border-color:var(--brass);color:#fff}
 .up-btn.ok{background:#2f7d55;border-color:#2f7d55;color:#fff}
 .up-btn:disabled{opacity:.45;cursor:not-allowed}
-.up-float{position:fixed;left:18px;top:50%;transform:translateY(-50%);z-index:900;white-space:nowrap;display:flex;flex-direction:column;align-items:center;gap:2px;padding:12px 20px;border:none;border-radius:14px;background:#2f7d55;color:#fff;font-family:inherit;font-size:15.5px;font-weight:700;cursor:pointer;box-shadow:0 6px 20px rgba(0,0,0,.25)}
+.up-float{position:fixed;left:18px;top:50%;transform:translateY(-50%);z-index:900;white-space:nowrap;display:flex;flex-direction:column;align-items:center;gap:2px;padding:12px 20px;border:none;border-radius:14px;background:#2f7d55;color:#fff;font-family:inherit;font-size:15.5px;font-weight:700;cursor:default;pointer-events:none;user-select:none;box-shadow:0 6px 20px rgba(0,0,0,.25)}
 .up-float b{font-size:19px}
 .up-float small{font-size:12px;font-weight:400;opacity:.9}
-.up-float:disabled{background:#8a8a8a;cursor:not-allowed}
+.up-float.off{background:#8a8a8a}
 .up-force{background:#2f7d55!important;color:#fff!important;border-radius:6px;padding:3px 8px!important;font-size:12px!important;white-space:nowrap}
 .up-ask{border:2px solid #e0a020;background:#fff8e6;border-radius:12px;padding:16px 18px;margin:16px 0}
 .up-ask.done{border-color:#2f7d55;background:#eef8f1}
@@ -13057,8 +13057,8 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
         <button class="up-btn" id="upExport" ${R.length ? '' : 'disabled'}>⬇️ نزّل شيت الجاهزين بس</button>
       </div>
       <p style="font-size:12.5px;color:var(--muted);margin:10px 0 0">${R.length ? 'الأوردرات بتتعمل في QP على طول وهتلاقيها في Orders List. ' : (probN ? 'صلّح الأوردرات اللي فيها مشاكل وهتطلع في الجاهزين. ' : '✅ كل الأوردرات اترفعت. ')}${!qpCities ? 'لازم الاتصال بـ QP يشتغل الأول (فوق). ' : ''}اللي يترفع بيتعلّم بالأخضر ومش بيترفع تاني.</p></div>`;
-    // 🚀 زرار عايم ثابت في الصفحة: عدد اللي هيترفعوا، وبيزيد لما توافق على أوردر من المشاكل
-    h += `<button class="up-float" id="upFloatSend" ${canSend ? '' : 'disabled'} title="${canSend ? '' : (!R.length ? 'مفيش أوردرات جاهزة' : !qpCities ? 'لازم تكون عامل دخول QP' : '')}">${S.sending ? '⏳ ' + esc(S.prog) : `🚀 ارفع على QP <b>${R.length}</b> أوردر`}${R.length ? `<small>${R.reduce((a, r) => a + (numOf(r.amount) || 0), 0).toLocaleString('ar-EG')} ج</small>` : ''}</button>`;
+    // 📊 عداد عايم (للعرض بس — مش زرار): عدد اللي هيترفعوا، وبيزيد لما توافق على أوردر من المشاكل
+    h += `<div class="up-float${R.length ? '' : ' off'}">${S.sending ? '⏳ ' + esc(S.prog) : `🚀 هيترفع على QP <b>${R.length}</b> أوردر`}${R.length ? `<small>${R.reduce((a, r) => a + (numOf(r.amount) || 0), 0).toLocaleString('ar-EG')} ج</small>` : ''}</div>`;
     return h + splitCard() + histHtml() + ptrBottom() + '</div>';
   }
   function easyStep1(){
@@ -13522,7 +13522,6 @@ create policy "sheets: upload" on storage.objects for insert to authenticated wi
       dupCheck(); draw();
     };
     if($('upSend')) $('upSend').onclick = sendToQP;
-    if($('upFloatSend')) $('upFloatSend').onclick = sendToQP;
     document.querySelectorAll('[data-upforce]').forEach(b => b.onclick = () => { const r = S.rows[Number(b.dataset.upforce)]; r.forceOk = true; r.dupOk = true; flash(`✔ "${r.name || 'الأوردر'}" طلع فوق مع الجاهزين وهيترفع برغم المشكلة.`); });
     document.querySelectorAll('[data-upunforce]').forEach(b => b.onclick = () => { const r = S.rows[Number(b.dataset.upunforce)]; r.forceOk = false; draw(); });
     // 🗑️ مسح بوالص
