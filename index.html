@@ -11379,6 +11379,9 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
      ===================================================================== */
   const SQ_KV = 'squad_last_at', PN_KV = 'squad_page_notes';
   const SQ = { at:null, by:'', updated:null, loaded:false, pageNotes:{}, names:{} };
+  // 🐰 أوردرات Bunny (مصدر EasyOrders أو صفحة Squad اسمها فيه bunny / باني) → الـ notes = bunny لوحدها لو مفيش notes متكتبة
+  const BUNNY_RE = /bunny|باني/i;
+  const pageNote = pg => SQ.pageNotes[pg] || (BUNNY_RE.test(String(pg || '')) ? 'bunny' : '');
   async function loadSquadPtr(){
     const { data } = await sbc().from('app_kv').select('*').in('key', [SQ_KV, PN_KV]);
     (data || []).forEach(r => {
@@ -11622,7 +11625,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
     if(/bunny|باني/.test(n) || /bunny/.test(k)) return 'bunny';
     return 'italy';
   }
-  const noteFor = r => (r.srcKey === 'squad' ? (SQ.pageNotes[r.page] || '') : (srcNote(r.srcKey) || r.srcKey || ''));
+  const noteFor = r => (r.srcKey === 'squad' ? pageNote(r.page) : (srcNote(r.srcKey) || r.srcKey || ''));
   async function pendingCounts(){
     await loadDone(); if(!SQ.loaded) await loadSquadPtr(); if(!E.ptrLoaded) await loadPtr(); if(!E.srcLoaded && typeof loadSources === 'function') await loadSources();
     const list = [], byBrand = { italy:0, kidzzly:0, rs:0, bloom:0, socky:0, bunny:0 };
@@ -12735,8 +12738,9 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
     return n;
   }
   // notes: اللي متكتب في الصف نفسه، وإلا notes المصدر (في 📦 الكل)، وإلا اللي اتكتب في خطوة 2
-  const srcNote = k => k === 'squad' ? ((S.store.squad || {}).note || '') : ((srcOf(k) || {}).note || '');
-  const finalNote = r => (r.note || (r.srcKey === 'squad' ? (SQ.pageNotes[r.page] || '') : S.src === 'all' ? (S.allNotes[r.srcKey] ?? srcNote(r.srcKey)) : S.note) || '').trim();
+  const srcNote = k => { if(k === 'squad') return (S.store.squad || {}).note || ''; const x = srcOf(k) || {};
+    return x.note || (BUNNY_RE.test(String(k || '') + ' ' + String(x.label || '')) ? 'bunny' : ''); };
+  const finalNote = r => (r.note || (r.srcKey === 'squad' ? pageNote(r.page) : S.src === 'all' ? (S.allNotes[r.srcKey] ?? srcNote(r.srcKey)) : S.note) || '').trim();
   const notesOk = () => (S.rows || []).every(r => finalNote(r));
   // ✅ جاهز للرفع = مفيهوش مشاكل + الـ notes مكتوبة + مش متكرر في QP (أو إنت قلت ارفعه برضه)
   const dupStatus = r => String((r.qpDup && r.qpDup[0] && r.qpDup[0].st) || '—').replace(/\s*#\d+$/, '').trim() || '—';
@@ -12910,7 +12914,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
       const keys = [...new Set(S.rows.map(r => r.srcKey === 'squad' ? 'page:' + r.page : r.srcKey))];
       const cnt = k => S.rows.filter(r => (r.srcKey === 'squad' ? 'page:' + r.page : r.srcKey) === k).length;
       const lbl = k => k.startsWith('page:') ? '🏆 Squad · ' + k.slice(5) : srcLabel(k);
-      const val = k => k.startsWith('page:') ? (SQ.pageNotes[k.slice(5)] || '') : (S.allNotes[k] ?? srcNote(k));
+      const val = k => k.startsWith('page:') ? pageNote(k.slice(5)) : (S.allNotes[k] ?? srcNote(k));
       h += `<div class="up-ask ${done ? 'done' : ''}"><h3>2️⃣ ${done ? '✅' : '⚠️'} الـ notes لكل مصدر</h3>
         <p style="margin:0 0 10px;font-size:13.5px;color:#555">كل أوردر بيتكتب في عمود G بالـ notes بتاعة المصدر بتاعه.${S.rows.some(r => r.srcKey === 'squad') ? ' مصادر Squad (الصفحات) بتتحفظ، فالمرة الجاية بتتملى لوحدها.' : ''}</p>
         ${keys.map(k => `<div class="up-row" style="margin-bottom:8px"><b style="min-width:160px">${esc(lbl(k))} (${cnt(k)})</b>
@@ -12954,7 +12958,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
           <td><input data-upf="${i}.phone" value="${esc(phoneOf(r.phone))}" style="direction:ltr;text-align:left;min-width:105px"></td>
           <td><input data-upf="${i}.address" value="${esc(r.address)}" style="min-width:260px"></td>
           <td><input data-upf="${i}.amount" value="${esc(r.amount)}" style="min-width:70px"></td>
-          <td><input data-upf="${i}.note" value="${esc(r.note)}" placeholder="${esc((r.srcKey === 'squad' ? (SQ.pageNotes[r.page] || '') : S.src === 'all' ? (S.allNotes[r.srcKey] ?? srcNote(r.srcKey)) : S.note) || '— لسه —')}" style="min-width:110px"></td>
+          <td><input data-upf="${i}.note" value="${esc(r.note)}" placeholder="${esc((r.srcKey === 'squad' ? pageNote(r.page) : S.src === 'all' ? (S.allNotes[r.srcKey] ?? srcNote(r.srcKey)) : S.note) || '— لسه —')}" style="min-width:110px"></td>
           <td><input data-upf="${i}.contentsFull" value="${esc(contentsOf(r))}" style="min-width:220px"></td>
           <td>${qpCities ? `<select data-upcity="${i}" style="border:none;padding:6px;font-family:Arial;font-size:13px;background:transparent;min-width:100px"><option value="">— اختار —</option>${qpCities.map(c => `<option ${c.name === r.city ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select>` : `<input data-upf="${i}.city" value="${esc(r.city)}" style="min-width:80px">`}</td>
           <td class="qpd">${r.serial ? '' : (r.qpDup && r.qpDup.length ? r.qpDup.slice(0, 2).map(q => `<div>⚠️ مرفوع: <b>${esc(q.serial)}</b> · ${new Date(q.date).toLocaleDateString('ar-EG', { day:'numeric', month:'short' })} · ${esc(String(q.price || '').replace(/\.00$/, ''))} ج · ${esc(q.st)}</div>`).join('') + (r.qpDup.length > 2 ? `<div>+ ${r.qpDup.length - 2} كمان</div>` : '') + (r.dupOk ? '<div class="ok">✔ هيترفع برضه</div>' : `<button class="up-btn" data-dupok="${i}" style="padding:2px 8px;font-size:11.5px;margin-top:3px">✔ ارفعه برضه</button>`) : (D.done ? '<span class="ok">✔ جديد</span>' : (D.loading ? '⏳' : '')))}</td>
