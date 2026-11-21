@@ -11185,6 +11185,9 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
 .up-grp{margin:10px 0 14px;border:1px solid #f1c7c2;border-radius:10px;padding:8px}
 .up-grp-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-weight:700;font-size:14px;margin:0 0 6px;color:#7a2a1f}
 .up-grp-h b{background:#fdecea;border-radius:10px;padding:0 8px}
+.up-chips{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}
+.up-chips a{border:1.5px solid #f1c7c2;color:#7a2a1f;background:#fff;border-radius:20px;padding:4px 12px;font-size:13px;font-weight:700;text-decoration:none}
+.up-chips a b{margin-inline-start:4px}
 .up-grp-h span{font-weight:500;font-size:12px;color:var(--muted)}
 .up-sheet tr.up-gap td{height:6px;padding:0;background:#f1c7c2;border:none}
 .up-done{margin-top:14px}.up-done summary{cursor:pointer;font-weight:700;color:#2f7d55;padding:6px 0}
@@ -13008,20 +13011,23 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
         if(probs.length){
           // تقسيم المشاكل لمجموعات عشان تتحل بسرعة
           const isPhoneDup = r => r.errs.includes('الموبايل متكرر') || r.dupLoserOf;
+          // 🗂️ أهم 3 أنواع مشاكل فوق — كل نوع في مجموعة لوحده، والأوردر اللي فيه أكتر من مشكلة بيظهر في كل مجموعة تخصه
+          const badPh = r => r.errs.some(e => /^الموبايل (غلط|فاضي)/.test(e));
           const G = [
+            { k:'text', c:'#8e44ad', t:'✍️ الاسم أو العنوان مش كلام (text)', hint:'الاسم فيه أرقام، أو العنوان أرقام بس / قصير أوي / حروف مكررة — صلّحه من الخانة أو كلّم العميل', list: probs.filter(x => x.r.textErr) },
+            { k:'badphone', c:'#c0392b', t:'📵 رقم الموبايل غلط', hint:'لازم يبدأ بـ 010/011/012/015 (11 رقم) أو 10/11/12/15 من غير الـ 0 (10 أرقام)', list: probs.filter(x => badPh(x.r)) },
+            { k:'oneword', c:'#d35400', t:'🏠 العنوان كلمة واحدة بس', hint:'كمّل العنوان (المنطقة / الشارع) من الخانة أو كلّم العميل', list: probs.filter(x => x.r.oneWord) },
             { k:'phone', t:'📞 أرقام متكررة في الشيت', hint:'الأوردرات اللي ليها نفس الموبايل جنب بعض — دوس "🔀 خلّي الأغلى" يطلّع الأغلى فوق', list: probs.filter(x => isPhoneDup(x.r)).sort((a, b) => phoneOf(a.r.phone).localeCompare(phoneOf(b.r.phone)) || (numOf(b.r.amount) || 0) - (numOf(a.r.amount) || 0)) },
             { k:'qp', t:'🟡 مرفوعة في QP قبل كده', hint:'امسحها، أو دوس "✔ ارفعه برضه" لو العميل طالب أوردر جديد', list: probs.filter(x => !isPhoneDup(x.r) && isDupPending(x.r)) },
-            { k:'text', t:'✍️ الاسم أو العنوان مش كلام (text)', hint:'الاسم فيه أرقام، أو العنوان أرقام بس / قصير أوي / حروف مكررة — صلّحه من الخانة أو كلّم العميل', list: probs.filter(x => !isPhoneDup(x.r) && !isDupPending(x.r) && x.r.textErr) },
-            { k:'badphone', t:'📵 رقم الموبايل غلط', hint:'لازم يبدأ بـ 010/011/012/015 (11 رقم) أو 10/11/12/15 من غير الـ 0 (10 أرقام)', list: probs.filter(x => !isPhoneDup(x.r) && !isDupPending(x.r) && !x.r.textErr && x.r.errs.some(e => /^الموبايل (غلط|فاضي)/.test(e))) },
-            { k:'oneword', t:'🏠 العنوان كلمة واحدة بس', hint:'كمّل العنوان (المنطقة / الشارع) من الخانة أو كلّم العميل', list: probs.filter(x => !isPhoneDup(x.r) && !isDupPending(x.r) && !x.r.textErr && x.r.oneWord && !x.r.errs.some(e => /^الموبايل (غلط|فاضي)/.test(e))) },
             { k:'notes', t:'📝 الـ notes فاضية', hint:'اكتب الـ notes في خطوة 2 أو في خانة الأوردر', list: probs.filter(x => !isPhoneDup(x.r) && !isDupPending(x.r) && !x.r.errs.length && !x.r.upErr && !finalNote(x.r)) },
           ];
           const used = new Set(G.flatMap(g => g.list.map(x => x.i)));
           G.push({ k:'other', t:'❌ بيانات ناقصة أو غلط / QP رفضها', hint:'صلّح الخانة اللي فيها المشكلة (مكتوبة في عمود الحالة)', list: probs.filter(x => !used.has(x.i)) });
-          const phoneN = G[0].list.filter(x => x.r.errs.includes('الموبايل متكرر')).length;
+          const phoneN = G.find(g => g.k === 'phone').list.filter(x => x.r.errs.includes('الموبايل متكرر')).length;
           t += `<h4 class="up-sec bad">⚠️ فيها مشاكل — صلّحها أو امسحها <b>${probs.length}</b> <span>أول ما تتصلّح بتطلع فوق لوحدها</span></h4>
             <div class="up-row" style="margin:0 0 8px"><button class="up-btn" id="urgAll" style="background:#c0392b;border-color:#c0392b;color:#fff">🚨 ابعت كل اللي فيهم مشاكل لحد يصلّحهم (${probs.filter(x => !x.r.urgent || x.r.urgent.status !== 'open').length})</button>${phoneN ? `<button class="up-btn" id="upDupResolve" style="background:#2b6cb0;border-color:#2b6cb0;color:#fff">🔀 الأرقام المتكررة: خلّي الأغلى يطلع فوق (${phoneN})</button>` : ''}
-              ${probs.some(x => x.r.dupLoserOf) ? `<button class="up-btn" id="upDupLosersDel" style="padding:6px 12px;font-size:13px">🧹 امسح الأرخص المتكرر (${probs.filter(x => x.r.dupLoserOf).length})</button>` : ''}</div>`;
+              ${probs.some(x => x.r.dupLoserOf) ? `<button class="up-btn" id="upDupLosersDel" style="padding:6px 12px;font-size:13px">🧹 امسح الأرخص المتكرر (${probs.filter(x => x.r.dupLoserOf).length})</button>` : ''}</div>
+            <div class="up-chips">${G.filter(g => g.list.length).map(g => `<a href="#" data-upgo="upg-${g.k}" style="${g.c ? 'border-color:' + g.c + ';color:' + g.c : ''}">${g.t} <b>${g.list.length}</b></a>`).join('')}</div>`;
           // 🟡 أزرار سريعة للمرفوعين قبل كده: حسب حالتهم في QP
           const qpG = G.find(g => g.k === 'qp');
           if(qpG && qpG.list.length){
@@ -13034,7 +13040,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
               ${readyRows().length ? `<button class="up-btn ok" data-dupact="send" style="padding:6px 14px">🚀 ارفع الباقي الجاهز (${readyRows().length})</button>` : ''}</div>`;
           }
           G.filter(g => g.list.length).forEach(g => {
-            t += `<div class="up-grp"><div class="up-grp-h">${g.t} <b>${g.list.length}</b><span>${g.hint}</span></div>${g.tools || ''}
+            t += `<div class="up-grp" id="upg-${g.k}" style="${g.c ? 'border:2px solid ' + g.c : ''}"><div class="up-grp-h" style="${g.c ? 'color:' + g.c : ''}">${g.t} <b>${g.list.length}</b><span>${g.hint}</span></div>${g.tools || ''}
               <div class="up-sheet"><table>${head}<tbody>${g.list.map((x, j) => { let row = rowHtml(x.r, x.i);
                 // فاصل بين كل رقم متكرر والتاني
                 if(g.k === 'phone' && j > 0 && phoneOf(g.list[j - 1].r.phone) !== phoneOf(x.r.phone)) row = '<tr class="up-gap"><td colspan="13"></td></tr>' + row;
@@ -13522,6 +13528,7 @@ create policy "sheets: upload" on storage.objects for insert to authenticated wi
       dupCheck(); draw();
     };
     if($('upSend')) $('upSend').onclick = sendToQP;
+    document.querySelectorAll('[data-upgo]').forEach(a => a.onclick = e => { e.preventDefault(); const el = document.getElementById(a.dataset.upgo); if(el) el.scrollIntoView({ behavior:'smooth', block:'start' }); });
     document.querySelectorAll('[data-upforce]').forEach(b => b.onclick = () => { const r = S.rows[Number(b.dataset.upforce)]; r.forceOk = true; r.dupOk = true; flash(`✔ "${r.name || 'الأوردر'}" طلع فوق مع الجاهزين وهيترفع برغم المشكلة.`); });
     document.querySelectorAll('[data-upunforce]').forEach(b => b.onclick = () => { const r = S.rows[Number(b.dataset.upunforce)]; r.forceOk = false; draw(); });
     // 🗑️ مسح بوالص
