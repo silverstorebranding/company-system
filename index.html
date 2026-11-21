@@ -11189,6 +11189,8 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
 .up-grp-h b{background:#fdecea;border-radius:10px;padding:0 8px}
 .up-chips{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}
 .rd-out{margin-top:10px;border:1.5px solid #b7791f;border-radius:10px;padding:8px 12px;background:#fffaf0}.rd-out summary{cursor:pointer;font-weight:700;font-size:13.5px}
+.rd-view{margin-top:12px;border:2px solid;border-radius:12px;padding:10px}
+.rd-view-h{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 8px}.rd-view-h b{margin-inline-end:auto;font-size:15px}
 .rd-dl{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
 .rd-sum{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:12px}
 .rd-sum>div{display:flex;justify-content:space-between;align-items:center;gap:8px;border:2px solid var(--line);border-radius:12px;padding:10px 14px;background:#fff}
@@ -11993,6 +11995,11 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
     RD.msg = `🗑️ اتمسح ${done.length} أوردر من QP${fail ? ` — و ${fail} QP رفض مسحهم (السبب جنبهم)` : ''}.`;
     draw();
   }
+  const RD_VIEWS = [
+    { k:'in',   t:'✅ اتصوروا وموجودين Pending على QP', c:'#2f7d55', bg:'#eef8f1' },
+    { k:'not',  t:'⚠️ اتصوروا ومش Pending على QP',     c:'#b7791f', bg:'#fff4e5' },
+    { k:'rest', t:'⏳ Pending على QP ومااتصوروش',       c:'#b3261e', bg:'#fdecea' } ];
+  const rdList = k => k === 'in' ? (RD.inQ || []) : k === 'not' ? (RD.notQ || []) : (RD.rest || []);
   function readyCard(){
     const rest = RD.rest || [], left = rest.filter(x => !x.res), okN = X.list.length;
     return `<div class="card"><h3>📦 الجاهزين والباقي</h3>
@@ -12013,10 +12020,8 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
       </div>
       ${RD.msg ? `<div class="up-msg ${RD.msgErr ? 'err' : 'ok'}">${esc(RD.msg)}</div>` : ''}
       <div class="rd-dl">
-        <b style="width:100%;font-size:13.5px">📄 نزّل شيت${RD.rest ? '' : ' <small style="font-weight:400;color:var(--muted)">(أول ما تدوس هيحسب من QP الأول)</small>'}</b>
-        <button class="up-btn ok" data-rdsheet="in" ${RD.loading ? 'disabled' : ''}>⬇️ اتصوروا وموجودين Pending على QP${RD.rest ? ` (${(RD.inQ || []).length})` : ''}</button>
-        <button class="up-btn" data-rdsheet="not" style="background:#fff4e5;border-color:#b7791f" ${RD.loading ? 'disabled' : ''}>⬇️ اتصوروا ومش Pending على QP${RD.rest ? ` (${(RD.notQ || []).length})` : ''}</button>
-        <button class="up-btn" data-rdsheet="rest" style="background:#fdecea;border-color:#b3261e" ${RD.loading ? 'disabled' : ''}>⬇️ Pending على QP ومااتصوروش${RD.rest ? ` (${rest.filter(x => x.res !== 'ok').length})` : ''}</button>
+        <b style="width:100%;font-size:13.5px">📋 اعرض الليستة${RD.rest ? '' : ' <small style="font-weight:400;color:var(--muted)">(أول ما تدوس هيحسب من QP الأول)</small>'}</b>
+        ${RD_VIEWS.map(v => `<button class="up-btn${RD.view === v.k ? ' on' : ''}" data-rdview="${v.k}" style="background:${RD.view === v.k ? v.c : v.bg};border-color:${v.c};color:${RD.view === v.k ? '#fff' : v.c}" ${RD.loading ? 'disabled' : ''}>${RD.view === v.k ? '▼' : '▶'} ${v.t}${RD.rest ? ` (${rdList(v.k).length})` : ''}</button>`).join('')}
       </div>
       ${RD.rest ? `<div class="rd-sum">
           <div><span>📦 إجمالي الـ Pending على QP<br><small>كل الأيام</small></span><b>${RD.pendN}</b></div>
@@ -12024,18 +12029,18 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
           <div class="bad"><span>⏳ مرفوع ومتجهزش<br><small>${left.length !== rest.length ? `فاضل ${left.length} مااتمسحوش` : 'هيتمسحوا من QP'}</small></span><b>${rest.length}</b></div>
         </div>
         ${canDelete() ? `<div class="up-row" style="margin-top:10px"><button class="up-btn" id="upRdDel2" style="background:#b3261e;border-color:#b3261e;color:#fff;font-size:16px;padding:12px 22px" ${left.length && !RD.busy ? '' : 'disabled'}>${RD.busy ? '⏳ بيمسح...' : `🗑️ امسح الـ ${left.length} اللي متجهزوش من QP`}</button></div>` : ''}` : ''}
-      ${RD.rest && RD.out && RD.out.length ? `<details class="rd-out" open><summary>🔍 ${RD.out.length} بوليصة اتصورت بس مش Pending على QP — ليه؟ (${Object.entries(RD.out.reduce((a, x) => { const k = x.why.replace(/ \d{4}-\d\d-\d\d$/, ' يوم تاني'); a[k] = (a[k] || 0) + 1; return a; }, {})).map(([k, n]) => esc(k) + ': ' + n).join(' · ')})</summary>
-        <div class="up-sheet" style="margin-top:8px;max-height:280px;overflow:auto"><table><thead><tr><th>رقم الشحنة</th><th>العميل</th><th>السبب</th></tr></thead><tbody>
-        ${RD.out.map(x => `<tr><td style="padding:5px 8px;direction:ltr;font-weight:700">${esc(x.serial)}</td><td style="padding:5px 8px">${esc(x.name)}</td><td style="padding:5px 8px">${esc(x.why)}</td></tr>`).join('')}
-        </tbody></table></div></details>` : ''}
-      ${RD.rest && rest.length ? `<div class="up-sheet" style="margin-top:10px;max-height:360px;overflow:auto"><table><thead><tr><th>رقم الشحنة</th><th>العميل</th><th>الموبايل</th><th>المحتوى</th><th>السعر</th><th>notes</th><th>النتيجة</th><th></th></tr></thead><tbody>
-        ${rest.map((x, i) => { const q = x.q; return `<tr ${x.res === 'ok' ? 'style="background:#eef8f1;opacity:.75"' : ''}>
-          <td style="padding:6px 8px;direction:ltr;font-weight:700">${esc(q.serial)}</td><td style="padding:6px 8px">${esc(q.full_name || '')}</td>
-          <td style="padding:6px 8px;direction:ltr">${esc(q.phone || '')}</td><td style="padding:6px 8px;max-width:260px;white-space:normal">${esc(q.shipment_contents || '')}</td>
-          <td style="padding:6px 8px">${esc(String(q.total_amount ?? q.price ?? '').replace(/\.00$/, ''))}</td><td style="padding:6px 8px">${esc(q.notes || '')}</td>
-          <td class="err">${x.res === 'ok' ? '<span style="color:#2f7d55;font-weight:700">✅ اتمسح</span>' : x.res === 'err' ? '❌ ' + esc(x.err) : ''}</td>
-          <td class="x">${x.res ? '' : `<button data-rdkeep="${i}" title="سيبه على QP (مش هيتمسح)">✕</button>`}</td></tr>`; }).join('')}
-      </tbody></table></div>` : ''}
+      ${RD.rest && RD.view ? (() => { const v = RD_VIEWS.find(x => x.k === RD.view), L = rdList(RD.view);
+        return `<div class="rd-view" style="border-color:${v.c}"><div class="rd-view-h"><b style="color:${v.c}">${v.t} — ${L.length}</b>
+          ${L.length ? `<button class="up-btn" data-rdsheet="${v.k}" style="padding:6px 14px;font-size:13px">⬇️ نزّل الشيت ده</button>` : ''}
+          <button class="up-btn" data-rdview="${v.k}" style="padding:6px 12px;font-size:13px">✕ اقفل</button></div>
+          ${L.length ? `<div class="up-sheet" style="max-height:420px;overflow:auto"><table><thead><tr><th>#</th><th>رقم الشحنة</th><th>العميل</th><th>الموبايل</th><th>المحتوى</th><th>السعر</th><th>notes</th><th>${v.k === 'not' ? 'السبب' : 'الحالة'}</th>${v.k === 'rest' ? '<th></th>' : ''}</tr></thead><tbody>
+          ${L.map((x, j) => { const q = x.q || {}; return `<tr ${x.res === 'ok' ? 'style="background:#eef8f1;opacity:.75"' : ''}><td style="padding:6px 8px;color:var(--muted)">${j + 1}</td>
+            <td style="padding:6px 8px;direction:ltr;font-weight:700">${esc(q.serial ?? x.serial)}</td><td style="padding:6px 8px">${esc(q.full_name || '')}</td>
+            <td style="padding:6px 8px;direction:ltr">${esc(q.phone || '')}</td><td style="padding:6px 8px;max-width:260px;white-space:normal">${esc(q.shipment_contents || '')}</td>
+            <td style="padding:6px 8px">${esc(String(q.total_amount ?? q.price ?? '').replace(/\.00$/, ''))}</td><td style="padding:6px 8px">${esc(q.notes || '')}</td>
+            <td style="padding:6px 8px">${v.k === 'not' ? esc(x.why || '') : x.res === 'ok' ? '<span style="color:#2f7d55;font-weight:700">✅ اتمسح</span>' : x.res === 'err' ? '❌ ' + esc(x.err) : esc(window.QP && window.QP.api && x.q ? String(window.QP.api.label(q) || '').replace(/\s*#\d+$/, '') : '')}</td>
+            ${v.k === 'rest' ? `<td class="x">${x.res ? '' : `<button data-rdkeep="${RD.rest.indexOf(x)}" title="سيبه على QP (مش هيتمسح)">✕</button>`}</td>` : ''}</tr>`; }).join('')}
+          </tbody></table></div>` : '<p class="up-empty">مفيش أوردرات من النوع ده.</p>'}</div>`; })() : ''}
     </div>`;
   }
   function ppCard(){
@@ -13773,10 +13778,10 @@ create policy "sheets: upload" on storage.objects for insert to authenticated wi
     if($('upRdSync')) $('upRdSync').onclick = () => { SC.loaded = false; scLoad(); };
     if($('upRdRestore')) $('upRdRestore').onclick = scRestore;
     if($('upRdDel2')) $('upRdDel2').onclick = rdDelete;
-    document.querySelectorAll('[data-rdsheet]').forEach(b => b.onclick = async () => { const k = b.dataset.rdsheet;
-      if(!RD.rest){ await rdFetch(); if(!RD.rest) return; }
-      const L = k === 'in' ? RD.inQ : k === 'not' ? RD.notQ : RD.rest.filter(x => x.res !== 'ok');
-      if(!L || !L.length){ RD.msg = 'مفيش أوردرات من النوع ده.'; RD.msgErr = false; draw(); return; }
+    document.querySelectorAll('[data-rdview]').forEach(b => b.onclick = async () => { const k = b.dataset.rdview;
+      if(RD.view === k){ RD.view = null; draw(); return; }
+      RD.view = k; if(!RD.rest){ draw(); await rdFetch(); } draw(); });
+    document.querySelectorAll('[data-rdsheet]').forEach(b => b.onclick = () => { const k = b.dataset.rdsheet;
       if(k === 'in') rdSheet(RD.inQ || [], 'جاهزين وموجودين Pending على QP');
       else if(k === 'not') rdSheet(RD.notQ || [], 'اتصوروا ومش Pending على QP');
       else rdSheet((RD.rest || []).filter(x => x.res !== 'ok').map(x => ({ serial:x.q.serial, q:x.q, why:'' })), 'Pending على QP ومااتصوروش'); });
