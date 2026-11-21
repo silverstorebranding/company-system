@@ -11858,6 +11858,79 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
     catch(e){ X.msg = 'مااتحفظش: ' + e.message; X.msgErr = true; }
     draw();
   }
+  /* ✅ الجاهزين ← شيت + امسح الباقي:
+     البوالص اللي اتمسحت بالكاميرا = اتجهزت → شيت لـ QP
+     الباقي = أوردرات Pending على QP اترفعت في اليوم ده ومااتمسحتش → تتمسح من QP */
+  const RD = { day:'', loading:false, rest:null, busy:false, msg:'', msgErr:false };
+  const rdDay = () => RD.day || ymd(new Date());
+  async function rdFetch(){
+    const api = window.QP && window.QP.api;
+    if(!api || !api.hasCreds()){ RD.msg = 'لازم تكون عامل دخول QP من قسم 🚚 QP على الجهاز ده.'; RD.msgErr = true; draw(); return; }
+    RD.loading = true; RD.msg = ''; draw();
+    try{
+      const day = rdDay();
+      const all = await api.fetchRange(day, day, n => { RD.msg = `بيجيب أوردرات QP... ${n} أوردر`; RD.msgErr = false; draw(); });
+      const scanned = new Set(X.list.map(x => String(x.serial)));
+      const pend = all.filter(q => isPendingQ(q) && ymd(new Date(q.order_date)) === day);
+      RD.rest = pend.filter(q => !scanned.has(String(q.serial))).sort((a, b) => new Date(a.order_date) - new Date(b.order_date)).map(q => ({ q, res:'', err:'' }));
+      RD.msg = `📦 يوم ${day}: ${pend.length} أوردر Pending على QP — منهم ${pend.length - RD.rest.length} اتمسحوا (جاهزين) و ${RD.rest.length} باقيين.`; RD.msgErr = false;
+    }catch(e){ RD.msg = 'مقدرتش أجيب من QP: ' + e.message; RD.msgErr = true; }
+    RD.loading = false; draw();
+  }
+  async function rdDelete(){
+    const rows = (RD.rest || []).filter(x => !x.res);
+    if(!rows.length) return;
+    const scanned = new Set(X.list.map(x => String(x.serial)));
+    if(rows.some(x => scanned.has(String(x.q.serial)))){ RD.msg = '⚠️ فيه بوالص اتمسحت بالكاميرا بعد ما جبت الباقي — دوس "🔎 هات الباقي" تاني الأول.'; RD.msgErr = true; draw(); return; }
+    if(!confirm(`هيتمسح من QP نهائيًا ${rows.length} أوردر (الباقي اللي ماتجهزش يوم ${rdDay()}).\n\nتكمل؟`)) return;
+    RD.busy = true; draw();
+    const done = [];
+    for(const x of rows){
+      try{ await qpCall('order/' + encodeURIComponent(x.q.serial), { method:'DELETE' }); x.res = 'ok'; done.push(x); }
+      catch(e){ x.res = 'err'; x.err = e.message; }
+      RD.msg = `🗑️ بيمسح... ${done.length} من ${rows.length}`; RD.msgErr = false; draw();
+    }
+    // 📒 بيتسجلوا في سجل المسح عشان "♻️ رجّع اللي اتمسح" يقدر يرجّعهم لو البضاعة جت
+    if(done.length){
+      const by = me().full_name || me().username || '';
+      try{
+        if(X.log === null) await loadDelLog();
+        const add = done.map(x => ({ serial:String(x.q.serial), name:x.q.full_name || '', phone:x.q.phone || '', address:x.q.address || '', city:x.q.city || '', amount:x.q.total_amount ?? x.q.price ?? '', notes:x.q.notes || '', contents:x.q.shipment_contents || '', reason:'ماتجهزش', agent:'', by, at:new Date().toISOString() }));
+        X.log = add.concat(X.log || []).slice(0, 500);
+        await sbc().from('app_kv').upsert({ key:DEL_LOG_KV, value:{ list:X.log }, updated_at:new Date().toISOString(), updated_by_name:by });
+      }catch(e){}
+    }
+    const fail = rows.length - done.length;
+    RD.busy = false; RD.msgErr = !!fail;
+    RD.msg = `🗑️ اتمسح ${done.length} أوردر من QP${fail ? ` — و ${fail} QP رفض مسحهم (السبب جنبهم)` : ''}.`;
+    draw();
+  }
+  function readyCard(){
+    const rest = RD.rest || [], left = rest.filter(x => !x.res), okN = X.list.filter(x => x.q).length;
+    return `<div class="card"><h3>📦 الجاهزين والباقي</h3>
+      <div class="up-row" style="gap:16px;font-size:14px">
+        <span>✅ اتمسحوا (جاهزين): <b style="font-size:18px;color:#2f7d55">${X.list.length}</b></span>
+        ${RD.rest ? `<span>⏳ الباقي على QP: <b style="font-size:18px;color:#b3261e">${left.length}</b></span>` : ''}</div>
+      <div class="up-row" style="margin-top:10px">
+        <button class="up-btn ok" id="upScanSheet" ${okN ? '' : 'disabled'}>⬇️ نزّل شيت الجاهزين (${okN}) — ابعته لـ QP</button>
+      </div>
+      <div class="up-row" style="margin-top:10px">
+        <label style="font-size:13.5px">الأوردرات اللي اترفعت يوم <input type="date" id="upRdDay" value="${esc(rdDay())}" style="padding:7px 9px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit"></label>
+        <button class="up-btn" id="upRdFetch" ${RD.loading ? 'disabled' : ''}>${RD.loading ? '⏳ بيجيب...' : '🔎 هات الباقي (Pending ومااتمسحش)'}</button>
+        ${RD.rest && canDelete() ? `<button class="up-btn" id="upRdDel" style="background:#b3261e;border-color:#b3261e;color:#fff" ${left.length && !RD.busy ? '' : 'disabled'}>${RD.busy ? '⏳ بيمسح...' : `🗑️ امسح الباقي من QP (${left.length})`}</button>` : ''}
+        ${RD.rest && !canDelete() ? '<span style="font-size:12.5px;color:var(--muted)">🔐 مسح البوالص من QP محتاج صلاحية "مسح بوالص من QP".</span>' : ''}
+      </div>
+      ${RD.msg ? `<div class="up-msg ${RD.msgErr ? 'err' : 'ok'}">${esc(RD.msg)}</div>` : ''}
+      ${RD.rest && rest.length ? `<div class="up-sheet" style="margin-top:10px;max-height:360px;overflow:auto"><table><thead><tr><th>رقم الشحنة</th><th>العميل</th><th>الموبايل</th><th>المحتوى</th><th>السعر</th><th>notes</th><th>النتيجة</th><th></th></tr></thead><tbody>
+        ${rest.map((x, i) => { const q = x.q; return `<tr ${x.res === 'ok' ? 'style="background:#eef8f1;opacity:.75"' : ''}>
+          <td style="padding:6px 8px;direction:ltr;font-weight:700">${esc(q.serial)}</td><td style="padding:6px 8px">${esc(q.full_name || '')}</td>
+          <td style="padding:6px 8px;direction:ltr">${esc(q.phone || '')}</td><td style="padding:6px 8px;max-width:260px;white-space:normal">${esc(q.shipment_contents || '')}</td>
+          <td style="padding:6px 8px">${esc(String(q.total_amount ?? q.price ?? '').replace(/\.00$/, ''))}</td><td style="padding:6px 8px">${esc(q.notes || '')}</td>
+          <td class="err">${x.res === 'ok' ? '<span style="color:#2f7d55;font-weight:700">✅ اتمسح</span>' : x.res === 'err' ? '❌ ' + esc(x.err) : ''}</td>
+          <td class="x">${x.res ? '' : `<button data-rdkeep="${i}" title="سيبه على QP (مش هيتمسح)">✕</button>`}</td></tr>`; }).join('')}
+      </tbody></table></div>` : ''}
+    </div>`;
+  }
   function ppCard(){
     if(PP.list === null){ loadPP().then(draw); return '<div class="card"><p class="up-empty">⏳ بيحمّل المؤجلين...</p></div>'; }
     const due = ppDue(), y = ymd(new Date(Date.now() - 86400000)), fromY = due.filter(x => x.day === y).length, td = ppToday();
@@ -11931,7 +12004,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
   const X = { mode:'delete', list:[], scanning:false, scanner:null, busy:false, msg:'', msgErr:false, notify:true, cancelSquad:false, log:null, lastCode:'', lastAt:0, reason:DEL_REASONS[0] };
   // 💾 ليستة البوالص اللي اتصورت بتتحفظ على الجهاز — عشان ماتختفيش لو الصفحة اتقفلت أو اتعملها Refresh (بتفضل لحد "تفضّي الليستة")
   const SCAN_LS = 'upScanList';
-  try{ const sv = JSON.parse(localStorage.getItem(SCAN_LS) || 'null'); if(sv && Array.isArray(sv.list)){ X.list = sv.list.filter(x => x && x.serial && !x.loading); if(sv.mode && ['delete', 'sheet', 'exclude'].includes(sv.mode)) X.mode = sv.mode; } }catch(e){}
+  try{ const sv = JSON.parse(localStorage.getItem(SCAN_LS) || 'null'); if(sv && Array.isArray(sv.list)){ X.list = sv.list.filter(x => x && x.serial && !x.loading); if(sv.mode && ['delete', 'sheet', 'exclude', 'ready'].includes(sv.mode)) X.mode = sv.mode; } }catch(e){}
   let scanSaved = '';
   function saveScanList(){
     try{ const v = JSON.stringify({ mode:['delete', 'sheet', 'exclude'].includes(X.mode) ? X.mode : undefined, list:X.list.filter(x => !x.loading), at:Date.now() });
@@ -12295,19 +12368,20 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
     let h = `<div class="up-tabs" style="margin-bottom:10px">
         ${canDelete() ? `<button class="${!SH ? 'on' : ''}" style="--bc:#b3261e" data-xmode="delete">🗑️ امسحها من QP</button>` : ''}
         <button class="${SH ? 'on' : ''}" style="--bc:#2b6cb0" data-xmode="sheet">📄 اعمل منها شيت</button>
+        <button class="${X.mode === 'ready' ? 'on' : ''}" style="--bc:#2f7d55" data-xmode="ready">✅ الجاهزين ← شيت + امسح الباقي</button>
         <button class="${X.mode === 'restore' ? 'on' : ''}" style="--bc:#2f7d55" data-xmode="restore">♻️ رجّع اللي اتمسح</button>
         <button class="${X.mode === 'exclude' ? 'on' : ''}" style="--bc:#6b46c1" data-xmode="exclude">⏭️ شيت Pending من غيرهم</button></div>`;
     if(X.mode === 'restore') return h + restoreHtml();
-    const EX = X.mode === 'exclude';
+    const EX = X.mode === 'exclude', RDY = X.mode === 'ready';
     h += `
-<div class="card"><h3>${EX ? '⏭️ بوالص مش جاهزة — شيت الـ Pending من غيرها' : SH ? '📄 بوالص ← شيت' : '🗑️ مسح بوالص من QP'}</h3>
-      <p style="margin:0 0 10px;font-size:13.5px;color:var(--muted)">${EX ? 'صوّري بوالص الأوردرات اللي <b>لسه ماتجهزتش</b> (أو اكتبي أرقامها)، وبعدين نزّلي شيت الـ Pending من QP <b>من غيرها</b>. البوالص دي <b>مش بتتمسح من QP</b> — هتفضل Pending وتطلع بكرة عادي.' : SH ? 'صوّر باركود البوالص (أو اكتب أرقامها) — السيستم بيجيب بيانات كل بوليصة من QP: العميل، الموبايل، العنوان، المحتوى، السعر، الـ notes والحالة — وتنزّلهم في شيت.' : (me().is_admin ? '' : '🔐 معاك صلاحية مسح البوالص. ') + 'امسح باركود البوالص اللي أوردراتها ماتجهزتش، راجع الليستة، وبعدين امسحهم من QP مرة واحدة. QP بيمسح الأوردرات اللي لسه <b>Pending</b> بس.'}</p>
+<div class="card"><h3>${RDY ? '✅ الأوردرات اللي اتجهزت ← شيت لـ QP + امسح الباقي' : EX ? '⏭️ بوالص مش جاهزة — شيت الـ Pending من غيرها' : SH ? '📄 بوالص ← شيت' : '🗑️ مسح بوالص من QP'}</h3>
+      <p style="margin:0 0 10px;font-size:13.5px;color:var(--muted)">${RDY ? '1) امسح باركود بوالص الأوردرات <b>اللي اتجهزت</b> (أو اكتب أرقامها). 2) نزّل شيت الجاهزين وابعته لـ QP. 3) هات الباقي (Pending ومااتمسحش) وامسحه من QP.' : EX ? 'صوّري بوالص الأوردرات اللي <b>لسه ماتجهزتش</b> (أو اكتبي أرقامها)، وبعدين نزّلي شيت الـ Pending من QP <b>من غيرها</b>. البوالص دي <b>مش بتتمسح من QP</b> — هتفضل Pending وتطلع بكرة عادي.' : SH ? 'صوّر باركود البوالص (أو اكتب أرقامها) — السيستم بيجيب بيانات كل بوليصة من QP: العميل، الموبايل، العنوان، المحتوى، السعر، الـ notes والحالة — وتنزّلهم في شيت.' : (me().is_admin ? '' : '🔐 معاك صلاحية مسح البوالص. ') + 'امسح باركود البوالص اللي أوردراتها ماتجهزتش، راجع الليستة، وبعدين امسحهم من QP مرة واحدة. QP بيمسح الأوردرات اللي لسه <b>Pending</b> بس.'}</p>
       <div class="up-row">
         ${X.scanning ? '<button class="up-btn" id="upScanStop">⏹️ وقّف الكاميرا</button>' : '<button class="up-btn pri" id="upScanStart">📷 امسح البوالص بالكاميرا</button>'}
         <label class="up-file">📸 صوّر البوليصة<input type="file" id="upPhoto" accept="image/*" capture="environment"></label>
         <input id="upSerial" placeholder="أو اكتب رقم الشحنة (أو أكتر من رقم)" style="max-width:260px;padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;direction:ltr">
         <button class="up-btn" id="upSerialAdd">➕ ضيف</button>
-        <label style="font-size:13px;${SH || EX ? 'display:none' : ''}">السبب الافتراضي <select id="upDelReason" style="padding:7px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit">${DEL_REASONS.map(r => `<option ${X.reason === r ? 'selected' : ''}>${r}</option>`).join('')}</select></label>
+        <label style="font-size:13px;${SH || EX || RDY ? 'display:none' : ''}">السبب الافتراضي <select id="upDelReason" style="padding:7px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit">${DEL_REASONS.map(r => `<option ${X.reason === r ? 'selected' : ''}>${r}</option>`).join('')}</select></label>
       </div>
       ${scanCounter()}
       <div id="upScanBox" style="${X.scanning ? 'display:block;margin-top:12px;width:100%;max-width:460px;min-height:240px;border-radius:12px;overflow:hidden;background:#000' : 'display:none'}"></div>
@@ -12315,21 +12389,22 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
       ${X.msg ? `<div class="up-msg ${X.msgErr ? 'err' : 'ok'}">${esc(X.msg)}</div>` : ''}
     </div>`;
     if(EX) h += ppCard();
+    if(RDY) h += readyCard();
     if(X.list.length){
-      h += `<div class="card"><h3>📋 ${EX ? 'البوالص المؤجلة لبكرة' : 'البوالص'} (${X.list.length})</h3>
-        <div class="up-sheet"><table><thead><tr><th>رقم الشحنة</th><th>العميل</th><th>الموبايل</th><th>المحتوى</th><th>السعر</th><th>notes</th><th>الحالة في QP</th>${SH || EX ? '' : '<th>السبب</th><th>النتيجة</th>'}<th></th></tr></thead><tbody>
+      h += `<div class="card"><h3>📋 ${EX ? 'البوالص المؤجلة لبكرة' : RDY ? 'البوالص الجاهزة' : 'البوالص'} (${X.list.length})</h3>
+        <div class="up-sheet"><table><thead><tr><th>رقم الشحنة</th><th>العميل</th><th>الموبايل</th><th>المحتوى</th><th>السعر</th><th>notes</th><th>الحالة في QP</th>${SH || EX || RDY ? '' : '<th>السبب</th><th>النتيجة</th>'}<th></th></tr></thead><tbody>
         ${X.list.map((x, i) => { const q = x.q || {}, pend = x.q && isPendingQ(q);
           const stTxt = x.loading ? '⏳' : x.err && !x.q ? '❌ ' + x.err : (window.QP && window.QP.api && x.q ? String(window.QP.api.label(q) || '').replace(/\s*#\d+$/, '') : (q.status || ''));
-          return `<tr class="${x.res === 'ok' ? '' : (x.q && !pend && !SH && !EX) || (x.err && !x.q) || x.res === 'err' ? 'bad' : ''}" ${x.res === 'ok' ? 'style="background:#eef8f1;opacity:.75"' : ''}>
+          return `<tr class="${x.res === 'ok' ? '' : (x.q && !pend && !SH && !EX && !RDY) || (x.err && !x.q) || x.res === 'err' ? 'bad' : ''}" ${x.res === 'ok' ? 'style="background:#eef8f1;opacity:.75"' : ''}>
             <td style="padding:6px 8px;direction:ltr;font-weight:700">${esc(x.serial)}</td><td style="padding:6px 8px">${esc(q.full_name || '')}</td>
             <td style="padding:6px 8px;direction:ltr">${esc(q.phone || '')}</td><td style="padding:6px 8px;max-width:260px;white-space:normal">${esc(q.shipment_contents || '')}</td>
             <td style="padding:6px 8px">${esc(String(q.total_amount ?? q.price ?? '').replace(/\.00$/, ''))}</td><td style="padding:6px 8px">${esc(q.notes || '')}</td>
-            <td style="padding:6px 8px;white-space:nowrap">${esc(stTxt)}${x.q && !pend && !x.res && !SH && !EX ? '<br><small style="color:#b3261e">مش Pending — مش هيتمسح</small>' : ''}</td>
-            ${SH || EX ? '' : `<td><select data-delr="${i}" style="border:none;background:transparent;font-family:inherit;padding:6px" ${x.res ? 'disabled' : ''}>${DEL_REASONS.map(r => `<option ${x.reason === r ? 'selected' : ''}>${r}</option>`).join('')}</select></td>
+            <td style="padding:6px 8px;white-space:nowrap">${esc(stTxt)}${x.q && !pend && !x.res && !SH && !EX && !RDY ? '<br><small style="color:#b3261e">مش Pending — مش هيتمسح</small>' : ''}</td>
+            ${SH || EX || RDY ? '' : `<td><select data-delr="${i}" style="border:none;background:transparent;font-family:inherit;padding:6px" ${x.res ? 'disabled' : ''}>${DEL_REASONS.map(r => `<option ${x.reason === r ? 'selected' : ''}>${r}</option>`).join('')}</select></td>
             <td class="err">${x.res === 'ok' ? '<span style="color:#2f7d55;font-weight:700">✅ اتمسح</span>' : x.res === 'err' ? '❌ ' + esc(x.err) : ''}</td>`}
             <td class="x">${x.res === 'ok' ? '' : `<button data-delx="${i}" title="شيلها من الليستة">✕</button>`}</td></tr>`; }).join('')}
         </tbody></table></div>
-        ${EX ? '' : SH ? `<div class="up-row" style="margin-top:12px">
+        ${EX ? '' : RDY ? '<div class="up-row" style="margin-top:12px"><button class="up-btn" id="upDelClear">🧹 فضّي الليستة</button></div>' : SH ? `<div class="up-row" style="margin-top:12px">
           <button class="up-btn ok" id="upScanSheet" ${X.list.some(x => x.q) ? '' : 'disabled'}>⬇️ نزّل الشيت (${X.list.filter(x => x.q).length} بوليصة)</button>
           <button class="up-btn" id="upDelClear">🧹 فضّي الليستة</button></div>` : `
         <div class="up-row" style="margin-top:12px;font-size:13.5px">
@@ -12341,7 +12416,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
           <button class="up-btn" id="upDelClear">🧹 فضّي الليستة</button>
         </div>`}</div>`;
     }
-    if(SH || EX){}
+    if(SH || EX || RDY){}
     else if(X.log === null){ loadDelLog().then(draw); }
     else if(X.log.length){
       h += `<div class="card"><h3 style="display:flex;justify-content:space-between;align-items:center">📒 سجل البوالص اللي اتمسحت <button class="up-btn" id="upDelLogX" style="padding:5px 12px;font-size:12.5px">⬇️ نزّل السجل</button></h3>
@@ -13560,6 +13635,10 @@ create policy "sheets: upload" on storage.objects for insert to authenticated wi
     if($('upRestQ')) $('upRestQ').oninput = e => { X.q = e.target.value; clearTimeout(X.qt); X.qt = setTimeout(() => { draw(); const el = document.getElementById('upRestQ'); if(el){ el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }, 350); };
     if($('upBackScan')) $('upBackScan').onclick = e => { e.preventDefault(); X.mode = 'restore'; switchSrc('delete'); };
     if($('upScanSheet')) $('upScanSheet').onclick = scanSheet;
+    if($('upRdDay')) $('upRdDay').onchange = e => { RD.day = e.target.value; RD.rest = null; RD.msg = ''; draw(); };
+    if($('upRdFetch')) $('upRdFetch').onclick = rdFetch;
+    if($('upRdDel')) $('upRdDel').onclick = rdDelete;
+    document.querySelectorAll('[data-rdkeep]').forEach(b => b.onclick = () => { RD.rest.splice(Number(b.dataset.rdkeep), 1); draw(); });
     if($('upExDay')) $('upExDay').onchange = e => { QD.day = e.target.value || ymd(new Date()); QD.dayTouched = !!e.target.value && e.target.value !== ymd(new Date()); };
     if($('upPPGo')) $('upPPGo').onclick = exportPendingNext;
     if($('upPPYest')) $('upPPYest').onclick = ppAddYesterday;
@@ -13636,11 +13715,8 @@ create policy "sheets: upload" on storage.objects for insert to authenticated wi
     document.querySelectorAll('[data-grpdel]').forEach(b => b.onclick = () => {
       const rows = b.dataset.grpdel.split(',').map(Number).map(i => S.rows[i]).filter(r => r && !r.serial);
       if(!rows.length) return;
-      if(!confirm(`هيتمسح ${rows.length} أوردر من "${b.dataset.grpname}" ومش هيظهروا تاني. تكمل؟`)) return;
-      rows.forEach(r => { if(isEasy(r.srcKey) || r.srcKey === 'squad') S.skipped.add(skipKey(r)); });
-      S.rows = S.rows.filter(r => !rows.includes(r)); dupCheck();
-      const urg = rows.filter(r => r.urgentId); if(urg.length) closeUrgent(urg);
-      if(rows.some(r => isEasy(r.srcKey) || r.srcKey === 'squad')) persistTaken();
+      if(!confirm(`هيتشال ${rows.length} أوردر من "${b.dataset.grpname}" من الشيت. تكمل؟`)) return;
+      S.rows = S.rows.filter(r => !rows.includes(r)); dupCheck();   // بيتشالوا من الشيت بس (مش بيتسجلوا إنهم اتاخدوا)
       flash(`🗑️ اتمسح ${rows.length} أوردر — الباقي ${S.rows.filter(r => !r.serial).length}.`);
     });
     document.querySelectorAll('[data-updel]').forEach(b => b.onclick = () => {
