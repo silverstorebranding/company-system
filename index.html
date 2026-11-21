@@ -11143,7 +11143,7 @@ grant select, insert, update on public.meta_ads_settings to authenticated;`;
 .up-btn.ok{background:#2f7d55;border-color:#2f7d55;color:#fff}
 .pp-up{border:2px solid #2b6cb0}
 .pp-up h3 b{background:#2b6cb0;color:#fff;border-radius:20px;padding:1px 10px;font-size:13px;margin-inline-start:6px}
-.pp-list{max-height:280px;overflow:auto;border:1px solid var(--line);border-radius:9px}
+.pp-list{max-height:420px;overflow:auto;border:1px solid var(--line);border-radius:9px}
 .pp-li{display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border-bottom:1px solid var(--line);font-size:13.5px;cursor:pointer}
 .pp-li:last-child{border-bottom:none}
 .pp-li input{margin-top:4px;width:17px;height:17px;flex:none}
@@ -12875,11 +12875,11 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
     if(!PPD.couriers){ ppCouriers().then(() => { if(isUP()) draw(); }).catch(() => {}); }
     const pick = L.filter(r => !PPD.off.has(r)), sum = pick.reduce((a, r) => a + (numOf(r.amount) || 0), 0);
     const C = PPD.couriers || [];
-    return `<div class="card pp-up"><h3>🛵 مدينة نصر ومصر الجديدة — لمناديب الدفع المقدم <b>${L.length}</b></h3>
-      <p style="margin:0 0 10px;font-size:13px;color:var(--muted)">الأوردرات دي عنوانها في مدينة نصر أو مصر الجديدة. علّم اللي هيروح للمندوب واختاره ودوس ابعت — هتتشال من الشيت ومش هتترفع على QP، والمندوب هيلاقيها في قسم <b>🛵 مناديب الدفع المقدم</b>.</p>
+    return `<div class="card pp-up"><h3>🛵 أوردرات مناديب الدفع المقدم <b>${L.length}</b> <span style="font-weight:400;font-size:13px;color:var(--muted)">${L.reduce((a, r) => a + (numOf(r.amount) || 0), 0).toLocaleString('ar-EG')} ج</span></h3>
+      <p style="margin:0 0 10px;font-size:13px;color:var(--muted)">أوردرات مدينة نصر ومصر الجديدة — <b>مش بتترفع على QP ومش في شيت QP</b>. اختار المندوب ودوس ابعت، وهتروح لقسم <b>🛵 مناديب الدفع المقدم</b>. (لو في أوردر مش عايزه يروح دلوقتي شيل علامته — هيفضل هنا.)</p>
       ${PPD.missing ? `<div class="up-msg err">جدول مناديب الدفع المقدم لسه مش متعمل في Supabase — ${me().is_admin ? 'افتح قسم 🛵 مناديب الدفع المقدم وانسخ الـ SQL وشغّله.' : 'كلّم الأدمن.'}</div>` : ''}
       <div class="pp-list">${L.map(r => { const i = S.rows.indexOf(r); return `<label class="pp-li"><input type="checkbox" data-ppchk="${i}" ${PPD.off.has(r) ? '' : 'checked'}>
-        <span><b>${esc(r.name || '—')}</b> · <span dir="ltr">${esc(phoneOf(r.phone) ? '0' + phoneOf(r.phone) : r.phone)}</span> · ${esc(r.amount || '')} ج<br><small>${esc(r.address || '')}${r.city ? ' — ' + esc(r.city) : ''}</small></span></label>`; }).join('')}</div>
+        <span><b>${esc(r.name || '—')}</b> · <span dir="ltr">${esc(phoneOf(r.phone) ? '0' + phoneOf(r.phone) : r.phone)}</span> · ${esc(r.amount || '')} ج<br><small>📍 ${esc(r.address || '')}${r.city ? ' — ' + esc(r.city) : ''}</small>${contentsOf(r) ? `<br><small>📦 ${esc(contentsOf(r))}</small>` : ''}<br><small style="color:#2b6cb0">${esc(r.srcKey === 'squad' ? '🏆 Squad · ' + (r.page || '') : srcLabel(r.srcKey))}</small></span></label>`; }).join('')}</div>
       <div class="up-row" style="margin-top:10px;align-items:center">
         ${!PPD.couriers ? '<span style="color:var(--muted)">⏳ بيحمّل المناديب...</span>' : C.length ? `<select id="ppTo" style="padding:9px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;min-width:180px"><option value="">— اختار المندوب —</option>${C.map(p => `<option value="${esc(p.id)}" ${PPD.to === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select>
           <button class="up-btn ok" id="ppSend" ${PPD.sending || !pick.length ? 'disabled' : ''}>${PPD.sending ? '⏳ بيبعت...' : `🛵 ابعت ${pick.length} أوردر للمندوب (${sum.toLocaleString('ar-EG')} ج)`}</button>`
@@ -12918,7 +12918,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
     PPD.sending = false;
     persistTaken();
     if(rows.some(r => r.urgentId)) closeUrgent(rows);
-    flash(`🛵 اتبعت ${recs.length} أوردر لـ ${to.name}${rows.length > recs.length ? ` (و ${rows.length - recs.length} كانوا اتبعتوله قبل كده فاتشالوا بس)` : ''} — واتشالوا من شيت QP.`);
+    flash(`🛵 اتبعت ${recs.length} أوردر لـ ${to.name}${rows.length > recs.length ? ` (و ${rows.length - recs.length} كانوا اتبعتوله قبل كده فاتشالوا بس)` : ''} — وراحوا لقسم 🛵 مناديب الدفع المقدم.`);
   }
 
   /* 🔁 الأوردرات اللي اترفعت بالفعل على QP (من السيستم أو مانوال على السايت) في آخر 3 أيام بتتشال لوحدها
@@ -13255,7 +13255,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
   const problemsOf = r => [...r.errs, ...(finalNote(r) ? [] : ['notes فاضية']), ...(r.upErr ? ['❌ QP: ' + r.upErr] : []), ...(isDupPending(r) ? ['⚠️ مرفوع في QP قبل كده'] : [])];
   // 🏆 أوردرات Squad دايماً في الجاهزين (من غير خانات المشاكل) — خدمة العملاء مسؤولة عنها
   // ✔ forceOk = إنت وافقت يترفع برغم المشاكل (من زرار "✔ ارفعه" جنب الأوردر)
-  const isReady = r => !r.serial && (r.srcKey === 'squad' || r.forceOk || !problemsOf(r).length);
+  const isReady = r => !r.serial && !isPPArea(r) && (r.srcKey === 'squad' || r.forceOk || !problemsOf(r).length);
   const readyRows = () => (S.rows || []).filter(isReady);
   const srcLabel = k => k === 'squad' ? '🏆 Squad' : k === 'restore' ? '♻️ اتمسحت قبل كده' : ((srcOf(k) || {}).label || k);
 
@@ -13430,7 +13430,8 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
       <div class="up-chips">${NOTE_SUGGEST.map(n => `<button type="button" data-upnote="${esc(n)}">${esc(n)}</button>`).join('')}</div></div>`;
 
     // 3) الشيت
-    const bad = S.rows.filter(r => r.errs.length).length, total = S.rows.reduce((a, r) => a + (numOf(r.amount) || 0), 0);
+    const QR = S.rows.filter(r => r.serial || !isPPArea(r));   // 🛵 أوردرات مناديب الدفع المقدم مش في شيت QP
+    const bad = QR.filter(r => r.errs.length).length, total = QR.reduce((a, r) => a + (numOf(r.amount) || 0), 0);
     // 🔁 مقارنة بالمرفوع على QP في آخر 3 أيام (مانوال أو من السيستم)
     if(S.rows && S.rows.length){ const dN = S.rows.filter(r => !r.serial && r.qpDup && r.qpDup.length && !r.dupOk).length;
       h += `<div class="card qpcmp ${dN ? 'bad' : ''}"><b>🔁 مقارنة بـ QP (آخر ${DUP_DAYS} أيام):</b> ${D.loading ? '⏳ بيقارن...' : !D.done ? 'لسه ماتقارنش — <button class="up-btn" id="qpcmpGo" style="padding:4px 10px;font-size:12.5px">🔎 قارن دلوقتي</button>'
@@ -13439,7 +13440,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
     h += prepaidCard();
     h += urgentBar() + urgPickHtml();
     h += `<div class="card"><h3>3️⃣ الشيت زي ما هيترفع على QP</h3>
-      <div class="up-kpis"><div><b>${S.rows.length}</b><span>أوردر</span></div><div><b>${total.toLocaleString('ar-EG')} ج</b><span>الإجمالي</span></div>
+      <div class="up-kpis"><div><b>${QR.length}</b><span>أوردر</span></div><div><b>${total.toLocaleString('ar-EG')} ج</b><span>الإجمالي</span></div>
         <div><b style="color:${bad ? '#b3261e' : '#2f7d55'}">${bad ? bad : '✔'}</b><span>${bad ? 'فيهم مشاكل' : 'كله تمام'}</span></div>
         ${D.done ? (() => { const n = S.rows.filter(r => !r.serial && r.qpDup && r.qpDup.length).length; return `<div><b style="color:${n ? '#b7791f' : '#2f7d55'}">${n || '✔'}</b><span>${n ? 'مرفوعين في QP قبل كده' : 'مفيش تكرار في QP'}</span></div>`; })() : ''}</div>
       <div class="up-row" style="margin:0 0 8px">${D.msg ? `<span style="font-size:13px;color:${/⚠️|مقدرتش|لازم/.test(D.msg) ? '#b7791f' : 'var(--muted)'}">${esc(D.msg)}</span>` : ''}
@@ -13460,7 +13461,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
           <td class="qpd">${r.serial ? '' : (r.qpDup && r.qpDup.length ? r.qpDup.slice(0, 2).map(q => `<div>⚠️ مرفوع: <b>${esc(q.serial)}</b> · ${new Date(q.date).toLocaleDateString('ar-EG', { day:'numeric', month:'short' })} · ${esc(String(q.price || '').replace(/\.00$/, ''))} ج · ${esc(q.st)}</div>`).join('') + (r.qpDup.length > 2 ? `<div>+ ${r.qpDup.length - 2} كمان</div>` : '') + (r.dupOk ? '<div class="ok">✔ هيترفع برضه</div>' : `<button class="up-btn" data-dupok="${i}" style="padding:2px 8px;font-size:11.5px;margin-top:3px">✔ ارفعه برضه</button>`) : (D.done ? '<span class="ok">✔ جديد</span>' : (D.loading ? '⏳' : '')))}</td>
           <td class="err">${r.serial ? `<span style="color:#2f7d55;font-weight:700">✅ اترفع ${esc(r.serial)}</span>` : (r.forceOk && problemsOf(r).length ? '<b style="color:#2f7d55">✔ وافقت يترفع:</b> ' : '') + esc(problemsOf(r).filter(x => !/مرفوع في QP قبل كده/.test(x)).join('، '))}</td>
           <td class="x">${r.serial ? '' : `${!isReady(r) ? `<button data-upforce="${i}" class="up-force" title="موافق يترفع برغم المشكلة — هيطلع فوق مع الجاهزين">✔ ارفعه</button>` : ''}${r.forceOk ? `<button data-upunforce="${i}" title="رجّعه للمشاكل">↩</button>` : ''}${!isReady(r) && !(r.urgent && r.urgent.status === 'open') ? `<button data-urgone="${i}" title="ابعته لحد يصلّحه (أوردرات عاجلة)">🚨</button>` : ''}<button data-updel="${i}" title="امسح الأوردر ده">✕</button>`}</td></tr>`;
-        const idx = S.rows.map((r, i) => ({ r, i }));
+        const idx = S.rows.map((r, i) => ({ r, i })).filter(x => x.r.serial || !isPPArea(x.r));
         const ready = idx.filter(x => isReady(x.r)), probs = idx.filter(x => !x.r.serial && !isReady(x.r)), done = idx.filter(x => x.r.serial);
         let t = `<h4 class="up-sec ok">✅ جاهزة للرفع على QP <b>${ready.length}</b> <span>${ready.reduce((a, x) => a + (numOf(x.r.amount) || 0), 0).toLocaleString('ar-EG')} ج</span></h4>`;
         t += ready.length ? `<div class="up-sheet"><table>${head}<tbody>${ready.map(x => rowHtml(x.r, x.i)).join('')}</tbody></table></div>` : '<p class="up-empty">مفيش أوردرات جاهزة لسه — صلّح اللي تحت وهتطلع هنا لوحدها.</p>';
@@ -13512,7 +13513,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
       <p style="font-size:12px;color:var(--muted);margin:8px 0 0">في الرفع المباشر بيتبعت تاريخ ووقت الرفع كـ order date ووزن 1 كجم، وفي الشيت اللي بيتنزّل بيتسابوا فاضيين زي شيت QP. المدينة اختيارية: بتتختار لوحدها لو مكتوبة في العنوان، ولو مش موجودة الأوردر بيترفع من غيرها.${S.rows.some(r => r.agent) ? ' الموظفة والمصدر اللي في الكوبي مش بيدخلوا الشيت.' : ''}</p></div>`;
 
     // 4) الموافقة
-    const R = readyRows(), probN = S.rows.filter(r => !r.serial && !isReady(r)).length;
+    const R = readyRows(), probN = S.rows.filter(r => !r.serial && !isPPArea(r) && !isReady(r)).length;
     const canSend = R.length && qpCities && !S.sending;
     h += `<div class="card"><h3>4️⃣ الموافقة والرفع على QP</h3>
       ${probN ? `<p style="color:#b7791f;margin:0 0 10px;font-size:14px">⚠️ فيه ${probN} أوردر فيهم مشاكل — مش هيترفعوا دلوقتي. هيترفع الجاهزين بس (${R.length}).</p>` : ''}
@@ -14072,7 +14073,7 @@ create policy "sheets: upload" on storage.objects for insert to authenticated wi
     if($('qpcmpDel')) $('qpcmpDel').onclick = () => { const b = $('upDupDel'); if(b) b.click(); };
     // 🚨 أوردرات عاجلة
     document.querySelectorAll('[data-urgone]').forEach(b => b.onclick = () => sendUrgent([S.rows[Number(b.dataset.urgone)]]));
-    if($('urgAll')) $('urgAll').onclick = () => sendUrgent(S.rows.filter(r => !r.serial && !isReady(r)));
+    if($('urgAll')) $('urgAll').onclick = () => sendUrgent(S.rows.filter(r => !r.serial && !isPPArea(r) && !isReady(r)));
     if($('urgTo')) $('urgTo').onchange = e => { S.urgPick.to = e.target.value; };
     if($('urgNote')) $('urgNote').oninput = e => { S.urgPick.note = e.target.value; };
     if($('urgSend')) $('urgSend').onclick = confirmUrgent;
