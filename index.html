@@ -13084,9 +13084,50 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
           <button class="up-btn" data-srccopy="${esc(hookUrl(x.key))}" style="padding:3px 10px;font-size:12px">📋 انسخ</button></div>
       </div>`).join('')}
       <datalist id="upNotes">${NOTE_SUGGEST.map(n => `<option value="${esc(n)}">`).join('')}</datalist>
+      ${easyFieldsHtml()}
       <div class="up-row"><button class="up-btn" id="upSrcAdd">➕ مصدر جديد</button>
         <button class="up-btn ok" id="upSrcSave" ${E.srcSaving ? 'disabled' : ''}>${E.srcSaving ? '⏳ بيتحفظ...' : '💾 حفظ المصادر'}</button></div>
       <p style="font-size:12px;color:var(--muted);margin:10px 0 0">لو مسحت مصدر، أوردراته اللي وصلت قبل كده بتفضل في Supabase بس مش هتظهر هنا. الكود بيتعمل لوحده من الاسم ومينفعش يتغير بعد ما تحفظ (عشان رابط الـ Webhook).</p></div>`;
+  }
+
+  /* 🔍 EasyOrders بيبعت إيه؟ — بيقرا آخر أوردرات وصلت من الـ Webhook ويطلع كل الحقول اللي فيها
+     عشان نعرف لو فيه بيانات عن مصدر الزيارة (utm / إعلان / لينك مباشر / IP ...) */
+  const ATTR_RE = /utm|fbclid|gclid|ttclid|refer|landing|campaign|ad_?id|adset|pixel|track|source|channel|medium|ip_?addr|^ip$|\.ip$|user_?agent|device|browser|session|visit|url|link|domain|origin/i;
+  const EF = { loading:false, err:'', rows:null, n:0, open:false };
+  function flatKeys(v, pre, out, depth){
+    if(depth > 5 || v === null || v === undefined) return;
+    if(Array.isArray(v)){ v.slice(0, 3).forEach(x => flatKeys(x, pre + '[]', out, depth + 1)); return; }
+    if(typeof v === 'object'){ Object.keys(v).forEach(k => flatKeys(v[k], pre ? pre + '.' + k : k, out, depth + 1)); return; }
+    const s = String(v); if(!out[pre]) out[pre] = { n:0, samples:[] };
+    out[pre].n++; if(s !== '' && out[pre].samples.length < 3 && !out[pre].samples.includes(s)) out[pre].samples.push(s.slice(0, 80));
+  }
+  async function loadEasyFields(){
+    EF.loading = true; EF.err = ''; EF.open = true; draw();
+    try{
+      const { data, error } = await sbc().from('easy_orders').select('payload, source, received_at').order('seq', { ascending:false }).limit(300);
+      if(error) throw error;
+      const out = {}; (data || []).forEach(o => { const seen = {}; flatKeys(o.payload || {}, '', seen, 0); Object.keys(seen).forEach(k => { const t = out[k] || (out[k] = { n:0, samples:[] }); t.n++; seen[k].samples.forEach(x => { if(t.samples.length < 3 && !t.samples.includes(x)) t.samples.push(x); }); }); });
+      EF.n = (data || []).length;
+      EF.rows = Object.entries(out).map(([k, v]) => ({ k, n:v.n, samples:v.samples, hot:ATTR_RE.test(k) }))
+        .sort((a, b) => (b.hot - a.hot) || a.k.localeCompare(b.k));
+    }catch(e){ EF.err = e.message || String(e); }
+    EF.loading = false; draw();
+  }
+  function easyFieldsHtml(){
+    const hot = (EF.rows || []).filter(r => r.hot);
+    return `<div class="card" style="margin:0 0 12px;background:var(--slate-l)">
+      <div class="up-row" style="align-items:center"><b>🔍 EasyOrders بيبعت إيه في كل أوردر؟</b>
+        <button class="up-btn" id="upEasyFields" ${EF.loading ? 'disabled' : ''}>${EF.loading ? '⏳ بيقرا...' : (EF.rows ? '🔄 افحص تاني' : 'افحص آخر 300 أوردر')}</button>
+        ${EF.rows ? `<button class="up-btn" id="upEasyFieldsTog" style="padding:4px 10px;font-size:12px">${EF.open ? 'اخفي' : 'اعرض'}</button>` : ''}</div>
+      <p style="font-size:12.5px;color:var(--muted);margin:6px 0 0">بيطلّع كل الحقول اللي وصلت من الـ Webhook — عشان نعرف لو فيه حاجة بتقول الأوردر جه من الإعلان ولا من اللينك المباشر (utm / referrer / IP ...).</p>
+      ${EF.err ? `<div class="up-msg err">${esc(EF.err)}</div>` : ''}
+      ${EF.rows && EF.open ? `<p style="margin:8px 0;font-size:13.5px">${hot.length
+          ? `🟢 لقيت <b>${hot.length}</b> حقل ممكن يكون ليه علاقة بمصدر الزيارة (متعلّمين بالأخضر) — راجع القيم.`
+          : `🔴 مفيش ولا حقل عن مصدر الزيارة (utm / referrer / إعلان) في آخر ${EF.n} أوردر — يعني EasyOrders مش بيبعت المعلومة دي في الـ Webhook.`}</p>
+        <div class="up-sheet" style="max-height:360px;overflow:auto"><table><thead><tr><th>الحقل</th><th>موجود في</th><th>أمثلة</th></tr></thead><tbody>
+        ${EF.rows.map(r => `<tr style="${r.hot ? 'background:#e6f4ea' : ''}"><td style="direction:ltr;text-align:left"><code>${esc(r.k)}</code></td><td>${r.n} / ${EF.n}</td><td style="direction:ltr;text-align:left;font-size:12px">${r.samples.map(esc).join(' · ') || '—'}</td></tr>`).join('')}
+        </tbody></table></div>` : ''}
+    </div>`;
   }
 
   function histHtml(){
@@ -13589,6 +13630,8 @@ create policy "sheets: upload" on storage.objects for insert to authenticated wi
     document.querySelectorAll('[data-srcf]').forEach(el => el.oninput = () => { const [i, k] = el.dataset.srcf.split('.'); E.srcDraft[Number(i)][k] = el.value; });
     document.querySelectorAll('[data-srcdel]').forEach(b => b.onclick = () => { const x = E.srcDraft[Number(b.dataset.srcdel)]; if(confirm('تمسح المصدر "' + x.label + '"؟')){ E.srcDraft.splice(Number(b.dataset.srcdel), 1); draw(); } });
     document.querySelectorAll('[data-srccopy]').forEach(b => b.onclick = () => { try{ navigator.clipboard.writeText(b.dataset.srccopy); b.textContent = '✔ اتنسخ'; }catch(e){} });
+    if($('upEasyFields')) $('upEasyFields').onclick = loadEasyFields;
+    if($('upEasyFieldsTog')) $('upEasyFieldsTog').onclick = () => { EF.open = !EF.open; draw(); };
     if($('upSrcAdd')) $('upSrcAdd').onclick = () => {
       const label = prompt('اسم المصدر الجديد (مثلاً: Bloom Easy):'); if(!label || !label.trim()) return;
       let key = slug(label); while(E.srcDraft.some(x => x.key === key)) key += '2';
