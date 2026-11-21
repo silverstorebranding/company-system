@@ -11913,6 +11913,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
         ${RD.rest ? `<span>⏳ الباقي على QP: <b style="font-size:18px;color:#b3261e">${left.length}</b></span>` : ''}</div>
       <div class="up-row" style="margin-top:10px">
         <button class="up-btn ok" id="upScanSheet" ${okN ? '' : 'disabled'}>⬇️ نزّل شيت الجاهزين (${okN}) — ابعته لـ QP</button>
+        ${X.list.length || RD.rest ? `<button class="up-btn" id="upRdClear" style="background:#fff4e5;border-color:#b7791f">🧹 ابدأ من جديد (فضّي الـ ${X.list.length} بوليصة)</button>` : ''}
       </div>
       <div class="up-row" style="margin-top:10px">
         <label style="font-size:13.5px">الأوردرات اللي اترفعت يوم <input type="date" id="upRdDay" value="${esc(rdDay())}" style="padding:7px 9px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit"></label>
@@ -12007,7 +12008,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
   try{ const sv = JSON.parse(localStorage.getItem(SCAN_LS) || 'null'); if(sv && Array.isArray(sv.list)){ X.list = sv.list.filter(x => x && x.serial && !x.loading); if(sv.mode && ['delete', 'sheet', 'exclude', 'ready'].includes(sv.mode)) X.mode = sv.mode; } }catch(e){}
   let scanSaved = '';
   function saveScanList(){
-    try{ const v = JSON.stringify({ mode:['delete', 'sheet', 'exclude'].includes(X.mode) ? X.mode : undefined, list:X.list.filter(x => !x.loading), at:Date.now() });
+    try{ const v = JSON.stringify({ mode:['delete', 'sheet', 'exclude', 'ready'].includes(X.mode) ? X.mode : undefined, list:X.list.filter(x => !x.loading), at:Date.now() });
       if(v !== scanSaved){ localStorage.setItem(SCAN_LS, v); scanSaved = v; } }catch(e){}
   }
   const isPendingQ = q => { const st = String(q.Order_Delivery_Status ?? q.status ?? '').trim().toLowerCase(); return st === '1' || st === 'pending'; };
@@ -13637,6 +13638,7 @@ create policy "sheets: upload" on storage.objects for insert to authenticated wi
     if($('upScanSheet')) $('upScanSheet').onclick = scanSheet;
     if($('upRdDay')) $('upRdDay').onchange = e => { RD.day = e.target.value; RD.rest = null; RD.msg = ''; draw(); };
     if($('upRdFetch')) $('upRdFetch').onclick = rdFetch;
+    if($('upRdClear')) $('upRdClear').onclick = () => { if(X.list.length && !confirm(`تفضّي الليستة (${X.list.length} بوليصة) وتبدأ من جديد؟`)) return; X.list = []; RD.rest = null; RD.msg = ''; X.msg = ''; draw(); };
     if($('upRdDel')) $('upRdDel').onclick = rdDelete;
     document.querySelectorAll('[data-rdkeep]').forEach(b => b.onclick = () => { RD.rest.splice(Number(b.dataset.rdkeep), 1); draw(); });
     if($('upExDay')) $('upExDay').onchange = e => { QD.day = e.target.value || ymd(new Date()); QD.dayTouched = !!e.target.value && e.target.value !== ymd(new Date()); };
