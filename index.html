@@ -12704,12 +12704,36 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
     });
   }
   function contentsOf(r){ return r.size && !String(r.contents).includes('مقاس') ? `${r.contents} - مقاس ${r.size}` : r.contents; }
+  /* ✍️ الاسم والعنوان لازم يكونوا كلام حقيقي: مش أرقام، ومش حروف مكررة أو متكتبة عشوائي (aaaa / سسسس / asdasd / qwer) */
+  const lettersOf = v => (String(v || '').toLowerCase().match(/[a-z\u0621-\u064A]/g) || []).join('');
+  function junkText(v){
+    const L = lettersOf(v); if(L.length < 3) return false;
+    const u = new Set(L).size; return u <= 1 || (u <= 2 && L.length >= 5) || /(.)\1{3,}/.test(L) || /^(.{1,4})\1+$/.test(L) || /asdf|sdfg|qwer|wert|zxcv|xcvb|hjkl|jkl;|ghjk/.test(L);
+  }
+  function nameIssue(v){
+    const t = String(v || '').trim(); if(!t) return '';
+    if(/[0-9٠-٩]/.test(t)) return 'الاسم فيه أرقام';
+    if(lettersOf(t).length < 3) return 'الاسم مش مفهوم (أقل من 3 حروف)';
+    if(junkText(t) || t.split(/\s+/).some(w => w.length >= 3 && junkText(w))) return 'الاسم شكله حروف عشوائية';
+    return '';
+  }
+  function addrIssue(v, name){
+    const t = String(v || '').trim(); if(!t) return '';
+    const L = lettersOf(t);
+    if(!L.length) return 'العنوان أرقام بس';
+    if(L.length < 6 || !t.split(/\s+/).some(w => lettersOf(w).length >= 3)) return 'العنوان قصير أوي (محتاج منطقة/شارع مش اسم مدينة بس)';
+    if(junkText(t) || t.split(/\s+/).some(w => w.length >= 4 && junkText(w))) return 'العنوان شكله حروف عشوائية';
+    if(name && L === lettersOf(name)) return 'العنوان هو نفس الاسم';
+    return '';
+  }
   function check(r){
     const e = [];
     if(!String(r.name).trim()) e.push('الاسم فاضي');
+    else { const ni = nameIssue(r.name); if(ni) e.push(ni); }
     // 📞 الموبايل سليم لو: بيبدأ بـ 0 وعدده 11 رقم، أو من غير الـ 0 وعدده 10 أرقام (phoneOf بيشيل الـ 0 و +20 فالاتنين بيبقوا 10)
     if(!/^[1-9]\d{9}$/.test(phoneOf(r.phone))) e.push(String(r.phone || '').trim() ? `الموبايل غلط (اتقرى: ${phoneOf(r.phone) || '—'} — لو بيبدأ بـ 0 لازم 11 رقم، ومن غير 0 لازم 10 أرقام)` : 'الموبايل فاضي');
     if(!String(r.address).trim()) e.push('العنوان فاضي');
+    else { const ai = addrIssue(r.address, r.name); if(ai) e.push(ai); }
     if(!(numOf(r.amount) > 0)) e.push('السعر غلط');
     r.errs = e;
     return r;
