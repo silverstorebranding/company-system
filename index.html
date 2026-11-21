@@ -15551,6 +15551,17 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
 .om-c3 b{background:var(--slate-l)}.om-c3 .q{background:#f3ede0;color:#6b4e12;font-size:12.5px}.om-c3 .d{background:#e3f3e8;color:#23784a;font-size:12.5px}
 .om-tbl tr.sum td{font-weight:800;background:var(--slate-l)}
 .om-wrap{overflow:auto;border:1px solid var(--line);border-radius:10px;max-height:520px}
+.om-src{cursor:pointer;transition:.15s}.om-src:hover,.om-src.on{box-shadow:0 0 0 2px var(--c,#8a6d3b)}
+.om-more{float:left;color:var(--brass-d);font-weight:700}
+.om-tbl td.clk{cursor:pointer}.om-tbl td.clk:hover,.om-tbl td.on{background:#f3ede0}
+.om-drill h3{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.om-drill h3 b{background:var(--brass-d);color:#fff;border-radius:20px;padding:1px 10px;font-size:13px}
+.om-filts{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+.om-filts button{padding:6px 11px;border:1px solid var(--line);border-radius:20px;background:var(--panel);color:var(--ink);font-family:inherit;font-size:12.5px;font-weight:600;cursor:pointer}
+.om-filts button.on{background:var(--brass-d);border-color:var(--brass-d);color:#fff}
+.om-dt td{white-space:normal;text-align:right}.om-dt td[dir=ltr]{text-align:left;white-space:nowrap}
+.om-dt tr.no td{background:#fffaf0}.om-dt .mut{color:var(--muted);font-size:12px}
+.om-tag{display:inline-block;padding:1px 8px;border-radius:12px;font-size:12px;font-weight:700}.om-tag.red{background:#fdecea;color:#a3271a}.om-tag.green{background:#e3f3e8;color:#23784a}
 </style>
 <script>
 /* =====================================================================
@@ -15574,7 +15585,7 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
   const DEF_SRC = [{ key:'dream', label:'Dream Easy', color:'#2b6cb0' }, { key:'care', label:'Care Easy', color:'#b0457a' }, { key:'kidzzly', label:'Kidzzly Easy', color:'#4f8fd8' }, { key:'socky', label:'Socky Easy', color:'#3f9b74' }];
   const SQUAD = { key:'squad', label:'🏆 Squad', color:'#8a6d3b' };
 
-  const S = { mode:'mtd', day:today(), month:today().slice(0, 7), from:today().slice(0, 8) + '01', to:today(), loading:false, msg:'', err:'', data:null, srcs:null, cache:{} };
+  const S = { open:null, filt:'all', mode:'mtd', day:today(), month:today().slice(0, 7), from:today().slice(0, 8) + '01', to:today(), loading:false, msg:'', err:'', data:null, srcs:null, cache:{} };
 
   function range(){
     if(S.mode === 'day') return [S.day, S.day];
@@ -15608,15 +15619,15 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
       // 🔎 بنجيب الوارد من قبل الفترة بأسبوع عشان نعرف مصدر أوردرات QP اللي اترفعت متأخر
       const pre = new Date(from + 'T00:00:00'); pre.setDate(pre.getDate() - 7);
       const [sq, ez, pp] = await Promise.all([
-        pages(() => sb().from('orders').select('customer_phone, created_at').gte('created_at', pre.toISOString()).lte('created_at', endIso(to)).order('created_at', { ascending:true })),
+        pages(() => sb().from('orders').select('customer_name, customer_phone, created_at, page_name').gte('created_at', pre.toISOString()).lte('created_at', endIso(to)).order('created_at', { ascending:true })),
         pages(() => sb().from('easy_orders').select('source, received_at, status, payload').gte('received_at', pre.toISOString()).lte('received_at', endIso(to)).order('seq', { ascending:true })),
         sb().from('prepaid_orders').select('src_label, order_date, phone').gte('order_date', from).lte('order_date', to).limit(20000).then(r => r.data || []).catch(() => [])
       ]);
       // الوارد: { src, at, phones }
       const inc = [];
-      sq.forEach(o => inc.push({ src:'squad', at:o.created_at, phones:[ph(o.customer_phone)].filter(Boolean) }));
+      sq.forEach(o => inc.push({ src:'squad', at:o.created_at, name:o.customer_name || '', page:o.page_name || '', phone:o.customer_phone || '', phones:[ph(o.customer_phone)].filter(Boolean) }));
       ez.forEach(x => { const p = x.payload || {}, st = x.status || p.status;
-        inc.push({ src: x.source || 'dream', at: x.received_at || p.created_at, cancel: isCancel(st), phones:[p.phone, p.phone2, p.second_phone, p.alt_phone].map(ph).filter(Boolean) }); });
+        inc.push({ src: x.source || 'dream', at: x.received_at || p.created_at, cancel: isCancel(st), name:p.full_name || p.name || '', phone:p.phone || '', estatus: st || '', phones:[p.phone, p.phone2, p.second_phone, p.alt_phone].map(ph).filter(Boolean) }); });
       const known = new Set(srcs.map(s => s.key));
       inc.forEach(x => { if(!known.has(x.src)){ known.add(x.src); srcs.push({ key:x.src, label:x.src, color:'#666' }); } });
       const byPhone = {};
@@ -15633,10 +15644,11 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
       const srcOfQP = q => {
         const t = new Date(q.order_date).getTime();
         const C = [...new Set([q.phone, q.phone2, q.customer_phone, q.phone_number].map(ph).filter(Boolean).flatMap(p => byPhone[p] || []))];
-        if(!C.length) return 'unknown';
+        if(!C.length) return null;
         const before = C.filter(x => new Date(x.at).getTime() <= t + 86400000).sort((a, b) => new Date(b.at) - new Date(a.at));
-        return (before[0] || C.sort((a, b) => new Date(a.at) - new Date(b.at))[0]).src;
+        return before[0] || C.sort((a, b) => new Date(a.at) - new Date(b.at))[0];
       };
+      const lbl = q => { try{ return String(api.label(q) || '').replace(/\s*#\d+$/, ''); }catch(e){ return String(q.Order_Delivery_Status ?? ''); } };
       const isDel = q => { try{ return api.category(q) === 'delivered'; }catch(e){ return String(q.Order_Delivery_Status) === '3'; } };
       const ppSrc = lbl => { const l = String(lbl || ''); if(/squad/i.test(l)) return 'squad'; const s = srcs.find(x => x.key !== 'squad' && (x.label === l || l.includes(x.label))); return s ? s.key : 'unknown'; };
 
@@ -15645,15 +15657,52 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
       const T = {}, D = {};
       const add = (src, day, k, n = 1) => { (T[src] = T[src] || blank())[k] += n; const dd = (D[day] = D[day] || {}); (dd[src] = dd[src] || blank())[k] += n; };
       inc.forEach(x => { const d = dayOf(x.at); if(d < from || d > to) return; add(x.src, d, 'inc'); if(x.cancel) add(x.src, d, 'cancel'); });
-      qp.forEach(q => { const d = dayOf(q.order_date); if(!d || d < from || d > to) return; const s = srcOfQP(q); add(s, d, 'qp'); if(isDel(q)) add(s, d, 'del'); });
+      // 📋 تفاصيل كل أوردر (للّستة اللي بتظهر لما تدوس على مصدر / يوم)
+      const rows = [];
+      inc.forEach(x => { const d = dayOf(x.at); if(d >= from && d <= to){ x.row = { src:x.src, inDay:d, at:x.at, name:x.name, phone:x.phone, page:x.page || '', cancel:!!x.cancel, estatus:x.estatus || '', qps:[] }; rows.push(x.row); } });
+      qp.forEach(q => { const d = dayOf(q.order_date); if(!d || d < from || d > to) return; const x = srcOfQP(q), s = x ? x.src : 'unknown', dl = isDel(q); add(s, d, 'qp'); if(dl) add(s, d, 'del');
+        const qi = { serial:String(q.serial || ''), day:d, notes:String(q.notes || '').trim(), status:lbl(q), del:dl, name:q.full_name || '', phone:q.phone || '' };
+        if(x && x.row) x.row.qps.push(qi);
+        else rows.push({ src:s, inDay:'', at:'', name: x ? x.name : qi.name, phone: x ? x.phone : qi.phone, page: x ? (x.page || '') : '', early: !!x, qps:[qi] }); });
+      rows.forEach(r => { r.qpDay = r.qps.length ? r.qps[0].day : ''; });
       pp.forEach(o => add(ppSrc(o.src_label), o.order_date, 'pp'));
       if(T.unknown && !srcs.some(s => s.key === 'unknown')) srcs.push({ key:'unknown', label:'❔ مانوال / مش معروف', color:'#999' });
-      S.data = { at:Date.now(), from, to, T, D, qpErr, qpN:qp.length };
+      S.data = { at:Date.now(), from, to, T, D, qpErr, qpN:qp.length, rows };
       S.cache[ck] = S.data;
     }catch(e){ S.err = 'حصلت مشكلة: ' + e.message; }
     S.loading = false; S.msg = ''; draw();
   }
 
+  // 📋 لستة الأوردرات لمصدر (ويوم لو اتحدد)
+  function drillRows(){
+    const X = S.data, o = S.open; if(!X || !o) return [];
+    return (X.rows || []).filter(r => r.src === o.src && (!o.day || r.inDay === o.day || r.qps.some(q => q.day === o.day)));
+  }
+  const FILTS = [['all', 'الكل'], ['qp', '🚚 راح QP'], ['notqp', '⏳ لسه مارحش QP'], ['del', '✅ اتسلم'], ['notdel', '🚚 راح ومااتسلمش'], ['nolabel', '⚠️ راح QP من غير ليبل']];
+  const passF = (r, f) => f === 'qp' ? r.qps.length : f === 'notqp' ? !r.qps.length : f === 'del' ? r.qps.some(q => q.del) : f === 'notdel' ? r.qps.length && !r.qps.some(q => q.del) : f === 'nolabel' ? r.qps.some(q => !q.notes) : true;
+  function drillHtml(){
+    const o = S.open; if(!o) return '';
+    const s = (S.srcs || []).find(x => x.key === o.src) || { label:o.src, color:'#666' };
+    const all = drillRows(), L = all.filter(r => passF(r, S.filt)).sort((a, b) => (b.inDay || b.qpDay).localeCompare(a.inDay || a.qpDay));
+    const dl = d => d ? new Date(d + 'T12:00:00').toLocaleDateString('ar-EG', { weekday:'short', day:'numeric', month:'short' }) : '';
+    return `<div class="card om-drill" id="omDrill" style="border-top:5px solid ${esc(s.color)}"><h3>📋 أوردرات ${esc(s.label)}${o.day ? ' — ' + esc(dl(o.day)) : ''} <b>${L.length}</b>
+        <button class="om-btn" id="omXls" style="margin-inline-start:auto;padding:5px 12px;font-size:12.5px">⬇️ Excel</button><button class="om-btn" id="omClose" style="padding:5px 12px;font-size:12.5px">✕</button></h3>
+      <div class="om-filts">${FILTS.map(([k, l]) => `<button class="${S.filt === k ? 'on' : ''}" data-omfilt="${k}">${l} (${all.filter(r => passF(r, k)).length})</button>`).join('')}</div>
+      ${L.length ? `<div class="om-wrap"><table class="om-tbl om-dt"><thead><tr><th>جه يوم</th><th>العميل</th><th>الموبايل</th>${o.src === 'squad' ? '<th>الصفحة</th>' : ''}<th>رقم QP</th><th>اترفع يوم</th><th>الليبل على QP (notes)</th><th>حالته في QP</th></tr></thead><tbody>
+        ${L.map(r => { const q = r.qps[0];
+          return `<tr class="${q ? (q.del ? 'ok' : '') : 'no'}"><td>${r.inDay ? esc(dl(r.inDay)) : `<span class="mut">${r.early ? 'جه قبل الفترة' : 'مانوال'}</span>`}</td><td>${esc(r.name || '—')}${r.cancel ? ' <span class="om-tag red">ملغي</span>' : ''}</td><td dir="ltr">${esc(r.phone || '')}</td>${o.src === 'squad' ? `<td>${esc(r.page)}</td>` : ''}
+            <td>${q ? esc(r.qps.map(x => x.serial).join(' / ')) : '<span class="mut">لسه مارحش QP</span>'}</td><td>${q ? esc(dl(q.day)) : ''}</td>
+            <td>${q ? (q.notes ? esc(q.notes) : '<span class="om-tag red">⚠️ من غير ليبل</span>') : ''}</td><td>${q ? (q.del ? '<span class="om-tag green">✅ ' + esc(q.status || 'اتسلم') + '</span>' : esc(q.status || '—')) : ''}</td></tr>`; }).join('')}</tbody></table></div>` : '<p style="color:var(--muted);margin:0">مفيش أوردرات.</p>'}
+    </div>`;
+  }
+  function drillXls(){
+    if(!window.XLSX) return;
+    const o = S.open, s = (S.srcs || []).find(x => x.key === o.src) || { label:o.src };
+    const L = drillRows().filter(r => passF(r, S.filt));
+    const ws = XLSX.utils.json_to_sheet(L.map(r => { const q = r.qps[0] || {}; return { 'جه يوم':r.inDay || '', 'العميل':r.name, 'الموبايل':String(r.phone || ''), 'الصفحة':r.page || '', 'رقم QP':r.qps.map(x => x.serial).join(' / '), 'اترفع يوم':q.day || '', 'notes على QP':q.notes || (r.qps.length ? 'من غير ليبل' : ''), 'حالته في QP':q.status || (r.qps.length ? '' : 'لسه مارحش QP') }; }));
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'orders');
+    XLSX.writeFile(wb, `أوردرات ${String(s.label).replace(/[^\w؀-ۿ ]/g, '').trim()} ${o.day || S.data.from + '_' + S.data.to}.xlsx`);
+  }
   function view(){
     const [from, to] = range();
     let h = `<div class="pagehead"><h1>🗺️ خريطة الأوردرات</h1><p>لكل مصدر: جه كام أوردر، وراح QP كام، واتسلم كام. Squad منفصل عن مصادر EasyOrders — وأوردرات QP بتتنسب لمصدرها بالموبايل مش بالـ notes.</p></div>`;
@@ -15679,16 +15728,17 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
     if(!srcs.length) return h + '<div class="card"><p style="margin:0;color:var(--muted)">مفيش أوردرات في الفترة دي.</p></div>';
     const mx = Math.max(1, ...srcs.map(s => Math.max(X.T[s.key].inc, X.T[s.key].qp)));
     const bar = (cls, lbl, n) => `<div class="om-row ${cls}"><span>${lbl}</span><div class="om-track"><i style="width:${Math.round(n / mx * 100)}%"></i></div><b>${fmt(n)}</b></div>`;
-    h += `<div class="om-grid">${srcs.map(s => { const t = X.T[s.key]; return `<div class="om-src" style="--c:${esc(s.color)}"><h4>${esc(s.label)}<small>${t.inc ? pct(t.qp, t.inc) + '% راح QP' : ''}</small></h4>
+    h += `<div class="om-grid">${srcs.map(s => { const t = X.T[s.key]; return `<div class="om-src ${S.open && S.open.src === s.key && !S.open.day ? 'on' : ''}" style="--c:${esc(s.color)}" data-omopen="${esc(s.key)}" title="دوس تشوف الأوردرات"><h4>${esc(s.label)}<small>${t.inc ? pct(t.qp, t.inc) + '% راح QP' : ''}</small></h4>
       ${bar('in', '📥 جه', t.inc)}${bar('qp', '🚚 راح QP', t.qp)}${bar('dl', '✅ اتسلم', t.del)}${t.pp ? bar('pp', '🛵 مناديب', t.pp) : ''}
-      <div class="om-pct">${t.qp ? `نسبة التسليم ${pct(t.del, t.qp)}%` : ''}${t.cancel ? ` · ${fmt(t.cancel)} ملغي` : ''}</div></div>`; }).join('')}</div>`;
+      <div class="om-pct">${t.qp ? `نسبة التسليم ${pct(t.del, t.qp)}%` : ''}${t.cancel ? ` · ${fmt(t.cancel)} ملغي` : ''}<span class="om-more">📋 الأوردرات</span></div></div>`; }).join('')}</div>`;
+    h += drillHtml();
     // جدول بالأيام
     const days = Object.keys(X.D).sort().reverse();
     if(days.length > 1){
       const cell = (t) => t ? `<span class="om-c3"><b title="جه">${fmt(t.inc)}</b><span class="q" title="راح QP">${fmt(t.qp)}</span><span class="d" title="اتسلم">${fmt(t.del)}</span></span>` : '—';
       h += `<div class="card"><h3>📅 بالأيام <span class="om-c3" style="font-weight:400;font-size:12.5px"><b>جه</b><span class="q">راح QP</span><span class="d">اتسلم</span></span></h3><div class="om-wrap"><table class="om-tbl"><thead><tr><th>اليوم</th>${srcs.map(s => `<th style="color:${esc(s.color)}">${esc(s.label)}</th>`).join('')}<th>الإجمالي</th></tr></thead><tbody>
         ${days.map(d => { const r = X.D[d], tt = { inc:0, qp:0, del:0 }; srcs.forEach(s => { const t = r[s.key]; if(t){ tt.inc += t.inc; tt.qp += t.qp; tt.del += t.del; } });
-          return `<tr><td>${esc(new Date(d + 'T12:00:00').toLocaleDateString('ar-EG', { weekday:'short', day:'numeric', month:'short' }))}</td>${srcs.map(s => `<td>${cell(r[s.key])}</td>`).join('')}<td>${cell(tt)}</td></tr>`; }).join('')}
+          return `<tr><td>${esc(new Date(d + 'T12:00:00').toLocaleDateString('ar-EG', { weekday:'short', day:'numeric', month:'short' }))}</td>${srcs.map(s => `<td class="${r[s.key] ? 'clk' : ''} ${S.open && S.open.src === s.key && S.open.day === d ? 'on' : ''}" ${r[s.key] ? `data-omopen="${esc(s.key)}|${d}" title="دوس تشوف الأوردرات"` : ''}>${cell(r[s.key])}</td>`).join('')}<td>${cell(tt)}</td></tr>`; }).join('')}
         <tr class="sum"><td>الإجمالي</td>${srcs.map(s => `<td>${cell(X.T[s.key])}</td>`).join('')}<td>${cell({ inc:I, qp:Q, del:Dl })}</td></tr></tbody></table></div></div>`;
     }
     h += `<p style="font-size:12px;color:var(--muted)">📥 جه = الأوردرات اللي اتسجلت في Squad أو وصلت من EasyOrders في الفترة. 🚚 راح QP = أوردرات QP اللي اتعملت في الفترة (حتى المرفوضة)، ومصدر كل واحد بيتعرف من الموبايل. ✅ اتسلم = من اللي راحوا QP في الفترة، حالته دلوقتي اتسلم. ❔ مانوال = أوردرات على QP ملهاش أوردر وارد بنفس الموبايل.</p>`;
@@ -15706,6 +15756,10 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
     if($('omFrom')) $('omFrom').onchange = e => { S.from = e.target.value; };
     if($('omTo')) $('omTo').onchange = e => { S.to = e.target.value; };
     if($('omGo')) $('omGo').onclick = () => { S.cache = {}; run(); };
+    main.querySelectorAll('[data-omopen]').forEach(el => el.onclick = () => { const [src, day] = el.dataset.omopen.split('|'); S.open = { src, day: day || '' }; S.filt = 'all'; draw(); const d = main.querySelector('#omDrill'); if(d) d.scrollIntoView({ behavior:'smooth', block:'start' }); });
+    main.querySelectorAll('[data-omfilt]').forEach(b => b.onclick = () => { S.filt = b.dataset.omfilt; draw(); });
+    if($('omClose')) $('omClose').onclick = () => { S.open = null; draw(); };
+    if($('omXls')) $('omXls').onclick = drillXls;
   }
   function mount(){ document.querySelectorAll('#sidebar a.navlink').forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#/orders-map')); draw(); if(!S.data && !S.loading) run(); }
   const _render = render;
