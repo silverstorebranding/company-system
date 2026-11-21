@@ -12731,8 +12731,9 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
     const ni = nameIssue(r.name), ai = addrIssue(r.address, r.name);
     r.textErr = !!(ni || ai);   // ✍️ بيتقسموا في مجموعة لوحدهم تحت "فيها مشاكل"
     if(ni) e.push(ni);
-    // 📞 الموبايل سليم لو: بيبدأ بـ 0 وعدده 11 رقم، أو من غير الـ 0 وعدده 10 أرقام (phoneOf بيشيل الـ 0 و +20 فالاتنين بيبقوا 10)
-    if(!/^[1-9]\d{9}$/.test(phoneOf(r.phone))) e.push(String(r.phone || '').trim() ? `الموبايل غلط (اتقرى: ${phoneOf(r.phone) || '—'} — لو بيبدأ بـ 0 لازم 11 رقم، ومن غير 0 لازم 10 أرقام)` : 'الموبايل فاضي');
+    // 📞 الموبايل سليم لو: 01x وعدده 11 رقم، أو 1x من غير الـ 0 وعدده 10 أرقام — و x = 0/1/2/5 (فودافون/اتصالات/أورنج/وي)
+    //    phoneOf بيشيل الـ 0 و +20 فالاتنين بيبقوا 10 أرقام بيبدأوا بـ 10/11/12/15
+    if(!/^1[0125]\d{8}$/.test(phoneOf(r.phone))) e.push(String(r.phone || '').trim() ? `الموبايل غلط (اتقرى: ${phoneOf(r.phone) || '—'} — لازم يبدأ بـ 010/011/012/015 ويبقى 11 رقم، أو من غير الـ 0 يبقى 10 أرقام)` : 'الموبايل فاضي');
     if(!String(r.address).trim()) e.push('العنوان فاضي');
     if(ai) e.push(ai);
     if(!(numOf(r.amount) > 0)) e.push('السعر غلط');
@@ -13000,7 +13001,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
             { k:'phone', t:'📞 أرقام متكررة في الشيت', hint:'الأوردرات اللي ليها نفس الموبايل جنب بعض — دوس "🔀 خلّي الأغلى" يطلّع الأغلى فوق', list: probs.filter(x => isPhoneDup(x.r)).sort((a, b) => phoneOf(a.r.phone).localeCompare(phoneOf(b.r.phone)) || (numOf(b.r.amount) || 0) - (numOf(a.r.amount) || 0)) },
             { k:'qp', t:'🟡 مرفوعة في QP قبل كده', hint:'امسحها، أو دوس "✔ ارفعه برضه" لو العميل طالب أوردر جديد', list: probs.filter(x => !isPhoneDup(x.r) && isDupPending(x.r)) },
             { k:'text', t:'✍️ الاسم أو العنوان مش كلام (text)', hint:'الاسم فيه أرقام، أو العنوان أرقام بس / قصير أوي / حروف مكررة — صلّحه من الخانة أو كلّم العميل', list: probs.filter(x => !isPhoneDup(x.r) && !isDupPending(x.r) && x.r.textErr) },
-            { k:'badphone', t:'📵 رقم الموبايل غلط', hint:'لو بيبدأ بـ 0 لازم 11 رقم، ومن غير 0 لازم 10 أرقام', list: probs.filter(x => !isPhoneDup(x.r) && !isDupPending(x.r) && !x.r.textErr && x.r.errs.some(e => /^الموبايل (غلط|فاضي)/.test(e))) },
+            { k:'badphone', t:'📵 رقم الموبايل غلط', hint:'لازم يبدأ بـ 010/011/012/015 (11 رقم) أو 10/11/12/15 من غير الـ 0 (10 أرقام)', list: probs.filter(x => !isPhoneDup(x.r) && !isDupPending(x.r) && !x.r.textErr && x.r.errs.some(e => /^الموبايل (غلط|فاضي)/.test(e))) },
             { k:'notes', t:'📝 الـ notes فاضية', hint:'اكتب الـ notes في خطوة 2 أو في خانة الأوردر', list: probs.filter(x => !isPhoneDup(x.r) && !isDupPending(x.r) && !x.r.errs.length && !x.r.upErr && !finalNote(x.r)) },
           ];
           const used = new Set(G.flatMap(g => g.list.map(x => x.i)));
