@@ -1039,7 +1039,7 @@ const PR_MANUAL=[
 let prManualVals={}; // prManualVals[id][brand]
 const prMan=(id,b)=>(prManualVals[id]&&prManualVals[id][b])||0;
 
-let prBrandCalc={}, prPendingTotal=0, prRealCols=[], prExpCols=[], prUnbranded=[];
+let prBrandCalc={}, prPendingTotal=0, prRealCols=[], prExpCols=[], prUnbranded=[], prHiddenRows=[], prTotalRows=0;
 
 /* 🏷️ البراندات الجديدة — بتتضاف من 🎯 أيام تحت هدف التسليم (للأدمن) وبتدخل أوتوماتيك في الأرباح وأيام التسليم
    وكل براند بيتعامل معاملة براند موجود (نسب التوقع / تكلفة البضاعة بالقطعة / ربح المحفظة / هدف التسليم)
@@ -1135,9 +1135,9 @@ function prProcess(rows){
     window.__prRulesLoading=true; OrderBreakdown.loadRules().then(()=>{ if(window.__prLastRows)prProcess(window.__prLastRows); });
   }
   const byBrand={}; PR_BRANDS.forEach(b=>byBrand[b]=[]);
-  prUnbranded=[];
+  prUnbranded=[]; prHiddenRows=[]; prTotalRows=rows.length;
   // 🏆 أوردرات Squad اللي ملقيناش مصدرها بتتحسب على DREAM — وأي براند مش في الأرباح (Socky / Bloom ...) مش محسوب
-  rows.forEach(r=>{let b=prGetBrand(r[PR_notesCol-1]); if(b==='squad')b='dream'; if(PR_HIDDEN_BRANDS.includes(b))return; if(b&&byBrand[b])byBrand[b].push(r); else prUnbranded.push(r);});
+  rows.forEach(r=>{let b=prGetBrand(r[PR_notesCol-1]); if(b==='squad')b='dream'; if(PR_HIDDEN_BRANDS.includes(b)){prHiddenRows.push(r);return;} if(b&&byBrand[b])byBrand[b].push(r); else prUnbranded.push(r);});
 
   function calcOne(brand){
     const rs=byBrand[brand];
@@ -1216,6 +1216,7 @@ function prProcess(rows){
   prBuildTable('A'); // الجدول الفعلي قبل التوقع
   prBuildSummaryTable();
   prBuildCountsTable();
+  prBuildTotalCard();
   prBuildUnbrandedTable();
   prBuildItemsTable(rows);
   prRecalc();
@@ -1589,6 +1590,25 @@ function prGuideRecalc(){
 }
 function prGuideReset(){ document.querySelectorAll('#prGuide .gIn').forEach(i=>{i.value=i.dataset.orig;i.classList.remove('gEdited');}); prGuideRecalc(); }
 
+/* 🧮 كارت فوق: إجمالي أوردرات QP اللي اتحسبت وتقسيمتها — المجموع لازم يطلع = الإجمالي */
+function prBuildTotalCard(){
+  const box=document.getElementById('prTotalCard'); if(!box) return;
+  const n=b=>(prBrandCalc[b]||{}).n||0, used=new Set();
+  const G=[['💍 DREAM (دريم + MSG SITE + واتساب دريم)',['dream','dream msg site','dream wa'],'#b08d57'],['💎 CARA (الثلاثة)',['cara silver','cara silver un','cara wa'],'#7a8fa6'],
+    ['💬 MSG',['msg'],'#6b7a3a'],['⚡ FASTPLT',['fastplt'],'#8a6d3b'],['💅 LO GEL NAILS',['lo gel nails'],'#c96b4f'],['🧸 KIDZZLY',['kidzzly'],'#4f8fd8'],['📨 إرسال صفحة',['ersal'],'#8a4fb0'],['🐰 BUNNY',['bunny'],'#d4789c']];
+  const rows=G.map(([l,bs,c])=>{bs.forEach(b=>used.add(b)); return [l,bs.reduce((a,b)=>a+n(b),0),c];});
+  PR_BRANDS.filter(b=>!used.has(b)).forEach(b=>rows.push(['🏷️ '+b.toUpperCase(),n(b),'#5aa9a0']));   // براندات جديدة
+  const hidN={}; prHiddenRows.forEach(r=>{const b=prGetBrand(r[PR_notesCol-1]); hidN[b]=(hidN[b]||0)+1;});
+  rows.push(['🙈 مخفي (RS KIDS / BLOOM) — مش محسوب',prHiddenRows.length,'#9a9a9a',Object.entries(hidN).map(([b,c])=>b.toUpperCase()+' '+c).join(' · ')]);
+  const unk={}; prUnbranded.forEach(r=>{const x=String(r[PR_notesCol-1]??'').trim().split('\n')[0]||'(notes فاضية)'; unk[x]=(unk[x]||0)+1;});
+  rows.push(['❔ من غير براند — مش محسوب',prUnbranded.length,'#c0392b',Object.entries(unk).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([x,c])=>x.replace(/[<>&]/g,'')+' '+c).join(' · ')+(Object.keys(unk).length>8?' ...':'')]);
+  const tot=prTotalRows, sum=rows.reduce((a,r)=>a+r[1],0), cnt=tot-prHiddenRows.length-prUnbranded.length;
+  box.innerHTML=`<h3 style="margin:0 0 6px">🧮 الأوردرات اللي اتحسبت — الإجمالي <b>${tot.toLocaleString('ar-EG')}</b> أوردر</h3>
+    <p style="margin:0 0 10px;font-size:13px;color:var(--muted)">داخل في الأرباح <b>${cnt.toLocaleString('ar-EG')}</b> · مش داخل ${(tot-cnt).toLocaleString('ar-EG')} (مخفي أو من غير براند)${sum!==tot?` · ⚠️ المجموع ${sum} مش = ${tot}`:''}</p>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:8px">${rows.filter(r=>r[1]).map(([l,v,c,sub])=>`<div style="border:1.5px solid ${c};border-radius:10px;padding:8px 10px">
+      <div style="font-size:13px;font-weight:700">${l}</div><div style="font-size:22px;font-weight:800;color:${c}">${v.toLocaleString('ar-EG')} <small style="font-size:12px;color:var(--muted);font-weight:600">${tot?Math.round(v/tot*100):0}%</small></div>
+      ${sub?`<div style="font-size:11.5px;color:var(--muted)">${sub}</div>`:''}</div>`).join('')}</div>`;
+}
 function prBuildCountsTable(){
   const t=document.getElementById('prCountsTable');
   const total=PR_BRANDS.reduce((s,b)=>s+prBrandCalc[b].n,0);
@@ -1984,6 +2004,7 @@ function viewProfits(){
     <div id="prStatus" style="font-size:13px;color:var(--muted);margin-top:8px"></div>
   </div>
   <div id="prResults" style="display:none">
+    <div class="card" id="prTotalCard"></div>
     <div class="card"><h3>⭐ الخلاصة — DREAM و CARA و KIDZZLY و إرسال صفحة</h3>
       <div class="tablewrap"><table class="sum">
         <tr><th rowspan="2">البند</th><th colspan="2" class="grp g-dream">DREAM المجمع</th><th colspan="2" class="grp g-cara sep">CARA المجمع</th><th colspan="2" class="grp g-rs sep">KIDZZLY</th><th colspan="2" class="grp g-cara sep">إرسال صفحة</th></tr>
