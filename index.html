@@ -12975,7 +12975,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
     rows.forEach(r => { if(isEasy(r.srcKey) || r.srcKey === 'squad') S.skipped.add(skipKey(r)); PPD.off.delete(r); });
     S.rows = S.rows.filter(r => !rows.includes(r)); dupCheck();
     PPD.sending = false;
-    persistTaken();
+    persistTaken(); loadPPToday(true);
     if(rows.some(r => r.urgentId)) closeUrgent(rows);
     flash(`🛵 اتبعت ${recs.length} أوردر لقسم الدفع المقدم${to ? ` (المسؤول: ${to.name})` : ''}${rows.length > recs.length ? ` (و ${rows.length - recs.length} كانوا اتبعتوا قبل كده فاتشالوا بس)` : ''}.`);
   }
@@ -13773,10 +13773,30 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
     if(!sess.length && !today.length) return '';
     return `<div class="card sp-card"><h3>📊 تقسيمة الأوردرات اللي اترفعت على QP</h3><div class="sp-grid">${splitCol('⬆️ الرفعة دي', sess)}${splitCol('📅 النهارده كله', today)}</div></div>`;
   }
+  /* 📅 ملخص النهارده: كام أوردر اترفع على QP (من سجل الرفع) وكام راح لمناديب الدفع المقدم (جدول prepaid_orders) */
+  const PPT = { day:'', list:null, at:0, busy:false };
+  async function loadPPToday(force){
+    const d = ymd(new Date());
+    if(PPT.busy || (!force && PPT.day === d && PPT.list && Date.now() - PPT.at < 60000)) return;
+    PPT.busy = true;
+    try{ const { data, error } = await sbc().from('prepaid_orders').select('id, amount, courier_name, status').eq('order_date', d).limit(2000);
+      PPT.err = !!error; PPT.list = error ? null : (data || []); }catch(e){ PPT.err = true; PPT.list = null; }
+    PPT.day = d; PPT.at = Date.now(); PPT.busy = false; if(isUP()) draw();
+  }
+  function todaySummary(){
+    loadPPToday();
+    const Q = todayUploads(), P = PPT.day === ymd(new Date()) ? PPT.list : null;
+    const qv = Q.reduce((a, o) => a + (numOf(o.amount) || 0), 0), pv = (P || []).reduce((a, o) => a + (Number(o.amount) || 0), 0);
+    const box = (ic, l, n, v, c) => `<div style="flex:1;min-width:150px;background:var(--panel);border:1.5px solid ${c};border-radius:12px;padding:10px 14px">
+      <div style="font-size:13px;color:var(--muted)">${ic} ${l}</div><div style="font-size:26px;font-weight:800;color:${c}">${n == null ? (PPT.err ? '—' : '…') : n.toLocaleString('ar-EG')} <small style="font-size:13px;font-weight:600">أوردر</small></div>
+      <div style="font-size:12.5px;color:var(--muted)">${v == null ? '' : Math.round(v).toLocaleString('ar-EG') + ' ج'}</div></div>`;
+    return `<div class="card" style="margin-bottom:12px"><h3 style="margin:0 0 10px">📅 ملخص النهارده — ${new Date().toLocaleDateString('ar-EG', { weekday:'long', day:'numeric', month:'long' })}</h3>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">${box('🚀', 'اترفع على QP', Q.length, qv, '#2b6cb0')}${box('🛵', 'راح لمناديب الدفع المقدم', P ? P.length : null, P ? pv : null, '#8a4fb0')}${box('📦', 'الإجمالي', P ? Q.length + P.length : null, P ? qv + pv : null, '#2f7d55')}</div></div>`;
+  }
   function todayUpBtn(){
     if(histShared === null){ loadHist().then(draw).catch(() => { histShared = []; }); return ''; }
     const L = todayUploads();
-    return `<div class="up-row" style="margin:0 0 12px"><button class="up-btn" id="upTodaySheet" ${L.length ? '' : 'disabled'} style="border-color:#2b6cb0;color:#2b6cb0">📊 رفعنا النهارده ${L.length.toLocaleString('ar-EG')} أوردر على QP — ⬇️ نزّلهم في شيت</button>${L.length ? sendBtn() : ''}</div>`;
+    return todaySummary() + `<div class="up-row" style="margin:0 0 12px"><button class="up-btn" id="upTodaySheet" ${L.length ? '' : 'disabled'} style="border-color:#2b6cb0;color:#2b6cb0">📊 رفعنا النهارده ${L.length.toLocaleString('ar-EG')} أوردر على QP — ⬇️ نزّلهم في شيت</button>${L.length ? sendBtn() : ''}</div>`;
   }
   function todaySheet(){
     const L = todayUploads(); if(!L.length || !window.XLSX) return;
