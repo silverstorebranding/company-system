@@ -14770,6 +14770,21 @@ a.hm-kpi:hover{box-shadow:0 6px 16px rgba(0,0,0,.07)}
     S.modal = null; flash(`✅ اتسجل ${KINDS[kind].l} ${fmt(row.amount)} ج لـ ${row.employee_name}.`); load();
     if(kind === 'bonus' || kind === 'deduction') notifyPay(row.month);   // 📨 رسالة للموظف في المهام
   }
+  // ✏️ تعديل بند (خصم / سلفة / مكافأة / صرف) — الأدمن بس
+  async function updEntry(id, patch){
+    if(!(num(patch.amount) > 0)) return flash('اكتب مبلغ صحيح.', true);
+    const { error } = await sb().from('payroll_entries').update({ amount:num(patch.amount), reason:patch.reason || null, note:patch.note || null, entry_date:patch.entry_date || null }).eq('id', id);
+    if(error) return flash('مااتعدّلش: ' + error.message, true);
+    const x = (S.entries || []).find(e => String(e.id) === String(id)); if(x) Object.assign(x, { amount:num(patch.amount), reason:patch.reason, note:patch.note, entry_date:patch.entry_date });
+    flash('✅ اتعدّل.'); draw();
+  }
+  async function updSalary(empId, v){
+    if(!(num(v) >= 0) || String(v).trim() === '') return flash('اكتب الراتب.', true);
+    const { error } = await sb().from('payroll_employees').update({ base_salary:num(v) }).eq('id', empId);
+    if(error) return flash('مااتعدّلش: ' + error.message, true);
+    const e = S.emps.find(x => String(x.id) === String(empId)); if(e) e.base_salary = num(v);
+    flash('✅ الراتب اتعدّل.'); draw();
+  }
   async function delEntry(id){
     if(!confirm('تمسح البند ده؟')) return;
     const { error } = await sb().from('payroll_entries').delete().eq('id', id);
@@ -14929,7 +14944,7 @@ a.hm-kpi:hover{box-shadow:0 6px 16px rgba(0,0,0,.07)}
             <td>${esc(e.dept || '—')}</td><td>${c.eod == null ? '—' : `<b>${fmt(c.eod)}</b> يوم`}</td><td>${fmt(c.base)}</td>
             <td class="pos">${!e.profile_id ? '—' : c.cm ? `<b>+${fmt(c.comm)}</b><div style="font-size:11px;color:var(--muted)">${fmt(c.cm.orders)} أوردر · تسليم ${Math.round((c.cm.delRate || 0) * 100)}%</div>` : '⏳'}</td><td class="pos">${c.bonus ? '+' + fmt(c.bonus) : '—'}</td><td class="neg">${c.ded ? '−' + fmt(c.ded) : '—'}</td><td class="neg">${c.adv ? '−' + fmt(c.adv) : '—'}</td>
             <td class="net">${fmt(c.net)}</td><td>${c.paid ? fmt(c.paid) : '—'}</td><td><span class="pr-st ${st[0]}">${st[1]}</span></td>
-            <td style="white-space:nowrap">${admin ? `<button class="pr-btn sm red" data-pradd="${e.id}" data-k="deduction">− خصم</button> <button class="pr-btn sm" data-pradd="${e.id}" data-k="advance">سلفة</button> <button class="pr-btn sm" data-pradd="${e.id}" data-k="bonus">+ إضافة</button> <button class="pr-btn sm ok" data-pradd="${e.id}" data-k="payment" ${c.left > 0.5 ? '' : 'disabled'}>💵 صرف</button>`
+            <td style="white-space:nowrap">${admin ? `<button class="pr-btn sm" data-predall="${e.id}" style="font-weight:800">✏️ تعديل</button> <button class="pr-btn sm red" data-pradd="${e.id}" data-k="deduction">− خصم</button> <button class="pr-btn sm" data-pradd="${e.id}" data-k="advance">سلفة</button> <button class="pr-btn sm" data-pradd="${e.id}" data-k="bonus">+ إضافة</button> <button class="pr-btn sm ok" data-pradd="${e.id}" data-k="payment" ${c.left > 0.5 ? '' : 'disabled'}>💵 صرف</button>`
               : `<button class="pr-btn sm red" data-prreq="${e.id}" data-k="deduction">− طلب خصم</button> <button class="pr-btn sm ok" data-prreq="${e.id}" data-k="bonus">+ طلب مكافأة</button>`}</td></tr>`;
           if(S.open === String(e.id) && c.cm) r += `<tr class="sub"><td colspan="12">🏆 عمولة Squad (تلقائي): 🧾 أوردرات عمومًا ${c.cm.active ? fmt(c.cm.pend) : '0 (التسليم تحت 50%)'} · ✅ مسلّمة ${fmt(c.cm.del)} · 🏢 مكتب ${fmt(c.cm.off)} = <b>${fmt(c.comm)} ج</b>${c.eod != null ? ` · 📝 EOD اتسجل ${fmt(c.eod)} يوم` : ''}</td></tr>`;
           if(S.open === String(e.id)) r += c.L.length ? c.L.map(x => `<tr class="sub"><td colspan="3">${esc(x.entry_date || '')} · ${esc(KINDS[x.kind] ? KINDS[x.kind].l : x.kind)}: ${esc(x.reason || '')}${x.note ? ' — ' + esc(x.note) : ''}</td><td colspan="6" class="${x.kind === 'bonus' ? 'pos' : x.kind === 'payment' ? '' : 'neg'}">${x.kind === 'bonus' ? '+' : x.kind === 'payment' ? 'اتصرف ' : '−'}${fmt(x.amount)} ج</td><td colspan="2" style="font-size:12px">${esc(x.created_by_name || '')}</td><td>${admin ? `<button class="pr-btn sm red" data-prdel="${x.id}">🗑️</button>` : ''}</td></tr>`).join('') : `<tr class="sub"><td colspan="12">مفيش خصومات ولا إضافات الشهر ده.</td></tr>`;
@@ -14941,7 +14956,7 @@ a.hm-kpi:hover{box-shadow:0 6px 16px rgba(0,0,0,.07)}
       const L = S.entries || [];
       h += `<div class="card"><h3>📒 الخصومات والإضافات والسلف والصرف — ${esc(monthLabel(S.month))}</h3>${L.length ? `<div class="tablewrap"><table class="pr-t"><thead><tr><th>التاريخ</th><th>الموظف</th><th>النوع</th><th>السبب</th><th>المبلغ</th><th>ملاحظة</th><th>سجّله</th><th></th></tr></thead><tbody>
         ${L.slice().reverse().map(x => `<tr style="${okE(x) ? '' : 'opacity:.6'}"><td>${esc(x.entry_date || '')}</td><td>${esc(x.employee_name || '')}</td><td>${esc(KINDS[x.kind] ? KINDS[x.kind].l : x.kind)}${x.status === 'requested' ? ' <span class="pr-st part">طلب — مستني القيمة</span>' : x.status === 'rejected' ? ' <span class="pr-st no">اترفض</span>' : x.requested_by_name ? ` <small style="color:var(--muted)">(طلب ${esc(x.requested_by_name)})</small>` : ''}</td><td>${esc(x.reason || '')}</td>
-          <td class="${x.kind === 'bonus' ? 'pos' : x.kind === 'payment' ? '' : 'neg'}"><b>${fmt(x.amount)}</b></td><td>${esc(x.note || '')}</td><td style="font-size:12px">${esc(x.created_by_name || '')}</td><td>${admin ? `<button class="pr-btn sm red" data-prdel="${x.id}">🗑️</button>` : ''}</td></tr>`).join('')}
+          <td class="${x.kind === 'bonus' ? 'pos' : x.kind === 'payment' ? '' : 'neg'}"><b>${fmt(x.amount)}</b></td><td>${esc(x.note || '')}</td><td style="font-size:12px">${esc(x.created_by_name || '')}</td><td style="white-space:nowrap">${admin ? `<button class="pr-btn sm" data-predall="${x.employee_id}" title="تعديل">✏️</button> <button class="pr-btn sm red" data-prdel="${x.id}">🗑️</button>` : ''}</td></tr>`).join('')}
         </tbody></table></div>` : '<p style="color:var(--muted)">مفيش حاجة متسجلة الشهر ده.</p>'}</div>`;
     }
     if(S.tab === 'emps' && S.profiles){
@@ -14985,6 +15000,28 @@ a.hm-kpi:hover{box-shadow:0 6px 16px rgba(0,0,0,.07)}
   }
   function modalHtml(){
     const M = S.modal;
+    if(M.type === 'edall'){
+      const e = S.emps.find(x => String(x.id) === String(M.empId)) || {}, c = calc(e);
+      const L = (S.entries || []).filter(x => String(x.employee_id) === String(e.id) && (!x.status || x.status === 'approved'));
+      const fi = 'padding:6px 8px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;box-sizing:border-box';
+      return `<div class="pr-modal" id="prModal"><div class="pr-box" style="width:min(820px,100%);max-height:90vh;overflow:auto"><h3>✏️ تعديل — ${esc(e.name || '')} · ${esc(monthLabel(S.month))}</h3>
+        <div class="pr-bar" style="margin:0 0 12px;align-items:center"><label style="font-weight:700">💰 الراتب الأساسي</label>
+          <input id="prEdSal" inputmode="decimal" value="${esc(num(e.base_salary))}" style="${fi};width:130px">
+          <button class="pr-btn pri" id="prEdSalSave">💾 احفظ الراتب</button>
+          <span style="font-size:12.5px;color:var(--muted)">الصافي دلوقتي ${fmt(c.net)} ج · اتصرف ${fmt(c.paid)} ج</span></div>
+        <h3 style="margin:8px 0">📒 الخصومات والمكافآت والسلف والصرف</h3>
+        ${L.length ? `<div class="tablewrap"><table class="pr-t"><thead><tr><th>النوع</th><th>المبلغ</th><th>السبب</th><th>التاريخ</th><th>ملاحظة</th><th></th></tr></thead><tbody>
+          ${L.map(x => { const K = KINDS[x.kind] || { l:x.kind, reasons:[] }, rs = K.reasons.includes(x.reason) || !x.reason ? K.reasons : [x.reason].concat(K.reasons);
+            return `<tr><td class="${x.kind === 'bonus' ? 'pos' : x.kind === 'payment' ? '' : 'neg'}"><b>${esc(K.l)}</b></td>
+            <td><input data-ed-amt="${x.id}" inputmode="decimal" value="${esc(num(x.amount))}" style="${fi};width:95px"></td>
+            <td><select data-ed-rs="${x.id}" style="${fi}">${rs.map(r => `<option ${r === x.reason ? 'selected' : ''}>${esc(r)}</option>`).join('')}</select></td>
+            <td><input type="date" data-ed-dt="${x.id}" value="${esc(x.entry_date || '')}" style="${fi}"></td>
+            <td><input data-ed-nt="${x.id}" value="${esc(x.note || '')}" style="${fi};width:150px"></td>
+            <td style="white-space:nowrap"><button class="pr-btn sm pri" data-ed-save="${x.id}">💾</button> <button class="pr-btn sm red" data-prdel="${x.id}">🗑️</button></td></tr>`; }).join('')}
+          </tbody></table></div>` : '<p style="color:var(--muted);margin:4px 0">مفيش خصومات ولا مكافآت ولا سلف الشهر ده.</p>'}
+        <div class="pr-bar" style="margin:16px 0 0"><button class="pr-btn red" data-pradd="${e.id}" data-k="deduction">− خصم جديد</button> <button class="pr-btn" data-pradd="${e.id}" data-k="advance">سلفة جديدة</button> <button class="pr-btn ok" data-pradd="${e.id}" data-k="bonus">+ إضافة جديدة</button>
+          <button class="pr-btn" data-prclose style="margin-inline-start:auto">قفل</button></div></div></div>`;
+    }
     if(M.type === 'linkone'){
       const e = S.emps.find(x => String(x.id) === String(M.empId)) || {}, sg = suggest(e);
       return `<div class="pr-modal" id="prModal"><div class="pr-box"><h3>🔗 اربط "${esc(e.name)}" بأكونتها</h3>
@@ -15080,6 +15117,10 @@ a.hm-kpi:hover{box-shadow:0 6px 16px rgba(0,0,0,.07)}
     document.querySelectorAll('[data-propen]').forEach(b => b.onclick = () => { S.open = S.open === b.dataset.propen ? '' : b.dataset.propen; draw(); });
     document.querySelectorAll('[data-pradd]').forEach(b => b.onclick = () => { S.modal = { type:'entry', empId:b.dataset.pradd, kind:b.dataset.k }; draw(); const a = $('prAmt'); if(a) a.focus(); });
     document.querySelectorAll('[data-prdel]').forEach(b => b.onclick = () => delEntry(b.dataset.prdel));
+    document.querySelectorAll('[data-predall]').forEach(b => b.onclick = () => { S.modal = { type:'edall', empId:b.dataset.predall }; draw(); });
+    if($('prEdSalSave')) $('prEdSalSave').onclick = () => updSalary(S.modal.empId, $('prEdSal').value);
+    document.querySelectorAll('[data-ed-save]').forEach(b => b.onclick = () => { const id = b.dataset.edSave, q = k => document.querySelector(`[data-ed-${k}="${id}"]`);
+      updEntry(id, { amount:q('amt').value, reason:q('rs').value, entry_date:q('dt').value, note:q('nt').value.trim() }); });
     document.querySelectorAll('[data-prreq]').forEach(b => b.onclick = () => { S.modal = { type:'req', empId:b.dataset.prreq, kind:b.dataset.k }; draw(); const n = $('prNote'); if(n) n.focus(); });
     if($('prSendReq')) $('prSendReq').onclick = () => { const rs = $('prReason').value, nt = $('prNote').value.trim(); requestEntry(S.modal.empId, S.modal.kind, rs === 'أخرى' && nt ? nt : rs, rs === 'أخرى' && nt ? '' : nt, $('prDate').value); };
     document.querySelectorAll('[data-predit]').forEach(b => b.onclick = () => { const e = S.emps.find(x => String(x.id) === b.dataset.predit); S.modalErr = ''; S.modal = { type:'emp', d:{ ...e } }; draw(); });
