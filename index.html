@@ -12095,7 +12095,16 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
       draw();
     }
     AGs.busy = false; AGs.msgErr = !!fail;
-    AGs.msg = `✅ اترفع ${ok} أوردر جديد على QP${fail ? ` — و ${fail} QP رفضهم (السبب جنبهم)` : ''}. الأوردرات القديمة زي ما هي.`;
+    // 🕘 يتسجل في سجل الرفع ويتحسب مع "اترفع النهارده" زي أي رفعة عادية
+    const upd = rows.filter(x => x.newSerial && !x.agErr);
+    if(upd.length){
+      const entry = { id: Date.now().toString(36), at: new Date().toISOString(), n: upd.length, total: upd.reduce((a, x) => a + (numOf(x.q.total_amount ?? x.q.price) || 0), 0),
+        notes: '🔁 اترفعت تاني بسريال جديد (من البوالص)', by: me().full_name || me().username || '', qp:true,
+        orders: upd.map(x => { const q = x.q; return { serial:String(x.newSerial), name:q.full_name || '', phone:phoneOf(q.phone), address:q.address || '', amount:numOf(q.total_amount ?? q.price),
+          notes:String(q.notes || '').trim(), contents:String(q.shipment_contents || '').trim(), city:q.city || '', src:'🔁 بدل ' + String(x.serial) }; }) };
+      try{ await addHist(entry); }catch(e){}
+    }
+    AGs.msg = `✅ اترفع ${ok} أوردر جديد على QP${fail ? ` — و ${fail} QP رفضهم (السبب جنبهم)` : ''}. الأوردرات القديمة زي ما هي. واتسجلوا في 🕘 سجل الرفع.`;
     draw();
   }
   function againSheet(){
