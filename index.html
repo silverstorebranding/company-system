@@ -1039,7 +1039,7 @@ const PR_MANUAL=[
 let prManualVals={}; // prManualVals[id][brand]
 const prMan=(id,b)=>(prManualVals[id]&&prManualVals[id][b])||0;
 
-let prBrandCalc={}, prPendingTotal=0, prRealCols=[], prExpCols=[], prUnbranded=[], prHiddenRows=[], prTotalRows=0;
+let prBrandCalc={}, prPendingTotal=0, prRealCols=[], prExpCols=[], prUnbranded=[], prHiddenRows=[], prTotalRows=0, prSquadN={};
 
 /* 🏷️ البراندات الجديدة — بتتضاف من 🎯 أيام تحت هدف التسليم (للأدمن) وبتدخل أوتوماتيك في الأرباح وأيام التسليم
    وكل براند بيتعامل معاملة براند موجود (نسب التوقع / تكلفة البضاعة بالقطعة / ربح المحفظة / هدف التسليم)
@@ -1137,7 +1137,7 @@ function prProcess(rows){
   const byBrand={}; PR_BRANDS.forEach(b=>byBrand[b]=[]);
   prUnbranded=[]; prHiddenRows=[]; prTotalRows=rows.length;
   // 🏆 أوردرات Squad اللي ملقيناش مصدرها بتتحسب على DREAM — وأي براند مش في الأرباح (Socky / Bloom ...) مش محسوب
-  rows.forEach(r=>{let b=prGetBrand(r[PR_notesCol-1]); if(b==='squad')b='dream'; if(PR_HIDDEN_BRANDS.includes(b)){prHiddenRows.push(r);return;} if(b&&byBrand[b])byBrand[b].push(r); else prUnbranded.push(r);});
+  prSquadN={}; rows.forEach(r=>{let b=prGetBrand(r[PR_notesCol-1]); if(b==='squad'){b='dream'; r.squad=true;} if(r.squad&&b) prSquadN[b]=(prSquadN[b]||0)+1; if(PR_HIDDEN_BRANDS.includes(b)){prHiddenRows.push(r);return;} if(b&&byBrand[b])byBrand[b].push(r); else prUnbranded.push(r);});
 
   function calcOne(brand){
     const rs=byBrand[brand];
@@ -1594,9 +1594,13 @@ function prGuideReset(){ document.querySelectorAll('#prGuide .gIn').forEach(i=>{
 function prBuildTotalCard(){
   const box=document.getElementById('prTotalCard'); if(!box) return;
   const n=b=>(prBrandCalc[b]||{}).n||0, used=new Set();
-  const G=[['💍 DREAM (دريم + MSG SITE + واتساب دريم)',['dream','dream msg site','dream wa'],'#b08d57'],['💎 CARA (الثلاثة)',['cara silver','cara silver un','cara wa'],'#7a8fa6'],
-    ['💬 MSG',['msg'],'#6b7a3a'],['⚡ FASTPLT',['fastplt'],'#8a6d3b'],['💅 LO GEL NAILS',['lo gel nails'],'#c96b4f'],['🧸 KIDZZLY',['kidzzly'],'#4f8fd8'],['📨 إرسال صفحة',['ersal'],'#8a4fb0'],['🐰 BUNNY',['bunny'],'#d4789c']];
-  const rows=G.map(([l,bs,c])=>{bs.forEach(b=>used.add(b)); return [l,bs.reduce((a,b)=>a+n(b),0),c];});
+  const G=[['💍 DREAM (دريم + MSG SITE + واتساب دريم)',['dream','dream msg site','dream wa'],'#b08d57'],['🧸 KIDZZLY',['kidzzly'],'#4f8fd8'],['🐰 BUNNY',['bunny'],'#d4789c'],
+    ['💬 MSG',['msg'],'#6b7a3a'],['⚡ FASTPLT',['fastplt'],'#8a6d3b'],['💅 LO GEL NAILS',['lo gel nails'],'#c96b4f'],['💎 CARA (الثلاثة)',['cara silver','cara silver un','cara wa'],'#7a8fa6'],['📨 إرسال صفحة',['ersal'],'#8a4fb0']];
+  const sqOf=bs=>bs.reduce((a,b)=>a+(prSquadN[b]||0),0);
+  const rows=G.map(([l,bs,c])=>{bs.forEach(b=>used.add(b)); const v=bs.reduce((a,b)=>a+n(b),0), q=sqOf(bs); return [l,v,c,q?`🏆 منهم ${q.toLocaleString('ar-EG')} من Squad (${v?Math.round(q/v*100):0}%)`:''];});
+  // 🏆 في جدول الخلاصة تحت اسم DREAM و KIDZZLY
+  [['S_sq_dream',['dream','dream msg site','dream wa']],['S_sq_kidzzly',['kidzzly']]].forEach(([id,bs])=>{const e=document.getElementById(id); if(!e)return; const v=bs.reduce((a,b)=>a+n(b),0), q=sqOf(bs);
+    e.textContent=`${v.toLocaleString('ar-EG')} أوردر · 🏆 منهم ${q.toLocaleString('ar-EG')} من Squad`;});
   PR_BRANDS.filter(b=>!used.has(b)).forEach(b=>rows.push(['🏷️ '+b.toUpperCase(),n(b),'#5aa9a0']));   // براندات جديدة
   const hidN={}; prHiddenRows.forEach(r=>{const b=prGetBrand(r[PR_notesCol-1]); hidN[b]=(hidN[b]||0)+1;});
   rows.push(['🙈 مخفي (RS KIDS / BLOOM) — مش محسوب',prHiddenRows.length,'#9a9a9a',Object.entries(hidN).map(([b,c])=>b.toUpperCase()+' '+c).join(' · ')]);
@@ -2005,15 +2009,15 @@ function viewProfits(){
   </div>
   <div id="prResults" style="display:none">
     <div class="card" id="prTotalCard"></div>
-    <div class="card"><h3>⭐ الخلاصة — DREAM و CARA و KIDZZLY و إرسال صفحة</h3>
+    <div class="card"><h3>⭐ الخلاصة — DREAM و KIDZZLY و CARA و إرسال صفحة</h3>
       <div class="tablewrap"><table class="sum">
-        <tr><th rowspan="2">البند</th><th colspan="2" class="grp g-dream">DREAM المجمع</th><th colspan="2" class="grp g-cara sep">CARA المجمع</th><th colspan="2" class="grp g-rs sep">KIDZZLY</th><th colspan="2" class="grp g-cara sep">إرسال صفحة</th></tr>
+        <tr><th rowspan="2">البند</th><th colspan="2" class="grp g-dream">DREAM المجمع<div id="S_sq_dream" style="font-size:11.5px;font-weight:500;opacity:.9"></div></th><th colspan="2" class="grp g-rs sep">KIDZZLY<div id="S_sq_kidzzly" style="font-size:11.5px;font-weight:500;opacity:.9"></div></th><th colspan="2" class="grp g-cara sep">CARA المجمع</th><th colspan="2" class="grp g-cara sep">إرسال صفحة</th></tr>
         <tr><th class="act">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th><th class="act sep">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th><th class="act sep">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th><th class="act sep">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th></tr>
         ${[['rev','📥 المبيعات',''],['cost','🔴 التكاليف',''],['prof','✅ الأرباح','big'],['pct','📊 نسبة الأرباح','big'],['ads','📢 نسبة الإعلانات','']].map(([k,l,cls])=>`
         <tr class="${cls}"><td class="lbl">${l}</td>
           <td class="act" id="S_${k}_dream_group_A">—</td><td class="exp" id="S_${k}_dream_group_F">—</td>
-          <td class="act sep" id="S_${k}_cara_group_A">—</td><td class="exp" id="S_${k}_cara_group_F">—</td>
           <td class="act sep" id="S_${k}_kidzzly_A">—</td><td class="exp" id="S_${k}_kidzzly_F">—</td>
+          <td class="act sep" id="S_${k}_cara_group_A">—</td><td class="exp" id="S_${k}_cara_group_F">—</td>
           <td class="act sep" id="S_${k}_ersal_A">—</td><td class="exp" id="S_${k}_ersal_F">—</td></tr>`).join('')}
       </table></div>
       <div class="legend">
@@ -5960,7 +5964,8 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
       r[4]  = num(o.price);                 // E
       r[5]  = num(o.total_fees);            // F
       r[8]  = o.returned_Client_date || ''; // I
-      r[9]  = squadBrandOf(o) || o.notes || '';   // J — أوردرات Squad بتتقسم حسب مصدرها (دريم / كيدزلي / إرسال)
+      const sqb = squadBrandOf(o); if(sqb) r.squad = true;   // 🏆 جاي من Squad (عشان نعدّ كام أوردر Squad في كل براند)
+      r[9]  = sqb || o.notes || '';   // J — أوردرات Squad بتتقسم حسب مصدرها (دريم / كيدزلي / إرسال)
       r[10] = new Date(o.order_date);       // K
       r[11] = o.shipment_contents || '';    // L
       r[14] = (QP_CATS[catOf(o)] || { pr:'Pending' }).pr; // O
