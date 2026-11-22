@@ -9046,6 +9046,12 @@ table.pr tr.bd-cat td{background:var(--slate-l);font-weight:700}
     }
     return n > 0 ? { n, how:'رقم قبل المنتج: ' + how.join(' + ') + (k > 1 ? ' = ' + n : '') + ' (اللي بعد "+" من غير رقم لون)' } : null;
   }
+  // 3) أشكال جوه قوس مفصولة بـ "+": "مقاس4(دبدوب بيج+فراشة بينك+نعناعي)" = 3 — كل شكل قطعة (و "× 2" = 2)
+  function kdParen(text){
+    const t = kdDig(text); let n = 0, k = 0;
+    for(const m of t.matchAll(/\(([^()]*\+[^()]*)\)/g)){ m[1].split('+').map(x => x.trim()).filter(Boolean).forEach(x => { const q = x.match(/[×xX\*]\s*(\d{1,2})\s*$/); n += q ? Math.max(1, +q[1]) : 1; }); k++; }
+    return n > 0 ? { n, how:`${n} شكل جوه القوس مفصولين بـ "+" (كل شكل قطعة)` } : null;
+  }
   function splitItems(text){
     return String(text || '').replace(/\r/g, '').split(/\s*\+\s*|\n+/).map(x => x.trim()).filter(Boolean);
   }
@@ -9085,7 +9091,7 @@ table.pr tr.bd-cat td{background:var(--slate-l);font-weight:700}
       }
       // 🧸 Kidzzly: العدد المكتوب صريح ("قطعتين" / "3 قطع") بيكسب · وبعده الرقم اللي قبل المنتج ("2دفاية ... + وردة موف" = 2 — اللي بعد "+" لون)
       if(bk === 'kidzzly'){
-        const kc = kdExplicit(o.shipment_contents) || kdLeading(o.shipment_contents);
+        const kc = kdExplicit(o.shipment_contents) || kdLeading(o.shipment_contents) || kdParen(o.shipment_contents);
         if(kc){ addP('قطعة Kidzzly', kc.n, {}).orders.add(oi); out.pieces += kc.n; row.items.push('قطعة × ' + kc.n + ' — ' + kc.how); rowAdd(row, kc.n, {}); out.ok++; row.price = oPrice; out.rows.push(row); return; }
       }
       splitItems(o.shipment_contents).forEach(raw => {
