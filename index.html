@@ -17967,8 +17967,8 @@ table.cs tr.cs-open td{background:#fff7dd}
 .wf-c .n{font-size:24px;font-weight:800;font-variant-numeric:tabular-nums}
 .wf-c .l{font-size:13px;font-weight:700}
 .wf-c .s{font-size:12px;color:var(--muted);margin-top:4px;line-height:1.6}
-@media (max-width:900px){.wf-k{grid-template-columns:repeat(2,1fr)}}
-@media (max-width:520px){.wf-k{grid-template-columns:1fr}}
+@media (max-width:900px){.wf-k{grid-template-columns:repeat(2,1fr)!important}}
+@media (max-width:520px){.wf-k{grid-template-columns:1fr!important}}
 </style>
 <script>
 /* =====================================================================
@@ -18283,12 +18283,33 @@ table.cs tr.cs-open td{background:#fff7dd}
     const wait = A() && A().hasCreds() ? '…' : '—';
     const card = (k, n, l, s) => `<div class="wf-c" style="--k:${k}"><div class="n">${n}</div><div class="l">${l}</div>${s ? `<div class="s">${s}</div>` : ''}</div>`;
     const monthTxt = new Date().toLocaleDateString('ar-EG', { month:'long' });
-    h += `<div class="wf-k">
-      ${card('#2f7d55', W.pr && W.pr.act ? esc(W.pr.act) + ' ج' : W.pr && W.pr.err ? '—' : wait, `📈 أرباح ${esc(monthTxt)} لحد النهارده`, W.pr ? (W.pr.busy ? '⏳ بيحسب بنفس حسبة قسم الأرباح...' : W.pr.err ? '⚠️ ' + esc(W.pr.err) : `إجمالي الأرباح (فعلي) — نفس رقم <a href="#/profits">💰 الأرباح</a> من ${esc(W.pr.from)} لـ ${esc(W.pr.to)}<br>📈 بعد التوقع: <b>${esc(W.pr.exp)}</b> ج`) : '')}
-      ${card('#1d4f91', wallet == null ? wait : fmt(wallet) + ' ج', '👛 لينا عند QP مجوش', W.sum && W.sum.walletN != null ? `${fmt(W.sum.walletN)} أوردر اتسلم وفلوسه لسه ماتحوّلتش` : '')}
-      ${card('#b08d3a', C ? fmt(C.wayV) + ' ج' : wait, '🚚 لينا كام لسه هيتسلموا', C ? `Pending + مع المندوب + هولد · المتوقع يتسلم منهم ≈ <b>${fmt(C.wayExp)}</b> ج<br>(Pending + مع المندوب 55% · هولد 20%)` : '')}
-      ${card('#c0392b', fmt(debts) + ' ج', '🧾 ديونا', `${(W.debts || []).length} بند — بتتكتب تحت`)}
+    // 🧭 الترتيب: المخزن الحالي (بالإيد) + الخزنة (من 💼 الحسابات) ← 5 مربعات ← الإجمالي ← كاش / بضاعة
+    const ed0 = canEdit(), stock0 = num((W.cfg || {}).stock);
+    const inp0 = 'padding:7px 9px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit';
+    h += `<div class="card" style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
+      <label style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-weight:700">📦 المخزن الحالي قيمته
+        ${ed0 ? `<input id="wfSt" inputmode="decimal" placeholder="قيمة البضاعة اللي في المخزن" value="${stock0 || ''}" style="width:200px;${inp0}">
+        <button class="mockbtn" id="wfStSave" style="background:#1f3d36;border-color:#1f3d36;color:#fff">💾 احفظ</button>` : `<b>${fmt(stock0)} ج</b>`}</label>
+      <span style="font-weight:700">🏦 الخزنة الحالية (من 💼 الحسابات): <b>${cash == null ? wait : fmt(cash) + ' ج'}</b></span></div>`;
+    const retG = C ? C.out.rc : null, expD = C ? C.wayExp : null;
+    h += `<div class="wf-k" style="grid-template-columns:repeat(5,1fr)">
+      ${card('#2f7d55', W.pr && W.pr.act ? esc(W.pr.act) + ' ج' : W.pr && W.pr.err ? '—' : wait, `📈 الربح لحد دلوقتي`, W.pr ? (W.pr.busy ? '⏳ بيحسب بنفس حسبة قسم الأرباح...' : W.pr.err ? '⚠️ ' + esc(W.pr.err) : `أرباح ${esc(monthTxt)} (فعلي) — نفس رقم <a href="#/profits">💰 الأرباح</a> من ${esc(W.pr.from)} لـ ${esc(W.pr.to)}`) : '')}
+      ${card('#6b4f2a', fmt(stock0) + ' ج', '📦 المخزن الحالي', 'مكتوب بالإيد فوق')}
+      ${card('#8a5a00', retG == null ? wait : fmt(retG) + ' ج', '↩️ مخزن مرتجع', C ? `بضاعة هترجع بعد توقع التسليمات (≈ ${fmt(C.out.rp)} قطعة)` : '')}
+      ${card('#1d4f91', expD == null ? wait : fmt(expD) + ' ج', '🚚 توقع التسليمات', C ? `المتوقع يتسلم من ${fmt(C.wayV)} ج برا (Pending + مع المندوب 55% · هولد 20%)${wallet != null ? `<br>👛 + عند QP مجوش: <b>${fmt(wallet)}</b> ج` : ''}` : '')}
+      ${card('#c0392b', fmt(debts) + ' ج', '🧾 ديون', `${(W.debts || []).length} بند — بتتكتب تحت`)}
     </div>`;
+    if(C && cash != null){
+      const cashLeft = cash + (wallet || 0) + expD - debts, goodsLeft = stock0 + retG, all = cashLeft + goodsLeft;
+      h += `<div class="card" style="border:2px solid #1f3d36;text-align:center">
+        <div style="font-size:14px;font-weight:700;color:var(--muted)">💰 الإجمالي من كل اللي فوق</div>
+        <div style="font-size:34px;font-weight:800;color:${all < 0 ? '#c0392b' : '#1f3d36'};font-variant-numeric:tabular-nums;margin:4px 0 12px">${fmt(all)} ج</div>
+        <div class="wf-k" style="grid-template-columns:repeat(2,1fr);margin:0;text-align:right">
+          ${card('#2f7d55', fmt(cashLeft) + ' ج', '💵 هيتبقى كاش', `الخزنة ${fmt(cash)} + عند QP ${fmt(wallet || 0)} + توقع التسليمات ${fmt(expD)} − الديون ${fmt(debts)}`)}
+          ${card('#6b4f2a', fmt(goodsLeft) + ' ج', '📦 هيتبقى بضاعة في المخازن', `المخزن الحالي ${fmt(stock0)} + المرتجع ${fmt(retG)}`)}
+        </div>
+        <div style="font-size:12px;color:var(--muted);margin-top:8px">مصاريف التشغيل مش داخلة هنا لسه.</div></div>`;
+    } else h += `<div class="card"><p class="none" style="margin:0">⏳ الإجمالي هيظهر لما أرقام QP والخزنة يتحمّلوا.</p></div>`;
     if(C){
       const pct = r => r == null ? '' : fmt(r * 100) + '%';
       const row = (l, x, extra, tot) => `<tr${tot ? ' class="total"' : ''}><td class="lbl">${l}</td><td>${fmt(x.n)}</td><td>${fmt(x.p)}</td><td>${fmt(x.v)} ج</td><td>${fmt(x.cost)} ج</td>
@@ -18321,9 +18342,7 @@ table.cs tr.cs-open td{background:#fff7dd}
       <h3 style="margin-top:16px">🏦 الخزنة الحالية — ${cashMan != null ? fmt(cashMan) + ' ج' : 'من الشيت ' + fmt(cash) + ' ج'}</h3>
       ${ed ? `<div style="display:flex;gap:8px;flex-wrap:wrap"><input id="wfCs" inputmode="decimal" placeholder="اللي في الخزنة فعلًا (فاضي = رصيد الشيت)" value="${cashMan != null ? cashMan : ''}" style="width:260px;${inp}">
         <button class="mockbtn" id="wfCsSave" style="background:#1f3d36;border-color:#1f3d36;color:#fff">💾 احفظ</button></div>` : ''}
-      <h3 style="margin-top:16px">📦 المخزن (تقديري) — ${fmt(stock)} ج</h3>
-      ${ed ? `<div style="display:flex;gap:8px;flex-wrap:wrap"><input id="wfSt" inputmode="decimal" placeholder="قيمة البضاعة اللي في المخزن" value="${stock || ''}" style="width:220px;${inp}">
-        <button class="mockbtn" id="wfStSave" style="background:#1f3d36;border-color:#1f3d36;color:#fff">💾 احفظ</button></div>` : ''}</div>`;
+      </div>`;
     // 🧮 الصورة الكاملة
     if(C && W.cash){
       const T = W.cash, bk = T.back || { peter:0, fady:0 };
