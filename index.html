@@ -4138,7 +4138,7 @@ grant select, insert, update, delete on public.office_sales to authenticated;`;
     else body = DashboardView();
     // 📋 كارت مهام اليوم لخدمة العملاء — فوق لوحتي وترتيب الـSquad
     const daily = (state.view === 'dashboard' || state.view === 'leaderboard' || !['new-order', 'agent-orders', 'qp-sync', 'verify', 'office', 'ersal', 'followbonus'].includes(state.view)) ? '<div id="sq-daily"></div>' : '';
-    const teamBox = (state.view === 'dashboard' || state.view === 'leaderboard') && canViewAll() ? TeamSalesBox() : '';
+    const teamBox = (state.view === 'dashboard' || state.view === 'leaderboard') && isAdminUser() ? TeamSalesBox() : '';
     root.innerHTML = Bar() + teamBox + daily + body;
     wireAppEvents();
     if(state.view === 'ersal' && window.ErsalFocus) window.ErsalFocus.mountCS();
