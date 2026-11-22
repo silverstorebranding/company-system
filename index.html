@@ -18193,7 +18193,7 @@ table.cs tr.cs-open td{background:#fff7dd}
   const ymd = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   const isWF = () => (location.hash.replace('#/', '') || 'home').split('?')[0].split('/')[0] === 'where';
   const GL = { italy:'💍 إيطالي', kidzzly:'🧸 كيدزلي', bunny:'🐰 Bunny', ersal:'📨 إرسال', socky:'🧦 سوكي', bloom:'🌸 بلوم', other:'❔ غيره' };
-  const W = { busy:false, prog:'', err:'', at:null, sum:null, list:null, cash:null, debts:null, cfg:null };
+  const W = { busy:false, prog:'', err:'', at:null, sum:null, list:null, cash:null, debts:null, cfg:null, snaps:null };
   const A = () => window.QP && window.QP.api;
   const WF_PIECE = 110;                       // تكلفة القطعة (بضاعة) بالجنيه
   const WF_RATE = { ofd:0.55, hold:0.20 };    // نسبة اللي بيتسلم: Pending + مع المندوب / هولد
@@ -18211,6 +18211,7 @@ table.cs tr.cs-open td{background:#fff7dd}
       jobs.push((async () => { try{ const { data } = await sb().from('app_kv').select('value').eq('key', 'where_debts').maybeSingle(); W.debts = (data && data.value && data.value.list) || []; }catch(e){ W.debts = W.debts || []; } draw(); })());
       jobs.push((async () => { try{ const { data } = await sb().from('app_kv').select('value').eq('key', 'where_cfg').maybeSingle(); W.cfg = (data && data.value) || {}; }catch(e){ W.cfg = W.cfg || {}; } draw(); })());
       jobs.push((async () => { try{ W.cash = window.CashAPI ? await window.CashAPI.balance() : null; }catch(e){ W.cash = null; } draw(); })());
+      jobs.push((async () => { try{ const { data } = await sb().from('app_kv').select('value').eq('key', 'where_snaps').maybeSingle(); W.snaps = (data && data.value) || {}; }catch(e){ W.snaps = W.snaps || {}; } })());
       if(!A() || !A().hasCreds()) W.err = 'محتاج دخول QP على الجهاز ده (من قسم 🚚 QP) عشان أرقام QP تظهر.';
       else {
         jobs.push((async () => { try{ W.sum = await window.QP.getSummary(); }catch(e){ W.sum = { err:e.message }; } draw(); })());
@@ -18224,6 +18225,7 @@ table.cs tr.cs-open td{background:#fff7dd}
       }
       await Promise.all(jobs);
       W.at = new Date();
+      await saveSnap();
     }catch(e){ W.err = e.message; }
     W.busy = false; draw();
   }
@@ -18272,6 +18274,26 @@ table.cs tr.cs-open td{background:#fff7dd}
         t.dv += x.v * r; t.dp += x.p * r; t.dc += x.cost * r; t.rp += x.p * (1 - r); t.rc += x.cost * (1 - r); }); });
     return { G, wayV:way.v, wayExp:way.dv, out:O };
   }
+  // 🏦 اللي نملكه دلوقتي = كاش (الخزنة + عند QP + توقع التسليمات − الديون) + بضاعة (المخزن الحالي + المرتجع)
+  function owned(){
+    const C = calc(); if(!C || !W.cash || W.cash.balance == null || !W.debts || !W.cfg) return null;
+    const wl = W.sum && W.sum.wallet != null ? Number(W.sum.wallet) : 0, debts = W.debts.reduce((a, x) => a + num(x.amount), 0);
+    return { cash: W.cash.balance + wl + C.wayExp - debts, goods: num(W.cfg.stock) + C.out.rc };
+  }
+  const prevMonth = () => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1); return ymd(d).slice(0, 7); };
+  // 📸 بنحفظ "اللي نملكه" لكل شهر (أول وآخر مرة الصفحة اتفتحت فيه) — آخر رقم في الشهر اللي فات = بداية الشهر ده
+  async function saveSnap(){
+    if(!canEdit()) return;
+    const o = owned(); if(!o) return;
+    try{
+      const { data } = await sb().from('app_kv').select('value').eq('key', 'where_snaps').maybeSingle();
+      const S = (data && data.value) || {}, m = ymd(new Date()).slice(0, 7), cur = { cash:Math.round(o.cash), goods:Math.round(o.goods), at:new Date().toISOString() };
+      S[m] = { first:(S[m] && S[m].first) || cur, last:cur };
+      Object.keys(S).sort().slice(0, -24).forEach(k => delete S[k]);
+      await sb().from('app_kv').upsert({ key:'where_snaps', value:S, updated_at:new Date().toISOString(), updated_by_name: me().full_name || me().username || '' });
+      W.snaps = S;
+    }catch(e){}
+  }
   const canEdit = () => me().is_admin || /فادي|فادى|fady/i.test((me().full_name || '') + ' ' + (me().username || ''));
   function view(){
     let h = `<div class="pagehead"><h1>📍 احنا فين؟</h1><p>فلوسنا فين دلوقتي: الأرباح من أول الشهر، اللي لينا عند QP، اللي لسه هيتسلم، اللي برا، وديونا. <small>(مبدئي — هنزوّد عليه)</small></p></div>
@@ -18302,15 +18324,28 @@ table.cs tr.cs-open td{background:#fff7dd}
     const allReady = C && cash != null && !W.busy && W.pr && !W.pr.busy && W.debts && W.cfg;
     if(allReady){
       const cashLeft = cash + (wallet || 0) + expD - debts, goodsLeft = stock0 + retG, all = cashLeft + goodsLeft;
+      const arN = t => num(String(t || '').replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/٫/g, '.').replace(/[٬,]/g, ''));
+      const pAct = arN(W.pr.act), pExp = arN(W.pr.exp), pWay = pExp - pAct, okPr = !W.pr.err && W.pr.exp;
+      const st = W.snaps && W.snaps[prevMonth()] && W.snaps[prevMonth()].last;
       h += `<div class="card" style="border:2px solid #1f3d36;text-align:center">
-        <div style="font-size:15px;font-weight:800;color:var(--muted)">💰 صافي الأرباح</div>
-        <div style="font-size:34px;font-weight:800;color:${all < 0 ? '#c0392b' : '#1f3d36'};font-variant-numeric:tabular-nums;margin:4px 0 12px">${fmt(all)} ج</div>
+        <div style="font-size:15px;font-weight:800;color:var(--muted)">📈 صافي ربح ${esc(monthTxt)}</div>
+        <div style="font-size:34px;font-weight:800;color:${pExp < 0 ? '#c0392b' : '#1f3d36'};font-variant-numeric:tabular-nums;margin:4px 0 6px">${okPr ? esc(W.pr.exp) + ' ج' : '—'}</div>
+        ${okPr ? `<div style="font-size:13px;color:var(--muted)">الربح لحد دلوقتي <b>${esc(W.pr.act)}</b> + ربح توقع التسليمات <b>${fmt(pWay)}</b> — نفس رقم "إجمالي الأرباح بعد التوقع" في <a href="#/profits">💰 الأرباح</a> (بعد الإعلانات والشحن وتكلفة البضاعة والمصاريف الثابتة)</div>`
+          : `<div style="font-size:13px;color:#c0392b">⚠️ ${esc(W.pr.err || 'الربح ماتحسبش')}</div>`}
+        ${st ? (() => { const dc = cashLeft - st.cash, dg = goodsLeft - st.goods;
+          return `<div style="margin-top:10px;font-size:13.5px">💡 من أول الشهر: الكاش ${dc >= 0 ? 'زاد' : 'قل'} <b style="color:${dc >= 0 ? '#2f7d55' : '#c0392b'}">${fmt(Math.abs(dc))}</b> ج · البضاعة ${dg >= 0 ? 'زادت' : 'قلت'} <b style="color:${dg >= 0 ? '#2f7d55' : '#c0392b'}">${fmt(Math.abs(dg))}</b> ج
+            <div style="font-size:12px;color:var(--muted)">مقارنة باللي كنا نملكه آخر الشهر اللي فات (${esc(new Date(st.at).toLocaleDateString('ar-EG', { day:'numeric', month:'short' }))}) — السحب من الشركا بيقلل الكاش.</div></div>`; })()
+          : `<div style="margin-top:10px;font-size:12px;color:var(--muted)">💡 الربح راح كاش ولا بضاعة؟ هيظهر من الشهر الجاي — السيستم بيحفظ "اللي نملكه" كل شهر عشان يقارن.</div>`}
+      </div>
+      <div class="card" style="border:2px solid #6b4f2a;text-align:center">
+        <div style="font-size:15px;font-weight:800;color:var(--muted)">🏦 اللي نملكه دلوقتي</div>
+        <div style="font-size:30px;font-weight:800;color:${all < 0 ? '#c0392b' : '#6b4f2a'};font-variant-numeric:tabular-nums;margin:4px 0 12px">${fmt(all)} ج</div>
         <div class="wf-k" style="grid-template-columns:repeat(2,1fr);margin:0;text-align:right">
           ${card('#2f7d55', fmt(cashLeft) + ' ج', `💵 كاش${all ? ' — ' + fmt(cashLeft / all * 100) + '%' : ''}`, `الخزنة ${fmt(cash)} + عند QP ${fmt(wallet || 0)} + توقع التسليمات ${fmt(expD)} − الديون ${fmt(debts)}`)}
           ${card('#6b4f2a', fmt(goodsLeft) + ' ج', `📦 بضاعة في المخازن (برا وجوا)${all ? ' — ' + fmt(goodsLeft / all * 100) + '%' : ''}`, `المخزن الحالي ${fmt(stock0)} + المرتجع ${fmt(retG)}`)}
         </div>
-        <div style="font-size:12px;color:var(--muted);margin-top:8px">صافي الأرباح = الكاش ${fmt(cashLeft)} + البضاعة ${fmt(goodsLeft)} · مصاريف التشغيل مش داخلة هنا لسه.</div></div>`;
-    } else h += `<div class="card" style="border:2px dashed var(--line);text-align:center"><div style="font-size:15px;font-weight:800;color:var(--muted)">💰 صافي الأرباح</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:8px">اللي نملكه = الكاش + البضاعة — ده مش ربح، ده فلوسنا فين دلوقتي.</div></div>`;
+    } else h += `<div class="card" style="border:2px dashed var(--line);text-align:center"><div style="font-size:15px;font-weight:800;color:var(--muted)">📈 صافي ربح الشهر · 🏦 اللي نملكه</div>
       <p class="none" style="margin:6px 0 0">⏳ بيستنى كل الأرقام تخلص (الربح · أوردرات QP · الخزنة · الديون) — وبعدين يحسب.</p></div>`;
     if(C){
       const pct = r => r == null ? '' : fmt(r * 100) + '%';
