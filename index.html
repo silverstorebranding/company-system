@@ -18727,12 +18727,20 @@ table.cs tr.cs-open td{background:#fff7dd}
         <p style="font-size:12px;color:var(--muted);margin:6px 0 0">من أوردرات QP من ${esc(W.from || '')} لحد النهارده · Kidzzly والإيطالي بس (باقي البراندات مش داخلة) · بيتسلم من Pending + مع المندوب 55% ومن الهولد 20% والباقي بيرجع، والاندلفرد اللي لسه مرجعش كله راجع.</p></div>`;
     } else if(A() && A().hasCreds()) h += `<div class="card"><p class="none">⏳ بيجيب أوردرات QP...</p></div>`;
     // ⚙️ مصاريف التشغيل (بتتكتب بالإيد: رواتب، إيجار...) + 📦 المخزن (تقديري) — app_kv where_cfg = { ops:[{ id, name, amount }], stock }
-    const ed = canEdit(), CF = W.cfg || {}, ops = CF.ops || [], opsT = ops.reduce((a, x) => a + num(x.amount), 0), stock = num(CF.stock), cashMan = CF.cash != null && CF.cash !== '' ? num(CF.cash) : null;
+    // 🏢 المصاريف الثابتة: الشهري ÷ 30 × الأيام اللي فاتت من الشهر (من يوم 1 لحد النهارده)
+    const FIXED_M = [['rent', '🏢 الإيجار', 15000], ['salaries', '👥 الرواتب', 66000], ['ops', '⚙️ التشغيل', 15000]];
+    const dayN = new Date().getDate();
+    const ed = canEdit(), CF = W.cfg || {}, fixedM = CF.fixed || {};
+    const fixedL = FIXED_M.map(([k, l, d]) => { const mo = fixedM[k] != null && fixedM[k] !== '' ? num(fixedM[k]) : d; return { id:'fx_' + k, k, name:l, mo, amount:mo / 30 * dayN, fixed:true }; });
+    const opsMan = CF.ops || [], ops = fixedL.concat(opsMan), opsT = ops.reduce((a, x) => a + num(x.amount), 0), stock = num(CF.stock), cashMan = CF.cash != null && CF.cash !== '' ? num(CF.cash) : null;
     const inp = 'padding:7px 9px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit';
-    h += `<div class="card"><h3>⚙️ مصاريف التشغيل — ${fmt(opsT)} ج</h3>
-      ${ops.length ? `<div class="tablewrap"><table class="pr" style="width:100%"><tr><th>البند</th><th>المبلغ</th>${ed ? '<th></th>' : ''}</tr>
-        ${ops.map(x => `<tr><td class="lbl">${esc(x.name)}</td><td><b>${fmt(x.amount)} ج</b></td>${ed ? `<td><button class="mockbtn" data-wfopdel="${esc(x.id)}" style="color:#b3261e">🗑</button></td>` : ''}</tr>`).join('')}</table></div>` : '<p class="none" style="margin:4px 0">لسه مفيش — اكتب الرواتب والإيجار وأي مصروف تشغيل.</p>'}
-      ${ed ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><input id="wfOpN" placeholder="البند (رواتب / إيجار / ...)" style="flex:1;min-width:160px;${inp}">
+    h += `<div class="card"><h3>⚙️ المصاريف لحد النهارده — ${fmt(opsT)} ج <small style="font-weight:500;color:var(--muted)">(${fmt(dayN)} يوم من الشهر)</small></h3>
+      <div class="tablewrap"><table class="pr" style="width:100%"><tr><th>البند</th><th>في الشهر</th><th>الحسبة</th><th>لحد النهارده</th></tr>
+        ${fixedL.map(x => `<tr><td class="lbl">${esc(x.name)}</td><td>${ed ? `<input data-wffix="${x.k}" inputmode="decimal" value="${x.mo}" style="width:100px;${inp};padding:4px 6px"> ج` : fmt(x.mo) + ' ج'}</td>
+          <td style="font-size:12.5px;color:var(--muted)">${fmt(x.mo)} ÷ 30 × ${fmt(dayN)} يوم</td><td><b>${fmt(x.amount)} ج</b></td></tr>`).join('')}</table></div>
+      ${opsMan.length ? `<div style="font-weight:700;margin:10px 0 4px">➕ بنود تانية (بالإيد)</div><div class="tablewrap"><table class="pr" style="width:100%"><tr><th>البند</th><th>المبلغ</th>${ed ? '<th></th>' : ''}</tr>
+        ${ops.map(x => `<tr><td class="lbl">${esc(x.name)}</td><td><b>${fmt(x.amount)} ج</b></td>${ed ? `<td><button class="mockbtn" data-wfopdel="${esc(x.id)}" style="color:#b3261e">🗑</button></td>` : ''}</tr>`).join('')}</table></div>` : ''}
+      ${ed ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><input id="wfOpN" placeholder="بند تاني لو فيه (غير الإيجار والرواتب والتشغيل)" style="flex:1;min-width:160px;${inp}">
         <input id="wfOpA" inputmode="decimal" placeholder="المبلغ" style="width:120px;${inp}">
         <button class="mockbtn" id="wfOpAdd" style="background:#1f3d36;border-color:#1f3d36;color:#fff">➕ أضف</button></div>` : ''}
       <h3 style="margin-top:16px">🏦 الخزنة الحالية — ${cashMan != null ? fmt(cashMan) + ' ج' : 'من الشيت ' + fmt(cash) + ' ج'}</h3>
@@ -18757,7 +18765,7 @@ table.cs tr.cs-open td{background:#fff7dd}
         ${ln('↩️', 'بضاعة هترجع', fmt(O.rc) + ' ج', WF_G.map(([g, l]) => `${l} ${fmt(C.G[g].tot.rc)} (≈ ${fmt(C.G[g].tot.rp)} قطعة)`).join(' · '), G)}
         ${ln('📦', 'المخزن (تقديري)', fmt(stock) + ' ج', '', G)}
         <div style="font-weight:800;margin:10px 0 0">❌ اللي علينا</div>
-        ${ops.map(x => ln('⚙️', esc(x.name), fmt(x.amount) + ' ج', '', Rd)).join('') || ln('⚙️', 'مصاريف التشغيل', '0 ج', 'اكتبها فوق', Rd)}
+        ${ops.map(x => ln(x.fixed ? '' : '⚙️', esc(x.name), fmt(x.amount) + ' ج', x.fixed ? `${fmt(x.mo)} ÷ 30 × ${fmt(dayN)} يوم` : '', Rd)).join('')}
         ${ln('🧾', 'ديون', fmt(debts) + ' ج', '', Rd)}
         <div style="display:flex;justify-content:space-between;gap:10px;padding:12px 0 2px;font-size:16px"><b>🧮 الصافي</b>
           <b style="font-size:22px;white-space:nowrap;color:${net < 0 ? Rd : G}">${fmt(net)} ج</b></div>
@@ -18816,6 +18824,7 @@ table.cs tr.cs-open td{background:#fff7dd}
         ['wfOpN', 'wfOpA'].forEach(id => { const e = $(id); if(e) e.value = ''; }); }catch(e){ alert('مااتحفظش: ' + e.message); } };
     if($('wfCsSave')) $('wfCsSave').onclick = async () => { const v = $('wfCs').value.trim(); try{ await cfgSave(c => { c.cash = v === '' ? null : num(v); }); }catch(e){ alert('مااتحفظش: ' + e.message); } };
     if($('wfStSave')) $('wfStSave').onclick = async () => { try{ await cfgSave(c => { c.stock = num($('wfSt').value); }); }catch(e){ alert('مااتحفظش: ' + e.message); } };
+    main.querySelectorAll('[data-wffix]').forEach(i => i.onchange = async () => { try{ await cfgSave(c => { (c.fixed = c.fixed || {})[i.dataset.wffix] = num(i.value); }); }catch(e){ alert('مااتحفظش: ' + e.message); } });
     main.querySelectorAll('[data-wfopdel]').forEach(b => b.onclick = async () => { if(!confirm('تمسح البند ده؟')) return;
       try{ await cfgSave(c => { c.ops = (c.ops || []).filter(x => x.id !== b.dataset.wfopdel); }); }catch(e){ alert('مااتمسحش: ' + e.message); } });
     main.querySelectorAll('[data-wfdel]').forEach(b => b.onclick = async () => { if(!confirm('تمسح الدين ده؟')) return;
