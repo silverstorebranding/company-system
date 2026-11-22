@@ -850,7 +850,8 @@ function prPiecesSmart(contents, price, brand){
   {const lk=cbLike(brand); if(lk) return prPiecesSmart(contents, price, lk);} // 🏷️ براند جديد = نفس عدّ قطع البراند اللي بيتعامل زيه
   if(brand==="bunny") return prBunnyPieces(contents, price);
   const OB=window.OrderBreakdown;
-  if(OB&&OB.countPieces&&PR_BD_KEY[brand]){ try{ return OB.countPieces(contents, price, PR_BD_KEY[brand]).n; }catch(e){} }
+  // ⚠️ لو المحتوى فاضي التحليل بيرجّع 0 قطع (يعني بضاعة ببلاش) — ساعتها بنعدّ من السعر بالطريقة القديمة
+  if(OB&&OB.countPieces&&PR_BD_KEY[brand]){ try{ const n=OB.countPieces(contents, price, PR_BD_KEY[brand]).n; if(n>0) return n; }catch(e){} }
   return prPieces(contents, price);
 }
 // بيعدّ القطع من خانة المحتوى: القطع مفصولة بـ "+" و "× 2" معناها قطعتين
