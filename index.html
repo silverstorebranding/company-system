@@ -514,6 +514,7 @@ body:has(#vaBanner){padding-top:38px}
     </div>
     <div class="grp"><div class="grp-title">المالية</div>
       <a class="navlink" href="#/where">📍 احنا فين؟</a>
+      <a class="navlink" href="#/suppliers">🏭 الموردين</a>
       <a class="navlink" href="#/orders-map">🗺️ خريطة الأوردرات</a>
       <a class="navlink" href="#/profits">💰 الأرباح</a>
       <a class="navlink" href="#/payroll">💵 الرواتب</a>
@@ -6208,6 +6209,7 @@ async function exportToSheet(btn) {
       { key:'qp_delete', label:'🗑️ مسح بوالص من QP', routes:['qp-delete'] },
       { key:'pickup_review', label:'📦 مراجعة البيكب', routes:['pickup'] },
       { key:'where', label:'📍 احنا فين؟ (فلوسنا فين)', routes:['where'] },
+      { key:'suppliers', label:'🏭 الموردين (البضاعة اللي جت والمدفوع واللي علينا)', routes:['suppliers'] },
       { key:'orders_map', label:'🗺️ خريطة الأوردرات', routes:['orders-map'] },
       { key:'profits', label:'💰 الأرباح',    routes:['profits'] },
       { key:'payroll', label:'💵 الرواتب', routes:['payroll'] },
@@ -18466,6 +18468,190 @@ table.cs tr.cs-open td{background:#fff7dd}
     if(!isWF()) return;
     document.querySelectorAll('#sidebar a.navlink').forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#/where'));
     draw(); if(!W.at && !W.busy && sb()) load();
+  }
+  const _render = render;
+  render = function(){ _render.apply(this, arguments); mount(); };
+  window.addEventListener('hashchange', () => setTimeout(mount, 0));
+  const w = setInterval(() => { if(sb() && me().id){ clearInterval(w); mount(); } }, 700);
+})();
+</script>
+<script>
+/* =====================================================================
+   🏭 الموردين — البضاعة اللي جت من كل مورد، ودفعنا كام، وعلينا كام
+   - البيانات في app_kv key = 'suppliers' → { list:[{ id, name, phone, note }], moves:[{ id, sup, date, kind:'goods'|'pay', desc, qty, amount, method, note, by, at }] }
+   - علينا للمورد = البضاعة اللي جت − اللي دفعناه
+   ===================================================================== */
+(function(){
+  const sb = () => window.__sbClient || (window.AuthGate && window.AuthGate.sb);
+  const me = () => (window.AuthGate && window.AuthGate.me && window.AuthGate.me()) || {};
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const fmt = n => Math.round(Number(n || 0)).toLocaleString('ar-EG');
+  const num = v => { const x = parseFloat(String(v ?? '').replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/[^\d.-]/g, '')); return isNaN(x) ? 0 : x; };
+  const ymd = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  const route = () => (location.hash.replace('#/', '') || 'home').split('?')[0].split('/');
+  const isSP = () => route()[0] === 'suppliers';
+  const KEY = 'suppliers';
+  const S = { data:null, err:'', busy:false, modal:null, q:'' };
+  const by = () => me().full_name || me().username || '';
+  const isAdm = () => !!me().is_admin;
+  const nid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  const inp = 'padding:8px 10px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;font-size:14.5px;background:var(--panel);color:var(--ink);box-sizing:border-box';
+  const btn = (bg) => `background:${bg};border-color:${bg};color:#fff`;
+
+  async function load(){
+    S.busy = true; S.err = ''; draw();
+    try{
+      const { data, error } = await sb().from('app_kv').select('value').eq('key', KEY).maybeSingle();
+      if(error) throw error;
+      const v = (data && data.value) || {};
+      S.data = { list:v.list || [], moves:v.moves || [] };
+    }catch(e){ S.err = 'مقدرناش نجيب الموردين: ' + e.message; S.data = S.data || { list:[], moves:[] }; }
+    S.busy = false; draw();
+  }
+  // بيقرا آخر نسخة، يعدّل، ويحفظ (عشان لو اتنين بيكتبوا في نفس الوقت)
+  async function save(fn){
+    const { data, error:e1 } = await sb().from('app_kv').select('value').eq('key', KEY).maybeSingle();
+    if(e1) throw e1;
+    const v = (data && data.value) || {}, D = { list:v.list || [], moves:v.moves || [] };
+    fn(D);
+    const { error } = await sb().from('app_kv').upsert({ key:KEY, value:D, updated_at:new Date().toISOString(), updated_by_name:by() });
+    if(error) throw error;
+    S.data = D; draw();
+  }
+  function totals(id){
+    const M = S.data.moves.filter(m => !id || m.sup === id);
+    const goods = M.filter(m => m.kind === 'goods').reduce((a, m) => a + num(m.amount), 0);
+    const paid = M.filter(m => m.kind === 'pay').reduce((a, m) => a + num(m.amount), 0);
+    return { goods, paid, owe:goods - paid, n:M.length, last:M.map(m => m.date).sort().pop() || '' };
+  }
+  const card = (k, n, l, s) => `<div class="wf-c" style="--k:${k}"><div class="n">${n}</div><div class="l">${l}</div>${s ? `<div class="s">${s}</div>` : ''}</div>`;
+  const dTxt = d => d ? new Date(d + 'T12:00:00').toLocaleDateString('ar-EG', { day:'numeric', month:'short', year:'numeric' }) : '—';
+
+  function viewList(){
+    const T = totals();
+    let h = `<div class="wf-k" style="grid-template-columns:repeat(3,1fr)">
+      ${card('#6b4f2a', fmt(T.goods) + ' ج', '📦 البضاعة اللي جت', 'من كل الموردين')}
+      ${card('#2f7d55', fmt(T.paid) + ' ج', '💵 دفعنا', '')}
+      ${card(T.owe > 0 ? '#c0392b' : '#2f7d55', fmt(T.owe) + ' ج', T.owe >= 0 ? '🧾 علينا' : '✅ لينا عندهم', 'البضاعة − اللي دفعناه')}
+    </div>`;
+    const L = S.data.list.map(s => ({ ...s, t:totals(s.id) }))
+      .filter(s => !S.q || (s.name + ' ' + (s.phone || '')).toLowerCase().includes(S.q.toLowerCase()))
+      .sort((a, b) => b.t.owe - a.t.owe || String(a.name).localeCompare(String(b.name), 'ar'));
+    h += `<div class="card"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+        <h3 style="margin:0">🏭 الموردين (${S.data.list.length})</h3>
+        <input type="search" id="spQ" placeholder="🔍 دوّر على مورد..." value="${esc(S.q)}" style="${inp};flex:1;min-width:160px">
+        <button class="mockbtn" id="spNew" style="${btn('#1f3d36')}">➕ مورد جديد</button></div>
+      ${L.length ? `<div class="tablewrap"><table class="pr" style="width:100%"><tr><th>المورد</th><th>📦 البضاعة اللي جت</th><th>💵 دفعنا</th><th>🧾 علينا</th><th>آخر حركة</th><th></th></tr>
+        ${L.map(s => `<tr><td class="lbl"><a href="#/suppliers/${esc(s.id)}"><b>${esc(s.name)}</b></a>${s.phone ? `<div style="font-size:12px;color:var(--muted);direction:ltr;text-align:right">${esc(s.phone)}</div>` : ''}</td>
+          <td>${fmt(s.t.goods)} ج</td><td style="color:#2f7d55">${fmt(s.t.paid)} ج</td>
+          <td><b style="color:${s.t.owe > 0 ? '#c0392b' : '#2f7d55'}">${s.t.owe < 0 ? 'لينا ' + fmt(-s.t.owe) : fmt(s.t.owe)} ج</b></td>
+          <td style="font-size:13px">${dTxt(s.t.last)}</td>
+          <td style="white-space:nowrap"><a class="mockbtn" href="#/suppliers/${esc(s.id)}">📒 الحساب</a></td></tr>`).join('')}
+        <tr class="total"><td>الإجمالي</td><td>${fmt(T.goods)} ج</td><td>${fmt(T.paid)} ج</td><td>${fmt(T.owe)} ج</td><td></td><td></td></tr></table></div>`
+        : `<p class="none" style="margin:4px 0">${S.data.list.length ? 'مفيش مورد بالاسم ده.' : 'لسه مفيش موردين — دوس "➕ مورد جديد".'}</p>`}</div>`;
+    return h;
+  }
+  function viewOne(id){
+    const s = S.data.list.find(x => x.id === id);
+    if(!s) return `<div class="card"><p style="margin:0">المورد ده مش موجود. <a href="#/suppliers">← ارجع للموردين</a></p></div>`;
+    const T = totals(id);
+    let h = `<div class="card" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <a class="mockbtn" href="#/suppliers">→ كل الموردين</a>
+        <div style="flex:1;min-width:160px"><b style="font-size:18px">🏭 ${esc(s.name)}</b>${s.phone ? ` · <span style="direction:ltr;display:inline-block">${esc(s.phone)}</span>` : ''}${s.note ? `<div style="font-size:13px;color:var(--muted)">${esc(s.note)}</div>` : ''}</div>
+        <button class="mockbtn" id="spEdit">✏️ تعديل</button>
+        ${isAdm() ? `<button class="mockbtn" id="spDel" style="color:#b3261e">🗑 امسح المورد</button>` : ''}</div>
+      <div class="wf-k" style="grid-template-columns:repeat(3,1fr)">
+        ${card('#6b4f2a', fmt(T.goods) + ' ج', '📦 البضاعة اللي جت', '')}
+        ${card('#2f7d55', fmt(T.paid) + ' ج', '💵 دفعنا', '')}
+        ${card(T.owe > 0 ? '#c0392b' : '#2f7d55', fmt(Math.abs(T.owe)) + ' ج', T.owe >= 0 ? '🧾 علينا' : '✅ لينا عنده', '')}
+      </div>
+      <div class="card" style="display:flex;gap:10px;flex-wrap:wrap">
+        <button class="mockbtn" id="spAddGoods" style="${btn('#6b4f2a')};font-size:15px;padding:10px 16px">📦 بضاعة جت</button>
+        <button class="mockbtn" id="spAddPay" style="${btn('#2f7d55')};font-size:15px;padding:10px 16px">💵 دفعنا</button></div>`;
+    // كشف الحساب: من الأقدم للأحدث، والرصيد بيتراكم
+    const M = S.data.moves.filter(m => m.sup === id).slice().sort((a, b) => (a.date || '').localeCompare(b.date || '') || (a.at || '').localeCompare(b.at || ''));
+    let bal = 0;
+    const rows = M.map(m => { bal += m.kind === 'goods' ? num(m.amount) : -num(m.amount); return { m, bal }; }).reverse();
+    h += `<div class="card"><h3>📒 كشف الحساب (${M.length} حركة)</h3>
+      ${rows.length ? `<div class="tablewrap"><table class="pr" style="width:100%"><tr><th>التاريخ</th><th>النوع</th><th>التفاصيل</th><th>📦 بضاعة</th><th>💵 دفعنا</th><th>🧾 علينا بعدها</th><th></th></tr>
+        ${rows.map(({ m, bal }) => `<tr><td style="white-space:nowrap">${dTxt(m.date)}</td>
+          <td>${m.kind === 'goods' ? '📦 بضاعة جت' : '💵 دفعنا'}</td>
+          <td style="text-align:right;white-space:normal;font-size:13.5px">${m.kind === 'goods' ? esc(m.desc || '') + (m.qty ? ` <small style="color:var(--muted)">(${esc(m.qty)})</small>` : '') : esc(m.method || '')}${m.note ? `<div style="font-size:12px;color:var(--muted)">${esc(m.note)}</div>` : ''}<div style="font-size:11.5px;color:var(--muted)">${esc(m.by || '')}</div></td>
+          <td>${m.kind === 'goods' ? fmt(m.amount) + ' ج' : ''}</td><td style="color:#2f7d55">${m.kind === 'pay' ? fmt(m.amount) + ' ج' : ''}</td>
+          <td><b style="color:${bal > 0 ? '#c0392b' : '#2f7d55'}">${fmt(bal)} ج</b></td>
+          <td style="white-space:nowrap"><button class="mockbtn" data-spme="${esc(m.id)}" title="تعديل">✏️</button>${isAdm() ? ` <button class="mockbtn" data-spmd="${esc(m.id)}" style="color:#b3261e" title="مسح">🗑</button>` : ''}</td></tr>`).join('')}
+        </table></div>` : '<p class="none" style="margin:4px 0">لسه مفيش حركات — سجّل أول بضاعة جت أو أول دفعة.</p>'}</div>`;
+    return h;
+  }
+  function viewModal(){
+    const M = S.modal; if(!M) return '';
+    if(M.t === 'sup'){ const s = M.s || {};
+      return `<div class="tm-modal" id="spModal"><div class="tm-box"><h3 style="margin:0">${s.id ? '✏️ تعديل المورد' : '➕ مورد جديد'}</h3>
+        <label>اسم المورد</label><input id="spN" value="${esc(s.name || '')}" placeholder="مثلاً: مصنع الفضة">
+        <label>الموبايل</label><input id="spP" value="${esc(s.phone || '')}" inputmode="tel" style="direction:ltr;text-align:right">
+        <label>ملاحظات</label><input id="spT" value="${esc(s.note || '')}" placeholder="بيورّد إيه، العنوان...">
+        <div style="display:flex;gap:8px;margin-top:14px"><button class="mockbtn" id="spSave" style="${btn('#1f3d36')};padding:10px 16px">💾 احفظ</button><button class="mockbtn" id="spCancel">إلغاء</button></div></div></div>`; }
+    const m = M.m || {}, g = M.kind === 'goods';
+    return `<div class="tm-modal" id="spModal"><div class="tm-box"><h3 style="margin:0">${g ? '📦 بضاعة جت' : '💵 دفعنا'} — ${esc(M.name)}</h3>
+      <label>التاريخ</label><input type="date" id="spD" value="${esc(m.date || ymd(new Date()))}">
+      ${g ? `<label>البضاعة (إيه اللي جه)</label><input id="spDesc" value="${esc(m.desc || '')}" placeholder="مثلاً: 200 طقم فضة">
+        <label>الكمية (اختياري)</label><input id="spQty" value="${esc(m.qty || '')}" placeholder="مثلاً: 200 قطعة">
+        <label>قيمتها كام (ج)</label>` : `<label>دفعنا كام (ج)</label>`}
+      <input id="spA" inputmode="decimal" value="${m.amount != null ? esc(m.amount) : ''}" placeholder="المبلغ">
+      ${g ? '' : `<label>دفعنا إزاي</label><input id="spMeth" value="${esc(m.method || '')}" placeholder="كاش / تحويل / إنستاباي...">
+        <div class="tm-chips">${['كاش', 'تحويل بنكي', 'إنستاباي', 'فودافون كاش'].map(t => `<button type="button" data-spchip="${t}">${t}</button>`).join('')}</div>`}
+      <label>ملاحظة</label><input id="spNote" value="${esc(m.note || '')}">
+      <div style="display:flex;gap:8px;margin-top:14px"><button class="mockbtn" id="spMSave" style="${btn(g ? '#6b4f2a' : '#2f7d55')};padding:10px 16px">💾 احفظ</button><button class="mockbtn" id="spCancel">إلغاء</button></div></div></div>`;
+  }
+  function view(){
+    let h = `<div class="pagehead"><h1>🏭 الموردين</h1><p>البضاعة اللي جت من كل مورد، ودفعنا كام، وعلينا كام.</p></div>`;
+    if(S.err) h += `<div class="mono-note">${esc(S.err)}</div>`;
+    if(!S.data) return h + '<p style="color:var(--muted)">⏳ بيحمّل...</p>';
+    const id = route()[1];
+    return h + (id ? viewOne(decodeURIComponent(id)) : viewList()) + viewModal();
+  }
+  function draw(){
+    if(!isSP()) return;
+    const main = document.getElementById('main'); if(!main) return;
+    const q = document.getElementById('spQ'), qFocus = q && document.activeElement === q;
+    main.innerHTML = view();
+    const $ = id => document.getElementById(id);
+    if($('spQ')){ $('spQ').oninput = e => { S.q = e.target.value; draw(); }; if(qFocus){ const e = $('spQ'); e.focus(); e.setSelectionRange(e.value.length, e.value.length); } }
+    const sid = decodeURIComponent(route()[1] || ''), sup = S.data && S.data.list.find(x => x.id === sid);
+    if($('spNew')) $('spNew').onclick = () => { S.modal = { t:'sup' }; draw(); setTimeout(() => $('spN') && $('spN').focus(), 30); };
+    if($('spEdit')) $('spEdit').onclick = () => { S.modal = { t:'sup', s:sup }; draw(); };
+    if($('spDel')) $('spDel').onclick = async () => {
+      const n = S.data.moves.filter(m => m.sup === sid).length;
+      if(!confirm(`متأكد إنك عايز تمسح المورد "${sup.name}"${n ? ` وكل حركاته (${n} حركة)` : ''}؟ مش هتقدر ترجعه.`)) return;
+      try{ await save(D => { D.list = D.list.filter(x => x.id !== sid); D.moves = D.moves.filter(m => m.sup !== sid); }); location.hash = '#/suppliers'; }catch(e){ alert('مااتمسحش: ' + e.message); } };
+    if($('spAddGoods')) $('spAddGoods').onclick = () => { S.modal = { t:'move', kind:'goods', sup:sid, name:sup.name }; draw(); setTimeout(() => $('spDesc') && $('spDesc').focus(), 30); };
+    if($('spAddPay')) $('spAddPay').onclick = () => { S.modal = { t:'move', kind:'pay', sup:sid, name:sup.name }; draw(); setTimeout(() => $('spA') && $('spA').focus(), 30); };
+    main.querySelectorAll('[data-spme]').forEach(b => b.onclick = () => { const m = S.data.moves.find(x => x.id === b.dataset.spme); if(m){ S.modal = { t:'move', kind:m.kind, sup:sid, name:sup.name, m }; draw(); } });
+    main.querySelectorAll('[data-spmd]').forEach(b => b.onclick = async () => { const m = S.data.moves.find(x => x.id === b.dataset.spmd); if(!m) return;
+      if(!confirm(`متأكد إنك عايز تمسح ${m.kind === 'goods' ? 'البضاعة' : 'الدفعة'} دي (${fmt(m.amount)} ج — ${dTxt(m.date)})؟`)) return;
+      try{ await save(D => { D.moves = D.moves.filter(x => x.id !== m.id); }); }catch(e){ alert('مااتمسحش: ' + e.message); } });
+    main.querySelectorAll('[data-spchip]').forEach(b => b.onclick = () => { $('spMeth').value = b.dataset.spchip; });
+    if($('spCancel')) $('spCancel').onclick = () => { S.modal = null; draw(); };
+    if($('spModal')) $('spModal').onclick = e => { if(e.target.id === 'spModal'){ S.modal = null; draw(); } };
+    if($('spSave')) $('spSave').onclick = async () => {
+      const name = $('spN').value.trim(); if(!name) return alert('اكتب اسم المورد.');
+      const row = { name, phone:$('spP').value.trim(), note:$('spT').value.trim() }, old = S.modal.s;
+      try{ await save(D => { if(old && old.id){ const x = D.list.find(y => y.id === old.id); if(x) Object.assign(x, row); } else D.list.push({ id:nid(), ...row, at:new Date().toISOString(), by:by() }); });
+        S.modal = null; draw(); }catch(e){ alert('مااتحفظش: ' + e.message); } };
+    if($('spMSave')) $('spMSave').onclick = async () => {
+      const M = S.modal, g = M.kind === 'goods', amount = num($('spA').value);
+      if(!amount || amount <= 0) return alert('اكتب المبلغ.');
+      if(g && !$('spDesc').value.trim()) return alert('اكتب البضاعة اللي جت.');
+      const row = { sup:M.sup, kind:M.kind, date:$('spD').value || ymd(new Date()), amount, note:$('spNote').value.trim() };
+      if(g){ row.desc = $('spDesc').value.trim(); row.qty = $('spQty').value.trim(); } else row.method = $('spMeth').value.trim();
+      try{ await save(D => { if(M.m){ const x = D.moves.find(y => y.id === M.m.id); if(x) Object.assign(x, row, { edited_by:by(), edited_at:new Date().toISOString() }); }
+          else D.moves.push({ id:nid(), ...row, by:by(), at:new Date().toISOString() }); });
+        S.modal = null; draw(); }catch(e){ alert('مااتحفظش: ' + e.message); } };
+  }
+  function mount(){
+    if(!isSP()) return;
+    document.querySelectorAll('#sidebar a.navlink').forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#/suppliers'));
+    draw(); if(!S.data && !S.busy && sb()) load();
   }
   const _render = render;
   render = function(){ _render.apply(this, arguments); mount(); };
