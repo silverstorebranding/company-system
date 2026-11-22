@@ -4388,7 +4388,6 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
     { key:'rs',      name:'RS KIDS', color:'#a0456e', spend:15, orders:null, msgs:null, pr:'rs kids',   prBrands:['rs kids'] },   // 🙈 RS مخفي — مالوش عمود في الأرباح
     { key:'kidzzly', name:'KIDZZLY', color:'#4f8fd8', spend:12, orders:null, msgs:null, pr:'kidzzly',   prBrands:['kidzzly'] },
     { key:'msg',     name:'MSG',     color:'#6b7a3a', spend:null, orders:null, msgs:null, pr:'msg',     prBrands:['msg'] },
-    { key:'socky',   name:'SOCKY',   color:'#7a5c3a', spend:null, orders:null, msgs:null, pr:'socky',   prBrands:['socky'] },
     { key:'bunny',   name:'BUNNY',   color:'#c0628f', spend:null, orders:null, msgs:null, pr:'bunny',   prBrands:['bunny'] },
   ];
   const MONTHS = ['january','february','march','april','may','june','july','august','september','october','november','december'];
@@ -5474,7 +5473,7 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
   };
   const qpdSt = k => QPD_ST[k] || { n:(qpNames[k] || 'حالة') + ' #' + k, c:'#a39e8f' };
   // 👛 البراند من عمود notes: Italy (دريم/كارا/واتساتهم/MSG/FASTPLT) — Kidzzly (RS) — Socky — Bloom — غيره
-  const WALLET_GROUPS = [ ['italy', '💍 Italy (دريم + كارا + واتساتهم)'], ['kidzzly', '🧸 Kidzzly'], ['ersal', '📨 إرسال صفحة'], ['socky', '🧦 Socky'], ['bunny', '🐰 Bunny'], ['other', '❔ من غير براند واضح'] ];
+  const WALLET_GROUPS = [ ['italy', '💍 Italy (دريم + كارا + واتساتهم)'], ['kidzzly', '🧸 Kidzzly'], ['ersal', '📨 إرسال صفحة'], ['bunny', '🐰 Bunny'], ['other', '❔ من غير براند واضح'] ];
   /* 🚚 البيكب اللي شغالين فيه = أوردرات امبارح (نفس "Yesterday Orders" في QP)
      - اليوم بيتحسب من تاريخ الأوردر (order_date) زي QP
      - الافتراضي امبارح، وتقدر تختار يوم تاني من الليستة
@@ -6359,7 +6358,7 @@ async function exportToSheet(btn) {
   }
   const GROUPS = () => [
     { title:'المالية', items:[
-      { key:'accounts',  label:'💼 الحسابات (Italy + Kidzzly + Socky + المجمّعة)',  routes:['accounts','accounts-kidzzly','accounts-socky','accounts-all','accounts-sheet'] },
+      { key:'accounts',  label:'💼 الحسابات (Italy + Kidzzly + المجمّعة)',  routes:['accounts','accounts-kidzzly','accounts-socky','accounts-all','accounts-sheet'] },
       { key:'meta_ads', label:'📊 Ads (Meta)', routes:['meta-ads'] },
       { key:'qp_upload', label:'📤 رفع الأوردرات', routes:['qp-upload'] },
       { key:'qp_delete', label:'🗑️ مسح بوالص من QP', routes:['qp-delete'] },
@@ -6928,7 +6927,7 @@ table.pr tr.out td{background:#fff5f4}
 
   /* ---------- البيانات ---------- */
   /* 🏷️ مخزن منفصل لكل براند (مفيش مخزن مجمّع) — العمود brand في inv_items */
-  const INV_BRANDS = [ { key:'italy', name:'Italy', icon:'💍', color:'#b08d57' }, { key:'kidzzly', name:'Kidzzly', icon:'🧸', color:'#4f8fd8' }, { key:'socky', name:'Socky', icon:'🧦', color:'#3f9b74' } ];
+  const INV_BRANDS = [ { key:'italy', name:'Italy', icon:'💍', color:'#b08d57' }, { key:'kidzzly', name:'Kidzzly', icon:'🧸', color:'#4f8fd8' } ];
   S.brand = (() => { try{ const v = localStorage.getItem('inv_brand'); return INV_BRANDS.some(b => b.key === v) ? v : 'italy'; }catch(e){ return 'italy'; } })();
   const curBrand = () => INV_BRANDS.find(b => b.key === S.brand) || INV_BRANDS[0];
   function setBrand(k){
@@ -6947,7 +6946,7 @@ table.pr tr.out td{background:#fff5f4}
       sb().from('inv_moves').select('*, inv_items!inner(name, unit, brand)').eq('inv_items.brand', S.brand).order('created_at', { ascending:false }).limit(500)
     ]);
     if((a.error && /brand/i.test(a.error.message)) || (b.error && /brand/i.test(b.error.message))){
-      S.loading = false; S.err = 'لازم ملف brands_split.sql يتشغّل في Supabase الأول عشان المخزن يتقسم على البراندات (Italy / Kidzzly / Socky).'; draw(); return;
+      S.loading = false; S.err = 'لازم ملف brands_split.sql يتشغّل في Supabase الأول عشان المخزن يتقسم على البراندات (Italy / Kidzzly).'; draw(); return;
     }
     S.loading = false;
     const e = a.error || b.error;
@@ -8995,7 +8994,6 @@ table.pr tr.bd-cat td{background:var(--slate-l);font-weight:700}
   const BRANDS = [
     { k:'italy',   l:'💍 إيطالي', test:b => ['dream','dream msg site','dream wa','msg','fastplt','cara silver','cara silver un','cara wa','squad','lo gel nails'].includes(b) },
     { k:'kidzzly', l:'🧸 Kidzzly', test:b => b === 'kidzzly' },
-    { k:'socky',   l:'🧦 Socky',   test:b => b === 'socky' },
   ];
   const brandOfNote = n => { let b = null; try{ b = prGetBrand(n); }catch(e){} if(!b && /^(sock|سوك)/i.test(String(n || '').trim())) b = 'socky'; return b; };
   // قواعد إضافية للفضة (أسماء منتجات Squad و QP)
@@ -10089,7 +10087,6 @@ function makeAccounts(CFG){
 const ACC_BRANDS = [
   { route:'accounts',         short:'Italy',   icon:'💍', color:'#b08d57' },
   { route:'accounts-kidzzly', short:'Kidzzly', icon:'🧸', color:'#4f8fd8' },
-  { route:'accounts-socky',   short:'Socky',   icon:'🧦', color:'#3f9b74' },
 ];
 window.accBrandBar = cur => `<div class="acb-bar">${ACC_BRANDS.map(b => `<a href="#/${b.route}" class="${cur === b.route ? 'on' : ''}" style="--bc:${b.color}">${b.icon} ${b.short}</a>`).join('')}
   <a href="#/accounts-all" class="all ${cur === 'accounts-all' ? 'on' : ''}">📊 الحسابات المجمّعة</a>
@@ -10115,7 +10112,7 @@ makeAccounts({ route:'accounts-socky', table:'accounts_entries_socky', icon:'�
     S.res = out; S.loading = false; draw();
   }
   function view(){
-    let h = window.accBrandBar('accounts-all') + `<div class="pagehead"><h1>📊 الحسابات المجمّعة</h1><p>كل الخزن بتاعة Italy و Kidzzly و Socky مع بعض: الفلوس اللي في كل خزنة دلوقتي، وإيرادات ومصروفات أي فترة.</p></div>
+    let h = window.accBrandBar('accounts-all') + `<div class="pagehead"><h1>📊 الحسابات المجمّعة</h1><p>كل الخزن بتاعة Italy و Kidzzly مع بعض: الفلوس اللي في كل خزنة دلوقتي، وإيرادات ومصروفات أي فترة.</p></div>
       <div class="card" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
         <label>من <input type="date" class="ac-in" id="aaFrom" value="${esc(S.from)}" style="width:auto"></label>
         <label>إلى <input type="date" class="ac-in" id="aaTo" value="${esc(S.to)}" style="width:auto"></label>
@@ -10123,7 +10120,7 @@ makeAccounts({ route:'accounts-socky', table:'accounts_entries_socky', icon:'�
     if(!S.res) return h + `<div class="card"><p style="color:var(--muted)">${S.loading ? '⏳ بيجيب الحسابات...' : ''}</p></div>`;
     const R = S.res, ok = R.map((r, i) => ({ b: ACC_BRANDS[i], r })).filter(x => !x.r.err);
     const errs = R.map((r, i) => r.err ? `${ACC_BRANDS[i].icon} ${ACC_BRANDS[i].short}: ${r.err}` : '').filter(Boolean);
-    if(errs.length) h += `<div class="ac-msg err">${errs.map(esc).join('<br>')}<br>لو جدول Kidzzly أو Socky مش موجود: شغّل ملف brands_split.sql في Supabase.</div>`;
+    if(errs.length) h += `<div class="ac-msg err">${errs.map(esc).join('<br>')}<br>لو جدول Kidzzly مش موجود: شغّل ملف brands_split.sql في Supabase.</div>`;
     const methods = [...new Set(ok.flatMap(x => Object.keys(x.r.wallets)))];
     const grand = ok.reduce((a, x) => a + x.r.total, 0);
     const per = m => ok.reduce((a, x) => a + (x.r.wallets[m] || 0), 0);
@@ -10796,7 +10793,6 @@ textarea.br-in{min-height:64px;resize:vertical}
   const BRANDS = [
     { key:'italy',   name:'Italy',   emoji:'💍', color:'#b08d57', desc:'إكسسوارات فضة إيطالي' },
     { key:'kidzzly', name:'Kidzzly', emoji:'🧸', color:'#4f8fd8', desc:'ملابس أطفال' },
-    { key:'socky',   name:'Socky',   emoji:'🧦', color:'#3f9b74', desc:'شرابات' },
   ];
   const DEFAULTS = {
     italy: {
@@ -11111,14 +11107,14 @@ grant select, insert, update on public.brand_profiles to authenticated;`;
   const fmt = (n, d) => Number(n || 0).toLocaleString('ar-EG', { maximumFractionDigits: d ?? 0 });
   const ymd = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   const isMA = () => (location.hash.replace('#/', '') || 'home').split('/')[0] === 'meta-ads';
-  const BRANDS = [ { key:'italy', name:'Italy', icon:'💍', color:'#b08d57' }, { key:'kidzzly', name:'Kidzzly', icon:'🧸', color:'#4f8fd8' }, { key:'socky', name:'Socky', icon:'🧦', color:'#3f9b74' } ];
+  const BRANDS = [ { key:'italy', name:'Italy', icon:'💍', color:'#b08d57' }, { key:'kidzzly', name:'Kidzzly', icon:'🧸', color:'#4f8fd8' } ];
   const RESULT_TYPES = {
     messages: { label:'💬 رسايل (واتساب/ماسنجر)', acts:['onsite_conversion.messaging_conversation_started_7d', 'onsite_conversion.total_messaging_connection'] },
     purchases:{ label:'🛒 مشتريات', acts:['purchase', 'offsite_conversion.fb_pixel_purchase', 'omni_purchase', 'onsite_web_purchase'] },
     leads:    { label:'📝 ليدز', acts:['lead', 'onsite_conversion.lead_grouped', 'offsite_conversion.fb_pixel_lead'] },
     clicks:   { label:'🔗 كليكات على اللينك', acts:['link_click'] },
   };
-  const DEF = { token:'', version:'v25.0', accounts:[], keywords:{ italy:'dream, cara, italy, ايطالي, msg, fast', kidzzly:'rs, kid, kidzzly, اطفال', socky:'sock, socky, شراب' } };
+  const DEF = { token:'', version:'v25.0', accounts:[], keywords:{ italy:'dream, cara, italy, ايطالي, msg, fast', kidzzly:'rs, kid, kidzzly, اطفال' } };
 
   const S = { set:null, missing:false, err:'', loading:false, prog:'', data:null, preset:'today', from:ymd(new Date()), to:ymd(new Date()), showSet:false, draft:null, saving:false, lvl:'campaign' };
 
@@ -11490,7 +11486,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
   const phoneKeys = x => [...new Set([x.phone, x.phone2, x.customer_phone, x.customer_phone2].map(phoneOf).filter(k => k && k.length >= 10))];
   const ymd = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   // البراندات اللي قسم الأرباح بيعرفها من عمود notes
-  const NOTE_SUGGEST = ['dream wa', 'dream', 'dream msg site', 'cara wa', 'cara silver', 'cara silver un', 'msg', 'fastplt', 'kidzzly', 'bunny', 'socky'];
+  const NOTE_SUGGEST = ['dream wa', 'dream', 'dream msg site', 'cara wa', 'cara silver', 'cara silver un', 'msg', 'fastplt', 'kidzzly', 'bunny'];
   const HIST_KEY = 'qp_upload_hist';
 
   /* ---------- 🚀 QP Integration API (نفس اللي في ملف Postman اللي بعتّه) ----------
@@ -11552,7 +11548,6 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
     { key:'dream',   label:'Dream Easy',   note:'', color:'#2b6cb0' },
     { key:'care',    label:'Care Easy',    note:'', color:'#b0457a' },
     { key:'kidzzly', label:'Kidzzly Easy', note:'', color:'#4f8fd8' },
-    { key:'socky',   label:'Socky Easy',   note:'', color:'#3f9b74' },
   ];
   let SOURCES = DEFAULT_SOURCES.map(x => ({ ...x }));
   const srcOf = k => SOURCES.find(s => s.key === k);
@@ -11564,7 +11559,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
   async function loadSources(){
     const { data, error } = await sbc().from('app_kv').select('*').eq('key', SRC_KV).maybeSingle();
     if(error){ E.missing = /app_kv|relation|schema cache|does not exist/i.test(error.message); }
-    else if(data && data.value && Array.isArray(data.value.list) && data.value.list.length) SOURCES = data.value.list;
+    else if(data && data.value && Array.isArray(data.value.list) && data.value.list.length) SOURCES = data.value.list.filter(x => x && x.key !== 'socky'); // 🧦 Socky اتقفل
     E.srcLoaded = true;
   }
   async function saveSources(list){
@@ -13901,7 +13896,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
     return out;
   }
   /* 📊 تقسيمة الأوردرات اللي اترفعت حسب البراند (من الـ notes) */
-  const BR = [ ['italy', '💍 Italy', 'دريم + كارا + واتساتهم', '#b08d57'], ['kidzzly', '🧸 Kidzzly', 'كيدزلي', '#4f8fd8'], ['socky', '🧦 Socky', '', '#3f9b74'], ['bunny', '🐰 Bunny', 'اللاندينج', '#d4789c'], ['other', '❔ أخرى', '', '#9a9a9a'] ];
+  const BR = [ ['italy', '💍 Italy', 'دريم + كارا + واتساتهم', '#b08d57'], ['kidzzly', '🧸 Kidzzly', 'كيدزلي', '#4f8fd8'], ['bunny', '🐰 Bunny', 'اللاندينج', '#d4789c'], ['other', '❔ أخرى', '', '#9a9a9a'] ];
   function brandOf(note){
     const n = String(note || '').toLowerCase();
     if(/^\s*(rs\b|rs kids|bloom|بلوم)|رويال|royal/.test(n)) return 'hidden';   // 🙈 RS و Bloom مخفيين
@@ -14624,7 +14619,7 @@ a.hm-kpi:hover{box-shadow:0 6px 16px rgba(0,0,0,.07)}
 
   const H = { today:null, pend:null, qp:null, qpErr:'', acc:null, ads:null, last:null, loading:false, at:null };
   // 💍/🧸 مبيعات المحفظة لكل قسم + الربح التقريبي (المحفظة بعد الشحن − تكلفة البضاعة)
-  const WB = [['italy', '💍 إيطالي'], ['kidzzly', '🧸 كيدزلي'], ['ersal', '📨 إرسال'], ['socky', '🧦 سوكي'], ['bunny', '🐰 Bunny'], ['other', '❔ غيره']];
+  const WB = [['italy', '💍 إيطالي'], ['kidzzly', '🧸 كيدزلي'], ['ersal', '📨 إرسال'], ['bunny', '🐰 Bunny'], ['other', '❔ غيره']];
   // 📈 ربح المحفظة = نسبة من قيمة التسليمات (قبل خصم الشحن) — مش من التحصيل اللي بعد الشحن: الإيطالي 15% · كيدزلي 30% · إرسال صفحة 40%
   const WALLET_PROFIT_PCT = { italy:0.15, kidzzly:0.30, ersal:0.40 };
   const WP_LBL = [['italy', '💍 إيطالي', '15%'], ['kidzzly', '🧸 كيدزلي', '30%'], ['ersal', '📨 إرسال صفحة', '40%']];
@@ -14658,8 +14653,8 @@ a.hm-kpi:hover{box-shadow:0 6px 16px rgba(0,0,0,.07)}
     const { data: kv } = await sb().from('app_kv').select('*').or('key.like.easy_last_%,key.eq.squad_last_at,key.eq.easy_sources,key.eq.up_done_keys,key.eq.up_history');
     const K = {}; (kv || []).forEach(r => K[r.key] = r.value || {});
     const done = new Set(((K.up_done_keys || {}).list || []).map(String));
-    const sources = ((K.easy_sources || {}).list && K.easy_sources.list.length) ? K.easy_sources.list : [
-      { key:'dream', label:'Dream Easy' }, { key:'care', label:'Care Easy' }, { key:'kidzzly', label:'Kidzzly Easy' }, { key:'socky', label:'Socky Easy' } ];
+    const sources = (((K.easy_sources || {}).list && K.easy_sources.list.length) ? K.easy_sources.list : [
+      { key:'dream', label:'Dream Easy' }, { key:'care', label:'Care Easy' }, { key:'kidzzly', label:'Kidzzly Easy' } ]).filter(x => x && x.key !== 'socky');
     const out = [];
     // Squad
     const sqFrom = (K.squad_last_at || {}).at || dayStart().toISOString();
@@ -14748,7 +14743,7 @@ a.hm-kpi:hover{box-shadow:0 6px 16px rgba(0,0,0,.07)}
 
   /* 🏬 المحلات: لكل براند محل صغير، وقدامه طابور العملاء اللي أوردراتهم مستنية الرفع */
   const SHOPS = [ { k:'italy', n:'الإيطالي', e:'💍', c1:'#b08d57', c2:'#f3e6cc' }, { k:'kidzzly', n:'Kidzzly', e:'🧸', c1:'#4f8fd8', c2:'#dbe9fa' },
-    { k:'socky', n:'Socky', e:'🧦', c1:'#3f9b74', c2:'#d8f0e5' }, { k:'bunny', n:'Bunny', e:'🐰', c1:'#d4789c', c2:'#fae3ec' } ];
+    { k:'bunny', n:'Bunny', e:'🐰', c1:'#d4789c', c2:'#fae3ec' } ];
   const PEOPLE = ['#e07a3f', '#2b6cb0', '#c0628f', '#3d7a3a', '#6b46c1', '#b7791f', '#2f7d55', '#a0456e'];
   const person = i => `<svg class="pp" viewBox="0 0 20 34" aria-hidden="true" style="animation-delay:${(i % 6) * .15}s"><circle cx="10" cy="7" r="6" fill="#e8b98f"/><path d="M3 34 V20 Q3 14 10 14 Q17 14 17 20 V34Z" fill="${PEOPLE[i % PEOPLE.length]}"/></svg>`;
   function shopsCard(){
@@ -14799,7 +14794,7 @@ a.hm-kpi:hover{box-shadow:0 6px 16px rgba(0,0,0,.07)}
         const T = H.qpTrack;
         if(D.wallet) h += `<div class="hm-row" style="font-size:13px"><span>💸 اللي QP هتحوّله (لو حوّلت النهارده)</span><b>${fmt(D.wallet)} ج</b></div>`;
         if(T && T.payouts && T.payouts[0]) h += `<div class="hm-row" style="font-size:13px;background:#eef4fb"><span>💸 آخر تحويل من QP (المحفظة اتصفرت)</span><b style="color:#2b5a8a">${fmt(T.payouts[0].v)} ج <small style="font-weight:500">· ${new Date(T.payouts[0].at).toLocaleDateString('ar-EG', { weekday:'short', day:'numeric', month:'short' })}${T.payouts[0].p ? ' · ربح ' + fmt(T.payouts[0].p) : ''}</small></b></div>`;
-        if(D.walletBy) [['italy', '💍 Italy'], ['kidzzly', '🧸 Kidzzly'], ['ersal', '📨 إرسال صفحة'], ['socky', '🧦 Socky'], ['bunny', '🐰 Bunny'], ['other', '❔ غيره']].filter(([kk]) => D.walletBy[kk]).forEach(([kk, l]) => {
+        if(D.walletBy) [['italy', '💍 Italy'], ['kidzzly', '🧸 Kidzzly'], ['ersal', '📨 إرسال صفحة'], ['bunny', '🐰 Bunny'], ['other', '❔ غيره']].filter(([kk]) => D.walletBy[kk]).forEach(([kk, l]) => {
           const W = D.walletBy[kk], pr = wGroupProfit(kk, W);
           h += `<div class="hm-row" style="padding-inline-start:14px;font-size:13px"><span>${l}${kk === 'other' && W.orders ? ` <button class="hm-btn" data-hm-other style="padding:2px 8px;font-size:12px">👀 شوف الأوردرات وحدّد براندها</button>` : ''}</span><span>${fmt(W.v)} ج${pr != null ? ` <small style="color:#2f7d55">· ربح ${fmt(pr)}</small>` : ''}</span></div>`; });
         const wp = walletProfit(D);
@@ -14941,7 +14936,7 @@ a.hm-kpi:hover{box-shadow:0 6px 16px rgba(0,0,0,.07)}
     bonus:{ l:'إضافة', sign:1, reasons:['مكافأة', 'عمولة', 'أوفر تايم', 'حافز', 'أخرى'] },
     payment:{ l:'صرف', sign:0, reasons:['مرتب'] },
   };
-  const DEPTS = ['خدمة العملاء', 'المخزن والبيكب', 'الإدارة', 'التسويق', 'المكتب', 'Italy', 'Kidzzly', 'Socky', 'أخرى'];
+  const DEPTS = ['خدمة العملاء', 'المخزن والبيكب', 'الإدارة', 'التسويق', 'المكتب', 'Italy', 'Kidzzly', 'أخرى'];
   const S = { month: ymd(new Date()).slice(0, 7), tab:'sheet', emps:null, entries:null, missing:false, err:'', msg:'', msgErr:false, open:'', modal:null, showOff:false,
     profiles:null, comm:{}, eod:{}, needCol:false };
 
@@ -15671,6 +15666,32 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
 .pp-chk{width:20px;height:20px;flex:none;cursor:pointer;accent-color:var(--brass-d)}
 .pp-card.sel{box-shadow:0 0 0 2px var(--brass-d)}
 .pp-dayh{position:static}
+.pp-card.out{border-inline-start-color:#2b6cb0}
+.pp-st.out{background:#e3eefb;color:#2b5a8a}.pp-st.adv{background:#efe6fa;color:#6b3fa0;margin-inline-start:6px}
+.pp-btn.out{background:#2b6cb0;border-color:#2b6cb0;color:#fff}
+.pp-note{margin:6px 0;padding:7px 10px;border-radius:8px;background:#fff8e6;border:1px dashed #e0c27a;font-size:13.5px}
+.pp-note .k,.pp-adv .k{color:var(--muted);font-size:12px;font-weight:400}
+.pp-views{display:flex;gap:6px}
+.pp-views button{padding:9px 14px;border:1.5px solid var(--line);border-radius:10px;background:var(--panel);color:var(--ink);font-family:inherit;font-size:14px;font-weight:700;cursor:pointer}
+.pp-views button.on{background:var(--brass-d);border-color:var(--brass-d);color:#fff}
+.pp-advbar{display:flex;flex-wrap:wrap;gap:10px 22px;align-items:center;padding:12px 16px;margin-bottom:14px;border-radius:12px;background:linear-gradient(135deg,#f3ecfb,#eaf2fc);border:1.5px solid #c9b3e6;cursor:pointer}
+.pp-advbar>div{display:flex;flex-direction:column}.pp-advbar span{font-size:12.5px;color:var(--muted)}.pp-advbar b{font-size:20px}.pp-advbar small{font-size:11.5px;color:var(--muted)}
+.pp-advbar .go{margin-inline-start:auto;font-weight:700;color:#6b3fa0;font-size:13.5px}
+.pp-bulk,.pp-advf{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 12px;margin-bottom:10px;border-radius:10px;border:1.5px solid var(--line);background:var(--panel)}
+.pp-advf{border-color:#c9b3e6;background:#f8f3fd}
+.pp-advf input,.pp-advf select{padding:8px 10px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;background:#fff;color:#222}
+.pp-acc-sum{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+.pp-acc-c{background:var(--panel);border:1.5px solid #c9b3e6;border-radius:12px;padding:12px 14px}
+.pp-acc-c h4{margin:0 0 8px;font-size:15.5px}.pp-acc-c h4 small{font-weight:400;color:var(--muted);font-size:12px}
+.pp-acc-c .row{display:flex;justify-content:space-between;padding:4px 0;font-size:14px}
+.pp-acc-c .row.tot{border-top:1.5px solid var(--line);margin-top:4px;padding-top:7px;font-size:16px}
+.pp-acc-c .row.sm{font-size:12.5px;color:var(--muted)}
+.pp-adv{background:var(--panel);border:1px solid var(--line);border-inline-start:5px solid #8a4fb0;border-radius:10px;padding:11px 13px;margin:9px 0}
+.pp-adv.settled{border-inline-start-color:#9a9a9a;opacity:.8}
+.pp-adv-n{display:flex;flex-wrap:wrap;gap:6px 16px;margin:7px 0;font-size:13px;color:var(--muted)}
+.pp-adv-n b{color:var(--ink)}.pp-adv-n .tot{font-size:14px;color:var(--ink)}.pp-adv-n .tot b{color:#2b5a8a;font-size:15px}
+.pp-adv-ol{margin-top:8px;border-top:1px dashed var(--line);padding-top:6px}
+.pp-adv-ol>div{display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:5px 0;border-bottom:1px dotted var(--line);font-size:13.5px}
 </style>
 <script>
 /* =====================================================================
@@ -15687,8 +15708,9 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
   const isMgr = () => { const m = me(); return !!(m.is_admin || (Array.isArray(m.allowed_sections) && m.allowed_sections.includes('prepaid_admin'))); };
   const ymd = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   const money = n => (Number(n) || 0).toLocaleString('ar-EG') + ' ج';
-  const ST = { pending:'⏳ لسه', delivered:'✅ اتسلم', failed:'❌ ماتسلمش' };
-  const S = { list:null, missing:false, msg:'', msgErr:false, tab:'pending', day:'', courier:'', days:30, couriers:null, sel:new Set(), size:25, page:0 };
+  const ST = { pending:'⏳ لسه', out:'🛵 مع المندوب', delivered:'✅ اتسلم', failed:'❌ ماتسلمش' };
+  const S = { list:null, missing:false, msg:'', msgErr:false, tab:'pending', day:'', courier:'', days:30, couriers:null, sel:new Set(), size:25, page:0,
+    view:'orders', adv:null, advMissing:false, advOrd:{}, advOpen:new Set(), advForm:{ amount:'', note:'', courier:'' }, advSaving:false, showSettled:false };
 
 
   try{ const v = localStorage.getItem('ppSize'); if(v !== null && [10, 25, 50, 0].includes(Number(v))) S.size = Number(v); }catch(e){}
@@ -15700,6 +15722,7 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
     if(error){ S.missing = /prepaid_orders|relation|schema cache|does not exist/i.test(error.message); S.list = []; if(!S.missing){ S.msg = error.message; S.msgErr = true; } draw(); return; }
     S.missing = false; S.list = data || [];
     if(isMgr() && !S.couriers) await loadCouriers();
+    await loadAdv().catch(() => {});
     draw(); badge();
   }
   async function loadCouriers(){
@@ -15710,18 +15733,18 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
   async function badge(){
     const m = me(), b = document.getElementById('ppBadge'); if(!m.id || !sb() || !b) return;
     if(!(Array.isArray(m.allowed_sections) && m.allowed_sections.includes('prepaid'))){ b.classList.remove('on'); return; }
-    const { count } = await sb().from('prepaid_orders').select('id', { count:'exact', head:true }).eq('status', 'pending');
+    const { count } = await sb().from('prepaid_orders').select('id', { count:'exact', head:true }).in('status', ['pending', 'out']);
     b.textContent = count || ''; b.classList.toggle('on', !!count);
   }
   const flash = (t, err) => { S.msg = t; S.msgErr = !!err; draw(); setTimeout(() => { if(S.msg === t){ S.msg = ''; draw(); } }, 6000); };
 
   async function setStatus(id, status, note){
     const { data, error } = await sb().rpc('prepaid_set_status', { p_id:id, p_status:status, p_note:note || null });
-    if(error) return flash('ماتحفظش: ' + error.message, true);
+    if(error) return flash(needSql(error) || /bad status/i.test(error.message) ? SQL3 : 'ماتحفظش: ' + error.message, true);
     if(!data) return flash('ماتحفظش — الأوردر ده مش بتاعك.', true);
     const o = S.list.find(x => x.id === id);
-    if(o){ o.status = status; o.status_note = status === 'pending' ? null : (note || null); o.status_at = status === 'pending' ? null : new Date().toISOString(); o.status_by_name = status === 'pending' ? null : (me().full_name || me().username || ''); }
-    flash(status === 'delivered' ? `✅ "${o ? o.customer_name : ''}" اتسلم.` : status === 'failed' ? `❌ اتسجل إن "${o ? o.customer_name : ''}" ماتسلمش.` : '↩ رجع لسه.');
+    if(o){ patch(o, status); if(status === 'failed' || status === 'delivered') o.status_note = note || null; }
+    flash(status === 'delivered' ? `✅ "${o ? o.customer_name : ''}" اتسلم.` : status === 'failed' ? `❌ اتسجل إن "${o ? o.customer_name : ''}" ماتسلمش.` : status === 'out' ? `🛵 "${o ? o.customer_name : ''}" خرج مع المندوب.` : '↩ رجع لسه.');
     badge();
   }
   async function reassign(id, cid){
@@ -15737,6 +15760,84 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
     const { data, error } = await sb().from('prepaid_orders').delete().eq('id', id).select('id');
     if(error || !data || !data.length) return flash('ماتمسحش: ' + (error ? error.message : 'مفيش صلاحية'), true);
     S.list = S.list.filter(x => x.id !== id); flash('🗑️ اتمسح.');
+  }
+
+  // 💵 حسابات المناديب: الدفعات + الأوردرات اللي عليها (حتى لو أقدم من الفترة المعروضة)
+  async function loadAdv(){
+    const { data, error } = await sb().from('prepaid_advances').select('*').order('pay_date', { ascending:false }).order('id', { ascending:false }).limit(500);
+    if(error){ S.advMissing = /prepaid_advances|relation|schema cache|does not exist/i.test(error.message); S.adv = []; return; }
+    S.advMissing = false; S.adv = data || [];
+    const have = new Set((S.list || []).map(o => o.id));
+    const need = [...new Set(S.adv.flatMap(a => (a.order_ids || []).map(Number)))].filter(id => !have.has(id) && !S.advOrd[id]);
+    for(let i = 0; i < need.length; i += 200){
+      const { data:os } = await sb().from('prepaid_orders').select('id, order_date, customer_name, amount, status, status_note, courier_note, courier_id, courier_name').in('id', need.slice(i, i + 200));
+      (os || []).forEach(o => { S.advOrd[o.id] = o; });
+    }
+  }
+  const needSql = e => /check constraint|prepaid_set_status_many|prepaid_set_note|function .* does not exist|schema cache/i.test(String(e && e.message || e));
+  const SQL3 = 'محتاج تشغّل ملف prepaid_orders_3.sql في Supabase → SQL Editor الأول.';
+  function patch(o, status){
+    o.status = status; o.status_at = status === 'pending' ? null : new Date().toISOString(); o.status_by_name = status === 'pending' ? null : (me().full_name || me().username || '');
+    if(status === 'pending' || status === 'out') o.status_note = null;
+    if(S.advOrd[o.id]) S.advOrd[o.id].status = status;
+  }
+  async function bulkStatus(ids, status){
+    if(!ids.length) return;
+    const { data, error } = await sb().rpc('prepaid_set_status_many', { p_ids:ids, p_status:status });
+    if(error) return flash(needSql(error) ? SQL3 : 'ماتحفظش: ' + error.message, true);
+    ids.forEach(id => { const o = S.list.find(x => x.id === id); if(o) patch(o, status); });
+    S.sel.clear();
+    flash(`${ST[status]} — اتعلّم ${Number(data) || 0} أوردر.`); badge();
+  }
+  async function setNote(id){
+    const o = S.list.find(x => x.id === id); if(!o) return;
+    const t = prompt('📝 ملاحظة المندوب على أوردر "' + (o.customer_name || '') + '" (اكتب اللي حصل — سيبها فاضية عشان تمسحها):', o.courier_note || '');
+    if(t === null) return;
+    const { data, error } = await sb().rpc('prepaid_set_note', { p_id:id, p_note:t });
+    if(error) return flash(needSql(error) ? SQL3 : 'ماتحفظتش: ' + error.message, true);
+    if(!data) return flash('ماتحفظتش — الأوردر ده مش بتاعك.', true);
+    o.courier_note = t.trim() || null; o.courier_note_at = o.courier_note ? new Date().toISOString() : null; o.courier_note_by = o.courier_note ? (me().full_name || me().username || '') : null;
+    flash(o.courier_note ? '📝 الملاحظة اتحفظت.' : '📝 الملاحظة اتمسحت.');
+  }
+  async function saveAdv(ids){
+    const M = ordMap(), sum = ids.reduce((a, id) => a + (Number((M.get(id) || {}).amount) || 0), 0);
+    const amt = S.advForm.amount === '' ? sum : Number(S.advForm.amount);
+    if(!(amt > 0)) return flash('اكتب المبلغ اللي المندوب دفعه.', true);
+    const dup = ids.filter(id => openAdvOf(id));
+    if(dup.length && !confirm(`${dup.length} من الأوردرات دي عليها دفعة مقدم مفتوحة قبل كده. تسجّل دفعة تانية برضه؟`)) return;
+    // المندوب: اللي اختاره المتابع — أو مندوب الأوردرات — أو المسؤول الوحيد
+    const cs = S.couriers || [], oc = ids.map(id => (M.get(id) || {}).courier_id).find(Boolean);
+    const c = cs.find(x => x.id === S.advForm.courier) || cs.find(x => x.id === oc) || (cs.length === 1 ? cs[0] : null);
+    if(cs.length > 1 && !c) return flash('اختار المندوب اللي دفع.', true);
+    S.advSaving = true; draw();
+    const rec = { pay_date:ymd(new Date()), courier_id:c ? c.id : null, courier_name:c ? c.name : null, amount:amt, order_ids:ids, note:S.advForm.note.trim() || null,
+      created_by:me().id, created_by_name:me().full_name || me().username || '' };
+    const { data, error } = await sb().from('prepaid_advances').insert(rec).select('*');
+    S.advSaving = false;
+    if(error) return flash(/prepaid_advances|relation|schema cache|does not exist/i.test(error.message) ? SQL3 : 'ماتسجلتش: ' + error.message, true);
+    S.adv = [...(data || []), ...(S.adv || [])];
+    S.advForm = { amount:'', note:'', courier:'' };
+    // اللي دفع مقدم يبقى خرج بيهم — الأوردرات اللي لسه ⏳ تتعلّم 🛵 مع المندوب
+    const pend = ids.filter(id => (S.list.find(x => x.id === id) || {}).status === 'pending');
+    if(pend.length){ const r = await sb().rpc('prepaid_set_status_many', { p_ids:pend, p_status:'out' }); if(!r.error) pend.forEach(id => patch(S.list.find(x => x.id === id), 'out')); }
+    S.sel.clear();
+    flash(`💵 اتسجل إن ${c ? c.name : 'المندوب'} دفع ${money(amt)} مقدم لـ ${ids.length} أوردر${pend.length ? ` — و ${pend.length} اتعلّموا 🛵 مع المندوب` : ''}.`); badge();
+  }
+  async function settleAdv(id, on){
+    const a = (S.adv || []).find(x => x.id === id); if(!a) return;
+    let note = null;
+    if(on){ const r = advCalc(a, ordMap()); note = prompt(`اقفل الدفعة؟ الباقي للمندوب ${money(r.bal)}.\nاكتب اللي حصل في الحساب (مثلاً: رجّعناله ${Math.max(0, Math.round(r.bal))} ج كاش) — أو سيبها فاضية:`, ''); if(note === null) return; }
+    const upd = on ? { settled:true, settled_at:new Date().toISOString(), settled_by_name:me().full_name || me().username || '', settle_note:note.trim() || null } : { settled:false, settled_at:null, settled_by_name:null, settle_note:null };
+    const { data, error } = await sb().from('prepaid_advances').update(upd).eq('id', id).select('id');
+    if(error || !data || !data.length) return flash('ماتحفظش: ' + (error ? error.message : 'مفيش صلاحية'), true);
+    Object.assign(a, upd); flash(on ? '✔ الدفعة اتقفلت.' : '↩ الدفعة اتفتحت تاني.');
+  }
+  async function delAdv(id){
+    const a = (S.adv || []).find(x => x.id === id); if(!a) return;
+    if(!confirm(`تمسح دفعة ${money(a.amount)} بتاعة ${a.courier_name || 'المندوب'}؟ (الأوردرات نفسها مش هتتمسح)`)) return;
+    const { data, error } = await sb().from('prepaid_advances').delete().eq('id', id).select('id');
+    if(error || !data || !data.length) return flash('ماتمسحتش: ' + (error ? error.message : 'مفيش صلاحية'), true);
+    S.adv = S.adv.filter(x => x.id !== id); flash('🗑️ الدفعة اتمسحت.');
   }
 
   const dayLabel = d => { const t = ymd(new Date()), y = new Date(); y.setDate(y.getDate() - 1);
@@ -15803,20 +15904,35 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
     flash(`🖨️ بيطبع ${L.length} بوليصة.`);
   }
 
+  // 💵 دفعات المقدم: مين الأوردرات اللي عليها دفعة مفتوحة
+  const ordMap = () => { const M = new Map(); Object.values(S.advOrd || {}).forEach(o => M.set(o.id, o)); (S.list || []).forEach(o => M.set(o.id, o)); return M; };
+  const openAdvOf = id => (S.adv || []).find(a => !a.settled && (a.order_ids || []).map(Number).includes(id));
+  function advCalc(a, M){
+    const os = (a.order_ids || []).map(id => M.get(Number(id))).filter(Boolean);
+    const v = st => os.filter(o => o.status === st).reduce((s, o) => s + (Number(o.amount) || 0), 0);
+    const r = { os, total:os.reduce((s, o) => s + (Number(o.amount) || 0), 0), del:v('delivered'), fail:v('failed'), out:v('out') + v('pending'), paid:Number(a.amount) || 0 };
+    r.bal = r.paid - r.del;   // الباقي للمندوب = اللي دفعه − قيمة اللي اتسلم
+    return r;
+  }
+
   function card(o){
-    const mgr = isMgr(), can = true, ph = tel(o.phone), ph2 = o.phone2 ? tel(o.phone2) : '';
+    const mgr = isMgr(), ph = tel(o.phone), ph2 = o.phone2 ? tel(o.phone2) : '', adv = openAdvOf(o.id);
     return `<div class="pp-card ${o.status} ${S.sel.has(o.id) ? 'sel' : ''}">
-      <div class="pp-top"><input type="checkbox" class="pp-chk" data-ppsel="${o.id}" ${S.sel.has(o.id) ? 'checked' : ''} title="علّم للطباعة"><span class="pp-st ${o.status}">${ST[o.status] || o.status}</span><span class="nm">${esc(o.customer_name || '—')}</span><span class="amt">${money(o.amount)}</span></div>
+      <div class="pp-top"><input type="checkbox" class="pp-chk" data-ppsel="${o.id}" ${S.sel.has(o.id) ? 'checked' : ''} title="علّم الأوردر"><span class="pp-st ${o.status}">${ST[o.status] || o.status}</span><span class="nm">${esc(o.customer_name || '—')}</span>${adv ? `<span class="pp-st adv" title="دفعة مقدم ${money(adv.amount)}">💵 مدفوع مقدم</span>` : ''}<span class="amt">${money(o.amount)}</span></div>
       <div class="pp-line"><span class="k">📞</span> <a href="tel:${esc(ph)}" dir="ltr" style="font-weight:700">${esc(ph)}</a>${ph2 ? ` · <a href="tel:${esc(ph2)}" dir="ltr">${esc(ph2)}</a>` : ''}</div>
       <div class="pp-line"><span class="k">📍</span> ${esc(o.address || '—')}${o.city ? ` — ${esc(o.city)}` : ''}</div>
       ${o.contents ? `<div class="pp-line"><span class="k">📦</span> ${esc(o.contents)}</div>` : ''}
       ${mgr && (o.notes || o.src_label) ? `<div class="pp-line"><span class="k">🏷️</span> ${esc([o.notes, o.src_label, o.agent ? '👤 ' + o.agent : ''].filter(Boolean).join(' · '))}</div>` : ''}
-      ${o.status !== 'pending' ? `<div class="pp-line" style="font-size:13px">${o.status === 'failed' ? '❌' : '✅'} ${o.status_note ? '<b>' + esc(o.status_note) + '</b> · ' : ''}<span class="k">${esc(o.status_by_name || '')} ${esc(tm(o.status_at))}</span></div>` : ''}
+      ${o.status === 'delivered' || o.status === 'failed' ? `<div class="pp-line" style="font-size:13px">${o.status === 'failed' ? '❌' : '✅'} ${o.status_note ? '<b>' + esc(o.status_note) + '</b> · ' : ''}<span class="k">${esc(o.status_by_name || '')} ${esc(tm(o.status_at))}</span></div>` : ''}
+      ${o.status === 'out' ? `<div class="pp-line" style="font-size:13px">🛵 خرج مع المندوب <span class="k">${esc(o.status_by_name || '')} ${esc(tm(o.status_at))}</span></div>` : ''}
+      ${o.courier_note ? `<div class="pp-note">📝 <b>${esc(o.courier_note)}</b> <span class="k">${esc(o.courier_note_by || '')} ${esc(tm(o.courier_note_at))}</span></div>` : ''}
       <div class="pp-meta">${mgr && o.courier_name ? `🛵 ${esc(o.courier_name)} · ` : ''}اتبعت ${esc(tm(o.created_at))}${o.sent_by_name ? ' من ' + esc(o.sent_by_name) : ''}</div>
       <div class="pp-act">
-        ${can && o.status !== 'delivered' ? `<button class="pp-btn ok" data-ppst="delivered" data-id="${o.id}">✅ اتسلم</button>` : ''}
-        ${can && o.status !== 'failed' ? `<button class="pp-btn no" data-ppst="failed" data-id="${o.id}">❌ ماتسلمش</button>` : ''}
-        ${can && o.status !== 'pending' ? `<button class="pp-btn sm" data-ppst="pending" data-id="${o.id}">↩ رجّعه لسه</button>` : ''}
+        ${o.status === 'pending' ? `<button class="pp-btn out" data-ppst="out" data-id="${o.id}">🛵 خرج مع المندوب</button>` : ''}
+        ${o.status !== 'delivered' ? `<button class="pp-btn ok" data-ppst="delivered" data-id="${o.id}">✅ اتسلم</button>` : ''}
+        ${o.status !== 'failed' ? `<button class="pp-btn no" data-ppst="failed" data-id="${o.id}">❌ ماتسلمش</button>` : ''}
+        ${o.status !== 'pending' ? `<button class="pp-btn sm" data-ppst="pending" data-id="${o.id}">↩ رجّعه لسه</button>` : ''}
+        <button class="pp-btn sm" data-ppnote="${o.id}">📝 ${o.courier_note ? 'عدّل الملاحظة' : 'ملاحظة'}</button>
         <a class="pp-btn sm" target="_blank" rel="noopener" href="https://wa.me/2${esc(ph)}">💬 واتساب</a>
         <a class="pp-btn sm" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent((o.address || '') + ' ' + (o.city || '') + ' القاهرة')}">🗺️ الخريطة</a>
         ${mgr && S.couriers && S.couriers.length ? `<select class="pp-btn sm" data-ppre="${o.id}" title="غيّر المندوب"><option value="">🔁 غيّر المندوب</option>${S.couriers.filter(c => c.id !== o.courier_id).map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('')}</select>` : ''}
@@ -15824,58 +15940,147 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
       </div></div>`;
   }
 
+  const head = () => {
+    const mgr = isMgr();
+    return `<div class="pagehead" style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap"><div><h1>🛵 مناديب الدفع المقدم</h1><p>${S.view === 'acc' ? 'المندوب دفع كام مقدم ولأنهي أوردرات — وبنطرح منها قيمة اللي اتسلم عشان نعرف الباقي.' : mgr ? 'أوردرات مدينة نصر ومصر الجديدة اللي اتبعتت للمناديب من 📤 رفع الأوردرات، وحالة كل أوردر.' : 'دي أوردراتك. أول ما تخرج بيهم علّم 🛵 مع المندوب — وبعد ما توصّل علّم ✅ اتسلم، ولو مااتسلمش علّم ❌ واكتب السبب. وتقدر تكتب 📝 ملاحظة باللي حصل.'}</p></div>
+      <div class="pp-views"><button class="${S.view === 'orders' ? 'on' : ''}" data-ppview="orders">📦 الأوردرات</button><button class="${S.view === 'acc' ? 'on' : ''}" data-ppview="acc">💰 حسابات المناديب</button></div></div>`;
+  };
+
+  // 💵 خانة "المندوب دفع كام مقدم" للأوردرات المتعلّمة
+  function advForm(selIds){
+    if(!isMgr() || !selIds.length) return '';
+    const M = ordMap(), sum = selIds.reduce((a, id) => a + (Number((M.get(id) || {}).amount) || 0), 0), F = S.advForm;
+    const cs = S.couriers || [];
+    return `<div class="pp-advf"><b>💵 المندوب دفع كام مقدم لشغل الـ ${selIds.length} أوردر دول؟</b>
+      <span style="font-size:12.5px;color:var(--muted)">(قيمتهم ${money(sum)})</span>
+      <input type="number" inputmode="decimal" id="ppAdvAmt" placeholder="${sum}" value="${esc(F.amount)}" style="width:120px">
+      ${cs.length > 1 ? `<select id="ppAdvCour"><option value="">🛵 المندوب...</option>${cs.map(c => `<option value="${esc(c.id)}" ${F.courier === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select>` : ''}
+      <input type="text" id="ppAdvNote" placeholder="ملاحظة (اختياري)" value="${esc(F.note)}" style="flex:1;min-width:140px">
+      <button class="pp-btn ok" id="ppAdvSave" ${S.advSaving ? 'disabled' : ''}>${S.advSaving ? '⏳...' : '💾 سجّل الدفعة'}</button></div>`;
+  }
+
   function view(){
     const mgr = isMgr();
-    let h = `<div class="pagehead"><h1>🛵 مناديب الدفع المقدم</h1><p>${mgr ? 'أوردرات مدينة نصر ومصر الجديدة اللي اتبعتت للمناديب من 📤 رفع الأوردرات، وحالة كل أوردر.' : 'دي أوردراتك. كل أوردر بيومه — بعد ما توصّل علّم ✅ اتسلم، ولو مااتسلمش علّم ❌ واكتب السبب.'}</p></div>`;
+    let h = head();
     if(S.missing) return h + `<div class="pp-msg err">جدول مناديب الدفع المقدم لسه مش متعمل في Supabase.${me().is_admin ? ' شغّل ملف <b>prepaid_orders.sql</b> (موجود في الريبو) في Supabase → SQL Editor مرة واحدة.' : ' كلّم الأدمن.'}</div>`;
     if(S.msg) h += `<div class="pp-msg ${S.msgErr ? 'err' : ''}">${esc(S.msg)}</div>`;
     if(!S.list) return h + '<p style="color:var(--muted)">⏳ بيحمّل...</p>';
+    if(S.view === 'acc') return h + accView();
 
     // فلترة بالمندوب (للمتابعة) ثم الأيام
     let L = S.list;
     if(mgr && S.courier) L = L.filter(o => (o.courier_id || '-') === S.courier);
     if(mgr){
-      const per = {}; S.list.forEach(o => { const k = o.courier_id || ''; (per[k] = per[k] || { name:o.courier_name || 'القسم (لسه من غير مسؤول)', n:0, p:0, d:0, f:0, amt:0 }); per[k].n++; per[k][o.status === 'delivered' ? 'd' : o.status === 'failed' ? 'f' : 'p']++; if(o.status === 'delivered') per[k].amt += Number(o.amount) || 0; });
+      const per = {}; S.list.forEach(o => { const k = o.courier_id || ''; (per[k] = per[k] || { name:o.courier_name || 'القسم (لسه من غير مسؤول)', n:0, p:0, o:0, d:0, f:0 }); per[k].n++; per[k][o.status === 'delivered' ? 'd' : o.status === 'failed' ? 'f' : o.status === 'out' ? 'o' : 'p']++; });
       const ks = Object.keys(per);
-      if(ks.length > 1 || S.courier) h += `<div class="pp-cour"><button class="${S.courier ? '' : 'on'}" data-ppcour="">👥 كل المناديب<small>${S.list.length} أوردر</small></button>${ks.map(k => `<button class="${S.courier === (k || '-') ? 'on' : ''}" data-ppcour="${esc(k || '-')}">🛵 ${esc(per[k].name)}<small>${per[k].n} · ✅${per[k].d} · ❌${per[k].f} · ⏳${per[k].p}</small></button>`).join('')}</div>`;
+      if(ks.length > 1 || S.courier) h += `<div class="pp-cour"><button class="${S.courier ? '' : 'on'}" data-ppcour="">👥 كل المناديب<small>${S.list.length} أوردر</small></button>${ks.map(k => `<button class="${S.courier === (k || '-') ? 'on' : ''}" data-ppcour="${esc(k || '-')}">🛵 ${esc(per[k].name)}<small>${per[k].n} · 🛵${per[k].o} · ✅${per[k].d} · ❌${per[k].f} · ⏳${per[k].p}</small></button>`).join('')}</div>`;
     }
     const days = [...new Set(L.map(o => o.order_date))].sort().reverse();
     if(S.day && !days.includes(S.day)) S.day = '';
     const LD = S.day ? L.filter(o => o.order_date === S.day) : L;
     const cnt = k => LD.filter(o => o.status === k).length;
     const sumD = LD.filter(o => o.status === 'delivered').reduce((a, o) => a + (Number(o.amount) || 0), 0);
+    // 💵 الخانة اللي فوق: المندوب دفع كام مقدم (الدفعات المفتوحة) والباقي بعد طرح اللي اتسلم
+    const M = ordMap(), openA = (S.adv || []).filter(a => !a.settled && (!mgr || !S.courier || (a.courier_id || '-') === S.courier));
+    const AC = openA.map(a => advCalc(a, M)), paid = AC.reduce((s, r) => s + r.paid, 0), adel = AC.reduce((s, r) => s + r.del, 0);
     h += `<div class="pp-kpis">
       <div class="pp-kpi"><div class="n">${LD.length}</div><div class="l">أوردر</div></div>
       <div class="pp-kpi"><div class="n" style="color:#8a5a00">${cnt('pending')}</div><div class="l">⏳ لسه</div></div>
+      <div class="pp-kpi"><div class="n" style="color:#2b5a8a">${cnt('out')}</div><div class="l">🛵 مع المندوب</div></div>
       <div class="pp-kpi"><div class="n" style="color:#2f7d55">${cnt('delivered')}</div><div class="l">✅ اتسلم</div></div>
       <div class="pp-kpi"><div class="n" style="color:#c0392b">${cnt('failed')}</div><div class="l">❌ ماتسلمش</div></div>
       <div class="pp-kpi"><div class="n">${money(sumD)}</div><div class="l">قيمة اللي اتسلم</div></div></div>`;
-    h += `<div class="pp-tabs">${[['pending', '⏳ لسه'], ['delivered', '✅ اتسلم'], ['failed', '❌ ماتسلمش'], ['all', '📋 الكل']].map(([k, l]) => `<button class="${S.tab === k ? 'on' : ''}" data-pptab="${k}">${l} (${k === 'all' ? LD.length : cnt(k)})</button>`).join('')}</div>
+    if(S.adv && !S.advMissing) h += `<div class="pp-advbar" data-ppview="acc" title="افتح حسابات المناديب">
+      <div><span>💵 المندوب دفع مقدم</span><b>${money(paid)}</b><small>${openA.length} دفعة مفتوحة · ${AC.reduce((s, r) => s + r.os.length, 0)} أوردر</small></div>
+      <div><span>− قيمة اللي اتسلم منهم</span><b style="color:#2f7d55">${money(adel)}</b></div>
+      <div><span>= الباقي للمندوب</span><b style="color:${paid - adel > 0 ? '#2b5a8a' : '#c0392b'}">${money(paid - adel)}</b><small>مرتجع / لسه معاه</small></div>
+      <span class="go">💰 حسابات المناديب ←</span></div>`;
+    else if(S.advMissing && mgr) h += `<div class="pp-msg err">عشان خانة "المندوب دفع مقدم" وحسابات المناديب وحالة 🛵 مع المندوب: شغّل ملف <b>prepaid_orders_3.sql</b> في Supabase → SQL Editor مرة واحدة.</div>`;
+    h += `<div class="pp-tabs">${[['pending', '⏳ لسه'], ['out', '🛵 مع المندوب'], ['delivered', '✅ اتسلم'], ['failed', '❌ ماتسلمش'], ['all', '📋 الكل']].map(([k, l]) => `<button class="${S.tab === k ? 'on' : ''}" data-pptab="${k}">${l} (${k === 'all' ? LD.length : cnt(k)})</button>`).join('')}</div>
       <div class="pp-filters"><label style="font-size:13px;color:var(--muted)">📅 اليوم:</label><select id="ppDay"><option value="">كل الأيام</option>${days.map(d => `<option value="${d}" ${S.day === d ? 'selected' : ''}>${esc(dayLabel(d))} (${L.filter(o => o.order_date === d).length})</option>`).join('')}</select>
         <select id="ppRange">${[[7, 'آخر أسبوع'], [30, 'آخر 30 يوم'], [90, 'آخر 3 شهور'], [365, 'آخر سنة']].map(([n, l]) => `<option value="${n}" ${S.days === n ? 'selected' : ''}>${l}</option>`).join('')}</select>
         <button class="pp-btn sm" id="ppRefresh">🔄 تحديث</button></div>`;
     const V = S.tab === 'all' ? LD : LD.filter(o => o.status === S.tab);
     if(!V.length) return h + `<div class="card"><p style="color:var(--muted);margin:0">${S.tab === 'pending' ? 'مفيش أوردرات لسه مستنية 👌' : 'مفيش أوردرات هنا.'}</p></div>`;
-    // 🖨️ عدد الأوردرات في الصفحة + التعليم + الطباعة
+    // 🖨️ عدد الأوردرات في الصفحة + التعليم + الطباعة + تغيير حالة المتعلّم
     const VS = V.slice().sort((a, b) => b.order_date.localeCompare(a.order_date) || a.id - b.id);
     const size = S.size || VS.length, pages = Math.max(1, Math.ceil(VS.length / size));
     if(S.page >= pages) S.page = pages - 1;
     const PG = VS.slice(S.page * size, S.page * size + size);
-    const selN = [...S.sel].filter(id => S.list.some(o => o.id === id)).length, allOn = PG.length && PG.every(o => S.sel.has(o.id));
+    const selIds = [...S.sel].filter(id => S.list.some(o => o.id === id)), selN = selIds.length, allOn = PG.length && PG.every(o => S.sel.has(o.id));
     const pager = pages > 1 ? `<div class="pp-pager"><button class="pp-btn sm" data-pppage="${S.page - 1}" ${S.page ? '' : 'disabled'}>→ اللي قبل</button><span>صفحة ${S.page + 1} من ${pages} · ${S.page * size + 1}–${S.page * size + PG.length} من ${VS.length}</span><button class="pp-btn sm" data-pppage="${S.page + 1}" ${S.page < pages - 1 ? '' : 'disabled'}>اللي بعد ←</button></div>` : '';
     h += `<div class="pp-tools">
       <span class="lbl">اعرض:</span><div class="pp-sizes">${[10, 25, 50, 0].map(n => `<button class="${S.size === n ? 'on' : ''}" data-ppsize="${n}">${n || 'الكل'}</button>`).join('')}</div>
       <button class="pp-btn sm" id="ppSelAll">${allOn ? '☐ شيل علامة الظاهرين' : `☑️ علّم الظاهرين (${PG.length})`}</button>
       ${selN ? `<button class="pp-btn sm" id="ppSelNone">✖ شيل كل العلامات</button>` : ''}
-      <button class="pp-btn ok" id="ppPrint" ${selN ? '' : 'disabled'} style="margin-inline-start:auto">🖨️ اطبع البوالص (${selN})</button></div>` + pager;
+      <button class="pp-btn ok" id="ppPrint" ${selN ? '' : 'disabled'} style="margin-inline-start:auto">🖨️ اطبع البوالص (${selN})</button></div>`;
+    if(selN) h += `<div class="pp-bulk"><b>☑️ ${selN} أوردر متعلّم:</b>
+      <button class="pp-btn out" data-ppbulk="out">🛵 خرجوا مع المندوب</button>
+      <button class="pp-btn ok" data-ppbulk="delivered">✅ اتسلموا</button>
+      <button class="pp-btn no" data-ppbulk="failed">❌ ماتسلموش</button>
+      <button class="pp-btn sm" data-ppbulk="pending">↩ رجّعهم لسه</button></div>` + advForm(selIds);
+    h += pager;
     const by = {}; PG.forEach(o => (by[o.order_date] = by[o.order_date] || []).push(o));
     Object.keys(by).sort().reverse().forEach(d => {
       const A = L.filter(o => o.order_date === d), X = by[d];
-      h += `<div class="pp-day"><div class="pp-dayh"><button class="pp-btn sm" data-ppselday="${d}" title="علّم أوردرات اليوم ده">${X.every(o => S.sel.has(o.id)) ? '☑️' : '☐'}</button><b>📅 ${esc(dayLabel(d))}</b><span>${A.length} أوردر · ✅ ${A.filter(o => o.status === 'delivered').length} · ❌ ${A.filter(o => o.status === 'failed').length} · ⏳ ${A.filter(o => o.status === 'pending').length}</span><span style="margin-inline-start:auto">${money(X.reduce((a, o) => a + (Number(o.amount) || 0), 0))}</span></div>${X.map(card).join('')}</div>`;
+      h += `<div class="pp-day"><div class="pp-dayh"><button class="pp-btn sm" data-ppselday="${d}" title="علّم أوردرات اليوم ده">${X.every(o => S.sel.has(o.id)) ? '☑️' : '☐'}</button><b>📅 ${esc(dayLabel(d))}</b><span>${A.length} أوردر · 🛵 ${A.filter(o => o.status === 'out').length} · ✅ ${A.filter(o => o.status === 'delivered').length} · ❌ ${A.filter(o => o.status === 'failed').length} · ⏳ ${A.filter(o => o.status === 'pending').length}</span><span style="margin-inline-start:auto">${money(X.reduce((a, o) => a + (Number(o.amount) || 0), 0))}</span></div>${X.map(card).join('')}</div>`;
     });
     h += pager;
     return h;
   }
+
+  /* 💰 حسابات المناديب: كل دفعة مقدم − قيمة اللي اتسلم من أوردراتها = الباقي للمندوب */
+  function accView(){
+    const mgr = isMgr();
+    if(S.advMissing) return `<div class="pp-msg err">حسابات المناديب محتاجة جدول جديد في Supabase.${me().is_admin ? ' شغّل ملف <b>prepaid_orders_3.sql</b> (موجود في الريبو) في Supabase → SQL Editor مرة واحدة.' : ' كلّم الأدمن.'}</div>`;
+    if(!S.adv) return '<p style="color:var(--muted)">⏳ بيحمّل الحسابات...</p>';
+    const M = ordMap();
+    const all = S.adv.map(a => ({ a, r:advCalc(a, M) }));
+    let h = '';
+    // ملخص لكل مندوب (الدفعات المفتوحة بس)
+    const per = {};
+    all.filter(x => !x.a.settled).forEach(({ a, r }) => { const k = a.courier_id || ''; const P = per[k] = per[k] || { name:a.courier_name || 'القسم', n:0, paid:0, del:0, fail:0, out:0, bal:0 };
+      P.n++; P.paid += r.paid; P.del += r.del; P.fail += r.fail; P.out += r.out; P.bal += r.bal; });
+    const ks = Object.keys(per);
+    h += `<div class="pp-acc-sum">${ks.length ? ks.map(k => { const P = per[k]; return `<div class="pp-acc-c">
+        <h4>🛵 ${esc(P.name)} <small>${P.n} دفعة مفتوحة</small></h4>
+        <div class="row"><span>💵 دفع مقدم</span><b>${money(P.paid)}</b></div>
+        <div class="row"><span>✅ اتسلم (بيتطرح)</span><b style="color:#2f7d55">− ${money(P.del)}</b></div>
+        <div class="row tot"><span>= الباقي للمندوب</span><b style="color:${P.bal >= 0 ? '#2b5a8a' : '#c0392b'}">${money(P.bal)}</b></div>
+        <div class="row sm"><span>منهم ❌ مرتجع</span><b>${money(P.fail)}</b></div>
+        <div class="row sm"><span>منهم 🛵 لسه معاه / ⏳ لسه</span><b>${money(P.out)}</b></div></div>`; }).join('') : `<div class="card" style="margin:0"><p style="margin:0;color:var(--muted)">مفيش دفعات مقدم مفتوحة.${mgr ? ' عشان تسجّل دفعة: روح 📦 الأوردرات، علّم الأوردرات اللي المندوب دفع عشانها، واكتب المبلغ في خانة "💵 المندوب دفع كام مقدم".' : ''}</p></div>`}</div>`;
+    const L = all.filter(x => S.showSettled || !x.a.settled);
+    const nSet = all.filter(x => x.a.settled).length;
+    h += `<div class="pp-filters" style="margin-top:12px"><b style="font-size:15px">📒 الدفعات</b>
+      ${nSet ? `<button class="pp-btn sm" id="ppShowSet">${S.showSettled ? '🙈 اخفي اللي اتقفل' : `👀 اعرض اللي اتقفل (${nSet})`}</button>` : ''}
+      <button class="pp-btn sm" id="ppRefresh">🔄 تحديث</button></div>`;
+    if(!L.length) return h;
+    h += L.map(({ a, r }) => {
+      const open = S.advOpen.has(a.id);
+      return `<div class="pp-adv ${a.settled ? 'settled' : ''}">
+        <div class="pp-adv-h">
+          <div><b>💵 ${money(r.paid)}</b> <span class="k">· ${esc(dayLabel(a.pay_date))} · 🛵 ${esc(a.courier_name || 'القسم')} · ${(a.order_ids || []).length} أوردر</span>${a.settled ? ` <span class="pp-st delivered">✔ اتقفل ${esc(tm(a.settled_at))}</span>` : ''}</div>
+          <div class="pp-adv-n">
+            <span>قيمة الأوردرات <b>${money(r.total)}</b></span>
+            <span>✅ اتسلم <b style="color:#2f7d55">${money(r.del)}</b></span>
+            <span>❌ مرتجع <b style="color:#c0392b">${money(r.fail)}</b></span>
+            <span>🛵/⏳ لسه <b style="color:#2b5a8a">${money(r.out)}</b></span>
+            <span class="tot">الباقي للمندوب <b>${money(r.bal)}</b></span>
+          </div>
+          ${a.note ? `<div class="pp-line" style="font-size:13px">📝 ${esc(a.note)}</div>` : ''}
+          ${a.settle_note ? `<div class="pp-line" style="font-size:13px">✔ ${esc(a.settle_note)}</div>` : ''}
+          <div class="pp-meta">سجّلها ${esc(a.created_by_name || '')} ${esc(tm(a.created_at))}${a.settled && a.settled_by_name ? ' · قفلها ' + esc(a.settled_by_name) : ''}</div>
+          <div class="pp-act">
+            <button class="pp-btn sm" data-ppadvopen="${a.id}">${open ? '▲ اخفي الأوردرات' : '▼ الأوردرات'}</button>
+            ${mgr && !a.settled ? `<button class="pp-btn ok" data-ppsettle="${a.id}">✔ اتحاسبنا — اقفل الدفعة</button>` : ''}
+            ${mgr && a.settled ? `<button class="pp-btn sm" data-ppunsettle="${a.id}">↩ افتحها تاني</button>` : ''}
+            ${mgr ? `<button class="pp-btn sm" data-ppadvdel="${a.id}" title="امسح الدفعة">🗑️</button>` : ''}
+          </div></div>
+        ${open ? `<div class="pp-adv-ol">${(a.order_ids || []).map(id => { const o = M.get(Number(id)); return o ? `<div><span class="pp-st ${o.status}">${ST[o.status] || o.status}</span> <b>${esc(o.customer_name || '—')}</b> <span class="k">${esc(o.order_date || '')}</span>${o.courier_note ? ` <span class="k">📝 ${esc(o.courier_note)}</span>` : ''}${o.status_note ? ` <span class="k">— ${esc(o.status_note)}</span>` : ''}<span style="margin-inline-start:auto">${money(o.amount)}</span></div>` : `<div class="k">أوردر #${esc(id)} (اتمسح)</div>`; }).join('')}</div>` : ''}
+      </div>`; }).join('');
+    return h;
+  }
+
   function draw(){
     if(!isPP()) return;
     const main = document.getElementById('main'); if(!main) return;
@@ -15900,6 +16105,24 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
     const sn = main.querySelector('#ppSelNone'); if(sn) sn.onclick = () => { S.sel.clear(); draw(); };
     main.querySelectorAll('[data-ppselday]').forEach(b => b.onclick = () => { const ids = [...main.querySelectorAll('.pp-day')].find(x => x.contains(b)).querySelectorAll('[data-ppsel]'); const L2 = [...ids].map(c => Number(c.dataset.ppsel)), on = L2.every(id => S.sel.has(id)); L2.forEach(id => on ? S.sel.delete(id) : S.sel.add(id)); draw(); });
     const pr = main.querySelector('#ppPrint'); if(pr) pr.onclick = () => printWaybills([...S.sel]);
+    // 🛵 الحالة الجديدة + الملاحظات + 💰 حسابات المناديب
+    main.querySelectorAll('[data-ppview]').forEach(b => b.onclick = () => { S.view = b.dataset.ppview; draw(); scrollTo(0, 0); if(S.view === 'acc' && !S.adv) loadAdv().then(draw); });
+    main.querySelectorAll('[data-ppnote]').forEach(b => b.onclick = () => setNote(Number(b.dataset.ppnote)));
+    main.querySelectorAll('[data-ppbulk]').forEach(b => b.onclick = () => {
+      const ids = [...S.sel].filter(id => S.list.some(o => o.id === id)), st = b.dataset.ppbulk;
+      if(!ids.length) return;
+      if(st !== 'out' && !confirm(`تعلّم ${ids.length} أوردر "${ST[st]}"؟`)) return;
+      bulkStatus(ids, st);
+    });
+    const aa = main.querySelector('#ppAdvAmt'); if(aa) aa.oninput = () => { S.advForm.amount = aa.value; };
+    const an = main.querySelector('#ppAdvNote'); if(an) an.oninput = () => { S.advForm.note = an.value; };
+    const ac = main.querySelector('#ppAdvCour'); if(ac) ac.onchange = () => { S.advForm.courier = ac.value; };
+    const as = main.querySelector('#ppAdvSave'); if(as) as.onclick = () => saveAdv([...S.sel].filter(id => S.list.some(o => o.id === id)));
+    main.querySelectorAll('[data-ppadvopen]').forEach(b => b.onclick = () => { const id = Number(b.dataset.ppadvopen); S.advOpen.has(id) ? S.advOpen.delete(id) : S.advOpen.add(id); draw(); });
+    main.querySelectorAll('[data-ppsettle]').forEach(b => b.onclick = () => settleAdv(Number(b.dataset.ppsettle), true));
+    main.querySelectorAll('[data-ppunsettle]').forEach(b => b.onclick = () => settleAdv(Number(b.dataset.ppunsettle), false));
+    main.querySelectorAll('[data-ppadvdel]').forEach(b => b.onclick = () => delAdv(Number(b.dataset.ppadvdel)));
+    const ss = main.querySelector('#ppShowSet'); if(ss) ss.onclick = () => { S.showSettled = !S.showSettled; draw(); };
   }
   function mount(){ document.querySelectorAll('#sidebar a.navlink').forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#/prepaid')); draw(); load(); }
   const _render = render;
@@ -15973,7 +16196,7 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
   const pct = (a, b) => b ? Math.round(a / b * 100) : 0;
   const ph = s => { let t = String(s || '').replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/\D/g, ''); if(t.startsWith('00')) t = t.slice(2); if(t.startsWith('20') && t.length >= 12) t = t.slice(2); t = t.replace(/^0+/, ''); return /^1[0125]\d{8}$/.test(t) ? t : ''; };
   const isCancel = st => /cancel|ملغ/i.test(String(st || ''));
-  const DEF_SRC = [{ key:'dream', label:'Dream Easy', color:'#2b6cb0' }, { key:'care', label:'Care Easy', color:'#b0457a' }, { key:'kidzzly', label:'Kidzzly Easy', color:'#4f8fd8' }, { key:'socky', label:'Socky Easy', color:'#3f9b74' }];
+  const DEF_SRC = [{ key:'dream', label:'Dream Easy', color:'#2b6cb0' }, { key:'care', label:'Care Easy', color:'#b0457a' }, { key:'kidzzly', label:'Kidzzly Easy', color:'#4f8fd8' }];
   const SQUAD = { key:'squad', label:'🏆 Squad', color:'#8a6d3b' };
 
   const S = { open:null, filt:'all', mode:'mtd', day:today(), month:today().slice(0, 7), from:today().slice(0, 8) + '01', to:today(), loading:false, msg:'', err:'', data:null, srcs:null, cache:{} };
@@ -15996,7 +16219,7 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
   async function loadSources(){
     if(S.srcs) return S.srcs;
     let list = DEF_SRC;
-    try{ const { data } = await sb().from('app_kv').select('value').eq('key', 'easy_sources').maybeSingle(); if(data && data.value && Array.isArray(data.value.list) && data.value.list.length) list = data.value.list; }catch(e){}
+    try{ const { data } = await sb().from('app_kv').select('value').eq('key', 'easy_sources').maybeSingle(); if(data && data.value && Array.isArray(data.value.list) && data.value.list.length) list = data.value.list.filter(x => x && x.key !== 'socky'); }catch(e){}
     S.srcs = [SQUAD].concat(list.map(s => ({ key:s.key, label:s.label || s.key, color:s.color || '#666' })));
     return S.srcs;
   }
@@ -16610,7 +16833,7 @@ table.gs tr.wk td.day{color:#c5221f}
   const num = v => parseFloat(String(v ?? '').replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/[^\d.-]/g, '')) || 0;
   const ymd = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   const isGS = () => (location.hash.replace('#/', '') || 'home').split('/')[0] === 'accounts-sheet';
-  const BR = [ { route:'accounts', table:'accounts_entries', short:'إيطالي' }, { route:'accounts-kidzzly', table:'accounts_entries_kidzzly', short:'Kidzzly' }, { route:'accounts-socky', table:'accounts_entries_socky', short:'Socky' } ];
+  const BR = [ { route:'accounts', table:'accounts_entries', short:'إيطالي' }, { route:'accounts-kidzzly', table:'accounts_entries_kidzzly', short:'Kidzzly' } ];
   const TRANSFER = 'تحويل بين الحسابات', COLS_KEY = 'gs_extra_cols';
   const S = { month: ymd(new Date()).slice(0, 7), brand:'all', rows:null, open:0, err:'', pop:null, show:'all', hideEmpty:false, d1:1, d2:31, saving:0, flash:'' };
   const extra = () => { try{ return JSON.parse(localStorage.getItem(COLS_KEY) || '[]'); }catch(e){ return []; } };
