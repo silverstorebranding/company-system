@@ -3865,7 +3865,7 @@ const Squad = (function(){
         <div class="sq-team-n">${money(Math.round(T.v))}</div><div class="sq-team-l">✅ ${T.d.toLocaleString('ar-EG')} أوردر اتسلم من ${T.n.toLocaleString('ar-EG')} · ${B.length} موظف</div>
         <div class="sq-team-r"><span>نسبة تسليماتهم كلهم</span><b>${pct(T.d, T.n)}</b></div>
         <div class="sq-team-r"><span>عمولتهم كلهم (المستحقة)</span><b>${money(Math.round(T.due))} <small>= ${pct(T.due, T.v)} من التسليمات</small></b></div>
-        <div class="sq-team-r sm"><span>العمولة الإجمالية (لو كله اتسلم)</span><b>${money(Math.round(T.c))}</b></div></div>
+        <div class="sq-team-r sm"><span title="عمولة اللي اتسلم + 5 ج على كل أوردر ماتسلمش (قيد التنفيذ / اندلفرد / ملغي) + عمولة المكتب — لكل الموظفين من غير شرط نسبة الـ50%">العمولة الإجمالية (من غير شرط الـ50%)</span><b>${money(Math.round(T.c))}</b></div></div>
       <div class="sq-team-c qp"><h4>🚚 مبيعات QP <small>(التسليمات${M ? ` · من ${dt(M.from)} لـ ${dt(M.to)}` : ' · من أول الشهر لليوم'})</small></h4>${qpSide}</div>
     </div>`;
   }
