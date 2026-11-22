@@ -16888,10 +16888,17 @@ table.gs tr.wk td.day{color:#c5221f}
       if(!S.agents.length) S.agents = L.filter(p => (data.find(d => d.id === p.id) || {}).allowed_sections?.includes?.('squad')).slice(0, 3);
       S.allPeople = L;
     }
-    try{ const { data:kv } = await sb().from('app_kv').select('key, value').in('key', Object.values(BR).map(b => b.kv));
+    await loadAssign();
+  }
+  // 📥 التوزيع المحفوظ (نفسه لكل الأجهزة) — بيتقري تاني قبل أي توزيع جديد، عشان جهاز مايكتبش فوق اللي جهاز تاني وزّعه
+  async function loadAssign(){
+    try{ const { data:kv, error } = await sb().from('app_kv').select('key, value').in('key', Object.values(BR).map(b => b.kv));
+      if(error) throw error;
       Object.entries(BR).forEach(([k, b]) => { const r = (kv || []).find(x => x.key === b.kv); S.assignAll[k] = (r && r.value && r.value.map) || {};
-        if(r && r.value && Array.isArray(r.value.balanced)) S.balanced = [...new Set((S.balanced || []).concat(r.value.balanced))]; }); }catch(e){}
-    S.assign = S.assignAll[S.brand] || {};
+        if(r && r.value && Array.isArray(r.value.balanced)) S.balanced = [...new Set((S.balanced || []).concat(r.value.balanced))]; });
+      S.assign = S.assignAll[S.brand] || {};
+      return true;
+    }catch(e){ S.assign = S.assignAll[S.brand] || {}; return false; }
   }
   const nameOf = id => ((S.allPeople || []).find(p => p.id === id) || {}).name || '';
   // 📒 سجل التجديدات والملاحظات لكل الموظفات في شهر معيّن
@@ -17026,8 +17033,10 @@ table.gs tr.wk td.day{color:#c5221f}
       // ⚖️ التوزيع التلقائي للأيام اللي فيها مشكلة — بالتساوي في "الناقص" (البراندين مع بعض)
       // الشهر الحالي بيتعاد توزيعه مرة واحدة بالطريقة الجديدة (بدل يوم ورا يوم بالترتيب)
       const cur = S.month === ymd(new Date()).slice(0, 7);
-      if(me().is_admin && cur) await handOver();
-      await balanceDays(me().is_admin && cur && !(S.balanced || []).includes(S.month));
+      // 🔄 جيب آخر توزيع اتحفظ (ممكن جهاز تاني وزّع وإحنا بنجيب أوردرات QP) — لو مقدرناش نقراه مانوزّعش حاجة
+      const fresh = await loadAssign();
+      if(me().is_admin && cur && fresh) await handOver();
+      if(fresh) await balanceDays(me().is_admin && cur && !(S.balanced || []).includes(S.month));
       build(); computeScores(); if(me().is_admin) saveSnapshot();
     }catch(e){ S.err = e.message; }
     S.busy = false; draw();
@@ -17064,11 +17073,14 @@ table.gs tr.wk td.day{color:#c5221f}
       S.assignAll[t.brand][t.k] = id; load[id] += t.need; cnt[id]++; changed.add(t.brand);
     });
     if(force){ S.balanced = [...new Set((S.balanced || []).concat(S.month))]; Object.keys(BR).forEach(b => changed.add(b)); }
-    for(const brand of changed) await saveAssign(brand);
+    let allSaved = true;
+    for(const brand of changed) if(!(await saveAssign(brand))) allSaved = false;
+    // ماتحفظش (مثلاً الأكونت مش مسموحله يكتب) → نعرض المحفوظ بس، عشان كل الأجهزة تشوف نفس الأسامي
+    if(!allSaved) await loadAssign();
     S.assign = S.assignAll[S.brand] || {};
   }
   function build(){ S.assign = S.assignAll[S.brand] || {}; S.days = S.all ? daysFor(S.brand, S.month) : null; }
-  async function saveAssign(brand){ brand = brand || S.brand; try{ await sb().from('app_kv').upsert({ key:BR[brand].kv, value:{ map:S.assignAll[brand] || {}, balanced:S.balanced || [] }, updated_at:new Date().toISOString(), updated_by_name: me().full_name || me().username || '' }); }catch(e){} }
+  async function saveAssign(brand){ brand = brand || S.brand; try{ const { error } = await sb().from('app_kv').upsert({ key:BR[brand].kv, value:{ map:S.assignAll[brand] || {}, balanced:S.balanced || [] }, updated_at:new Date().toISOString(), updated_by_name: me().full_name || me().username || '' }); return !error; }catch(e){ return false; } }
   async function sendTasks(){
     const bad = (S.days || []).filter(d => d.rate < B().target), by = {};
     bad.forEach(d => { const a = S.assign[d.k]; if(a) (by[a] = by[a] || []).push(d); });
@@ -17316,7 +17328,8 @@ table.gs tr.wk td.day{color:#c5221f}
       await balanceDays(true); build(); computeScores(); draw(); };
     if($('kdPay')) $('kdPay').onclick = toPayroll;
     cbWire();
-    main.querySelectorAll('[data-kda]').forEach(s => s.onchange = () => { S.assignAll[S.brand] = S.assign; S.assign[s.dataset.kda] = s.value; saveAssign(); computeScores(); draw(); });
+    main.querySelectorAll('[data-kda]').forEach(s => s.onchange = () => { S.assignAll[S.brand] = S.assign; S.assign[s.dataset.kda] = s.value;
+      saveAssign().then(ok => { if(!ok){ alert('⚠️ التغيير ماتحفظش — هيرجع زي ما كان. اتأكد إن فيه نت وإنك داخل بأكونت الأدمن.'); loadAssign().then(() => { computeScores(); draw(); }); } }); computeScores(); draw(); });
   }
   let loadedOnce = false;
   function mount(){ document.querySelectorAll('#sidebar a.navlink').forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#/kidzzly-days'));
