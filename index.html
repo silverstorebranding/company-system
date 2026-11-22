@@ -18355,10 +18355,30 @@ table.cs tr.cs-open td{background:#fff7dd}
     const T = rows.reduce((a, r) => ({ days:a.days + r.days, ok:a.ok + r.ok, no:a.no + r.no, plus:a.plus + r.plus, minus:a.minus + r.minus, net:a.net + r.net }), { days:0, ok:0, no:0, plus:0, minus:0, net:0 });
     h += `<div class="tablewrap"><table class="pr" style="width:100%"><tr><th>الموظفة</th><th>أيام عليها</th><th>✅ اتحقق</th><th>⏳ باقي (ماتحققش)</th><th>🟢 المكافأة</th>${window.seeDeduct() ? '<th>🔴 الخصم</th>' : ''}<th></th></tr>
       ${rows.map(r => `<tr><td class="lbl">${esc(r.name || '—')}</td><td>${r.days}</td><td style="color:#2f7d55">${r.ok}</td><td style="color:#c0392b">${r.no}</td><td style="color:#2f7d55">+${fmt(r.plus)}</td>${window.seeDeduct() ? `<td style="color:#c0392b">−${fmt(r.minus)}</td>` : ''}<td>${(r.list || []).length ? `<button class="sqd-btn" data-fbo="${esc(r.id)}">${F.open[r.id] ? '▲' : '▼'} الأيام</button>` : ''}</td></tr>
-        ${F.open[r.id] ? `<tr><td colspan="7" style="text-align:right;font-size:12.5px;background:var(--slate-l)">${(r.list || []).map(d => `<span style="display:block;width:fit-content;margin:4px 0;padding:3px 10px;border-radius:8px;background:${d.closed ? '#e3f3e8' : '#fbe3e1'};color:${d.closed ? '#1f5f3a' : '#a3271a'}">${esc(d.ic || '')} ${esc(new Date(d.k + 'T12:00:00').toLocaleDateString('ar-EG', { day:'numeric', month:'short' }))} ${esc(d.b || '')} — ${d.closed ? '✅ +' + AMT : window.seeDeduct() ? '❌ −' + AMT : '⏳ لسه'}${d.closed ? '' : ` (ناقص ${d.missing})`}</span>`).join('')}</td></tr>` : ''}`).join('')}
+        ${F.open[r.id] ? `<tr><td colspan="7" style="text-align:right;background:var(--slate-l);padding:8px">${fbDaysTable(r)}</td></tr>` : ''}`).join('')}
       ${admin && rows.length > 1 ? `<tr class="total"><td>الإجمالي</td><td>${T.days}</td><td>${T.ok}</td><td>${T.no}</td><td>+${fmt(T.plus)}</td>${window.seeDeduct() ? `<td>−${fmt(T.minus)}</td>` : ''}<td></td></tr>` : ''}</table></div>`;
     if(F.snap && F.snap.at) h += `<p style="font-size:12px;color:var(--muted);margin:8px 0 0">آخر حسبة: ${esc(new Date(F.snap.at).toLocaleString('ar-EG', { weekday:'short', day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }))}</p>`;
     return h + '</div>';
+  }
+  /* 📅 لما تفتح "الأيام": جدول بكل أيام الشهر — عمود لكل براند (💍 إيطالي · 🧸 كيدزلي · وأي براند تاني عليها أيام فيه)
+     وقدام كل يوم: ✅ تمام · ✅ زايد كام · ⏳/❌ ناقص كام · — لو اليوم مش عليها في البراند ده */
+  function fbDaysTable(r){
+    const COLS = [['Dream', '💍 إيطالي'], ['Kidzzly', '🧸 كيدزلي']];
+    (r.list || []).forEach(d => { if(!COLS.some(c => c[0] === d.b)) COLS.push([d.b, (d.ic || '') + ' ' + d.b]); });
+    const at = {}; (r.list || []).forEach(d => at[d.b + '|' + d.k] = d);
+    const y = +F.month.slice(0, 4), m = +F.month.slice(5, 7), n = new Date(y, m, 0).getDate();
+    const cell = d => {
+      if(!d) return '<td style="color:#b5b0a5">—</td>';
+      const extra = Math.max(0, (d.have || 0) - (d.goal || 0));
+      if(d.closed) return `<td style="background:#e3f3e8;color:#1f5f3a;font-weight:700">${extra ? '✅ زايد ' + extra : '✅ تمام'}</td>`;
+      return `<td style="background:#fbe3e1;color:#a3271a;font-weight:700">${window.seeDeduct() ? '❌' : '⏳'} ناقص ${d.missing}</td>`;
+    };
+    let h = `<table class="pr" style="width:auto;min-width:340px;font-size:13px;background:#fff"><tr><th>اليوم</th>${COLS.map(c => `<th>${esc(c[1])}</th>`).join('')}</tr>`;
+    for(let i = 1; i <= n; i++){
+      const k = F.month + '-' + String(i).padStart(2, '0');
+      h += `<tr><td class="lbl">${esc(new Date(k + 'T12:00:00').toLocaleDateString('ar-EG', { weekday:'short', day:'numeric', month:'short' }))}</td>${COLS.map(c => cell(at[c[0] + '|' + k])).join('')}</tr>`;
+    }
+    return h + '</table>';
   }
   function draw(){
     const el = document.getElementById('sq-fb'); if(!el) return;
