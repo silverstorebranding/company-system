@@ -797,9 +797,9 @@ const PR_COLS=[
 // راتب مساعد مدير المكتب: 16000 شهريًا
 // 🏢 المصاريف الثابتة الشهرية — بتتوزع على الإيطالي و Kidzzly و RS حسب عدد الأوردرات (Bloom مالوش دعوة)
 //   الإيجار 5000 — المرتبات 4 × 8000 = 32000 — البرامج / النثريات وتشغيل المكتب (بتتكتب في صفحة الأرباح)
-const PR_FIXED_DEF={rent:15000,salaries:66000,software:1500,ops:15000,power:100,net:500,mobile:500};
+const PR_FIXED_DEF={rent:15000,salaries:66000,software:1500,ops:15000,power:2000,net:0,mobile:0};   // 💡 power = كهربا ونت وباقات مع بعض
 const PR_FIXED_LS='pr_fixed_costs';
-let PR_FIXED=(()=>{try{return {...PR_FIXED_DEF,...JSON.parse(localStorage.getItem(PR_FIXED_LS)||'{}')};}catch(e){return {...PR_FIXED_DEF};}})();
+let PR_FIXED={...PR_FIXED_DEF};   // 🧾 مابقاش بيتاخد من الجهاز — من مراجعة المصاريف بس
 const PR_FIXED_EXCLUDE=['bloom'];
 /* 🧾 مراجعة المصاريف — المكان الواحد لكل بنود المصاريف (💰 الأرباح و 📍 احنا فين بيستخدموه هما الاتنين)
    app_kv: expense_review = { items:{ <key>:{ v:<الرقم الصح أو null>, ok:true/false (متأكد), note, by, at } } }
@@ -810,9 +810,7 @@ const EXP_ITEMS=[
   {k:'salaries', g:'fixed', l:'👥 الرواتب',                          unit:'ج في الشهر'},
   {k:'ops',      g:'fixed', l:'⚙️ التشغيل (نثريات وتشغيل مكتب)',     unit:'ج في الشهر'},
   {k:'software', g:'fixed', l:'💻 برامج',                            unit:'ج في الشهر'},
-  {k:'power',    g:'fixed', l:'💡 كهربا',                            unit:'ج في الشهر'},
-  {k:'net',      g:'fixed', l:'🌐 نت',                               unit:'ج في الشهر'},
-  {k:'mobile',   g:'fixed', l:'📱 باقات موبايل',                     unit:'ج في الشهر'},
+  {k:'power',    g:'fixed', l:'💡 كهربا ونت وباقات',                 unit:'ج في الشهر'},
   {k:'ads',      g:'var',   l:'📢 الإعلانات',                        how:'من شيت الإعلانات، أو بتتكتب بالإيد في 💰 الأرباح'},
   {k:'cogs_no',  g:'var',   l:'💍 بضاعة الإيطالي — أوردر من غير انسيال', unit:'ج للأوردر'},
   {k:'cogs_yes', g:'var',   l:'💍 بضاعة الإيطالي — أوردر فيه انسيال',   unit:'ج للأوردر'},
@@ -841,10 +839,16 @@ function expSetVal(k,v){
 }
 window.EXP={ items:EXP_ITEMS, cur:expCur, review:{} };
 const expSb=()=>window.__sbClient||(window.AuthGate&&window.AuthGate.sb);
-function expApply(rv){ window.EXP.review=rv||{}; Object.entries(window.EXP.review).forEach(([k,x])=>{ if(x&&x.v!=null&&x.v!=='') expSetVal(k,x.v); }); }
+function expApply(rv){ window.EXP.review=rv||{}; Object.entries(window.EXP.review).forEach(([k,x])=>{ if(x&&x.v!=null&&x.v!=='') expSetVal(k,x.v); });
+  try{ window.prRefreshFixedView&&window.prRefreshFixedView(); }catch(e){} }
 async function expLoad(){ const c=expSb(); if(!c) return;
   const [{data:a},{data:w}]=await Promise.all([c.from('app_kv').select('value').eq('key','expense_review').maybeSingle(), c.from('app_kv').select('value').eq('key','where_cfg').maybeSingle()]);
-  const rv=(a&&a.value&&a.value.items)||{};
+  let rv=(a&&a.value&&a.value.items)||{};
+  // ✅ الأرقام اللي اتأكدت (22 نوفمبر 2026): بتتكتب مرة واحدة في مراجعة المصاريف وتتعلّم "متأكد"
+  if(!(a&&a.value&&a.value.seed1122)){ try{ const val=(a&&a.value)||{}; val.items=val.items||{}; const me=(window.AuthGate&&window.AuthGate.me&&window.AuthGate.me())||{}, by=me.full_name||me.username||'', at=new Date().toISOString();
+      Object.entries({rent:15000,salaries:66000,ops:15000,software:1500,power:2000,piece_kidzzly:110,piece_bunny:110}).forEach(([k,v])=>{ val.items[k]={...(val.items[k]||{}),v,ok:true,by,at}; });
+      ['net','mobile'].forEach(k=>delete val.items[k]); val.seed1122=true;
+      const {error}=await c.from('app_kv').upsert({key:'expense_review',value:val,updated_at:at,updated_by_name:by}); if(!error) rv=val.items; }catch(e){} }
   // الأرقام اللي اتكتبت قبل كده في احنا فين (الإيجار / الرواتب / التشغيل) لو لسه مااتراجعتش
   const f=(w&&w.value&&w.value.fixed)||{}; ['rent','salaries','ops'].forEach(k=>{ if(!(rv[k]&&rv[k].v!=null&&rv[k].v!=='')&&f[k]!=null&&f[k]!=='') expSetVal(k,f[k]); });
   expApply(rv); }
@@ -865,6 +869,19 @@ function prSetFixed(k,v){PR_FIXED[k]=prNum(v);try{localStorage.setItem(PR_FIXED_
   clearTimeout(window.__prFixT);
   window.__prFixT=setTimeout(()=>{const res=document.getElementById('prResults');
     if(window.__prLastRows&&res&&res.style.display==='block')prProcess(window.__prLastRows);},350);}
+/* 🏢 المصاريف الثابتة وتكلفة القطعة — عرض بس (التعديل من 🧾 مراجعة المصاريف في 📍 احنا فين) */
+function prFixedViewHtml(){
+  const C=window.__prCtx, days=C&&C.days, f=v=>Math.round(+v||0).toLocaleString('ar-EG');
+  const L=[['🏢 الإيجار',PR_FIXED.rent],['👥 الرواتب',PR_FIXED.salaries],['⚙️ التشغيل',PR_FIXED.ops],['💻 برامج',PR_FIXED.software],['💡 كهربا ونت وباقات',(+PR_FIXED.power||0)+(+PR_FIXED.net||0)+(+PR_FIXED.mobile||0)]];
+  const tot=L.reduce((a,x)=>a+(+x[1]||0),0);
+  return `<h3>🏢 المصاريف الثابتة <span style="font-size:13px;font-weight:500;color:var(--muted)">— بتتعدّل من <a href="#/where">🧾 مراجعة المصاريف في 📍 احنا فين</a></span></h3>
+    <div class="tablewrap"><table class="pr" style="width:100%;max-width:620px"><tr><th>البند</th><th>في الشهر</th><th>${days?`للمدة (${f(days)} يوم)`:'للمدة'}</th></tr>
+      ${L.map(([l,v])=>`<tr><td class="lbl">${l}</td><td>${f(v)} ج</td><td>${days?f((+v||0)/30*days)+' ج':'÷ 30 × أيام المدة'}</td></tr>`).join('')}
+      <tr class="total"><td>الإجمالي</td><td>${f(tot)} ج</td><td>${days?f(tot/30*days)+' ج':''}</td></tr>
+      <tr><td class="lbl">🧸 قطعة Kidzzly</td><td>${f(PR_PIECE_COST.kidzzly)} ج للقطعة</td><td></td></tr>
+      <tr><td class="lbl">🐰 قطعة Bunny</td><td>${f(PR_PIECE_COST.bunny)} ج للقطعة</td><td></td></tr></table></div>`;
+}
+window.prRefreshFixedView=()=>{const e=document.getElementById('prFixedView'); if(e) e.innerHTML=prFixedViewHtml();};
 const prFixedSum=()=>['rent','salaries','software','ops','power','net','mobile'].reduce((s,k)=>s+(+PR_FIXED[k]||0),0);
 // 💔 الهوالك: 0.25% من المبيعات
 let PR_WASTE_PCT=0.0025;
@@ -899,10 +916,8 @@ const prRatesFor=b=>PR_RATE_OVERRIDES[b]||{ofd:PR_OFD_RATE,hold:PR_HOLD_RATE};
 // براندات تكلفة بضاعتها نسبة ثابتة من المبيعات (بدل 65.2 / 94 للقطعة)
 const PR_COGS_PCT={"bloom":0.45};
 // 🧸 KIDZZLY و 👶 RS KIDS: تكلفة البضاعة = عدد القطع في الطلب × سعر القطعة
-const PR_PIECE_DEF={"kidzzly":110,"bunny":100,"rs kids":175,"bloom":0,"socky":0};
-const PR_PIECE_COST=(()=>{try{const sv=JSON.parse(localStorage.getItem('pr_piece_cost')||'{}');
-  if(+sv.kidzzly===100){delete sv.kidzzly;localStorage.setItem('pr_piece_cost',JSON.stringify(sv));} // 🧸 قطعة Kidzzly بقت 110 (زي احنا فين) — الـ 100 القديمة المتسجلة على الجهاز بتتشال
-  return {...PR_PIECE_DEF,...sv};}catch(e){return {...PR_PIECE_DEF};}})();
+const PR_PIECE_DEF={"kidzzly":110,"bunny":110,"rs kids":175,"bloom":0,"socky":0};
+const PR_PIECE_COST={...PR_PIECE_DEF};   // 🧾 مابقاش بيتاخد من الجهاز — Kidzzly و Bunny من مراجعة المصاريف
 // Bloom: لو تكلفة القطعة 0 بيفضل 45% من المبيعات
 function prSetPiece(b,v){PR_PIECE_COST[b]=prNum(v); if(b==='kidzzly'||b==='bunny'){ clearTimeout(window.__prPcT); const val=PR_PIECE_COST[b]; window.__prPcT=setTimeout(()=>window.EXP.save('piece_'+b,{v:val}).catch(()=>{}),800); }try{localStorage.setItem('pr_piece_cost',JSON.stringify(PR_PIECE_COST));}catch(e){}
   if(window.__prLastRows&&document.getElementById('prResults')&&document.getElementById('prResults').style.display==='block')prProcess(window.__prLastRows);}
@@ -1211,7 +1226,7 @@ function prProcess(rows){
     return s+rs.length;
   },0);
 
-  window.__prCtx={days,FX,totalOrders,COMM,fxBrands,byBrand};
+  window.__prCtx={days,FX,totalOrders,COMM,fxBrands,byBrand}; try{ window.prRefreshFixedView(); }catch(e){}
   prBuildTable('F'); // الجدول الأساسي: الفعلي + المتوقع
   prBuildTable('A'); // الجدول الفعلي قبل التوقع
   prBuildSummaryTable();
@@ -1980,33 +1995,7 @@ function viewProfits(){
     </div>
     <div id="prAutoStatus" style="font-size:13px;color:var(--muted);margin-top:10px"></div>
   </div>
-  <div class="card"><h3>🏢 المصاريف الثابتة الشهرية <span style="font-size:13px;font-weight:500;color:var(--muted)">— بتتوزع على الإيطالي و Kidzzly و RS حسب عدد الأوردرات (Bloom مالوش دعوة)، وبتتحسب على عدد أيام الشيت</span></h3>
-    <div class="uploadrow" style="flex-wrap:wrap;gap:10px">
-      <div class="kpi">🏢 الإيجار <input class="plainIn" type="number" value="${PR_FIXED.rent}" oninput="prSetFixed('rent',this.value)"></div>
-      <div class="kpi">👥 المرتبات <input class="plainIn" type="number" value="${PR_FIXED.salaries}" oninput="prSetFixed('salaries',this.value)"></div>
-      <div class="kpi">💻 برامج <input class="plainIn" type="number" value="${PR_FIXED.software}" oninput="prSetFixed('software',this.value)"></div>
-      <div class="kpi">⚙️ التشغيل (نثريات وتشغيل مكتب) <input class="plainIn" type="number" value="${PR_FIXED.ops}" oninput="prSetFixed('ops',this.value)"></div>
-      <div class="kpi">💡 كهربا <input class="plainIn" type="number" value="${PR_FIXED.power}" oninput="prSetFixed('power',this.value)"></div>
-      <div class="kpi">🌐 نت <input class="plainIn" type="number" value="${PR_FIXED.net}" oninput="prSetFixed('net',this.value)"></div>
-      <div class="kpi">📱 باقات <input class="plainIn" type="number" value="${PR_FIXED.mobile}" oninput="prSetFixed('mobile',this.value)"></div>
-      <div class="kpi">الإجمالي في الشهر: <b id="prFixedTotal">${prFmt(prFixedSum())}</b> ج</div>
-    </div>
-    <div class="uploadrow" style="flex-wrap:wrap;gap:10px;margin-top:10px">
-      <div class="kpi"><b>🧩 تكلفة القطعة</b> (عدد القطع بيتجاب من تحليل المكونات أوتوماتيك):</div>
-      <div class="kpi">🧸 Kidzzly <input class="plainIn" type="number" value="${PR_PIECE_COST.kidzzly}" oninput="prSetPiece('kidzzly',this.value)"></div>
-      <div class="kpi">🐰 Bunny <input class="plainIn" type="number" value="${PR_PIECE_COST.bunny}" oninput="prSetPiece('bunny',this.value)"></div>
-    </div>
-    <div style="font-size:12.5px;color:var(--muted);margin-top:6px">وكمان تلقائي في التقرير: 📢 الإعلانات من جوجل شيت (DREAM / CARA / FASTPLT / KIDZZLY عمود M / RS عمود P) · 🏆 عمولة البنات من Squad لنفس الفترة · 💔 الهوالك 0.25% من المبيعات.</div>
-    <div>
-    </div></div>
-  <div class="card"><h3>📄 أو ارفع ملف يدويًا</h3>
-    <div class="uploadrow">
-      <input type="file" id="prFileIn" accept=".xlsx,.xls,.csv">
-      <button class="mockbtn" onclick="prRunReport()">▶️ شغّل التقرير</button>
-    </div>
-    <div class="mono-note">الشيت لازم يكون بنفس ترتيب أعمدة "orders" الأصلي: أول صف عناوين، وبعدين الأعمدة بالترتيب — العمود E = السعر، F = الشحن، I = تاريخ الإرجاع، J = الملاحظة (اسم البراند)، K = التاريخ، L = المحتويات، O = الحالة.<br>⏳ الأوردرات اللي حالتها <b>Pending</b> في العمود O بتتحسب في التوقع زي الأوردرات اللي تحت التسليم بالظبط.<br>👶 أوردرات براند <b>RS KIDS</b>: اكتب في أول العمود J كلمة <b>rs kids</b> أو <b>rs</b> (أو rskids) — كابيتال أو سمول مش فارقة. تكلفة البضاعة = <b>عدد القطع × 175 ج</b>.<br>🧸 أوردرات براند <b>KIDZZLY</b>: اكتب في أول العمود J كلمة <b>kidzzly</b> (حتى لو بعدها msg) — تكلفة البضاعة = <b>عدد القطع × 110 ج</b> (القطع بتتعدّ من عمود المحتوى L: مفصولة بـ + و "× 2" = قطعتين)، والتوقع زي RS KIDS.<br>🌸 أوردرات براند <b>BLOOM</b>: اكتب في أول العمود J كلمة <b>bloom</b> — كابيتال أو سمول مش فارقة.</div>
-    <div id="prStatus" style="font-size:13px;color:var(--muted);margin-top:8px"></div>
-  </div>
+  <div class="card" id="prFixedView">${prFixedViewHtml()}</div>
   <div id="prResults" style="display:none">
     <div class="card" id="prTotalCard"></div>
     <div class="card"><h3>⭐ الخلاصة — DREAM و KIDZZLY و CARA و إرسال صفحة</h3>
