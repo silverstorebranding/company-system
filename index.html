@@ -1566,7 +1566,7 @@ function prBuildGuide(){
     if(!c.n){ h+=`<details class="gBrand gEmpty"><summary><b>${G.l}</b> — مفيش أوردرات في الملف</summary></details>`; return; }
     const g={...G,m};
     const rows=PR_GUIDE_ROWS.map(([k,l])=>{const v=Math.round(prGSum(m,b=>prGVal(b,k))*100)/100;
-      return `<tr><td class="lbl">${l}</td><td><input class="plainIn gIn" data-gb="${G.k}" data-gk="${k}" type="number" step="0.01" value="${v}" data-orig="${v}"></td><td class="gHow">${prGuideHow(g,k,c,C)}</td></tr>`;}).join('');
+      return `<tr><td class="lbl">${l}</td><td style="white-space:nowrap"><input class="plainIn gIn" data-gb="${G.k}" data-gk="${k}" type="number" step="0.01" value="${v}" data-orig="${v}"> <b class="gPctOf" data-gpc="${G.k}|${k}" style="font-size:12.5px;color:#2b6cb0;display:inline-block;min-width:46px"></b></td><td class="gHow">${prGuideHow(g,k,c,C)}</td></tr>`;}).join('');
     const rev=Math.round(c.revenue*100)/100;
     const aov=c.delivered?Math.round(c.revenue/c.delivered):0;
     h+=`<details class="gBrand ${G.k==='g_italy'||G.all?'gAll':''}" ${gi<3||G.all?'open':''}><summary><b>${G.l}</b> <span class="gAov">AOV ${prFmt(aov)} ج</span> — ${c.n} أوردر${m.length>1?` <small>(${m.map(b=>b+' '+prBrandCalc[b].n).join(' · ')})</small>`:''} · <span data-gsum="${G.k}"></span></summary>
@@ -1603,7 +1603,9 @@ function prGuideRecalc(){
   Object.entries(by).forEach(([gk,v])=>{
     const cost=PR_GUIDE_ROWS.reduce((s,[k])=>s+(v[k]||0),0), net=(v.revenue||0)-cost, c=window.__gCalc[gk]||{delivered:0};
     const set=(a,t)=>{const e=box.querySelector(`[${a}="${gk}"]`); if(e) e.innerHTML=t;};
-    set('data-gtot',prFmt(Math.round(cost))); set('data-gnet',`<b style="color:${net>=0?'#2f7d55':'#b3261e'}">${prFmt(Math.round(net))}</b>`);
+    // 📊 نسبة كل بند من المبيعات (جنب الرقم) — بتتحدّث لو عدّلت أي رقم
+    box.querySelectorAll(`[data-gpc^="${gk}|"]`).forEach(e=>{ const k=e.dataset.gpc.split('|')[1]; e.textContent=v.revenue?((v[k]||0)/v.revenue*100).toFixed(1)+'%':''; });
+    set('data-gtot',prFmt(Math.round(cost))+(v.revenue?` <b style="font-size:12.5px;color:#2b6cb0">${(cost/v.revenue*100).toFixed(1)}%</b>`:'')); set('data-gnet',`<b style="color:${net>=0?'#2f7d55':'#b3261e'}">${prFmt(Math.round(net))}</b>`);
     set('data-gpct',v.revenue?`نسبة الربح ${(net/v.revenue*100).toFixed(1)}% من المبيعات`:'');
     set('data-gper',c.delivered?`تكلفة ${prFmt(Math.round(cost/c.delivered))} · ربح ${prFmt(Math.round(net/c.delivered))}`:'—');
     const E=(window.__prExp||{})[gk];
