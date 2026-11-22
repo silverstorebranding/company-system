@@ -797,11 +797,26 @@ const PR_COLS=[
 // راتب مساعد مدير المكتب: 16000 شهريًا
 // 🏢 المصاريف الثابتة الشهرية — بتتوزع على الإيطالي و Kidzzly و RS حسب عدد الأوردرات (Bloom مالوش دعوة)
 //   الإيجار 5000 — المرتبات 4 × 8000 = 32000 — البرامج / النثريات وتشغيل المكتب (بتتكتب في صفحة الأرباح)
-const PR_FIXED_DEF={rent:5000,salaries:32000,software:1500,ops:0,power:100,net:500,mobile:500};
+const PR_FIXED_DEF={rent:15000,salaries:66000,software:1500,ops:15000,power:100,net:500,mobile:500};
+// 🔗 الإيجار والرواتب والتشغيل مشتركين مع 📍 احنا فين (app_kv where_cfg.fixed) — أي تعديل في حتة بيتطبق في التانية
+const PR_SHARED_FIXED=['rent','salaries','ops'];
 const PR_FIXED_LS='pr_fixed_costs';
-let PR_FIXED=(()=>{try{return {...PR_FIXED_DEF,...JSON.parse(localStorage.getItem(PR_FIXED_LS)||'{}')};}catch(e){return {...PR_FIXED_DEF};}})();
+let PR_FIXED=(()=>{try{const o={...PR_FIXED_DEF,...JSON.parse(localStorage.getItem(PR_FIXED_LS)||'{}')}; ['rent','salaries','ops'].forEach(k=>o[k]=PR_FIXED_DEF[k]); return o;}catch(e){return {...PR_FIXED_DEF};}})();   // الإيجار والرواتب والتشغيل من المشترك (مش من الجهاز)
 const PR_FIXED_EXCLUDE=['bloom'];
+// بنجيب الأرقام المشتركة أول ما الاتصال يجهز
+window.prFixedReady=new Promise(res=>{ let i=0; const t=setInterval(async()=>{
+  const c=window.__sbClient||(window.AuthGate&&window.AuthGate.sb); if(!c&&++i<120) return; clearInterval(t); if(!c) return res();
+  try{ const {data}=await c.from('app_kv').select('value').eq('key','where_cfg').maybeSingle(); const f=(data&&data.value&&data.value.fixed)||{};
+    PR_SHARED_FIXED.forEach(k=>{ PR_FIXED[k]=f[k]!=null&&f[k]!==''?(+f[k]||0):PR_FIXED_DEF[k]; }); }catch(e){}
+  res(); },500); });
+window.prApplySharedFixed=f=>{ PR_SHARED_FIXED.forEach(k=>{ if(f&&f[k]!=null&&f[k]!=='') PR_FIXED[k]=+f[k]||0; }); };
+async function prSaveSharedFixed(k,v){ try{ const c=window.__sbClient||(window.AuthGate&&window.AuthGate.sb); if(!c) return;
+  const {data}=await c.from('app_kv').select('value').eq('key','where_cfg').maybeSingle(); const cfg=(data&&data.value)||{}; (cfg.fixed=cfg.fixed||{})[k]=v;
+  const me=(window.AuthGate&&window.AuthGate.me&&window.AuthGate.me())||{};
+  await c.from('app_kv').upsert({key:'where_cfg',value:cfg,updated_at:new Date().toISOString(),updated_by_name:me.full_name||me.username||''}); }catch(e){} }
+let prFixT=null;
 function prSetFixed(k,v){PR_FIXED[k]=prNum(v);try{localStorage.setItem(PR_FIXED_LS,JSON.stringify(PR_FIXED));}catch(e){}
+  if(PR_SHARED_FIXED.includes(k)){ clearTimeout(prFixT); const val=PR_FIXED[k]; prFixT=setTimeout(()=>prSaveSharedFixed(k,val),800); }
   const t=document.getElementById('prFixedTotal');if(t)t.textContent=prFmt(prFixedSum());
   // ✏️ أي تعديل في المصاريف الثابتة بيتطبق على طول على التقرير اللي تحت (سواء من QP أو من ملف)
   clearTimeout(window.__prFixT);
@@ -1901,9 +1916,9 @@ function viewProfits(){
   <div class="card"><h3>🏢 المصاريف الثابتة الشهرية <span style="font-size:13px;font-weight:500;color:var(--muted)">— بتتوزع على الإيطالي و Kidzzly و RS حسب عدد الأوردرات (Bloom مالوش دعوة)، وبتتحسب على عدد أيام الشيت</span></h3>
     <div class="uploadrow" style="flex-wrap:wrap;gap:10px">
       <div class="kpi">🏢 الإيجار <input class="plainIn" type="number" value="${PR_FIXED.rent}" oninput="prSetFixed('rent',this.value)"></div>
-      <div class="kpi">👥 المرتبات (4 × 8000) <input class="plainIn" type="number" value="${PR_FIXED.salaries}" oninput="prSetFixed('salaries',this.value)"></div>
+      <div class="kpi">👥 المرتبات <input class="plainIn" type="number" value="${PR_FIXED.salaries}" oninput="prSetFixed('salaries',this.value)"></div>
       <div class="kpi">💻 برامج <input class="plainIn" type="number" value="${PR_FIXED.software}" oninput="prSetFixed('software',this.value)"></div>
-      <div class="kpi">🧾 نثريات وتشغيل مكتب <input class="plainIn" type="number" value="${PR_FIXED.ops}" oninput="prSetFixed('ops',this.value)"></div>
+      <div class="kpi">⚙️ التشغيل (نثريات وتشغيل مكتب) <input class="plainIn" type="number" value="${PR_FIXED.ops}" oninput="prSetFixed('ops',this.value)"></div>
       <div class="kpi">💡 كهربا <input class="plainIn" type="number" value="${PR_FIXED.power}" oninput="prSetFixed('power',this.value)"></div>
       <div class="kpi">🌐 نت <input class="plainIn" type="number" value="${PR_FIXED.net}" oninput="prSetFixed('net',this.value)"></div>
       <div class="kpi">📱 باقات <input class="plainIn" type="number" value="${PR_FIXED.mobile}" oninput="prSetFixed('mobile',this.value)"></div>
@@ -6007,6 +6022,7 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
     },
     // 🔽 الحساب التلقائي من صفحة الأرباح: يجيب أوردرات المدة من QP + إعلانات نفس المدة
     async calcProfitsRange(){
+      try{ if(window.prFixedReady) await window.prFixedReady; }catch(e){}   // 🔗 الإيجار والرواتب والتشغيل المشتركين مع احنا فين
       const st = document.getElementById('prAutoStatus');
       const from = document.getElementById('prAutoFrom') && document.getElementById('prAutoFrom').value;
       const to   = document.getElementById('prAutoTo')   && document.getElementById('prAutoTo').value;
@@ -18567,6 +18583,7 @@ table.cs tr.cs-open td{background:#fff7dd}
   /* 💰 الأرباح بنفس حسبة قسم الأرباح بالظبط: بنشغّل تقرير الأرباح نفسه (من أول الشهر لحد النهارده — زرار "حتى النهارده")
      في صفحة مخفية، ونقرا "إجمالي الأرباح (فعلي)" و"بعد التوقع" من نفس الخانات اللي بتظهر في قسم الأرباح */
   async function calcProfits(){
+    try{ if(window.prFixedReady) await window.prFixedReady; if(window.prApplySharedFixed && W.cfg) window.prApplySharedFixed(W.cfg.fixed); }catch(e){}
     if(typeof viewProfits !== 'function' || !window.QP || !window.QP.calcProfitsRange) return;
     W.pr = { busy:true }; draw();
     let host = document.getElementById('wfPrHost'); if(!host){ host = document.createElement('div'); host.id = 'wfPrHost'; host.style.display = 'none'; document.body.appendChild(host); }
@@ -18824,7 +18841,8 @@ table.cs tr.cs-open td{background:#fff7dd}
         ['wfOpN', 'wfOpA'].forEach(id => { const e = $(id); if(e) e.value = ''; }); }catch(e){ alert('مااتحفظش: ' + e.message); } };
     if($('wfCsSave')) $('wfCsSave').onclick = async () => { const v = $('wfCs').value.trim(); try{ await cfgSave(c => { c.cash = v === '' ? null : num(v); }); }catch(e){ alert('مااتحفظش: ' + e.message); } };
     if($('wfStSave')) $('wfStSave').onclick = async () => { try{ await cfgSave(c => { c.stock = num($('wfSt').value); }); }catch(e){ alert('مااتحفظش: ' + e.message); } };
-    main.querySelectorAll('[data-wffix]').forEach(i => i.onchange = async () => { try{ await cfgSave(c => { (c.fixed = c.fixed || {})[i.dataset.wffix] = num(i.value); }); }catch(e){ alert('مااتحفظش: ' + e.message); } });
+    main.querySelectorAll('[data-wffix]').forEach(i => i.onchange = async () => { try{ await cfgSave(c => { (c.fixed = c.fixed || {})[i.dataset.wffix] = num(i.value); });
+      if(window.prApplySharedFixed) window.prApplySharedFixed(W.cfg.fixed); }catch(e){ alert('مااتحفظش: ' + e.message); } });
     main.querySelectorAll('[data-wfopdel]').forEach(b => b.onclick = async () => { if(!confirm('تمسح البند ده؟')) return;
       try{ await cfgSave(c => { c.ops = (c.ops || []).filter(x => x.id !== b.dataset.wfopdel); }); }catch(e){ alert('مااتمسحش: ' + e.message); } });
     main.querySelectorAll('[data-wfdel]').forEach(b => b.onclick = async () => { if(!confirm('تمسح الدين ده؟')) return;
