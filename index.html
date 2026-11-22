@@ -327,6 +327,14 @@ input.plainIn{padding:6px 10px;border:1px solid var(--line);border-radius:6px;wi
 #sq-root .sq-board-row:last-child{border-bottom:none}
 #sq-root .sq-board-row.head{background:var(--slate-l);font-size:12px;font-weight:600;color:var(--muted);padding:11px 18px}
 #sq-root .sq-board-row .c{text-align:center}
+.sq-team{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin:0 0 14px}
+.sq-team-c{background:var(--panel,#fff);border:1.5px solid #d8cdb5;border-top:5px solid #b08d57;border-radius:12px;padding:12px 16px}
+.sq-team-c.qp{border-top-color:#2b6cb0}
+.sq-team-c h4{margin:0 0 6px;font-size:15px}.sq-team-c h4 small{font-weight:400;color:var(--muted,#777);font-size:12px}
+.sq-team-n{font-size:30px;font-weight:800;color:#2f7d55;line-height:1.2}
+.sq-team-l{font-size:13px;color:var(--muted,#777);margin-bottom:6px}
+.sq-team-r{display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-top:1px dashed #e3dccb;font-size:14px}
+.sq-team-r b small{font-weight:400;color:var(--muted,#777);font-size:12px}.sq-team-r.sm{font-size:12.5px;color:var(--muted,#777)}
 /* 📊 جدول ترتيب الـSquad — كل رقم تحت عنوانه */
 #sq-root table.sq-board{width:100%;border-collapse:collapse;min-width:1100px}
 #sq-root .sq-board th,#sq-root .sq-board td{border:1px solid var(--line);padding:10px 8px;text-align:center;vertical-align:middle}
@@ -3789,6 +3797,12 @@ const Squad = (function(){
         else if(cats.every(x => x === 'undelivered') || o.status === 'undelivered') a.undel.push({ o, q:c[0] });
         else a.way.push({ o, q:pick(q => api.category(q) !== 'undelivered') }); });
       state.boardQP = by;
+      // 🚚 مبيعات QP من أول الشهر لليوم (حسب تاريخ الأوردر في QP)
+      const mF = R.fromD, mT = localYmd(new Date()) < R.toD ? localYmd(new Date()) : localYmd(new Date(new Date(R.to).getTime() - DAY));
+      const qv = q => Number(String(q.total_amount ?? q.price ?? '').replace(/[^\d.]/g, '')) || 0;
+      const inM = qp.filter(q => { const d = String(q.order_date || '').slice(0, 10); return d >= mF && d <= mT; });
+      const qd = inM.filter(q => api.category(q) === 'delivered');
+      state.boardQPMonth = { total:inM.length, del:qd.length, val:qd.reduce((a, q) => a + qv(q), 0), from:mF, to:mT };
     }catch(e){ state.boardQP = { err:e.message }; }
     state.boardQPBusy = false; render();
   }
@@ -3832,6 +3846,28 @@ const Squad = (function(){
     return `<div class="sq-commnote off"><b>✍️ ${L.length} أوردر فوق 2000 ج مستنيين تكتب عمولتهم</b> — ✅ اتسلم منهم <b>${nDel}</b>${L.length - nDel ? ` · ⏳ لسه <b>${L.length - nDel}</b>` : ''} (لحد ما تكتبها عمولتهم = 0)
       <div class="sq-tablecard" style="margin-top:8px"><table class="sq-table"><thead><tr><th>الموظفة</th><th>العميل</th><th>السعر</th><th>التاريخ</th><th>اتسلم؟</th><th>العمولة</th></tr></thead><tbody>
       ${L.map(o => `<tr><td>${esc(profileNameMap[o.agent_id] || '—')}</td><td>${esc(o.customer_name || '')}</td><td><b>${Number(o.amount).toLocaleString('ar-EG')} ج</b></td><td>${esc(new Date(o.created_at).toLocaleDateString('ar-EG', { day:'numeric', month:'short' }))}</td><td>${manualDel(o)}</td><td>${o.status === 'delivered' ? commCell(o, true) : '<span style="color:var(--muted)">لما يتسلم</span>'}</td></tr>`).join('')}</tbody></table></div></div>`;
+  }
+  /* 📊 مربع فوق: إجمالي مبيعات (تسليمات) خدمة العملاء كلهم + نسبة التسليم + العمولة — وقدامها مبيعات QP من أول الشهر لليوم */
+  function TeamSalesBox(){
+    const B = state.board, Q = state.boardQP, M = state.boardQPMonth;
+    if(!B) return `<div class="sq-team"><div class="sq-loading" style="margin:0">⏳ بيحسب مبيعات خدمة العملاء...</div></div>`;
+    const T = B.reduce((a, r) => ({ n:a.n + r.total, d:a.d + r.delivered, v:a.v + (r.delValue || 0), c:a.c + (r.totalComm || 0), due:a.due + (r.dueComm || 0) }), { n:0, d:0, v:0, c:0, due:0 });
+    const pct = (x, y) => y ? (Math.round(x / y * 1000) / 10) + '%' : '—';
+    const dt = d => new Date(d + 'T12:00:00').toLocaleDateString('ar-EG', { day:'numeric', month:'short' });
+    const qpSide = !Q ? `<div class="sq-team-l">⏳ بيجيب من QP...</div>`
+      : Q.noCreds ? `<div class="sq-team-l">محتاج دخول QP على الجهاز ده</div>`
+      : Q.err || !M ? `<div class="sq-team-l">مقدرناش نجيب من QP${Q.err ? ': ' + esc(Q.err) : ''}</div>`
+      : `<div class="sq-team-n">${money(Math.round(M.val))}</div><div class="sq-team-l">✅ ${M.del.toLocaleString('ar-EG')} أوردر اتسلم من ${M.total.toLocaleString('ar-EG')}</div>
+         <div class="sq-team-r"><span>نسبة التسليم</span><b>${pct(M.del, M.total)}</b></div>
+         ${T.v && M.val ? `<div class="sq-team-r"><span>خدمة العملاء من مبيعات QP</span><b>${pct(T.v, M.val)}</b></div>` : ''}`;
+    return `<div class="sq-team">
+      <div class="sq-team-c cs"><h4>🎧 مبيعات خدمة العملاء كلهم <small>(التسليمات · ${esc(new Date((state.month || sqCurMonth()) + '-15').toLocaleDateString('ar-EG', { month:'long', year:'numeric' }))})</small></h4>
+        <div class="sq-team-n">${money(Math.round(T.v))}</div><div class="sq-team-l">✅ ${T.d.toLocaleString('ar-EG')} أوردر اتسلم من ${T.n.toLocaleString('ar-EG')} · ${B.length} موظف</div>
+        <div class="sq-team-r"><span>نسبة تسليماتهم كلهم</span><b>${pct(T.d, T.n)}</b></div>
+        <div class="sq-team-r"><span>عمولتهم كلهم (المستحقة)</span><b>${money(Math.round(T.due))} <small>= ${pct(T.due, T.v)} من التسليمات</small></b></div>
+        <div class="sq-team-r sm"><span>العمولة الإجمالية (لو كله اتسلم)</span><b>${money(Math.round(T.c))}</b></div></div>
+      <div class="sq-team-c qp"><h4>🚚 مبيعات QP <small>(التسليمات${M ? ` · من ${dt(M.from)} لـ ${dt(M.to)}` : ' · من أول الشهر لليوم'})</small></h4>${qpSide}</div>
+    </div>`;
   }
   function LeaderboardView(){
     if(!state.board) return head('ترتيب الـSquad', 'ترتيب حسب عدد الأوردرات اللي اتسلمت.') + `<div class="sq-loading">بنجيب النتائج...</div>`;
@@ -4102,7 +4138,8 @@ grant select, insert, update, delete on public.office_sales to authenticated;`;
     else body = DashboardView();
     // 📋 كارت مهام اليوم لخدمة العملاء — فوق لوحتي وترتيب الـSquad
     const daily = (state.view === 'dashboard' || state.view === 'leaderboard' || !['new-order', 'agent-orders', 'qp-sync', 'verify', 'office', 'ersal', 'followbonus'].includes(state.view)) ? '<div id="sq-daily"></div>' : '';
-    root.innerHTML = Bar() + daily + body;
+    const teamBox = (state.view === 'dashboard' || state.view === 'leaderboard') && canViewAll() ? TeamSalesBox() : '';
+    root.innerHTML = Bar() + teamBox + daily + body;
     wireAppEvents();
     if(state.view === 'ersal' && window.ErsalFocus) window.ErsalFocus.mountCS();
     if(daily && window.SquadDaily) window.SquadDaily.mount();
