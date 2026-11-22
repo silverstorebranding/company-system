@@ -18679,7 +18679,10 @@ table.cs tr.cs-open td{background:#fff7dd}
 .ot-root{margin-top:14px}
 .ot-root{display:flex;justify-content:center;position:relative;z-index:1}
 .ot-circle{width:190px;height:190px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#2e5a50,#1f3d36);color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;box-shadow:0 0 0 8px #e6efe9,0 8px 22px rgba(0,0,0,.18);text-align:center}
-.ot-circle span{font-size:14px;opacity:.85}.ot-circle b{font-size:26px;font-variant-numeric:tabular-nums;margin-top:4px}
+.ot-circle span{font-size:14px;opacity:.85}.ot-circle small{font-size:11.5px;opacity:.75;margin-top:2px}
+.ot-eq{display:flex;flex-wrap:wrap;justify-content:center;gap:6px 10px;margin:12px 0 4px;font-size:13.5px}
+.ot-eq>span{background:#eef3f0;border:1px solid #cfdcd5;border-radius:20px;padding:4px 12px}
+.ot-eq>span.dbt{background:#fdecea;border-color:#efc1bb;color:#a3271a}.ot-eq small{font-size:11px;opacity:.8}.ot-circle b{font-size:26px;font-variant-numeric:tabular-nums;margin-top:4px}
 .ot-rail{position:relative;height:30px;margin:0 16.66%}
 .ot-rail::before{content:'';position:absolute;top:0;left:50%;width:3px;height:15px;background:#9fb3aa;transform:translateX(-50%)}
 .ot-rail::after{content:'';position:absolute;top:15px;left:0;right:0;height:3px;background:#9fb3aa;border-radius:3px}
@@ -19075,13 +19078,16 @@ table.cs tr.cs-open td{background:#fff7dd}
     const goods = ret == null ? null : stock + ret;
     const money = safe == null || dP == null ? null : safe + dP + dF;
     const qp = wallet == null && way == null ? null : (wallet || 0) + (way || 0);
-    const all = goods == null || money == null || qp == null ? null : goods + money + qp;
-    const pc = v => all && v != null ? Math.round(v / all * 100) + '%' : '';
+    const gross = goods == null || money == null || qp == null ? null : goods + money + qp;
+    const debts = W.debts ? W.debts.reduce((a, x) => a + num(x.amount), 0) : null;
+    const all = gross == null || debts == null ? null : gross - debts;
+    const pc = v => gross && v != null ? Math.round(v / gross * 100) + '%' : '';
     const leaf = (ic, l, v, sub) => `<div class="ot-leaf"><i>${ic}</i><div><span>${l}</span><b>${q(v)}</b>${sub ? `<small>${sub}</small>` : ''}</div></div>`;
     const br = (k, ic, l, v, sub, leaves) => `<div class="ot-br" style="--k:${k}"><div class="ot-box"><div class="ot-dot">${ic}</div><span>${l}</span><b>${q(v)}</b>${pc(v) ? `<em>${pc(v)}</em>` : ''}${sub ? `<small>${sub}</small>` : ''}</div>
       <div class="ot-leaves">${leaves.join('')}</div></div>`;
-    return `<div class="card ot"><h3 style="margin:0 0 4px">🌳 اللي عندنا دلوقتي</h3><p style="margin:0 0 6px;font-size:12.5px;color:var(--muted)">مخزن + كاش (ومعاه اللي انت وفادي سحبتوه) + الكاش اللي لسه جاي من QP بعد خصم الشحن.</p>
-      <div class="ot-root"><div class="ot-circle"><span>💎 الإجمالي</span><b>${q(all)}</b></div></div>
+    return `<div class="card ot"><h3 style="margin:0 0 4px">🌳 اللي عندنا دلوقتي</h3><p style="margin:0 0 6px;font-size:12.5px;color:var(--muted)">مخزن + كاش (ومعاه اللي انت وفادي سحبتوه) + الكاش اللي لسه جاي من QP بعد خصم الشحن − الديون.</p>
+      <div class="ot-root"><div class="ot-circle"><span>💎 الصافي</span><b>${q(all)}</b><small>بعد خصم الديون</small></div></div>
+      <div class="ot-eq"><span>مخزن + كاش + QP <b>${q(gross)}</b></span><span class="dbt">− 🧾 ديون <b>${q(debts)}</b> <small>(${(W.debts || []).length} بند)</small></span><span>= <b>${q(all)}</b></span></div>
       <div class="ot-rail"></div>
       <div class="ot-brs">
         ${br('#6b4f2a', '📦', 'مخزن', goods, 'بضاعة', [leaf('🏬', 'المخزن الحالي', stock, 'مكتوب بالإيد'), leaf('↩️', 'مرتجع هيرجع', ret, C ? `≈ ${fmt(C.out.rp)} قطعة` : '')])}
