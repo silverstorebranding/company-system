@@ -1391,13 +1391,15 @@ function prBuildSummaryTable(){
    📋 جدول استرشادي: البراندات المجمّعة (DREAM / CARA / الاتنين مع بعض / RS / KIDZZLY / BLOOM / SOCKY)
    لكل واحد: كل رقم وإزاي اتحسب — والأرقام قابلة للتعديل (للمراجعة بس)
    ===================================================================== */
+// الترتيب: KIDZZLY ← BUNNY ← DREAM ← الباقي ← 🧮 الكل مع بعض في الآخر
 const PR_GUIDE_GROUPS=[
+  {k:'g_kid',   l:'🧸 KIDZZLY', m:['kidzzly']},
+  {k:'g_bunny', l:'🐰 BUNNY', m:['bunny']},
   {k:'g_dream', l:'💍 DREAM (المجمّع)', m:['dream','dream msg site','dream wa']},
   {k:'g_cara',  l:'💎 CARA (المجمّع)',  m:['cara silver','cara silver un','cara wa']},
   {k:'g_italy', l:'💍💎 DREAM + CARA مع بعض', m:['dream','dream msg site','dream wa','cara silver','cara silver un','cara wa']},
-  {k:'g_kid',   l:'🧸 KIDZZLY', m:['kidzzly']},
-  {k:'g_bunny', l:'🐰 BUNNY', m:['bunny']},
   {k:'g_ersal', l:'📨 إرسال صفحة', m:['ersal']},
+  {k:'g_all',   l:'🧮 الكل مع بعض (كل البراندات في الأرباح)', all:true, get m(){ return PR_BRANDS.filter(b=>b!=='lo gel nails'); }},
 ];
 const PR_GUIDE_ROWS=[
   ['cogs','📦 تكلفة البضاعة'],['shipDel','🚚 شحن التسليمات'],['shipUndel','💔 شحن بايظ'],['shipRet','↩️ شحن المرتجعات'],
@@ -1557,7 +1559,7 @@ function prBuildGuide(){
       return `<tr><td class="lbl">${l}</td><td><input class="plainIn gIn" data-gb="${G.k}" data-gk="${k}" type="number" step="0.01" value="${v}" data-orig="${v}"></td><td class="gHow">${prGuideHow(g,k,c,C)}</td></tr>`;}).join('');
     const rev=Math.round(c.revenue*100)/100;
     const aov=c.delivered?Math.round(c.revenue/c.delivered):0;
-    h+=`<details class="gBrand ${G.k==='g_italy'?'gAll':''}" ${gi<3?'open':''}><summary><b>${G.l}</b> <span class="gAov">AOV ${prFmt(aov)} ج</span> — ${c.n} أوردر${m.length>1?` <small>(${m.map(b=>b+' '+prBrandCalc[b].n).join(' · ')})</small>`:''} · <span data-gsum="${G.k}"></span></summary>
+    h+=`<details class="gBrand ${G.k==='g_italy'||G.all?'gAll':''}" ${gi<3||G.all?'open':''}><summary><b>${G.l}</b> <span class="gAov">AOV ${prFmt(aov)} ج</span> — ${c.n} أوردر${m.length>1?` <small>(${m.map(b=>b+' '+prBrandCalc[b].n).join(' · ')})</small>`:''} · <span data-gsum="${G.k}"></span></summary>
       <div class="gInfo">📦 <b>الأوردرات:</b> ${c.n} أوردر: ✅ ${c.delivered} اتسلم · ⏳ ${c.pend+c.ofd} تحت التسليم · ✋ ${c.hold} هولد · 💔 ${c.undel} Undelivered · ↩️ ${c.returned} رجع<br>
         💰 <b>AOV (متوسط سعر الأوردر المتسلم):</b> ${prFmt(aov)} ج${m.length>1?` <small>(${m.filter(b=>prBrandCalc[b].delivered).map(b=>b+' '+prFmt(Math.round(prBrandCalc[b].revenue/prBrandCalc[b].delivered))).join(' · ')})</small>`:''}<br>
         🧩 <b>البضاعة اللي اتسلمت:</b> ${prGuideItems(m)}</div>${prGuideAtQP(g)}
@@ -1571,7 +1573,7 @@ function prBuildGuide(){
       </table></div></details>`;
   });
   // ❔ مبيعات مش معروفة تبع أنهي براند
-  const inG=new Set(PR_GUIDE_GROUPS.flatMap(G=>G.m)), outB=PR_BRANDS.filter(b=>!inG.has(b)&&prBrandCalc[b]&&prBrandCalc[b].n);
+  const inG=new Set(PR_GUIDE_GROUPS.filter(G=>!G.all).flatMap(G=>G.m)), outB=PR_BRANDS.filter(b=>!inG.has(b)&&prBrandCalc[b]&&prBrandCalc[b].n);
   const unbDel=(prUnbranded||[]).filter(r=>r[PR_statusCol-1]==="Delivered"), unbRev=unbDel.reduce((s,r)=>s+prNum(r[PR_priceCol-1]),0);
   const list=outB.map(b=>({l:b.toUpperCase(),n:prBrandCalc[b].n,d:prBrandCalc[b].delivered,v:prBrandCalc[b].revenue}));
   if((prUnbranded||[]).length) list.push({l:'بدون براند (الـ notes مش معروفة)',n:prUnbranded.length,d:unbDel.length,v:unbRev});
