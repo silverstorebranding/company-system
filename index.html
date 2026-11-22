@@ -839,8 +839,10 @@ const prRatesFor=b=>PR_RATE_OVERRIDES[b]||{ofd:PR_OFD_RATE,hold:PR_HOLD_RATE};
 // براندات تكلفة بضاعتها نسبة ثابتة من المبيعات (بدل 65.2 / 94 للقطعة)
 const PR_COGS_PCT={"bloom":0.45};
 // 🧸 KIDZZLY و 👶 RS KIDS: تكلفة البضاعة = عدد القطع في الطلب × سعر القطعة
-const PR_PIECE_DEF={"kidzzly":100,"bunny":100,"rs kids":175,"bloom":0,"socky":0};
-const PR_PIECE_COST=(()=>{try{return {...PR_PIECE_DEF,...JSON.parse(localStorage.getItem('pr_piece_cost')||'{}')};}catch(e){return {...PR_PIECE_DEF};}})();
+const PR_PIECE_DEF={"kidzzly":110,"bunny":100,"rs kids":175,"bloom":0,"socky":0};
+const PR_PIECE_COST=(()=>{try{const sv=JSON.parse(localStorage.getItem('pr_piece_cost')||'{}');
+  if(+sv.kidzzly===100){delete sv.kidzzly;localStorage.setItem('pr_piece_cost',JSON.stringify(sv));} // 🧸 قطعة Kidzzly بقت 110 (زي احنا فين) — الـ 100 القديمة المتسجلة على الجهاز بتتشال
+  return {...PR_PIECE_DEF,...sv};}catch(e){return {...PR_PIECE_DEF};}})();
 // Bloom: لو تكلفة القطعة 0 بيفضل 45% من المبيعات
 function prSetPiece(b,v){PR_PIECE_COST[b]=prNum(v);try{localStorage.setItem('pr_piece_cost',JSON.stringify(PR_PIECE_COST));}catch(e){}
   if(window.__prLastRows&&document.getElementById('prResults')&&document.getElementById('prResults').style.display==='block')prProcess(window.__prLastRows);}
@@ -940,6 +942,12 @@ function kidsPajamaText(text, price){
   if(named.length>=2){ named.forEach(m=>add(3,m[2],m[1].toUpperCase(),1)); return {n,sizes,colors}; }
   const pr=parseFloat(String(price??"").replace(/[^\d.]/g,""))||0, sets=pr>=950?2:1;
   const sz=(t.match(/\)\s*(\d{1,2})\s*$/)||t.match(/size\s*(\d+)/i)||[])[1]||"";
+  // 🩳 "بيجامة" عادي من غير Set A / Set B / HK-DUO = قطعة واحدة (إلا لو العدد مكتوب: "3 بيجامات" / "بيجامتين")
+  if(!/set[\s-]*[ab]\b|hk[\s-]*duo|pajama/i.test(t)){
+    const m=t.match(/(\d{1,2})\s*(?:بيجام|قطع|قطعة|قطعه|اطقم|أطقم|طقم)/);
+    const w=/بيجامتين|قطعتين|طقمين/.test(t)?2:0;
+    const q=m&&+m[1]>0?+m[1]:w||1; n=q; if(sz) sizes[sz]=q; return {n,sizes,colors};
+  }
   add(3*sets, sz, vOf(t), sets); return {n,sizes,colors,byPrice:true};
 }
 // 🐰 Bunny: المحتوى جاي من اللاندينج "▪ طفل 1 · مقاس 4 لـ 6 سنين - الأرانب الوردي × 1 - الكتاكيت × 2 + ▪ طفل 2 ..." — عدد القطع = مجموع كل "× N"
@@ -1915,7 +1923,7 @@ function viewProfits(){
       <input type="file" id="prFileIn" accept=".xlsx,.xls,.csv">
       <button class="mockbtn" onclick="prRunReport()">▶️ شغّل التقرير</button>
     </div>
-    <div class="mono-note">الشيت لازم يكون بنفس ترتيب أعمدة "orders" الأصلي: أول صف عناوين، وبعدين الأعمدة بالترتيب — العمود E = السعر، F = الشحن، I = تاريخ الإرجاع، J = الملاحظة (اسم البراند)، K = التاريخ، L = المحتويات، O = الحالة.<br>⏳ الأوردرات اللي حالتها <b>Pending</b> في العمود O بتتحسب في التوقع زي الأوردرات اللي تحت التسليم بالظبط.<br>👶 أوردرات براند <b>RS KIDS</b>: اكتب في أول العمود J كلمة <b>rs kids</b> أو <b>rs</b> (أو rskids) — كابيتال أو سمول مش فارقة. تكلفة البضاعة = <b>عدد القطع × 175 ج</b>.<br>🧸 أوردرات براند <b>KIDZZLY</b>: اكتب في أول العمود J كلمة <b>kidzzly</b> (حتى لو بعدها msg) — تكلفة البضاعة = <b>عدد القطع × 100 ج</b> (القطع بتتعدّ من عمود المحتوى L: مفصولة بـ + و "× 2" = قطعتين)، والتوقع زي RS KIDS.<br>🌸 أوردرات براند <b>BLOOM</b>: اكتب في أول العمود J كلمة <b>bloom</b> — كابيتال أو سمول مش فارقة.</div>
+    <div class="mono-note">الشيت لازم يكون بنفس ترتيب أعمدة "orders" الأصلي: أول صف عناوين، وبعدين الأعمدة بالترتيب — العمود E = السعر، F = الشحن، I = تاريخ الإرجاع، J = الملاحظة (اسم البراند)، K = التاريخ، L = المحتويات، O = الحالة.<br>⏳ الأوردرات اللي حالتها <b>Pending</b> في العمود O بتتحسب في التوقع زي الأوردرات اللي تحت التسليم بالظبط.<br>👶 أوردرات براند <b>RS KIDS</b>: اكتب في أول العمود J كلمة <b>rs kids</b> أو <b>rs</b> (أو rskids) — كابيتال أو سمول مش فارقة. تكلفة البضاعة = <b>عدد القطع × 175 ج</b>.<br>🧸 أوردرات براند <b>KIDZZLY</b>: اكتب في أول العمود J كلمة <b>kidzzly</b> (حتى لو بعدها msg) — تكلفة البضاعة = <b>عدد القطع × 110 ج</b> (القطع بتتعدّ من عمود المحتوى L: مفصولة بـ + و "× 2" = قطعتين)، والتوقع زي RS KIDS.<br>🌸 أوردرات براند <b>BLOOM</b>: اكتب في أول العمود J كلمة <b>bloom</b> — كابيتال أو سمول مش فارقة.</div>
     <div id="prStatus" style="font-size:13px;color:var(--muted);margin-top:8px"></div>
   </div>
   <div id="prResults" style="display:none">
