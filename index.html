@@ -2064,17 +2064,47 @@ const Squad = (function(){
   const ORDER_SOURCES = ['واتساب دريم', 'بيدج دريم', 'واتساب كيدزلي', 'بيدج كيدزلي', 'إرسال صفحة', 'إرسال صفحة kidzzly'];
   const KIDZZLY_ONLY_SOURCES = ['إرسال صفحة kidzzly'];
   const SOURCE_LABEL = { 'إرسال صفحة':'إرسال', 'إرسال صفحة kidzzly':'إرسال صفحة Kidzzly' };
-  const isErsalSrc = p => p === 'إرسال صفحة' || p === 'إرسال صفحة kidzzly';
+  // 📨 قسم "إرسال" في أوردر جديد: المصدر = اسم البيدج من 📨 إرسال فوكس، وبيتسجل page_name = "إرسال صفحة - <اسم البيدج>"
+  //    (بيبدأ بـ "إرسال صفحة" عشان العمولة والأرباح والمحفظة يفضلوا يحسبوه إرسال صفحة زي الأول)
+  const ERSAL_PREFIX = 'إرسال صفحة - ';
+  const isErsalPage = p => String(p || '').startsWith(ERSAL_PREFIX) && String(p).length > ERSAL_PREFIX.length;
+  const ersalPageName = p => isErsalPage(p) ? String(p).slice(ERSAL_PREFIX.length) : '';
+  const isErsalSrc = p => p === 'إرسال صفحة' || p === 'إرسال صفحة kidzzly' || isErsalPage(p);
+  let ersalPages = null, ersalPagesLoading = false;   // أسامي صفحات إرسال فوكس (app_kv ersal_focus)
+  async function loadErsalPages(){
+    if(ersalPagesLoading) return; ersalPagesLoading = true;
+    try{ const { data, error } = await sb.from('app_kv').select('value').eq('key', 'ersal_focus').maybeSingle();
+      if(error) throw error;
+      ersalPages = (((data && data.value && data.value.pages) || []).map(p => String(p.name || '').trim()).filter(Boolean)); }
+    catch(e){ ersalPages = ersalPages || []; }
+    ersalPagesLoading = false;
+    refreshErsalSel('sq-new');
+  }
+  function refreshErsalSel(prefix){
+    const sel = document.getElementById(prefix + '-e-page'); if(!sel || ersalPages === null) return;
+    sel.outerHTML = ersalSelect(prefix + '-e-page', sel.value && !sel.disabled ? ERSAL_PREFIX + sel.value : '', newOrderType !== 'ersal');
+  }
+  function ersalSelect(id, val, disabled){
+    const cur = ersalPageName(val);
+    if(ersalPages === null){ loadErsalPages(); return `<select id="${id}" disabled><option>⏳ بنجيب صفحات إرسال...</option></select>`; }
+    const L = ersalPages.slice(); if(cur && !L.includes(cur)) L.unshift(cur);
+    if(!L.length) return `<select id="${id}" disabled><option>مفيش صفحات — ضيفها من 📨 إرسال فوكس</option></select>`;
+    return `<select id="${id}" required ${disabled ? 'disabled' : ''}>
+          <option value="" disabled ${cur ? '' : 'selected'}>اختار البيدج اللي جه منها الأوردر</option>
+          ${L.map(x => `<option value="${esc(x)}" ${cur === x ? 'selected' : ''}>📨 ${esc(x)}</option>`).join('')}
+        </select>`;
+  }
   // ♻️ مصدر الأوردرات المتجددة من "🎯 أيام تحت الهدف" — بيتحط لوحده لما تدوسي "جدّدي" (البراند في الاسم عشان الـ notes في الرفع)
   const RENEW_SOURCES = { acc:'تجديد من اندلفرد - دريم', kidzzly:'تجديد من اندلفرد - كيدزلي' };
   const isRenewSrc = x => Object.values(RENEW_SOURCES).includes(x);
-  const isSource = x => ORDER_SOURCES.includes(x) || isRenewSrc(x);
+  const isSource = x => ORDER_SOURCES.includes(x) || isRenewSrc(x) || isErsalPage(x);
   function sourceSelect(id, val, disabled, dreamForm){
     // فورم Dream (أوردر جديد) مابيظهرش فيه مصادر Kidzzly بس
     const L = isRenewSrc(val) ? [val] : ORDER_SOURCES.filter(x => !dreamForm || !KIDZZLY_ONLY_SOURCES.includes(x) || x === val);   // التجديد مصدره ثابت
+    if(isErsalPage(val)) L.unshift(val);   // 📨 أوردر من قسم إرسال (في التعديل)
     return `<select id="${id}" required ${disabled ? 'disabled' : ''}>
           <option value="" disabled ${isSource(val) ? '' : 'selected'}>اختار المصدر اللي جه منه الأوردر</option>
-          ${L.map(x => `<option value="${esc(x)}" ${val === x ? 'selected' : ''}>${esc(isRenewSrc(x) ? '♻️ ' + x : (SOURCE_LABEL[x] || x))}</option>`).join('')}
+          ${L.map(x => `<option value="${esc(x)}" ${val === x ? 'selected' : ''}>${esc(isRenewSrc(x) ? '♻️ ' + x : isErsalPage(x) ? '📨 إرسال — ' + ersalPageName(x) : (SOURCE_LABEL[x] || x))}</option>`).join('')}
         </select>`;
   }
 
@@ -2128,7 +2158,7 @@ const Squad = (function(){
   const pad2 = n => String(n).padStart(2, '0');
   const localYmd = d => d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
   const isNewRule = () => true; // كل الأوردرات (القديمة والجديدة) بتتحسب بالنظام الجديد
-  const rulesFor = o => SOURCE_COMM[o && o.page_name] || STD_COMM;
+  const rulesFor = o => SOURCE_COMM[o && isErsalPage(o.page_name) ? 'إرسال صفحة' : o && o.page_name] || STD_COMM;
   function deliveredCommission(o){
     if(isNewRule(o)) return deliveredFor(o);
     const amt = Number(o && o.amount);
@@ -3030,12 +3060,14 @@ const Squad = (function(){
   // ♻️ تجديد أوردر اندلفرد من صفحة "🎯 أيام تحت الهدف": بيانات العميل بتتملى لوحدها، وبعد التسجيل بيتعلّم إنه تجديد لليوم ده
   let prefill = null;
   let newOrderType = ''; // '' | 'acc' (Dream) | 'kidzzly'  (كود RS / Bloom / Socky لسه موجود لو احتجناه تاني)
-  const ORDER_BRANDS = { acc:'اكسسوارات', kidzzly:'Kidzzly', rs:'RS', bloom:'Bloom', socky:'Socky' };
+  const ORDER_BRANDS = { acc:'اكسسوارات', kidzzly:'Kidzzly', ersal:'إرسال', rs:'RS', bloom:'Bloom', socky:'Socky' };
+  // 📨 إرسال بيستخدم نفس خانات Dream (الطلب من ليستة المنتجات + المقاس) بس المصدر = ليستة صفحات إرسال فوكس
   const isClothes = t => t === 'kidzzly' || t === 'rs' || t === 'bloom' || t === 'socky';
+  const isAccLike = t => t === 'acc' || t === 'ersal';
   function typePicker(prefix){
     const b = (k, l) => `<button type="button" class="sq-type ${newOrderType === k ? 'on' : ''}" data-otype="${k}">${l}</button>`;
     return `<div class="sq-field"><label>البراند <span class="sq-hint">حدد الأول الأوردر ده تبع أنهي براند</span></label>
-      <div class="sq-types" id="${prefix}-types">${b('acc', '💍 Dream')}${b('kidzzly', '🧸 Kidzzly')}</div></div>`;
+      <div class="sq-types" id="${prefix}-types">${b('acc', '💍 Dream')}${b('kidzzly', '🧸 Kidzzly')}${b('ersal', '📨 إرسال')}</div></div>`;
   }
   function clothesFields(prefix, o){
     o = o || {};
@@ -3051,11 +3083,18 @@ const Squad = (function(){
     newOrderType = t;
     document.querySelectorAll(`#${prefix}-types .sq-type`).forEach(b => b.classList.toggle('on', b.dataset.otype === t));
     const acc = document.getElementById(`${prefix}-acc`), clo = document.getElementById(`${prefix}-clothes`);
-    if(acc){ acc.classList.toggle('sq-hide', t !== 'acc'); acc.querySelectorAll('input,select').forEach(x => { if(!x.classList.contains('sq-qty')) x.disabled = t !== 'acc'; }); }
+    if(acc){ acc.classList.toggle('sq-hide', !isAccLike(t)); acc.querySelectorAll('input,select').forEach(x => { if(!x.classList.contains('sq-qty')) x.disabled = !isAccLike(t); }); }
     if(clo){
       const was = clo.dataset.brand || '';
       clo.classList.toggle('sq-hide', !isClothes(t)); clo.querySelectorAll('input,textarea,select').forEach(x => x.disabled = !isClothes(t));
       clo.dataset.brand = isClothes(t) ? t : was;
+    }
+    {
+      // 📨 إرسال: نخفي مصادر Dream ونظهر ليستة صفحات إرسال (والعكس)
+      const cs = document.getElementById(`${prefix}-a-src`), es = document.getElementById(`${prefix}-e-src`);
+      if(cs){ cs.classList.toggle('sq-hide', t === 'ersal'); cs.querySelectorAll('select').forEach(x => x.disabled = t !== 'acc'); }
+      if(es){ es.classList.toggle('sq-hide', t !== 'ersal'); es.querySelectorAll('select').forEach(x => x.disabled = t !== 'ersal' || ersalPages === null || !ersalPages.length); }
+      if(t === 'ersal'){ if(ersalPages === null) loadErsalPages(); else refreshErsalSel(prefix); }
     }
   }
 
@@ -3075,11 +3114,13 @@ const Squad = (function(){
       </div>
       <div class="sq-field"><label for="${prefix}-customer-address">العنوان</label>
         <input type="text" id="${prefix}-customer-address" value="${esc(o.customer_address||'')}"></div>
-      ${isNew ? `<div id="${prefix}-acc" class="${t === 'acc' ? '' : 'sq-hide'}">` : ''}
-      <div class="sq-field"><label for="${prefix}-page-name">المصدر</label>
+      ${isNew ? `<div id="${prefix}-acc" class="${isAccLike(t) ? '' : 'sq-hide'}">` : ''}
+      <div class="sq-field ${isNew && t === 'ersal' ? 'sq-hide' : ''}" id="${prefix}-a-src"><label for="${prefix}-page-name">المصدر</label>
         ${sourceSelect(prefix + '-page-name', o.page_name || '', isNew && t !== 'acc', isNew)}</div>
+      ${isNew ? `<div class="sq-field ${t === 'ersal' ? '' : 'sq-hide'}" id="${prefix}-e-src"><label for="${prefix}-e-page">المصدر <span class="sq-hint">البيدج اللي جه منها الأوردر (من 📨 إرسال فوكس)</span></label>
+        ${ersalSelect(prefix + '-e-page', o.page_name || '', t !== 'ersal')}</div>` : ''}
       <div class="sq-field"><label for="${prefix}-size">المقاس <span class="sq-hint">مثلاً 16 أو 18 — ولو أكتر من قطعة اكتبهم: محبس 18 / دبلة 22</span></label>
-        <input type="text" id="${prefix}-size" value="${esc(o.size||'')}" placeholder="اكتب المقاس" autocomplete="off" ${isNew && t !== 'acc' ? 'disabled' : ''}></div>
+        <input type="text" id="${prefix}-size" value="${esc(o.size||'')}" placeholder="اكتب المقاس" autocomplete="off" ${isNew && !isAccLike(t) ? 'disabled' : ''}></div>
       ${productPicker(prefix, o.order_details)}
       ${isNew ? `</div>
       <div id="${prefix}-clothes" class="${isClothes(t) ? '' : 'sq-hide'}">${clothesFields(prefix, o)}</div>` : ''}`;
@@ -3099,11 +3140,11 @@ const Squad = (function(){
       };
     }
     return {
-      order_type: prefix === 'sq-new' ? ORDER_BRANDS.acc : undefined,
+      order_type: prefix === 'sq-new' ? ORDER_BRANDS[newOrderType === 'ersal' ? 'ersal' : 'acc'] : undefined,
       customer_name: v('customer-name'),
       customer_phone: v('customer-phone'),
       customer_address: v('customer-address'),
-      page_name: v('page-name'),
+      page_name: prefix === 'sq-new' && newOrderType === 'ersal' ? (v('e-page') ? ERSAL_PREFIX + v('e-page') : '') : v('page-name'),
       amount: v('amount'),
       order_details: readPicks(prefix),
       size: v('size').trim(),
@@ -4082,10 +4123,10 @@ grant select, insert, update, delete on public.office_sales to authenticated;`;
     if($('sq-prefill-x')) $('sq-prefill-x').onclick = () => { const b = prefill && prefill.back; prefill = null; newOrderType = ''; if(b) go(b); else render(); };
     if($('sq-order-form')) $('sq-order-form').onsubmit = e => {
       e.preventDefault();
-      if(!newOrderType){ showToast('حدد الأول البراند: Dream ولا Kidzzly.', 'error'); return; }
+      if(!newOrderType){ showToast('حدد الأول البراند: Dream ولا Kidzzly ولا إرسال.', 'error'); return; }
       const p = readFields('sq-new');
-      if(!isSource(p.page_name)){ showToast('اختار المصدر من الليستة الأول.', 'error'); return; }
-      if(newOrderType === 'acc' && !p.order_details){ showToast('اختار الطلب من الليستة الأول.', 'error'); return; }
+      if(!isSource(p.page_name)){ showToast(newOrderType === 'ersal' ? 'اختار البيدج من ليستة صفحات إرسال الأول.' : 'اختار المصدر من الليستة الأول.', 'error'); return; }
+      if(isAccLike(newOrderType) && !p.order_details){ showToast('اختار الطلب من الليستة الأول.', 'error'); return; }
       createOrder(p);
     };
 
@@ -5406,11 +5447,11 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
     try{ const { data } = await c.from('app_kv').select('value').eq('key', 'wallet_note_map').maybeSingle(); window.__noteMap = (data && data.value && data.value.map) || {}; }catch(e){}
   }
   // 📒 الـ notes اللي أوردر Squad يتحسب بيها في الأرباح وأيام التسليم حسب مصدره
-  const pageNote = pg => { const p = String(pg || ''); if(/كيدز|kid/i.test(p)) return 'kidzzly'; if(/إرسال|ارسال/.test(p)) return 'ersal'; if(/واتساب\s*دريم|dream\s*wa/i.test(p)) return 'dream wa'; if(/دريم|dream/i.test(p)) return 'dream'; return null; };
+  const pageNote = pg => { const p = String(pg || ''); if(/^إرسال صفحة - /.test(p)) return 'ersal'; if(/كيدز|kid/i.test(p)) return 'kidzzly'; if(/إرسال|ارسال/.test(p)) return 'ersal'; if(/واتساب\s*دريم|dream\s*wa/i.test(p)) return 'dream wa'; if(/دريم|dream/i.test(p)) return 'dream'; return null; };
   const squadPageOf = o => o && sqPages ? [o.phone, o.phone2, o.customer_phone].map(phKey).map(k => k && sqPages[k]).find(x => x != null) : null;
   // للأرباح وأيام التسليم: لو notes = squad رجّع البراند الحقيقي من المصدر (أو null لو مش معروف)
   function squadBrandOf(o){ let b = null; try{ b = prGetBrand(o && o.notes); }catch(e){} if(b !== 'squad') return null; const pg = squadPageOf(o); return (pg == null ? null : pageNote(pg)) || 'dream'; }   // ملقيناش المصدر = دريم
-  const pageGroup = pg => { const p = String(pg || ''); if(/كيدز|kid/i.test(p)) return 'kidzzly'; if(/إرسال|ارسال/.test(p)) return 'ersal'; return 'italy'; };
+  const pageGroup = pg => { const p = String(pg || ''); if(/^إرسال صفحة - /.test(p)) return 'ersal'; if(/كيدز|kid/i.test(p)) return 'kidzzly'; if(/إرسال|ارسال/.test(p)) return 'ersal'; return 'italy'; };
   function walletGroup(note, o){
     const n = String(note || '').toLowerCase().trim();
     const nm = n.split('\n')[0].trim().replace(/\s+/g, ' ');
@@ -14727,6 +14768,7 @@ a.hm-kpi:hover{box-shadow:0 6px 16px rgba(0,0,0,.07)}
     const { error } = await sb().from('payroll_entries').insert(row);
     if(error) return flash('ماتسجلش: ' + error.message, true);
     S.modal = null; flash(`✅ اتسجل ${KINDS[kind].l} ${fmt(row.amount)} ج لـ ${row.employee_name}.`); load();
+    if(kind === 'bonus' || kind === 'deduction') notifyPay(row.month);   // 📨 رسالة للموظف في المهام
   }
   async function delEntry(id){
     if(!confirm('تمسح البند ده؟')) return;
@@ -14744,7 +14786,60 @@ a.hm-kpi:hover{box-shadow:0 6px 16px rgba(0,0,0,.07)}
     if(x.requested_by) await sb().from('inbox').insert({ kind:'message', from_id:me().id, from_name:by(), to_id:x.requested_by, to_name:x.requested_by_name,
       body: ok ? `✅ اتوافق على ${x.kind === 'bonus' ? 'مكافأة' : 'خصم'} ${x.employee_name}: ${fmt(amt)} ج (${x.reason || ''}).` : `✕ اترفض طلب ${x.kind === 'bonus' ? 'المكافأة' : 'الخصم'} لـ ${x.employee_name} (${x.reason || ''}).` });
     flash(ok ? `✅ اتوافق — ${fmt(amt)} ج لـ ${x.employee_name}.` : 'اترفض.'); load();
+    if(ok) notifyPay(x.month);   // 📨 رسالة للموظف في المهام
   }
+  /* 📨 رسالة للموظف في ✅ المهام بكل مكافأة / خصم اتسجلوله (بعد ما يتوافق عليهم)
+     - بتشتغل لما الأدمن يسجّل أو يوافق، ولما الأدمن يفتح السيستم (للشهر الحالي) — فأي بند مااتبعتش لسه بيتبعت مرة واحدة بس
+     - اللي اتبعت بيتسجل في app_kv بمفتاح pay_notified_<YYYY-MM> = { list:[توقيع البند] } عشان مايتبعتش تاني
+       (التوقيع = الموظف + النوع + المبلغ + السبب + الملاحظة + التاريخ — لو "أيام التسليم" اتسجلت تاني بنفس الأرقام مش هتتبعت تاني)
+     - الموظف اللي مش مربوط بأكونت (profile_id) مابيتبعتلوش، وأول ما يتربط بيتبعتله */
+  const PN_KEY = m => 'pay_notified_' + m;
+  const pnSig = x => [x.employee_id, x.kind, Math.round(num(x.amount)), x.reason || '', x.note || '', x.entry_date || ''].join('|');
+  const realMe = () => (window.AuthGate && window.AuthGate.realMe && window.AuthGate.realMe()) || me();
+  const pnBusy = {};
+  async function notifyPay(month){
+    const R = realMe(); if(!R || !R.is_admin || !month || pnBusy[month]) return 0;
+    pnBusy[month] = true;
+    try{
+      const [a, b, c] = await Promise.all([
+        sb().from('payroll_employees').select('id, name, profile_id'),
+        sb().from('payroll_entries').select('*').eq('month', month).in('kind', ['bonus', 'deduction']).order('entry_date', { ascending:true }),
+        sb().from('app_kv').select('value').eq('key', PN_KEY(month)).maybeSingle(),
+      ]);
+      if(a.error || b.error || c.error) return 0;
+      const sent = new Set((c.data && c.data.value && c.data.value.list) || []);
+      const emps = {}; (a.data || []).forEach(e => emps[e.id] = e);
+      const todo = (b.data || []).filter(x => okE(x) && num(x.amount) > 0 && !sent.has(pnSig(x)) && emps[x.employee_id] && emps[x.employee_id].profile_id);
+      if(!todo.length) return 0;
+      const per = {}; todo.forEach(x => (per[x.employee_id] = per[x.employee_id] || []).push(x));
+      const mLbl = new Date(month + '-15').toLocaleDateString('ar-EG', { month:'long', year:'numeric' });
+      const dLbl = d => d ? new Date(d + 'T12:00:00').toLocaleDateString('ar-EG', { day:'numeric', month:'long' }) : '';
+      const from = R.full_name || R.username || 'الإدارة';
+      const done = [];
+      for(const [eid, L] of Object.entries(per)){
+        const e = emps[eid];
+        const plus = L.filter(x => x.kind === 'bonus').reduce((s, x) => s + num(x.amount), 0), minus = L.filter(x => x.kind === 'deduction').reduce((s, x) => s + num(x.amount), 0);
+        const line = x => `${x.kind === 'bonus' ? '🟢 + ' + (x.reason || 'مكافأة') : '🔴 − خصم (' + (x.reason || 'خصم') + ')'}: ${fmt(x.amount)} ج${x.entry_date ? ' — ' + dLbl(x.entry_date) : ''}${x.note ? '\n    السبب: ' + x.note : ''}`;
+        const title = L.length === 1 ? (L[0].kind === 'bonus' ? `🟢 ${L[0].reason || 'مكافأة'} ${fmt(L[0].amount)} ج اتسجلت في مرتبك` : `🔴 خصم ${fmt(L[0].amount)} ج (${L[0].reason || 'خصم'}) اتسجل في مرتبك`)
+          : `💵 المكافآت والخصومات بتاعتك — ${mLbl}`;
+        const body = `${L.map(line).join('\n')}\n\n${plus ? '🟢 إجمالي الإضافات: ' + fmt(plus) + ' ج' : ''}${plus && minus ? '\n' : ''}${minus ? '🔴 إجمالي الخصومات: ' + fmt(minus) + ' ج' : ''}\n\nكل ده متسجل في مرتب ${mLbl} — تقدر تشوفه من 💵 راتبي.`;
+        const { error } = await sb().from('inbox').insert({ kind:'task', from_id:R.id, from_name:from, to_id:e.profile_id, to_name:e.name, title, body });
+        if(!error) L.forEach(x => done.push(pnSig(x)));
+      }
+      if(done.length){
+        const { data } = await sb().from('app_kv').select('value').eq('key', PN_KEY(month)).maybeSingle();
+        const list = [...new Set(((data && data.value && data.value.list) || []).concat(done))];
+        await sb().from('app_kv').upsert({ key:PN_KEY(month), value:{ list }, updated_at:new Date().toISOString(), updated_by_name:from });
+      }
+      return Object.keys(per).length;
+    }catch(e){ return 0; }
+    finally{ pnBusy[month] = false; }
+  }
+  window.PayNotify = notifyPay;
+  // 🚀 أول ما الأدمن يفتح السيستم: يبعت أي مكافأة / خصم لسه مااتبعتش (الشهر الحالي + نوفمبر 2026)
+  { const w = setInterval(() => { const R = realMe(); if(!sb() || !R || !R.id) return; clearInterval(w);
+      if(R.is_admin) [...new Set([ymd(new Date()).slice(0, 7), '2026-11'])].reduce((p, m) => p.then(() => notifyPay(m)), Promise.resolve()); }, 1500); }
+
   // 📝 طلب خصم / مكافأة بالسبب من غير قيمة (للي فاتحله الرواتب ومش أدمن) — الأدمن بيحط القيمة ويوافق
   async function requestEntry(empId, kind, reason, note, date){
     const emp = S.emps.find(x => String(x.id) === String(empId)); if(!emp) return;
@@ -16960,6 +17055,7 @@ table.gs tr.wk td.day{color:#c5221f}
       for(const x of rows){ const { error:er } = await sb().from('payroll_entries').insert({ employee_id:e.id, employee_name:e.name, month:S.month, entry_date:ymd(new Date()), created_by_name: me().full_name || me().username || '', ...x }); if(!er) n++; }
     }
     await saveSnapshot();
+    if(window.PayNotify) window.PayNotify(S.month);   // 📨 كل موظفة توصلها رسالة في المهام بالحافز/الخصم
     flashKD(`✅ اتسجل ${n} بند في الرواتب لشهر ${S.month}.` + (miss.length ? ' ⚠️ مش مربوطين بأكونت في الرواتب: ' + miss.join('، ') : ''), !!miss.length);
   }
   async function saveSnapshot(){
@@ -17344,6 +17440,8 @@ table.cs td.cs-day{background:#f4f2ec;font-weight:800;min-width:46px}
 table.cs input{width:100%;min-width:66px;height:30px;border:0;padding:0 4px;text-align:center;font-family:inherit;font-size:13px;background:transparent;color:#1c2321}
 table.cs input.cs-note{min-width:160px;text-align:right}
 table.cs input:focus{outline:2px solid #2b6cb0;background:#eef5ff}
+table.cs input.cs-fx{color:#1f4f8a;font-weight:700;background:linear-gradient(135deg,transparent 0 calc(100% - 7px),#2b6cb0 calc(100% - 7px))}
+table.cs input.cs-bad{outline:2px solid #c0392b;background:#fdecea}
 table.cs td.cs-in{background:#eaf7ee}
 table.cs td.cs-dir{background:#e3eefb;color:#1f4f8a}
 table.cs td.cs-auto{background:#f6f3ea;font-weight:700;padding:0 6px;color:#333}
@@ -17445,21 +17543,55 @@ table.cs tr.cs-open td{background:#fff7dd}
     try{
       const { data } = await sb().from('app_kv').select('value').eq('key', 'cash_' + m).maybeSingle();
       const cur = (data && data.value) || { open:'', days:{} }; cur.days = cur.days || {};
-      Object.entries(dirty).forEach(([path, v]) => { if(path === 'open') cur.open = v; else { const [d, k] = path.split('|'); (cur.days[d] = cur.days[d] || {})[k] = v; } });
+      Object.entries(dirty).forEach(([path, v]) => { if(path === 'open' || path === 'open$f') cur[path] = v; else { const [d, k] = path.split('|'); (cur.days[d] = cur.days[d] || {})[k] = v; } });
       Object.keys(cur.days).forEach(d => { if(!hasAny(cur.days[d])) delete cur.days[d]; });
       const { error } = await sb().from('app_kv').upsert({ key:'cash_' + m, value:cur, updated_at:new Date().toISOString(), updated_by_name: me().full_name || me().username || '' });
       if(error) throw error;
       // نحدّث اللي عندنا بالنسخة المدموجة من غير ما نمسح اللي لسه بيتكتب
       const local = doc(m); const pend = S.dirty[m] || {};
-      S.docs[m] = cur; Object.entries(pend).forEach(([path, v]) => { if(path === 'open') cur.open = v; else { const [d, k] = path.split('|'); (cur.days[d] = cur.days[d] || {})[k] = v; } });
+      S.docs[m] = cur; Object.entries(pend).forEach(([path, v]) => { if(path === 'open' || path === 'open$f') cur[path] = v; else { const [d, k] = path.split('|'); (cur.days[d] = cur.days[d] || {})[k] = v; } });
       if(st) st.textContent = '✅ اتحفظ ' + new Date().toLocaleTimeString('ar-EG', { hour:'2-digit', minute:'2-digit' });
       refreshAuto();
     }catch(e){ S.dirty[m] = Object.assign(dirty, S.dirty[m] || {}); if(st) st.textContent = '⚠️ مااتحفظش: ' + e.message; }
   }
+  /* 🧮 معادلات زي الإكسيل: اكتب =1000+2000 (أو 1000+2000) وهتتجمع لوحدها
+     الرقم الناتج بيتحفظ في الخانة نفسها (عشان أي حتة تانية بتقرا الشيت تاخد الرقم الصح)، والمعادلة بتتحفظ جنبها في "<الخانة>$f" */
+  const fx = path => path + '$f';
+  const getRaw = (m, path) => { if(path === 'open') return doc(m).open; const [d, k] = path.split('|'); return ((doc(m).days[d] || {})[k]); };
+  const setRaw = (m, path, v) => { if(path === 'open') doc(m).open = v; else { const [d, k] = path.split('|'); (doc(m).days[d] = doc(m).days[d] || {})[k] = v; } };
+  const fxOf = (m, path) => { const f = path === 'open' ? doc(m)['open$f'] : getRaw(m, fx(path)); return f ? String(f) : ''; };
+  function calcExpr(t){
+    let e = String(t ?? '').trim().replace(/^=/, '').replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/[٫]/g, '.').replace(/[,،\s]/g, '')
+      .replace(/[×xX]/g, '*').replace(/[÷]/g, '/').replace(/[−–]/g, '-');
+    if(!e || !/^[0-9.+\-*/()]+$/.test(e) || !/[0-9]/.test(e)) return null;
+    let i = 0;
+    const peek = () => e[i];
+    function nm(){ if(peek() === '('){ i++; const v = sum(); if(peek() !== ')') throw 0; i++; return v; }
+      if(peek() === '-'){ i++; return -nm(); } if(peek() === '+'){ i++; return nm(); }
+      const m = /^[0-9]*\.?[0-9]+|^[0-9]+\.?/.exec(e.slice(i)); if(!m) throw 0; i += m[0].length; return parseFloat(m[0]); }
+    function prod(){ let v = nm(); while(peek() === '*' || peek() === '/'){ const o = e[i++], r = nm(); v = o === '*' ? v * r : v / r; } return v; }
+    function sum(){ let v = prod(); while(peek() === '+' || peek() === '-'){ const o = e[i++], r = prod(); v = o === '+' ? v + r : v - r; } return v; }
+    try{ const v = sum(); if(i !== e.length || !isFinite(v)) return null; return Math.round(v * 100) / 100; }catch(_){ return null; }
+  }
+  // فيه معادلة؟ = بيبدأ بـ "=" أو فيه عملية بين رقمين (1000+2000)
+  const isFormula = v => /^\s*=/.test(v) || /[0-9٠-٩]\s*[+\-*/×÷]\s*[0-9٠-٩(]/.test(String(v));
   function onInput(el){
-    const m = S.m, path = el.dataset.cs, v = el.value;
-    if(path === 'open') doc(m).open = v; else { const [d, k] = path.split('|'); (doc(m).days[d] = doc(m).days[d] || {})[k] = v; }
-    (S.dirty[m] = S.dirty[m] || {})[path] = v;
+    const m = S.m, path = el.dataset.cs, v0 = el.value;
+    let v = v0;
+    const dirty = S.dirty[m] = S.dirty[m] || {};
+    if(path.indexOf('|note') < 0 && isFormula(v0)){
+      const r = calcExpr(v0);
+      el.classList.toggle('cs-bad', r === null);
+      el.title = r === null ? '⚠️ المعادلة لسه مش كاملة' : '🧮 ' + v0 + ' = ' + fmt(r);
+      if(r === null) return;          // لسه بيكتب (زي "=1000+") — مانحفظش لحد ما تبقى صح
+      v = String(r);
+      setRaw(m, fx(path), v0); dirty[fx(path)] = v0;
+    } else {
+      el.classList.remove('cs-bad'); el.title = '';
+      if(fxOf(m, path)){ setRaw(m, fx(path), ''); dirty[fx(path)] = ''; }
+    }
+    setRaw(m, path, v);
+    dirty[path] = v;
     refreshAuto();
     const st = document.getElementById('csSt'); if(st) st.textContent = '✏️ ...';
     clearTimeout(S.t); S.t = setTimeout(() => save(m), 800);
@@ -17485,7 +17617,7 @@ table.cs tr.cs-open td{background:#fff7dd}
     const m = S.m, y = +m.slice(0, 4), mo = +m.slice(5, 7), n = new Date(y, mo, 0).getDate();
     const months = []; { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() + 1); for(let i = 0; i < 12; i++){ months.push(d.getFullYear() + '-' + pad(d.getMonth() + 1)); d.setMonth(d.getMonth() - 1); } }
     if(!months.includes(m)) months.push(m);
-    let h = `<div class="pagehead"><h1>💼 الحسابات</h1><p>شيت الخزنة يوم بيوم — اكتب في الخانات على طول وهيتحفظ لوحده. <b>مبيعات مكتب</b> بتيجي لوحدها من 🛒 مبيعات مباشرة، و<b>اجمالى المصروف</b> و<b>خزنة اليوم</b> بيتحسبوا لوحدهم، و<b>رصيد الخزنة</b> = تقفيل الشهر اللي فات + خزنة كل الأيام.</p></div>
+    let h = `<div class="pagehead"><h1>💼 الحسابات</h1><p>شيت الخزنة يوم بيوم — اكتب في الخانات على طول وهيتحفظ لوحده. <b>مبيعات مكتب</b> بتيجي لوحدها من 🛒 مبيعات مباشرة، و<b>اجمالى المصروف</b> و<b>خزنة اليوم</b> بيتحسبوا لوحدهم، و<b>رصيد الخزنة</b> = تقفيل الشهر اللي فات + خزنة كل الأيام. 🧮 تقدر تكتب معادلة في أي خانة زي <b dir="ltr">=1000+2000</b> وهتتجمع لوحدها (الخانة اللي فيها معادلة عليها علامة زرقا في الركن — اقف عليها تشوف المعادلة وتعدّلها).</p></div>
       <div class="cs-bar"><label>الشهر <select id="csM">${months.map(x => `<option value="${x}" ${x === m ? 'selected' : ''}>${new Date(x + '-15').toLocaleDateString('ar-EG', { month:'long', year:'numeric' })}</option>`).join('')}</select></label>
         <span id="csSt" style="font-size:13px;color:var(--muted)"></span>${window.XLSX ? '<button class="mockbtn" id="csX">⬇️ Excel</button>' : ''}
         ${SEED[m] && S.loaded[m] && !(doc(m).days['0'] && doc(m).days['0'].imported) ? '<button class="mockbtn" id="csImp" style="background:#2f7d55;border-color:#2f7d55;color:#fff">📥 انقل أرقام الشهر ده من شيت new system 2026</button>' : ''}</div>`;
@@ -17501,7 +17633,7 @@ table.cs tr.cs-open td{background:#fff7dd}
       <tr class="cs-tot"><td>${esc(new Date(m + '-15').toLocaleDateString('en-US', { month:'short' }).toLowerCase())}</td>${COLS.map(c => c.t === 'text' ? '<td></td>' : `<td id="csT_${c.k}"${c.k === '_bal' ? ' class="cs-bal"' : ''}>0</td>`).join('')}</tr>
       ${headRow()}</thead><tbody>
       <tr class="cs-open"><td class="cs-day">تقفيل</td><td colspan="${COLS.length - 2}" style="text-align:right;padding:0 8px;font-size:12.5px;color:#7a5c00">رصيد الخزنة من الشهر اللي فات ←</td>
-        <td class="cs-in"><input type="text" inputmode="decimal" data-cs="open" value="${esc(D.open ?? '')}"></td><td></td></tr>`;
+        <td class="cs-in"><input type="text" data-cs="open" value="${esc(D.open ?? '')}"${D['open$f'] ? ` class="cs-fx" title="🧮 ${esc(D['open$f'])}"` : ''}></td><td></td></tr>`;
     // صف إضافي من غير يوم (زي "بيتر سحب من المحفظة")
     for(let d = 0; d <= n; d++){
       if(d > 1 && (d - 1) % 7 === 0) h += headRow().replace('<tr>', '<tr class="cs-rep">');
@@ -17511,7 +17643,8 @@ table.cs tr.cs-open td{background:#fff7dd}
         if(c.t === 'dir') return `<td class="cs-auto cs-dir" id="csO${d}" title="تلقائي من 🛒 مبيعات مباشرة"></td>`;
         if(c.t === 'text') return `<td><input class="cs-note" type="text" data-cs="${d}|${c.k}" value="${v(d, c.k)}"></td>`;
         if(c.fady && !isFady()) return `<td title="فادي بس اللي بيكتب هنا"><input type="text" value="${v(d, c.k)}" readonly style="background:var(--slate-l);cursor:not-allowed"></td>`;
-        return `<td${c.t === 'in' ? ' class="cs-in"' : ''}><input type="text" inputmode="decimal" data-cs="${d}|${c.k}" value="${v(d, c.k)}"></td>`; }).join('')}</tr>`;
+        const f = (D.days[d] || {})[c.k + '$f'];
+        return `<td${c.t === 'in' ? ' class="cs-in"' : ''}><input type="text" data-cs="${d}|${c.k}" value="${v(d, c.k)}"${f ? ` class="cs-fx" title="🧮 ${esc(f)}"` : ''}></td>`; }).join('')}</tr>`;
     }
     h += '</tbody></table></div>';
     return h;
@@ -17631,7 +17764,13 @@ table.cs tr.cs-open td{background:#fff7dd}
     const sel = document.getElementById('csM'); if(sel) sel.onchange = e => { S.m = e.target.value; if(!S.loaded[S.m]) load(S.m); draw(); };
     const x = document.getElementById('csX'); if(x) x.onclick = exportX;
     const im = document.getElementById('csImp'); if(im) im.onclick = importSeed;
-    main.querySelectorAll('[data-cs]').forEach(el => { el.oninput = () => onInput(el); el.onkeydown = e => {
+    main.querySelectorAll('[data-cs]').forEach(el => { el.oninput = () => onInput(el);
+      // 🧮 وانت واقف على الخانة بتشوف المعادلة وتعدّل فيها، ولما تخرج بيظهر الناتج
+      el.onfocus = () => { const f = fxOf(S.m, el.dataset.cs); if(f){ el.value = f; el.select && el.select(); } };
+      el.onblur = () => { const p = el.dataset.cs; if(p.indexOf('|note') >= 0) return; const f = fxOf(S.m, p), raw = getRaw(S.m, p);
+        if(el.classList.contains('cs-bad')) return;
+        el.value = raw ?? ''; el.classList.toggle('cs-fx', !!f); el.title = f ? '🧮 ' + f : ''; };
+      el.onkeydown = e => {
       if(e.key !== 'Enter' && e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
       const all = [...main.querySelectorAll('[data-cs]')], [d, k] = (el.dataset.cs + '|').split('|');
       const col = all.filter(z => z.dataset.cs.split('|')[1] === k || (k === '' && z.dataset.cs === 'open'));
