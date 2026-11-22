@@ -18565,6 +18565,11 @@ table.cs tr.cs-open td{background:#fff7dd}
       try{ prRecalc(); }catch(e){}
       const tx = id => ((host.querySelector('#' + id) || {}).textContent || '').trim();
       W.pr = { from, to, act:tx('prTotalProfit'), exp:tx('prTotalExpected'), brands:tx('prBrandsProfit'), branch:tx('prBranchProfit') };
+      // 🧾 تفصيلة الربح: كل بنود جدول الأرباح (بعد التوقع F · الفعلي A) — { البند: الإجمالي }
+      const arN0 = t => num(String(t || '').replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/٫/g, '.').replace(/[٬,]/g, ''));
+      const grab = id => { const o = {}; host.querySelectorAll('#' + id + ' tr').forEach(tr => { const l = tr.querySelector('td.lbl'), t = tr.querySelector('td.tot'); if(!l || !t) return;
+        o[l.textContent.replace(/\s*\((فعلي \+ متوقع|عدّل يدوي)\)\s*/g, '').replace(/⏳/g, '').trim()] = arN0(t.textContent); }); return o; };
+      W.pr.F = grab('prFullTable'); W.pr.A = grab('prActTable'); W.pr.branchN = arN0(tx('prBranchProfit'));
     }catch(e){ W.pr = { err:e.message }; }
     host.remove(); draw();
   }
@@ -18643,25 +18648,44 @@ table.cs tr.cs-open td{background:#fff7dd}
       const cashLeft = cash + (wallet || 0) + expD - debts, goodsLeft = stock0 + retG, all = cashLeft + goodsLeft;
       const arN = t => num(String(t || '').replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/٫/g, '.').replace(/[٬,]/g, ''));
       const pAct = arN(W.pr.act), pExp = arN(W.pr.exp), pWay = pExp - pAct, okPr = !W.pr.err && W.pr.exp;
-      const st = W.snaps && W.snaps[prevMonth()] && W.snaps[prevMonth()].last;
-      h += `<div class="card" style="border:2px solid #1f3d36;text-align:center">
-        <div style="font-size:15px;font-weight:800;color:var(--muted)">📈 صافي ربح ${esc(monthTxt)}</div>
-        <div style="font-size:34px;font-weight:800;color:${pExp < 0 ? '#c0392b' : '#1f3d36'};font-variant-numeric:tabular-nums;margin:4px 0 6px">${okPr ? esc(W.pr.exp) + ' ج' : '—'}</div>
-        ${okPr ? `<div style="font-size:13px;color:var(--muted)">الربح لحد دلوقتي <b>${esc(W.pr.act)}</b> + ربح توقع التسليمات <b>${fmt(pWay)}</b> — نفس رقم "إجمالي الأرباح بعد التوقع" في <a href="#/profits">💰 الأرباح</a> (بعد الإعلانات والشحن وتكلفة البضاعة والمصاريف الثابتة)</div>`
-          : `<div style="font-size:13px;color:#c0392b">⚠️ ${esc(W.pr.err || 'الربح ماتحسبش')}</div>`}
-        ${st ? (() => { const dc = cashLeft - st.cash, dg = goodsLeft - st.goods;
-          return `<div style="margin-top:10px;font-size:13.5px">💡 من أول الشهر: الكاش ${dc >= 0 ? 'زاد' : 'قل'} <b style="color:${dc >= 0 ? '#2f7d55' : '#c0392b'}">${fmt(Math.abs(dc))}</b> ج · البضاعة ${dg >= 0 ? 'زادت' : 'قلت'} <b style="color:${dg >= 0 ? '#2f7d55' : '#c0392b'}">${fmt(Math.abs(dg))}</b> ج
-            <div style="font-size:12px;color:var(--muted)">مقارنة باللي كنا نملكه آخر الشهر اللي فات (${esc(new Date(st.at).toLocaleDateString('ar-EG', { day:'numeric', month:'short' }))}) — السحب من الشركا بيقلل الكاش.</div></div>`; })()
-          : `<div style="margin-top:10px;font-size:12px;color:var(--muted)">💡 الربح راح كاش ولا بضاعة؟ هيظهر من الشهر الجاي — السيستم بيحفظ "اللي نملكه" كل شهر عشان يقارن.</div>`}
-      </div>
-      <div class="card" style="border:2px solid #6b4f2a;text-align:center">
-        <div style="font-size:15px;font-weight:800;color:var(--muted)">🏦 اللي نملكه دلوقتي</div>
-        <div style="font-size:30px;font-weight:800;color:${all < 0 ? '#c0392b' : '#6b4f2a'};font-variant-numeric:tabular-nums;margin:4px 0 12px">${fmt(all)} ج</div>
-        <div class="wf-k" style="grid-template-columns:repeat(2,1fr);margin:0;text-align:right">
-          ${card('#2f7d55', fmt(cashLeft) + ' ج', `💵 كاش${all ? ' — ' + fmt(cashLeft / all * 100) + '%' : ''}`, `الخزنة ${fmt(cash)} + عند QP ${fmt(wallet || 0)} + توقع التسليمات ${fmt(expD)} − الديون ${fmt(debts)}`)}
-          ${card('#6b4f2a', fmt(goodsLeft) + ' ج', `📦 بضاعة في المخازن (برا وجوا)${all ? ' — ' + fmt(goodsLeft / all * 100) + '%' : ''}`, `المخزن الحالي ${fmt(stock0)} + المرتجع ${fmt(retG)}`)}
-        </div>
-        <div style="font-size:12px;color:var(--muted);margin-top:8px">اللي نملكه = الكاش + البضاعة — ده مش ربح، ده فلوسنا فين دلوقتي.</div></div>`;
+      // 🧾 تفصيلة صافي الربح (من جدول الأرباح نفسه)
+      const F = W.pr.F || {}, Ac = W.pr.A || {};
+      const pick = (o, re) => Object.entries(o).filter(([l]) => re.test(l)).reduce((a, [, v]) => a + v, 0);
+      const part = o => ({ rev:pick(o, /^📥 مبيعات/), ship:pick(o, /شحن/), cogs:pick(o, /^📦 تكلفة البضاعة/), ads:pick(o, /^📢 إعلانات/), waste:pick(o, /هوالك/),
+        fixed:pick(o, /الرواتب|عمولة البنات|برامج|نثريات|إيجار|كهربا/), other:0 });
+      const pf = part(F), pa = part(Ac);
+      // أي بند تاني (زي "أخرى" اليدوي) بيتحسب في "مصاريف تانية"
+      const known = /^📥 مبيعات|شحن|تكلفة البضاعة|هوالك|الرواتب|عمولة البنات|برامج|نثريات|إيجار|كهربا|نسبة|إجمالي التكاليف|صافي الربح|أوردرات|منها مبيعات|^📢 إعلانات/;
+      pf.other = Object.entries(F).filter(([l]) => !known.test(l)).reduce((a, [, v]) => a + v, 0);
+      const expRev = pf.rev - pa.rev, expCogs = pf.cogs - pa.cogs, expShip = pf.ship - pa.ship, expWaste = pf.waste - pa.waste;
+      const hasBk = pf.rev > 0;
+      const bl = (l, v, sign, col, sub) => `<div style="display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px dashed var(--line)"><span>${l}${sub ? `<div style="font-size:11.5px;color:var(--muted)">${sub}</div>` : ''}</span><b style="white-space:nowrap;color:${col}">${sign}${fmt(Math.abs(v))} ج</b></div>`;
+      const G2 = '#2f7d55', R2 = '#c0392b';
+      const goodsAll = stock0 + retG, cfC = (W.cfg || {}).cash, csN = cfC != null && cfC !== '' ? num(cfC) : (cash || 0);   // الخزنة المكتوبة بالإيد لو موجودة، وإلا رصيد الشيت
+      const T0 = W.cash || {}, bk0 = T0.back || { peter:0, fady:0 }, dP0 = num(T0.peter) - num(bk0.peter), dF0 = num(T0.fady) - num(bk0.fady), drawn0 = dP0 + dF0;
+      const big = (k, n, l, sub) => `<div style="background:var(--panel);border:2px solid ${k};border-radius:14px;padding:14px;text-align:center"><div style="font-size:14px;font-weight:800;color:var(--muted)">${l}</div>
+        <div style="font-size:30px;font-weight:800;color:${k};font-variant-numeric:tabular-nums;margin:4px 0">${n}</div><div style="font-size:12px;color:var(--muted)">${sub}</div></div>`;
+      h += `<div class="card" style="border:2px solid #1f3d36"><h3 style="margin:0 0 12px">🧭 الأرقام المهمة — ${esc(monthTxt)}</h3>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px">
+          ${big(pExp < 0 ? R2 : '#1f3d36', okPr ? esc(W.pr.exp) + ' ج' : '—', '📈 صافي ربح الشهر كامل', 'الربح لحد دلوقتي + ربح اللي لسه هيتسلم — التفصيلة تحت')}
+          ${big('#6b4f2a', fmt(goodsAll) + ' ج', '📦 بضاعتنا', `المخزن ${fmt(stock0)} + برا ولسه هترجع ${fmt(retG)}`)}
+          ${big(R2, fmt(debts) + ' ج', '🧾 ديوننا', `${(W.debts || []).length} بند — مكتوبين تحت`)}
+          ${big('#2b6cb0', fmt(csN + drawn0) + ' ج', '🏦 الخزنة لو ماسحبناش', `الخزنة ${fmt(csN)} + بيتر سحب ${fmt(dP0)} + فادي سحب ${fmt(dF0)}`)}
+        </div></div>`;
+      h += `<div class="card" style="border:2px solid #1f3d36"><h3 style="margin:0 0 8px">📈 تفصيلة صافي ربح ${esc(monthTxt)} — ${okPr ? esc(W.pr.exp) + ' ج' : '—'}</h3>
+        ${!okPr ? `<div style="font-size:13px;color:#c0392b">⚠️ ${esc(W.pr.err || 'الربح ماتحسبش')}</div>` : !hasBk ? `<p style="font-size:13px;color:var(--muted)">الربح لحد دلوقتي <b>${esc(W.pr.act)}</b> + ربح توقع التسليمات <b>${fmt(pWay)}</b> (دوس 🔄 حدّث عشان تظهر التفصيلة).</p>` : `<div style="font-size:14px;max-width:620px">
+          ${bl('📥 المبيعات (اللي اتسلم + المتوقع يتسلم)', pf.rev, '', G2, `اتسلم ${fmt(pa.rev)} + متوقع ${fmt(expRev)}`)}
+          ${bl('📦 تكلفة البضاعة', pf.cogs, '− ', R2, `اتسلم ${fmt(pa.cogs)} + متوقع ${fmt(expCogs)}`)}
+          ${bl('🚚 الشحن (التسليمات + البايظ + المرتجع)', pf.ship, '− ', R2, `فعلي ${fmt(pa.ship)} + متوقع ${fmt(expShip)}`)}
+          ${bl('📣 الإعلانات', pf.ads, '− ', R2, 'كلها في الفعلي — مش بتزيد مع التوقع')}
+          ${bl('🏢 مرتبات وعمولات وإيجار وبرامج ومكتب', pf.fixed, '− ', R2, 'كلها في الفعلي — مش بتزيد مع التوقع')}
+          ${pf.other ? bl('➖ مصاريف تانية (يدوي)', pf.other, '− ', R2) : ''}
+          ${bl('💔 هوالك', pf.waste, '− ', R2)}
+          ${W.pr.branchN ? bl('🏬 ربح الفرع', W.pr.branchN, '+ ', G2) : ''}
+          <div style="display:flex;justify-content:space-between;gap:10px;padding:10px 0 2px;font-size:16px"><b>✅ صافي الربح</b><b style="font-size:20px;color:${pExp < 0 ? R2 : '#1f3d36'}">${esc(W.pr.exp)} ج</b></div>
+          <div style="font-size:12.5px;color:var(--muted);margin-top:6px;line-height:1.8">= الربح لحد دلوقتي <b>${esc(W.pr.act)}</b> ج + ربح اللي لسه هيتسلم <b>${fmt(pWay)}</b> ج<br>
+            ربح اللي هيتسلم = مبيعات متوقعة ${fmt(expRev)} − بضاعتها ${fmt(expCogs)} − شحنها ${fmt(expShip)} − هوالك ${fmt(expWaste)} (الإعلانات والمصاريف اتخصمت خلاص في الفعلي)</div></div>`}
+        <div style="font-size:12px;color:var(--muted);margin-top:6px">نفس أرقام <a href="#/profits">💰 الأرباح</a> من ${esc(W.pr.from || '')} لـ ${esc(W.pr.to || '')}.</div></div>`;
     } else h += `<div class="card" style="border:2px dashed var(--line);text-align:center"><div style="font-size:15px;font-weight:800;color:var(--muted)">📈 صافي ربح الشهر · 🏦 اللي نملكه</div>
       <p class="none" style="margin:6px 0 0">⏳ بيستنى كل الأرقام تخلص (الربح · أوردرات QP · الخزنة · الديون) — وبعدين يحسب.</p></div>`;
     if(C){
