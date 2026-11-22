@@ -1531,6 +1531,7 @@ function prPiecesModal(b, onlyBad){
       <div class="gpm-f"><span style="font-size:12.5px;color:var(--muted)">الأوردرات:</span>${[['del','✅ اتسلم'],['not','⏳ ماتسلمش'],['all','الكل']].map(([k,l])=>`<button class="${F.st===k?'on':''}" data-st="${k}">${l}</button>`).join('')}
         <span style="font-size:12.5px;color:var(--muted);margin-inline-start:10px">عدد القطع:</span><button class="${!F.n?'on':''}" data-f="">الكل</button>${Object.keys(dist).sort((a,b)=>a-b).map(n=>`<button class="${F.n===n?'on':''}" data-f="${n}">${n} (${dist[n]})</button>`).join('')}
         <button class="${F.n==='bad'?'on':''}" data-f="bad" style="color:#b3261e">⚠️ مش مفهوم</button>
+        <button data-copyunk style="background:#2b6cb0;border-color:#2b6cb0;color:#fff">📋 انسخ المش مفهوم لـ Claude</button><span data-copymsg style="font-size:12px;color:#2f7d55"></span>
         ${F.size||F.color?`<button data-clear style="color:#2b6cb0">✕ امسح فلتر ${esc2([F.size,F.color].filter(Boolean).join(' + '))}</button>`:''}</div>
       ${SZ.length||CL.length?`<div class="gpm-sums">${sumT(SZ,'📏 المقاس','size')}${sumT(CL,'🎨 الشكل / اللون','color')}</div><p class="gpm-n" style="padding-top:0">دوس على أي مقاس أو شكل عشان تفلتر بيه.</p>`:''}
       <div class="gpm-t"><table class="pr"><tr><th>#</th><th>الحالة</th><th>السعر</th><th>المحتوى (زي ما هو في الشيت)</th><th>اتعدّ</th><th>إزاي</th></tr>
@@ -1542,6 +1543,15 @@ function prPiecesModal(b, onlyBad){
     wrap.querySelectorAll('[data-st]').forEach(x=>x.onclick=()=>{F.st=x.dataset.st;draw();});
     wrap.querySelectorAll('[data-pick]').forEach(x=>x.onclick=()=>{const k=x.dataset.pick; F[k]=F[k]===x.dataset.v?'':x.dataset.v; draw();});
     const cl=wrap.querySelector('[data-clear]'); if(cl) cl.onclick=()=>{F.size='';F.color='';draw();};
+    // 📋 كل الأجزاء المش مفهومة (من كل الأوردرات) متجمعة: الجزء · اتكرر كام · مثال أوردر كامل بسعره
+    const cu=wrap.querySelector('[data-copyunk]'); if(cu) cu.onclick=async()=>{
+      const G={}; L.forEach(o=>o.x.unknown.forEach(u=>{ const k=String(u).replace(/\s+/g,' ').trim(); const g=G[k]=G[k]||{n:0,ex:null,pr:0,cnt:0}; g.n++; if(!g.ex){ g.ex=String(o.r[PR_contentsCol-1]||'').replace(/\s+/g,' ').trim(); g.pr=prNum(o.r[PR_priceCol-1]); g.cnt=o.x.n; } }));
+      const E=Object.entries(G).sort((a,b)=>b[1].n-a[1].n);
+      const txt=`مش مفهوم في ${b.toUpperCase()} — ${E.length} جزء مختلف (في ${L.filter(o=>o.x.unknown.length).length} أوردر):\n`+E.map(([k,g],i)=>`${i+1}) "${k}" — اتكرر ${g.n}\n    مثال: ${g.ex} — السعر ${Math.round(g.pr)} — اتعدّ ${g.cnt}`).join('\n');
+      let ok=false; try{ await navigator.clipboard.writeText(txt); ok=true; }catch(e){}
+      if(!ok){ const ta=document.createElement('textarea'); ta.value=txt; document.body.appendChild(ta); ta.select(); try{ ok=document.execCommand('copy'); }catch(e){} ta.remove(); }
+      const m=wrap.querySelector('[data-copymsg]'); if(m) m.textContent=ok?` ✅ اتنسخ ${E.length} — الزقهم في الشات`:' ⚠️ مقدرتش أنسخ';
+    };
   };
   wrap.onclick=e=>{ if(e.target===wrap) wrap.remove(); };
   draw();
@@ -9230,7 +9240,8 @@ table.pr tr.bd-cat td{background:var(--slate-l);font-weight:700}
         ${window.XLSX ? '<div class="bd-bar"><button class="bd-btn" data-act="bxlsx">⬇️ Excel</button></div>' : ''}</div>`;
       h += ordersCard(A);
       if(uN) h += `<div class="card" id="bdUnk"><h3 style="color:#b3423a">⚠️ مش مفهوم — ${fmt(A.unk)} سطر (${fmt(uN)} شكل مختلف)</h3>
-        <p class="none" style="margin-bottom:8px">مش داخلين في العدّ. دوس "➕ قاعدة" جنب أي سطر وقولّي ده إيه وكام قطعة — والسيستم هيلتزم بيها في كل مرة.</p>
+        <p class="none" style="margin-bottom:8px">كل سطر منهم بيتحسب قطعة (تخمين). دوس "➕ قاعدة" جنب أي سطر وقولّي ده إيه وكام قطعة — والسيستم هيلتزم بيها في كل مرة. أو انسخهم كلهم وابعتهم لـ Claude يقسّمهم ويسألك.</p>
+        <div class="bd-bar" style="margin-bottom:8px"><button class="bd-btn" data-act="bdcopyunk" style="background:#2b6cb0;border-color:#2b6cb0;color:#fff">📋 انسخ كل المش مفهوم (عشان تبعته لـ Claude)</button> <span id="bdCopyMsg" style="font-size:12.5px;color:#2f7d55"></span></div>
         <div class="tablewrap" style="max-height:420px;overflow-y:auto"><table class="pr"><tr><th>السطر</th><th>سعر الأوردر</th><th>اتكرر</th><th></th></tr>
         ${Object.entries(A.unknown).sort((a, b) => b[1] - a[1]).map(([l, n], i) => `<tr><td class="lbl" style="font-weight:400;white-space:normal">${esc(l)}</td><td>${esc(unkPrice(l))}</td><td>${fmt(n)}</td><td><button class="bd-btn" data-bdnew="${i}">➕ قاعدة</button></td></tr>`).join('')}
         </table></div></div>`;
@@ -9419,6 +9430,16 @@ table.pr tr.bd-cat td{background:var(--slate-l);font-weight:700}
       if(!r.name || (!r.any.length && !r.all.length && !r.price)){ alert('اكتب اسم المنتج، وكلمة واحدة على الأقل أو سعر.'); return; }
       B.custom = B.custom || []; if(B.editing.idx >= 0) B.custom[B.editing.idx] = r; else B.custom.push(r);
       B.editing = null; await saveRules(); computeB(); B.msg = '✅ القاعدة اتحفظت واتطبقت.'; B.msgErr = false; draw();
+    };
+    // 📋 نسخ كل السطور المش مفهومة (بالسعر وعدد المرات والأوردر كامل) — نص جاهز يتلزق في الشات
+    const bcu = root.querySelector('[data-act=bdcopyunk]'); if(bcu) bcu.onclick = async () => {
+      const A = B.res && B.res.an; if(!A) return;
+      const L = Object.entries(A.unknown).sort((a, b) => b[1] - a[1]);
+      const full = l => { const r = A.rows.find(x => x.unknown.includes(l)); return r ? String(r.o.shipment_contents || '').replace(/\s+/g, ' ').trim() : ''; };
+      const txt = `مش مفهوم في ${B.brand} — ${L.length} سطر مختلف (${A.unk} مرة):\n` + L.map(([l, n], i) => `${i + 1}) "${l}" — اتكرر ${n} · سعر الأوردر ${unkPrice(l)}` + (full(l) && full(l) !== l ? `\n    الأوردر كامل: ${full(l)}` : '')).join('\n');
+      let ok = false; try{ await navigator.clipboard.writeText(txt); ok = true; }catch(e){}
+      if(!ok){ const ta = document.createElement('textarea'); ta.value = txt; document.body.appendChild(ta); ta.select(); try{ ok = document.execCommand('copy'); }catch(e){} ta.remove(); }
+      const m = root.querySelector('#bdCopyMsg'); if(m) m.textContent = ok ? `✅ اتنسخ ${L.length} سطر — الزقهم في الشات` : '⚠️ مقدرتش أنسخ — نزّل الـ Excel وابعته';
     };
     const bx = root.querySelector('[data-act=bxlsx]'); if(bx) bx.onclick = () => {
       const A = B.res.an, wb = XLSX.utils.book_new();
