@@ -18302,14 +18302,14 @@ table.cs tr.cs-open td{background:#fff7dd}
     if(C && cash != null){
       const cashLeft = cash + (wallet || 0) + expD - debts, goodsLeft = stock0 + retG, all = cashLeft + goodsLeft;
       h += `<div class="card" style="border:2px solid #1f3d36;text-align:center">
-        <div style="font-size:14px;font-weight:700;color:var(--muted)">💰 الإجمالي من كل اللي فوق</div>
+        <div style="font-size:15px;font-weight:800;color:var(--muted)">💰 صافي الأرباح</div>
         <div style="font-size:34px;font-weight:800;color:${all < 0 ? '#c0392b' : '#1f3d36'};font-variant-numeric:tabular-nums;margin:4px 0 12px">${fmt(all)} ج</div>
         <div class="wf-k" style="grid-template-columns:repeat(2,1fr);margin:0;text-align:right">
-          ${card('#2f7d55', fmt(cashLeft) + ' ج', '💵 هيتبقى كاش', `الخزنة ${fmt(cash)} + عند QP ${fmt(wallet || 0)} + توقع التسليمات ${fmt(expD)} − الديون ${fmt(debts)}`)}
-          ${card('#6b4f2a', fmt(goodsLeft) + ' ج', '📦 هيتبقى بضاعة في المخازن', `المخزن الحالي ${fmt(stock0)} + المرتجع ${fmt(retG)}`)}
+          ${card('#2f7d55', fmt(cashLeft) + ' ج', `💵 كاش${all ? ' — ' + fmt(cashLeft / all * 100) + '%' : ''}`, `الخزنة ${fmt(cash)} + عند QP ${fmt(wallet || 0)} + توقع التسليمات ${fmt(expD)} − الديون ${fmt(debts)}`)}
+          ${card('#6b4f2a', fmt(goodsLeft) + ' ج', `📦 بضاعة في المخازن (برا وجوا)${all ? ' — ' + fmt(goodsLeft / all * 100) + '%' : ''}`, `المخزن الحالي ${fmt(stock0)} + المرتجع ${fmt(retG)}`)}
         </div>
-        <div style="font-size:12px;color:var(--muted);margin-top:8px">مصاريف التشغيل مش داخلة هنا لسه.</div></div>`;
-    } else h += `<div class="card"><p class="none" style="margin:0">⏳ الإجمالي هيظهر لما أرقام QP والخزنة يتحمّلوا.</p></div>`;
+        <div style="font-size:12px;color:var(--muted);margin-top:8px">صافي الأرباح = الكاش ${fmt(cashLeft)} + البضاعة ${fmt(goodsLeft)} · مصاريف التشغيل مش داخلة هنا لسه.</div></div>`;
+    } else h += `<div class="card"><p class="none" style="margin:0">⏳ صافي الأرباح هيظهر لما أرقام QP والخزنة يتحمّلوا.</p></div>`;
     if(C){
       const pct = r => r == null ? '' : fmt(r * 100) + '%';
       const row = (l, x, extra, tot) => `<tr${tot ? ' class="total"' : ''}><td class="lbl">${l}</td><td>${fmt(x.n)}</td><td>${fmt(x.p)}</td><td>${fmt(x.v)} ج</td><td>${fmt(x.cost)} ج</td>
