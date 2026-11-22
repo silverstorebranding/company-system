@@ -6253,7 +6253,7 @@ async function exportToSheet(btn) {
     if(me.is_admin) return true;
     // 💵 الرواتب: للأدمن، أو اللي فاتحله صلاحية "الرواتب" (بيشوف الكشف ويطلب خصم/مكافأة بالسبب — القيمة الأدمن بيحددها)
     if(r === 'inbox' || r === 'urgent' || r === 'team' || r === 'my-salary' || r === 'order-issues' || r === 'order-edit' || r === 'delivery-rates') return true; // 📨 الرسايل والمهام و 🚨 الأوردرات العاجلة مفتوحين لكل الناس
-    if(r === 'admin') return false;
+    if(r === 'admin' || r === 'payroll') return false; // 💵 كشف الرواتب كله للأدمن بس — الموظف: 💵 راتبي، المدير: 👥 فريقي ورواتبهم
     const al = allowedSet();
     if(r === 'dept') return al.has('dept:' + p);
     const secs = allSections().filter(s => (s.routes || []).includes(r));
@@ -6263,8 +6263,8 @@ async function exportToSheet(btn) {
   function firstAllowed(){
     if(me.is_admin) return '#/home';
     const al = allowedSet();
-    const s = allSections().find(x => al.has(x.key));
-    if(!s) return null;
+    const s = allSections().find(x => al.has(x.key) && x.key !== 'payroll');
+    if(!s) return al.has('payroll') ? '#/my-salary' : null;
     return s.key.startsWith('dept:') ? '#/dept/' + s.key.slice(5) : '#/' + s.routes[0];
   }
 
@@ -14640,7 +14640,7 @@ a.hm-kpi:hover{box-shadow:0 6px 16px rgba(0,0,0,.07)}
   const isPR = () => (location.hash.replace('#/', '') || 'home').split('/')[0] === 'payroll';
   const by = () => me().full_name || me().username || '';
   const isAdm = () => !!me().is_admin;
-  const canPR = () => isAdm() || (Array.isArray(me().allowed_sections) && me().allowed_sections.includes('payroll'));
+  const canPR = () => isAdm(); // 🔐 كل موظف يشوف راتبه بس (💵 راتبي)، والمدير يشوف فريقه (👥 فريقي) — الكشف كله للأدمن
   const KINDS = {
     deduction:{ l:'خصم', sign:-1, reasons:['تأخير', 'غياب', 'جزاء', 'إذن', 'تلف / عجز', 'أخرى'] },
     advance:{ l:'سلفة', sign:-1, reasons:['سلفة'] },
@@ -15090,14 +15090,10 @@ create policy "payroll emp: mgr read" on public.payroll_employees for select to 
 create policy "payroll ent: mgr read" on public.payroll_entries for select to authenticated using (public.payroll_is_my_team(employee_id));
 create policy "payroll ent: mgr request" on public.payroll_entries for insert to authenticated
   with check (public.payroll_is_my_team(employee_id) and status = 'requested' and amount is null and kind in ('deduction','bonus') and requested_by = auth.uid());
--- 🔑 اللي فاتحله صلاحية "💵 الرواتب" (مش أدمن): يشوف الكشف كله، ويطلب خصم/مكافأة بالسبب من غير قيمة
+-- 🔐 صلاحية "💵 الرواتب" مابقتش بتفتح الكشف كله: كل موظف يشوف نفسه بس، والمدير فريقه بس
 drop policy if exists "payroll emp: perm read" on public.payroll_employees;
 drop policy if exists "payroll ent: perm read" on public.payroll_entries;
 drop policy if exists "payroll ent: perm request" on public.payroll_entries;
-create policy "payroll emp: perm read" on public.payroll_employees for select to authenticated using (public.app_has_section('payroll'));
-create policy "payroll ent: perm read" on public.payroll_entries for select to authenticated using (public.app_has_section('payroll'));
-create policy "payroll ent: perm request" on public.payroll_entries for insert to authenticated
-  with check (public.app_has_section('payroll') and status = 'requested' and amount is null and kind in ('deduction','bonus') and requested_by = auth.uid());
 grant select, insert, update, delete on public.payroll_employees, public.payroll_entries to authenticated;`;
   window.Payroll = { sql: PAYROLL_SQL };
 })();
