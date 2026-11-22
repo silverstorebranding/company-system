@@ -472,7 +472,7 @@ html:not(.auth-ok) #app{display:none}
 #myMenuBtn:hover{background:var(--brass)}
 #myMenuBtn:focus-visible,.mm-side:focus-visible,.mm-item:focus-visible{outline:3px solid var(--brass);outline-offset:2px}
 .mm-side{display:block;width:100%;margin-top:8px;background:#f3ede0;color:var(--brass-d);border:none;border-radius:7px;padding:8px;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer}
-#vaBanner{position:fixed;top:0;left:0;right:0;z-index:200;background:#6b46c1;color:#fff;padding:8px 14px;font-size:14px;text-align:center;box-shadow:0 4px 12px rgba(0,0,0,.2)}
+#vaBanner{position:fixed;top:0;left:0;right:0;z-index:10000;background:#6b46c1;color:#fff;padding:8px 14px;font-size:14px;text-align:center;box-shadow:0 4px 12px rgba(0,0,0,.2)}
 #vaBanner button{margin-inline-start:10px;padding:4px 12px;border:none;border-radius:8px;background:#fff;color:#6b46c1;font-family:inherit;font-weight:700;cursor:pointer}
 body:has(#vaBanner){padding-top:38px}
 .mm-va{display:block;width:100%;margin:8px 0 4px;padding:10px;border:2px dashed #6b46c1;border-radius:10px;background:#f4effc;color:#6b46c1;font-family:inherit;font-size:14.5px;font-weight:700;cursor:pointer}
@@ -6327,7 +6327,7 @@ async function exportToSheet(btn) {
     else showLogin('login', 'اتعمل الحساب ✅ سجّل دخول دلوقتي.', true);
   }
 
-  async function logout(){ await sb.auth.signOut(); location.reload(); }
+  async function logout(){ try{ sessionStorage.removeItem('viewAs'); }catch(e){} await sb.auth.signOut(); location.reload(); }
 
   // لو التوكن خلص ومينفعش يتجدد (مثلاً الحساب اتعمله خروج من جهاز تاني) → اطلب دخول تاني بدل رسالة "JWT expired"
   let deadShown = false;
@@ -6346,8 +6346,10 @@ async function exportToSheet(btn) {
       <div class="ag-sub">أهلاً ${esc(me.full_name || me.username)} 👋</div>
       <div class="ag-msg ok">حسابك اتعمل، ومستني الأدمن يفتحلك الأقسام اللي هتشتغل عليها. لما يوافق دوس "تحديث".</div>
       <button class="ag-btn" type="button" id="agReload">🔄 تحديث</button>
+      ${window.__viewAs ? '<button class="ag-btn" type="button" id="agBack" style="margin-top:8px;background:#6b46c1">✕ ارجع لحسابي (الأدمن)</button>' : ''}
       <button class="ag-btn ghost" type="button" id="agOut" style="margin-top:8px">خروج</button>`);
     g.querySelector('#agReload').onclick = () => location.reload();
+    const bk = g.querySelector('#agBack'); if(bk) bk.onclick = () => viewAs(null);
     g.querySelector('#agOut').onclick = logout;
   }
 
