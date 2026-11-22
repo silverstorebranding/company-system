@@ -18299,7 +18299,8 @@ table.cs tr.cs-open td{background:#fff7dd}
       ${card('#1d4f91', expD == null ? wait : fmt(expD) + ' ج', '🚚 توقع التسليمات', C ? `المتوقع يتسلم من ${fmt(C.wayV)} ج برا (Pending + مع المندوب 55% · هولد 20%)${wallet != null ? `<br>👛 + عند QP مجوش: <b>${fmt(wallet)}</b> ج` : ''}` : '')}
       ${card('#c0392b', fmt(debts) + ' ج', '🧾 ديون', `${(W.debts || []).length} بند — بتتكتب تحت`)}
     </div>`;
-    if(C && cash != null){
+    const allReady = C && cash != null && !W.busy && W.pr && !W.pr.busy && W.debts && W.cfg;
+    if(allReady){
       const cashLeft = cash + (wallet || 0) + expD - debts, goodsLeft = stock0 + retG, all = cashLeft + goodsLeft;
       h += `<div class="card" style="border:2px solid #1f3d36;text-align:center">
         <div style="font-size:15px;font-weight:800;color:var(--muted)">💰 صافي الأرباح</div>
@@ -18309,7 +18310,8 @@ table.cs tr.cs-open td{background:#fff7dd}
           ${card('#6b4f2a', fmt(goodsLeft) + ' ج', `📦 بضاعة في المخازن (برا وجوا)${all ? ' — ' + fmt(goodsLeft / all * 100) + '%' : ''}`, `المخزن الحالي ${fmt(stock0)} + المرتجع ${fmt(retG)}`)}
         </div>
         <div style="font-size:12px;color:var(--muted);margin-top:8px">صافي الأرباح = الكاش ${fmt(cashLeft)} + البضاعة ${fmt(goodsLeft)} · مصاريف التشغيل مش داخلة هنا لسه.</div></div>`;
-    } else h += `<div class="card"><p class="none" style="margin:0">⏳ صافي الأرباح هيظهر لما أرقام QP والخزنة يتحمّلوا.</p></div>`;
+    } else h += `<div class="card" style="border:2px dashed var(--line);text-align:center"><div style="font-size:15px;font-weight:800;color:var(--muted)">💰 صافي الأرباح</div>
+      <p class="none" style="margin:6px 0 0">⏳ بيستنى كل الأرقام تخلص (الربح · أوردرات QP · الخزنة · الديون) — وبعدين يحسب.</p></div>`;
     if(C){
       const pct = r => r == null ? '' : fmt(r * 100) + '%';
       const row = (l, x, extra, tot) => `<tr${tot ? ' class="total"' : ''}><td class="lbl">${l}</td><td>${fmt(x.n)}</td><td>${fmt(x.p)}</td><td>${fmt(x.v)} ج</td><td>${fmt(x.cost)} ج</td>
