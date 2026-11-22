@@ -5535,24 +5535,31 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
   /* 🏆 أوردرات Squad (notes = squad) فيها Dream و Kidzzly — بنقسمها حسب "المصدر" اللي اتكتب في Squad:
      واتساب/بيدج كيدزلي → Kidzzly · إرسال صفحة → براند لوحده · غير كده (دريم والمصادر القديمة) → Italy
      الربط برقم موبايل العميل في جدول orders (آخر 6 شهور) */
-  let sqPages = null, sqPagesAt = 0;
+  let sqPages = null, sqPagesAt = 0, sqTimes = {};   // sqTimes: موبايل العميل ← أوقات أوردرات Squad بتاعته
   const phKey = v => String(v || '').replace(/\D/g, '').slice(-10);
   async function loadSquadPages(){
     if(sqPages && Date.now() - sqPagesAt < 10 * 60 * 1000) return;
     // ⏳ نستنى الاتصال بقاعدة البيانات (على الموبايل بيتأخر) — من غيره أوردرات Squad كلها بتتحسب إيطالي والربح بيطلع مختلف
     let c = null; for(let i = 0; i < 40 && !(c = window.__sbClient || (window.AuthGate && window.AuthGate.sb)); i++) await new Promise(r => setTimeout(r, 250));
     if(!c) return;
-    try{ const since = new Date(Date.now() - 183 * 86400000).toISOString(), map = {}; let off = 0;
+    try{ const since = new Date(Date.now() - 183 * 86400000).toISOString(), map = {}, times = {}; let off = 0;
       for(;;){ const { data, error } = await c.from('orders').select('customer_phone, page_name, created_at').gte('created_at', since).order('created_at', { ascending:true }).range(off, off + 999);
-        if(error) throw error; (data || []).forEach(r => { const k = phKey(r.customer_phone); if(k) map[k] = r.page_name || ''; });
+        if(error) throw error; (data || []).forEach(r => { const k = phKey(r.customer_phone); if(k){ map[k] = r.page_name || ''; (times[k] = times[k] || []).push(+new Date(r.created_at)); } });
         if(!data || data.length < 1000) break; off += 1000; }
-      sqPages = map; sqPagesAt = Date.now(); }catch(e){ sqPages = sqPages || {}; }
+      sqPages = map; sqTimes = times; sqPagesAt = Date.now(); }catch(e){ sqPages = sqPages || {}; }
     try{ const { data } = await c.from('app_kv').select('value').eq('key', 'wallet_note_map').maybeSingle(); window.__noteMap = (data && data.value && data.value.map) || {}; }catch(e){}
   }
   // 📒 الـ notes اللي أوردر Squad يتحسب بيها في الأرباح وأيام التسليم حسب مصدره
   const pageNote = pg => { const p = String(pg || ''); if(/^إرسال صفحة - /.test(p)) return 'ersal'; if(/bunny|باني/i.test(p)) return 'bunny'; if(/كيدز|kid/i.test(p)) return 'kidzzly'; if(/إرسال|ارسال/.test(p)) return 'ersal'; if(/واتساب\s*دريم|dream\s*wa/i.test(p)) return 'dream wa'; if(/دريم|dream/i.test(p)) return 'dream'; return null; };
   const squadPageOf = o => o && sqPages ? [o.phone, o.phone2, o.customer_phone].map(phKey).map(k => k && sqPages[k]).find(x => x != null) : null;
   // للأرباح وأيام التسليم: لو notes = squad رجّع البراند الحقيقي من المصدر (أو null لو مش معروف)
+  // 🏆 أوردر QP ده جاي من Squad؟ = نفس موبايل العميل عليه أوردر في Squad اتسجل من 20 يوم قبل الرفع على QP لحد يوم بعده
+  //    (أغلب أوردرات Squad بتترفع بـ notes البراند — dream / kidzzly — مش "squad"، فبنعرفها من الموبايل)
+  function isSquadOrder(o){
+    if(!o || !sqTimes) return false;
+    const t = +new Date(o.order_date); if(!t) return false;
+    return [o.phone, o.phone2, o.customer_phone].map(phKey).some(k => k && (sqTimes[k] || []).some(x => x >= t - 20 * 86400000 && x <= t + 86400000));
+  }
   function squadBrandOf(o){ let b = null; try{ b = prGetBrand(o && o.notes); }catch(e){} if(b !== 'squad') return null; const pg = squadPageOf(o); return (pg == null ? null : pageNote(pg)) || 'dream'; }   // ملقيناش المصدر = دريم
   const pageGroup = pg => { const p = String(pg || ''); if(/^إرسال صفحة - /.test(p)) return 'ersal'; if(/bunny|باني/i.test(p)) return 'bunny'; if(/كيدز|kid/i.test(p)) return 'kidzzly'; if(/إرسال|ارسال/.test(p)) return 'ersal'; return 'italy'; };
   function walletGroup(note, o){
@@ -5964,7 +5971,7 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
       r[4]  = num(o.price);                 // E
       r[5]  = num(o.total_fees);            // F
       r[8]  = o.returned_Client_date || ''; // I
-      const sqb = squadBrandOf(o); if(sqb) r.squad = true;   // 🏆 جاي من Squad (عشان نعدّ كام أوردر Squad في كل براند)
+      const sqb = squadBrandOf(o); if(sqb || isSquadOrder(o)) r.squad = true;   // 🏆 جاي من Squad (عشان نعدّ كام أوردر Squad في كل براند)
       r[9]  = sqb || o.notes || '';   // J — أوردرات Squad بتتقسم حسب مصدرها (دريم / كيدزلي / إرسال)
       r[10] = new Date(o.order_date);       // K
       r[11] = o.shipment_contents || '';    // L
