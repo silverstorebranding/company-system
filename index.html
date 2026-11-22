@@ -798,25 +798,68 @@ const PR_COLS=[
 // 🏢 المصاريف الثابتة الشهرية — بتتوزع على الإيطالي و Kidzzly و RS حسب عدد الأوردرات (Bloom مالوش دعوة)
 //   الإيجار 5000 — المرتبات 4 × 8000 = 32000 — البرامج / النثريات وتشغيل المكتب (بتتكتب في صفحة الأرباح)
 const PR_FIXED_DEF={rent:15000,salaries:66000,software:1500,ops:15000,power:100,net:500,mobile:500};
-// 🔗 الإيجار والرواتب والتشغيل مشتركين مع 📍 احنا فين (app_kv where_cfg.fixed) — أي تعديل في حتة بيتطبق في التانية
-const PR_SHARED_FIXED=['rent','salaries','ops'];
 const PR_FIXED_LS='pr_fixed_costs';
-let PR_FIXED=(()=>{try{const o={...PR_FIXED_DEF,...JSON.parse(localStorage.getItem(PR_FIXED_LS)||'{}')}; ['rent','salaries','ops'].forEach(k=>o[k]=PR_FIXED_DEF[k]); return o;}catch(e){return {...PR_FIXED_DEF};}})();   // الإيجار والرواتب والتشغيل من المشترك (مش من الجهاز)
+let PR_FIXED=(()=>{try{return {...PR_FIXED_DEF,...JSON.parse(localStorage.getItem(PR_FIXED_LS)||'{}')};}catch(e){return {...PR_FIXED_DEF};}})();
 const PR_FIXED_EXCLUDE=['bloom'];
-// بنجيب الأرقام المشتركة أول ما الاتصال يجهز
-window.prFixedReady=new Promise(res=>{ let i=0; const t=setInterval(async()=>{
-  const c=window.__sbClient||(window.AuthGate&&window.AuthGate.sb); if(!c&&++i<120) return; clearInterval(t); if(!c) return res();
-  try{ const {data}=await c.from('app_kv').select('value').eq('key','where_cfg').maybeSingle(); const f=(data&&data.value&&data.value.fixed)||{};
-    PR_SHARED_FIXED.forEach(k=>{ PR_FIXED[k]=f[k]!=null&&f[k]!==''?(+f[k]||0):PR_FIXED_DEF[k]; }); }catch(e){}
-  res(); },500); });
-window.prApplySharedFixed=f=>{ PR_SHARED_FIXED.forEach(k=>{ if(f&&f[k]!=null&&f[k]!=='') PR_FIXED[k]=+f[k]||0; }); };
-async function prSaveSharedFixed(k,v){ try{ const c=window.__sbClient||(window.AuthGate&&window.AuthGate.sb); if(!c) return;
-  const {data}=await c.from('app_kv').select('value').eq('key','where_cfg').maybeSingle(); const cfg=(data&&data.value)||{}; (cfg.fixed=cfg.fixed||{})[k]=v;
-  const me=(window.AuthGate&&window.AuthGate.me&&window.AuthGate.me())||{};
-  await c.from('app_kv').upsert({key:'where_cfg',value:cfg,updated_at:new Date().toISOString(),updated_by_name:me.full_name||me.username||''}); }catch(e){} }
+/* 🧾 مراجعة المصاريف — المكان الواحد لكل بنود المصاريف (💰 الأرباح و 📍 احنا فين بيستخدموه هما الاتنين)
+   app_kv: expense_review = { items:{ <key>:{ v:<الرقم الصح أو null>, ok:true/false (متأكد), note, by, at } } }
+   - الرقم اللي بيتكتب هنا بيتطبق على طول في الحسبة (ومتقدّم على أي رقم متسجل على الجهاز)
+   - البنود اللي مالهاش رقم (زي الإعلانات والشحن الفعلي) بتتأكد أو بتتكتب عليها ملاحظة بس */
+const EXP_ITEMS=[
+  {k:'rent',     g:'fixed', l:'🏢 الإيجار',                          unit:'ج في الشهر'},
+  {k:'salaries', g:'fixed', l:'👥 الرواتب',                          unit:'ج في الشهر'},
+  {k:'ops',      g:'fixed', l:'⚙️ التشغيل (نثريات وتشغيل مكتب)',     unit:'ج في الشهر'},
+  {k:'software', g:'fixed', l:'💻 برامج',                            unit:'ج في الشهر'},
+  {k:'power',    g:'fixed', l:'💡 كهربا',                            unit:'ج في الشهر'},
+  {k:'net',      g:'fixed', l:'🌐 نت',                               unit:'ج في الشهر'},
+  {k:'mobile',   g:'fixed', l:'📱 باقات موبايل',                     unit:'ج في الشهر'},
+  {k:'ads',      g:'var',   l:'📢 الإعلانات',                        how:'من شيت الإعلانات، أو بتتكتب بالإيد في 💰 الأرباح'},
+  {k:'cogs_no',  g:'var',   l:'💍 بضاعة الإيطالي — أوردر من غير انسيال', unit:'ج للأوردر'},
+  {k:'cogs_yes', g:'var',   l:'💍 بضاعة الإيطالي — أوردر فيه انسيال',   unit:'ج للأوردر'},
+  {k:'piece_kidzzly', g:'var', l:'🧸 بضاعة Kidzzly — القطعة',        unit:'ج للقطعة'},
+  {k:'piece_bunny',   g:'var', l:'🐰 بضاعة Bunny — القطعة',          unit:'ج للقطعة'},
+  {k:'ship_del', g:'var',   l:'🚚 شحن التسليمات',                     how:'الفعلي من QP لكل أوردر'},
+  {k:'undel_ship', g:'var', l:'💔 شحن البايظ (Undelivered)',          unit:'ج للأوردر'},
+  {k:'ship_ret', g:'var',   l:'↩️ شحن المرتجعات',                     how:'الفعلي من QP'},
+  {k:'comm',     g:'var',   l:'🏆 عمولة البنات (Squad)',              how:'من Squad تلقائي'},
+  {k:'waste_pct',g:'var',   l:'💔 هوالك',                             unit:'% من المبيعات'},
+  {k:'branch_pct',g:'var',  l:'🏬 بضاعة الفرع (مبيعات المكتب)',       unit:'% من مبيعات الفرع'},
+  {k:'other',    g:'var',   l:'🧾 أخرى',                              how:'بتتكتب بالإيد في 💰 الأرباح'},
+];
+const EXP_FIXED_KEYS=EXP_ITEMS.filter(x=>x.g==='fixed').map(x=>x.k);
+function expCur(k){
+  if(EXP_FIXED_KEYS.includes(k)) return +PR_FIXED[k]||0;
+  switch(k){ case 'cogs_no': return PR_COGS_NO; case 'cogs_yes': return PR_COGS_YES; case 'piece_kidzzly': return +PR_PIECE_COST.kidzzly||0; case 'piece_bunny': return +PR_PIECE_COST.bunny||0;
+    case 'undel_ship': return PR_UNDEL_SHIP; case 'waste_pct': return Math.round(PR_WASTE_PCT*10000)/100; case 'branch_pct': return Math.round(PR_BRANCH_PCT*10000)/100; }
+  return null;
+}
+function expSetVal(k,v){
+  v=+v; if(!isFinite(v)) return;
+  if(EXP_FIXED_KEYS.includes(k)){ PR_FIXED[k]=v; return; }
+  switch(k){ case 'cogs_no': PR_COGS_NO=v; break; case 'cogs_yes': PR_COGS_YES=v; break; case 'piece_kidzzly': PR_PIECE_COST.kidzzly=v; break; case 'piece_bunny': PR_PIECE_COST.bunny=v; break;
+    case 'undel_ship': PR_UNDEL_SHIP=v; break; case 'waste_pct': PR_WASTE_PCT=v/100; break; case 'branch_pct': PR_BRANCH_PCT=v/100; break; }
+}
+window.EXP={ items:EXP_ITEMS, cur:expCur, review:{} };
+const expSb=()=>window.__sbClient||(window.AuthGate&&window.AuthGate.sb);
+function expApply(rv){ window.EXP.review=rv||{}; Object.entries(window.EXP.review).forEach(([k,x])=>{ if(x&&x.v!=null&&x.v!=='') expSetVal(k,x.v); }); }
+async function expLoad(){ const c=expSb(); if(!c) return;
+  const [{data:a},{data:w}]=await Promise.all([c.from('app_kv').select('value').eq('key','expense_review').maybeSingle(), c.from('app_kv').select('value').eq('key','where_cfg').maybeSingle()]);
+  const rv=(a&&a.value&&a.value.items)||{};
+  // الأرقام اللي اتكتبت قبل كده في احنا فين (الإيجار / الرواتب / التشغيل) لو لسه مااتراجعتش
+  const f=(w&&w.value&&w.value.fixed)||{}; ['rent','salaries','ops'].forEach(k=>{ if(!(rv[k]&&rv[k].v!=null&&rv[k].v!=='')&&f[k]!=null&&f[k]!=='') expSetVal(k,f[k]); });
+  expApply(rv); }
+window.EXP.load=expLoad;
+// 💾 حفظ بند: patch = { v?, ok?, note? } — بيتطبق على طول
+window.EXP.save=async(k,patch)=>{ const c=expSb(); if(!c) throw new Error('مفيش اتصال');
+  const {data}=await c.from('app_kv').select('value').eq('key','expense_review').maybeSingle(); const val=(data&&data.value)||{}; const items=val.items=val.items||{};
+  const me=(window.AuthGate&&window.AuthGate.me&&window.AuthGate.me())||{}, by=me.full_name||me.username||'';
+  items[k]={...(items[k]||{}),...patch,by,at:new Date().toISOString()};
+  const {error}=await c.from('app_kv').upsert({key:'expense_review',value:val,updated_at:new Date().toISOString(),updated_by_name:by}); if(error) throw error;
+  expApply(items); };
+window.prFixedReady=new Promise(res=>{ let i=0; const t=setInterval(async()=>{ if(!expSb()&&++i<120) return; clearInterval(t); try{ await expLoad(); }catch(e){} res(); },500); });
 let prFixT=null;
 function prSetFixed(k,v){PR_FIXED[k]=prNum(v);try{localStorage.setItem(PR_FIXED_LS,JSON.stringify(PR_FIXED));}catch(e){}
-  if(PR_SHARED_FIXED.includes(k)){ clearTimeout(prFixT); const val=PR_FIXED[k]; prFixT=setTimeout(()=>prSaveSharedFixed(k,val),800); }
+  if(EXP_FIXED_KEYS.includes(k)){ clearTimeout(prFixT); const val=PR_FIXED[k]; prFixT=setTimeout(()=>window.EXP.save(k,{v:val}).catch(()=>{}),800); }   // 🧾 بيتحفظ في مراجعة المصاريف
   const t=document.getElementById('prFixedTotal');if(t)t.textContent=prFmt(prFixedSum());
   // ✏️ أي تعديل في المصاريف الثابتة بيتطبق على طول على التقرير اللي تحت (سواء من QP أو من ملف)
   clearTimeout(window.__prFixT);
@@ -824,7 +867,7 @@ function prSetFixed(k,v){PR_FIXED[k]=prNum(v);try{localStorage.setItem(PR_FIXED_
     if(window.__prLastRows&&res&&res.style.display==='block')prProcess(window.__prLastRows);},350);}
 const prFixedSum=()=>['rent','salaries','software','ops','power','net','mobile'].reduce((s,k)=>s+(+PR_FIXED[k]||0),0);
 // 💔 الهوالك: 0.25% من المبيعات
-const PR_WASTE_PCT=0.0025;
+let PR_WASTE_PCT=0.0025;
 // 🏆 عمولة البنات (Squad) للفترة — بتتجاب من Squad وبتتوزع زي المرتبات
 let prCommTotal=null, prCommKey='', prCommBusy=false;
 // (قديم — لسه مستخدم في صفحة Brands للعرض بس)
@@ -833,9 +876,9 @@ const PR_A_SAL_D=PR_FIXED.salaries/30, PR_MSG_SAL_D=0, PR_SHR_SAL_D=0, PR_RENT_D
 //   الطقم: سلسلة 25 + حلق 4 + خاتم 10 + علبة الطقم 13.5 = 52.5
 //   باكدج الهدية: كيس جلد 4 + أكياس قطيفة 2 + شهادة ضمان 0.5 + كيس بلاستيك 0.25 + كارت هدايا 2 = 8.75
 //   من غير انسيال = 61.25 — بالانسيال: + انسيال 15 + علبة الانسيال 13.5 = 89.75
-const PR_COGS_NO=61.25, PR_COGS_YES=89.75, PR_BRANCH_PCT=0.145, PR_PEND_VAL=75;
+let PR_COGS_NO=61.25, PR_COGS_YES=89.75, PR_BRANCH_PCT=0.145; const PR_PEND_VAL=75;
 // 💔 الشحن البايظ: الشركة بتحسب شحن كامل، لكن في الحقيقة متوسطه 25 ج للأوردر
-const PR_UNDEL_SHIP=25;
+let PR_UNDEL_SHIP=25;
 // نسبة التوقع: ofd = للأوردرات "تحت التسليم" و "Pending" (نفس المعاملة)، hold = للـ Hold
 const PR_OFD_RATE=0.35, PR_HOLD_RATE=0.15;
 const PR_RATE_OVERRIDES={
@@ -861,7 +904,7 @@ const PR_PIECE_COST=(()=>{try{const sv=JSON.parse(localStorage.getItem('pr_piece
   if(+sv.kidzzly===100){delete sv.kidzzly;localStorage.setItem('pr_piece_cost',JSON.stringify(sv));} // 🧸 قطعة Kidzzly بقت 110 (زي احنا فين) — الـ 100 القديمة المتسجلة على الجهاز بتتشال
   return {...PR_PIECE_DEF,...sv};}catch(e){return {...PR_PIECE_DEF};}})();
 // Bloom: لو تكلفة القطعة 0 بيفضل 45% من المبيعات
-function prSetPiece(b,v){PR_PIECE_COST[b]=prNum(v);try{localStorage.setItem('pr_piece_cost',JSON.stringify(PR_PIECE_COST));}catch(e){}
+function prSetPiece(b,v){PR_PIECE_COST[b]=prNum(v); if(b==='kidzzly'||b==='bunny'){ clearTimeout(window.__prPcT); const val=PR_PIECE_COST[b]; window.__prPcT=setTimeout(()=>window.EXP.save('piece_'+b,{v:val}).catch(()=>{}),800); }try{localStorage.setItem('pr_piece_cost',JSON.stringify(PR_PIECE_COST));}catch(e){}
   if(window.__prLastRows&&document.getElementById('prResults')&&document.getElementById('prResults').style.display==='block')prProcess(window.__prLastRows);}
 const PR_BD_KEY={"kidzzly":"kidzzly","rs kids":"rs","bloom":"bloom","socky":"socky"};
 // عدد القطع: من تحليل المكونات لو متاح، وإلا الطريقة القديمة
@@ -18540,13 +18583,14 @@ table.cs tr.cs-open td{background:#fff7dd}
   const me = () => (window.AuthGate && window.AuthGate.me && window.AuthGate.me()) || {};
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const fmt = n => Math.round(Number(n || 0)).toLocaleString('ar-EG');
+  const fmt2 = n => Number(n || 0).toLocaleString('ar-EG', { maximumFractionDigits:2 });   // بالكسور (61.25 / 0.25%)
   const num = v => { const x = parseFloat(String(v ?? '').replace(/[^\d.-]/g, '')); return isNaN(x) ? 0 : x; };
   const ymd = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   const isWF = () => (location.hash.replace('#/', '') || 'home').split('?')[0].split('/')[0] === 'where';
   const GL = { italy:'💍 إيطالي', kidzzly:'🧸 كيدزلي', bunny:'🐰 Bunny', ersal:'📨 إرسال', socky:'🧦 سوكي', other:'❔ غيره' };
   const W = { busy:false, prog:'', err:'', at:null, sum:null, list:null, cash:null, debts:null, cfg:null, snaps:null };
   const A = () => window.QP && window.QP.api;
-  const WF_PIECE = 110;                       // تكلفة القطعة (بضاعة) بالجنيه
+  const wfPiece = () => (window.EXP && num(window.EXP.cur('piece_kidzzly'))) || 110;   // 🧸 تكلفة القطعة — من 🧾 مراجعة المصاريف
   const WF_RATE = { ofd:0.55, hold:0.20 };    // نسبة اللي بيتسلم: Pending + مع المندوب / هولد
   function brandOf(o){ let b = null; try{ b = prGetBrand(o.notes); }catch(e){} if(b === 'squad'){ const x = A() && A().squadBrandOf ? A().squadBrandOf(o) : null; b = x || 'dream'; }
     if(b && window.cbLike && window.cbLike(b)) b = window.cbLike(b); return b; }
@@ -18583,7 +18627,7 @@ table.cs tr.cs-open td{background:#fff7dd}
   /* 💰 الأرباح بنفس حسبة قسم الأرباح بالظبط: بنشغّل تقرير الأرباح نفسه (من أول الشهر لحد النهارده — زرار "حتى النهارده")
      في صفحة مخفية، ونقرا "إجمالي الأرباح (فعلي)" و"بعد التوقع" من نفس الخانات اللي بتظهر في قسم الأرباح */
   async function calcProfits(){
-    try{ if(window.prFixedReady) await window.prFixedReady; if(window.prApplySharedFixed && W.cfg) window.prApplySharedFixed(W.cfg.fixed); }catch(e){}
+    try{ if(window.prFixedReady) await window.prFixedReady; if(window.EXP && window.EXP.load) await window.EXP.load(); }catch(e){}
     if(typeof viewProfits !== 'function' || !window.QP || !window.QP.calcProfitsRange) return;
     W.pr = { busy:true }; draw();
     let host = document.getElementById('wfPrHost'); if(!host){ host = document.createElement('div'); host.id = 'wfPrHost'; host.style.display = 'none'; document.body.appendChild(host); }
@@ -18611,7 +18655,7 @@ table.cs tr.cs-open td{background:#fff7dd}
   // 🧸 Kidzzly: البضاعة = القطع × 110 · 💍 الإيطالي: الطقم = قطعة وتكلفته زي قسم الأرباح (من غير انسيال / بانسيال) · باقي البراندات مش داخلة
   const WF_G = [['kidzzly', '🧸 Kidzzly'], ['italy', '💍 الإيطالي']];
   function goodsCost(x){
-    if(x.g === 'kidzzly') return x.p * WF_PIECE;
+    if(x.g === 'kidzzly') return x.p * wfPiece();
     let ins = false; try{ ins = prHasInsial(x.o.shipment_contents || ''); }catch(e){}
     return ins ? (typeof PR_COGS_YES !== 'undefined' ? PR_COGS_YES : 89.75) : (typeof PR_COGS_NO !== 'undefined' ? PR_COGS_NO : 61.25);
   }
@@ -18729,7 +18773,7 @@ table.cs tr.cs-open td{background:#fff7dd}
         <td>${pct(x.r)}</td><td style="color:#2f7d55"><b>${fmt(x.dv)} ج</b><br><small>${fmt(x.dp)} قطعة</small></td>
         <td style="color:#c0392b"><b>${fmt(x.rp)} قطعة</b><br><small>${fmt(x.rc)} ج بضاعة</small></td><td style="font-size:12.5px;color:var(--muted)">${extra || ''}</td></tr>`;
       const O = C.out;
-      const costTxt = { kidzzly:`القطع × ${WF_PIECE} ج`, italy:'الطقم = قطعة · تكلفته زي قسم الأرباح (من غير انسيال / بانسيال)' };
+      const costTxt = { kidzzly:`القطع × ${wfPiece()} ج`, italy:'الطقم = قطعة · تكلفته زي قسم الأرباح (من غير انسيال / بانسيال)' };
       h += `<div class="card"><h3>📦 لينا كام برا (Kidzzly + الإيطالي) — ${fmt(O.n)} أوردر · ${fmt(O.p)} قطعة · ${fmt(O.v)} ج</h3>
         <div class="wf-k" style="grid-template-columns:repeat(3,1fr)">
           ${card('#6b4f2a', fmt(O.cost) + ' ج', '🏷️ البضاعة اللي برا بكام', WF_G.map(([g, l]) => `${l} ${fmt(C.G[g].tot.cost)}`).join(' · '))}
@@ -18745,19 +18789,33 @@ table.cs tr.cs-open td{background:#fff7dd}
     } else if(A() && A().hasCreds()) h += `<div class="card"><p class="none">⏳ بيجيب أوردرات QP...</p></div>`;
     // ⚙️ مصاريف التشغيل (بتتكتب بالإيد: رواتب، إيجار...) + 📦 المخزن (تقديري) — app_kv where_cfg = { ops:[{ id, name, amount }], stock }
     // 🏢 المصاريف الثابتة: الشهري ÷ 30 × الأيام اللي فاتت من الشهر (من يوم 1 لحد النهارده)
-    const FIXED_M = [['rent', '🏢 الإيجار', 15000], ['salaries', '👥 الرواتب', 66000], ['ops', '⚙️ التشغيل', 15000]];
+    // 🧾 كل البنود من "مراجعة المصاريف" (نفس اللي 💰 الأرباح بيستخدمه)
+    const EXI = (window.EXP && window.EXP.items) || [], RV = (window.EXP && window.EXP.review) || {};
     const dayN = new Date().getDate();
-    const ed = canEdit(), CF = W.cfg || {}, fixedM = CF.fixed || {};
-    const fixedL = FIXED_M.map(([k, l, d]) => { const mo = fixedM[k] != null && fixedM[k] !== '' ? num(fixedM[k]) : d; return { id:'fx_' + k, k, name:l, mo, amount:mo / 30 * dayN, fixed:true }; });
+    const ed = canEdit(), CF = W.cfg || {};
+    const fixedL = EXI.filter(x => x.g === 'fixed').map(x => { const mo = num(window.EXP.cur(x.k)); return { id:'fx_' + x.k, k:x.k, name:x.l, mo, amount:mo / 30 * dayN, fixed:true }; });
     const opsMan = CF.ops || [], ops = fixedL.concat(opsMan), opsT = ops.reduce((a, x) => a + num(x.amount), 0), stock = num(CF.stock), cashMan = CF.cash != null && CF.cash !== '' ? num(CF.cash) : null;
     const inp = 'padding:7px 9px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit';
-    h += `<div class="card"><h3>⚙️ المصاريف لحد النهارده — ${fmt(opsT)} ج <small style="font-weight:500;color:var(--muted)">(${fmt(dayN)} يوم من الشهر)</small></h3>
-      <div class="tablewrap"><table class="pr" style="width:100%"><tr><th>البند</th><th>في الشهر</th><th>الحسبة</th><th>لحد النهارده</th></tr>
-        ${fixedL.map(x => `<tr><td class="lbl">${esc(x.name)}</td><td>${ed ? `<input data-wffix="${x.k}" inputmode="decimal" value="${x.mo}" style="width:100px;${inp};padding:4px 6px"> ج` : fmt(x.mo) + ' ج'}</td>
-          <td style="font-size:12.5px;color:var(--muted)">${fmt(x.mo)} ÷ 30 × ${fmt(dayN)} يوم</td><td><b>${fmt(x.amount)} ج</b></td></tr>`).join('')}</table></div>
+    // 🧾 جدول المراجعة: البند · المستخدم دلوقتي · الصح (اكتبه) · ✅ متأكد · ملاحظة — وللثابت: لحد النهارده
+    const okN = EXI.filter(x => RV[x.k] && RV[x.k].ok).length;
+    const revRow = x => { const r = RV[x.k] || {}, cur = window.EXP.cur(x.k), fx = x.g === 'fixed';
+      const okC = r.ok ? 'background:#eef8f1' : '';
+      return `<tr style="${okC}"><td class="lbl">${esc(x.l)}${r.by ? `<div style="font-size:11px;color:var(--muted);font-weight:400">آخر تعديل: ${esc(r.by)} · ${esc(new Date(r.at).toLocaleDateString('ar-EG', { day:'numeric', month:'short' }))}</div>` : ''}</td>
+        <td>${cur == null ? `<span style="font-size:12.5px;color:var(--muted)">${esc(x.how || '')}</span>` : `<b>${fmt2(cur)}</b> <small style="color:var(--muted)">${esc(x.unit || '')}</small>`}</td>
+        <td>${cur == null ? '—' : ed ? `<input data-exv="${x.k}" inputmode="decimal" placeholder="${fmt2(cur)}" value="${r.v != null && r.v !== '' ? esc(r.v) : ''}" style="width:95px;${inp};padding:4px 6px">` : (r.v != null && r.v !== '' ? fmt2(r.v) : '—')}</td>
+        <td style="text-align:center"><input type="checkbox" data-exok="${x.k}" ${r.ok ? 'checked' : ''} ${ed ? '' : 'disabled'} style="width:20px;height:20px"></td>
+        <td>${ed ? `<input data-exn="${x.k}" value="${esc(r.note || '')}" placeholder="ملاحظة..." style="width:100%;min-width:140px;${inp};padding:4px 6px">` : esc(r.note || '')}</td>
+        ${fx ? `<td style="white-space:nowrap"><b>${fmt(num(cur) / 30 * dayN)} ج</b><div style="font-size:11px;color:var(--muted)">÷ 30 × ${fmt(dayN)} يوم</div></td>` : '<td></td>'}</tr>`; };
+    const head = t => `<tr><th>${t}</th><th>المستخدم دلوقتي</th><th>✏️ الصح</th><th>✅ متأكد</th><th>ملاحظة</th><th>لحد النهارده</th></tr>`;
+    h += `<div class="card"><h3>🧾 مراجعة المصاريف — اتأكد من ${fmt(okN)} من ${fmt(EXI.length)} بند</h3>
+      <p style="font-size:12.5px;color:var(--muted);margin:0 0 8px">لو الرقم غلط اكتب الصح في "✏️ الصح" — بيتحفظ لوحده وبيتطبق على طول هنا وفي 💰 الأرباح. علّم ✅ على اللي اتأكدت منه، واكتب ملاحظة لو فيه حاجة.</p>
+      <div class="tablewrap"><table class="pr" style="width:100%">${head('🏢 مصاريف ثابتة')}${EXI.filter(x => x.g === 'fixed').map(revRow).join('')}
+        <tr class="total"><td>إجمالي الثابت</td><td>${fmt(fixedL.reduce((a, x) => a + x.mo, 0))} ج في الشهر</td><td></td><td></td><td></td><td>${fmt(fixedL.reduce((a, x) => a + x.amount, 0))} ج</td></tr></table></div>
+      <div class="tablewrap" style="margin-top:10px"><table class="pr" style="width:100%">${head('📦 مصاريف متغيرة')}${EXI.filter(x => x.g === 'var').map(revRow).join('')}</table></div></div>`;
+    h += `<div class="card"><h3>⚙️ المصاريف لحد النهارده — ${fmt(opsT)} ج <small style="font-weight:500;color:var(--muted)">(الثابت ${fmt(dayN)} يوم من الشهر${opsMan.length ? ' + بنود بالإيد' : ''})</small></h3>
       ${opsMan.length ? `<div style="font-weight:700;margin:10px 0 4px">➕ بنود تانية (بالإيد)</div><div class="tablewrap"><table class="pr" style="width:100%"><tr><th>البند</th><th>المبلغ</th>${ed ? '<th></th>' : ''}</tr>
-        ${ops.map(x => `<tr><td class="lbl">${esc(x.name)}</td><td><b>${fmt(x.amount)} ج</b></td>${ed ? `<td><button class="mockbtn" data-wfopdel="${esc(x.id)}" style="color:#b3261e">🗑</button></td>` : ''}</tr>`).join('')}</table></div>` : ''}
-      ${ed ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><input id="wfOpN" placeholder="بند تاني لو فيه (غير الإيجار والرواتب والتشغيل)" style="flex:1;min-width:160px;${inp}">
+        ${opsMan.map(x => `<tr><td class="lbl">${esc(x.name)}</td><td><b>${fmt(x.amount)} ج</b></td>${ed ? `<td><button class="mockbtn" data-wfopdel="${esc(x.id)}" style="color:#b3261e">🗑</button></td>` : ''}</tr>`).join('')}</table></div>` : ''}
+      ${ed ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><input id="wfOpN" placeholder="بند تاني لو فيه (مش في جدول المراجعة)" style="flex:1;min-width:160px;${inp}">
         <input id="wfOpA" inputmode="decimal" placeholder="المبلغ" style="width:120px;${inp}">
         <button class="mockbtn" id="wfOpAdd" style="background:#1f3d36;border-color:#1f3d36;color:#fff">➕ أضف</button></div>` : ''}
       <h3 style="margin-top:16px">🏦 الخزنة الحالية — ${cashMan != null ? fmt(cashMan) + ' ج' : 'من الشيت ' + fmt(cash) + ' ج'}</h3>
@@ -18841,8 +18899,11 @@ table.cs tr.cs-open td{background:#fff7dd}
         ['wfOpN', 'wfOpA'].forEach(id => { const e = $(id); if(e) e.value = ''; }); }catch(e){ alert('مااتحفظش: ' + e.message); } };
     if($('wfCsSave')) $('wfCsSave').onclick = async () => { const v = $('wfCs').value.trim(); try{ await cfgSave(c => { c.cash = v === '' ? null : num(v); }); }catch(e){ alert('مااتحفظش: ' + e.message); } };
     if($('wfStSave')) $('wfStSave').onclick = async () => { try{ await cfgSave(c => { c.stock = num($('wfSt').value); }); }catch(e){ alert('مااتحفظش: ' + e.message); } };
-    main.querySelectorAll('[data-wffix]').forEach(i => i.onchange = async () => { try{ await cfgSave(c => { (c.fixed = c.fixed || {})[i.dataset.wffix] = num(i.value); });
-      if(window.prApplySharedFixed) window.prApplySharedFixed(W.cfg.fixed); }catch(e){ alert('مااتحفظش: ' + e.message); } });
+    // 🧾 مراجعة المصاريف: بيتحفظ أول ما تخرج من الخانة
+    const exSave = async (k, patch) => { try{ await window.EXP.save(k, patch); draw(); }catch(e){ alert('مااتحفظش: ' + e.message); } };
+    main.querySelectorAll('[data-exv]').forEach(i => i.onchange = () => { const t = i.value.trim(); exSave(i.dataset.exv, { v: t === '' ? null : num(t) }); });
+    main.querySelectorAll('[data-exok]').forEach(i => i.onchange = () => exSave(i.dataset.exok, { ok: i.checked }));
+    main.querySelectorAll('[data-exn]').forEach(i => i.onchange = () => exSave(i.dataset.exn, { note: i.value.trim() }));
     main.querySelectorAll('[data-wfopdel]').forEach(b => b.onclick = async () => { if(!confirm('تمسح البند ده؟')) return;
       try{ await cfgSave(c => { c.ops = (c.ops || []).filter(x => x.id !== b.dataset.wfopdel); }); }catch(e){ alert('مااتمسحش: ' + e.message); } });
     main.querySelectorAll('[data-wfdel]').forEach(b => b.onclick = async () => { if(!confirm('تمسح الدين ده؟')) return;
