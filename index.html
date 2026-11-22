@@ -11471,7 +11471,8 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
   const SQ = { at:null, by:'', updated:null, loaded:false, pageNotes:{}, names:{} };
   // 🐰 أوردرات Bunny (مصدر EasyOrders أو صفحة Squad اسمها فيه bunny / باني) → الـ notes = bunny لوحدها لو مفيش notes متكتبة
   const BUNNY_RE = /bunny|باني/i;
-  const pageNote = pg => SQ.pageNotes[pg] || (BUNNY_RE.test(String(pg || '')) ? 'bunny' : '');
+  // 📨 أوردرات قسم إرسال (page_name = "إرسال صفحة - الامل") ← الـ notes بتتكتب لوحدها "ارسال صفحة الامل"
+  const pageNote = pg => SQ.pageNotes[pg] || (/^إرسال صفحة - ./.test(String(pg || '')) ? 'ارسال صفحة ' + String(pg).replace(/^إرسال صفحة - /, '').trim() : '') || (BUNNY_RE.test(String(pg || '')) ? 'bunny' : '');
   async function loadSquadPtr(){
     const { data } = await sbc().from('app_kv').select('*').in('key', [SQ_KV, PN_KV]);
     (data || []).forEach(r => {
@@ -18354,7 +18355,7 @@ table.cs tr.cs-open td{background:#fff7dd}
     const T = rows.reduce((a, r) => ({ days:a.days + r.days, ok:a.ok + r.ok, no:a.no + r.no, plus:a.plus + r.plus, minus:a.minus + r.minus, net:a.net + r.net }), { days:0, ok:0, no:0, plus:0, minus:0, net:0 });
     h += `<div class="tablewrap"><table class="pr" style="width:100%"><tr><th>الموظفة</th><th>أيام عليها</th><th>✅ اتحقق</th><th>⏳ باقي (ماتحققش)</th><th>🟢 المكافأة</th>${window.seeDeduct() ? '<th>🔴 الخصم</th>' : ''}<th></th></tr>
       ${rows.map(r => `<tr><td class="lbl">${esc(r.name || '—')}</td><td>${r.days}</td><td style="color:#2f7d55">${r.ok}</td><td style="color:#c0392b">${r.no}</td><td style="color:#2f7d55">+${fmt(r.plus)}</td>${window.seeDeduct() ? `<td style="color:#c0392b">−${fmt(r.minus)}</td>` : ''}<td>${(r.list || []).length ? `<button class="sqd-btn" data-fbo="${esc(r.id)}">${F.open[r.id] ? '▲' : '▼'} الأيام</button>` : ''}</td></tr>
-        ${F.open[r.id] ? `<tr><td colspan="7" style="text-align:right;font-size:12.5px;background:var(--slate-l)">${(r.list || []).map(d => `<span style="display:inline-block;margin:2px 4px;padding:2px 8px;border-radius:8px;background:${d.closed ? '#e3f3e8' : '#fbe3e1'};color:${d.closed ? '#1f5f3a' : '#a3271a'}">${esc(d.ic || '')} ${esc(new Date(d.k + 'T12:00:00').toLocaleDateString('ar-EG', { day:'numeric', month:'short' }))} ${esc(d.b || '')} — ${d.closed ? '✅ +' + AMT : window.seeDeduct() ? '❌ −' + AMT : '⏳ لسه'}${d.closed ? '' : ` (ناقص ${d.missing})`}</span>`).join('')}</td></tr>` : ''}`).join('')}
+        ${F.open[r.id] ? `<tr><td colspan="7" style="text-align:right;font-size:12.5px;background:var(--slate-l)">${(r.list || []).map(d => `<span style="display:block;width:fit-content;margin:4px 0;padding:3px 10px;border-radius:8px;background:${d.closed ? '#e3f3e8' : '#fbe3e1'};color:${d.closed ? '#1f5f3a' : '#a3271a'}">${esc(d.ic || '')} ${esc(new Date(d.k + 'T12:00:00').toLocaleDateString('ar-EG', { day:'numeric', month:'short' }))} ${esc(d.b || '')} — ${d.closed ? '✅ +' + AMT : window.seeDeduct() ? '❌ −' + AMT : '⏳ لسه'}${d.closed ? '' : ` (ناقص ${d.missing})`}</span>`).join('')}</td></tr>` : ''}`).join('')}
       ${admin && rows.length > 1 ? `<tr class="total"><td>الإجمالي</td><td>${T.days}</td><td>${T.ok}</td><td>${T.no}</td><td>+${fmt(T.plus)}</td>${window.seeDeduct() ? `<td>−${fmt(T.minus)}</td>` : ''}<td></td></tr>` : ''}</table></div>`;
     if(F.snap && F.snap.at) h += `<p style="font-size:12px;color:var(--muted);margin:8px 0 0">آخر حسبة: ${esc(new Date(F.snap.at).toLocaleString('ar-EG', { weekday:'short', day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }))}</p>`;
     return h + '</div>';
