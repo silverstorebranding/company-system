@@ -778,6 +778,8 @@ const CHANNELS = "WhatsApp, Messenger, Instagram, TikTok, Phone";
 /* ---------------- PROFITS DATA/LOGIC ---------------- */
 const PR_BRANDS=["dream","dream msg site","dream wa","msg","lo gel nails","fastplt","cara silver","cara silver un","cara wa","ersal","kidzzly","bunny"];   // ⛔ RS KIDS اتشال — أوردراته بتتحسب على KIDZZLY
 //   // ⛔ SQUAD / SOCKY / BLOOM اتشالوا من الأرباح — أوردرات Squad بتتوزع على دريم / كيدزلي / إرسال صفحة
+// 🙈 RS KIDS و BLOOM: براندات موجودة بأساميها، بس أوردراتها مش بتظهر في أي حتة ولا بتتحسب (ولا بتتضاف على KIDZZLY)
+const PR_HIDDEN_BRANDS=["rs kids","bloom"];
 const PR_PNL_BRANDS=PR_BRANDS.filter(b=>b!=="lo gel nails");
 const PR_SOLO="lo gel nails";
 const PR_MSG_GROUP=["msg","dream msg site","fastplt"];
@@ -1027,8 +1029,8 @@ function prGetBrand(note){
   if(n.startsWith("sock")||n.startsWith("سوك"))return"socky"; // 🧦 SOCKY
   if(n.startsWith("bunny")||n.startsWith("باني"))return"bunny"; // 🐰 BUNNY (أوردرات اللاندينج — notes المصدر في رفع الأوردرات)
   if(n.startsWith("kidzzly")||n.startsWith("kidzly")||n.startsWith("kidz"))return"kidzzly"; // 🧸 براند KIDZZLY (kidzzly / kidzzly msg ...)
-  if(n.startsWith("rs kids")||n.startsWith("rskids")||n.startsWith("rs-kids")||n.startsWith("rs_kids"))return"kidzzly"; // ⛔ RS KIDS اتشال — بيتحسب على KIDZZLY
-  if(/^rs(\s|$|[^a-z])/.test(n))return"kidzzly"; // ملاحظة "rs" لوحدها = KIDZZLY (RS اتشال)
+  if(n.startsWith("rs kids")||n.startsWith("rskids")||n.startsWith("rs-kids")||n.startsWith("rs_kids"))return"rs kids"; // 👶 RS KIDS — براند لوحده (مخفي: أوردراته مش بتظهر ولا بتتحسب)
+  if(/^rs(\s|$|[^a-z])/.test(n))return"rs kids"; // ملاحظة "rs" لوحدها = RS KIDS
   if(/kid|كيدز/.test(n))return"kidzzly"; // 🧸 أي notes فيها kid (kidzly / kidz wa ...) = Kidzzly
   if(n.startsWith("dream msg site"))return"dream msg site";
   if(n.startsWith("drew wa"))return"dream wa"; // خطأ إملائي شائع لـ dream wa
@@ -1077,7 +1079,7 @@ function prProcess(rows){
   const byBrand={}; PR_BRANDS.forEach(b=>byBrand[b]=[]);
   prUnbranded=[];
   // 🏆 أوردرات Squad اللي ملقيناش مصدرها بتتحسب على DREAM — وأي براند مش في الأرباح (Socky / Bloom ...) مش محسوب
-  rows.forEach(r=>{let b=prGetBrand(r[PR_notesCol-1]); if(b==='squad')b='dream'; if(b&&byBrand[b])byBrand[b].push(r); else prUnbranded.push(r);});
+  rows.forEach(r=>{let b=prGetBrand(r[PR_notesCol-1]); if(b==='squad')b='dream'; if(PR_HIDDEN_BRANDS.includes(b))return; if(b&&byBrand[b])byBrand[b].push(r); else prUnbranded.push(r);});
 
   function calcOne(brand){
     const rs=byBrand[brand];
@@ -4297,7 +4299,7 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
     { key:'cara',    name:'CARA',    color:'#2f5f73', spend:5, orders:6,  msgs:7,    pr:'cara silver', prBrands:['cara silver','cara silver un','cara wa'] },
     { key:'fastplt', name:'FASTPLT', color:'#8a6d3b', spend:9, orders:10, msgs:null, pr:'fastplt',     prBrands:['fastplt'] },
     // (أرقام الأعمدة الفعلية بقت في ADS_TABS فوق — اللي هنا اسم ولون وعمود الأرباح بس)
-    { key:'rs',      name:'RS KIDS', color:'#a0456e', spend:15, orders:null, msgs:null, pr:'kidzzly',   prBrands:['kidzzly'] },   // ⛔ RS اتشال — صرفه القديم بيتجمع على KIDZZLY
+    { key:'rs',      name:'RS KIDS', color:'#a0456e', spend:15, orders:null, msgs:null, pr:'rs kids',   prBrands:['rs kids'] },   // 🙈 RS مخفي — مالوش عمود في الأرباح
     { key:'kidzzly', name:'KIDZZLY', color:'#4f8fd8', spend:12, orders:null, msgs:null, pr:'kidzzly',   prBrands:['kidzzly'] },
     { key:'msg',     name:'MSG',     color:'#6b7a3a', spend:null, orders:null, msgs:null, pr:'msg',     prBrands:['msg'] },
     { key:'socky',   name:'SOCKY',   color:'#7a5c3a', spend:null, orders:null, msgs:null, pr:'socky',   prBrands:['socky'] },
@@ -5473,7 +5475,7 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
   function walletGroup(note, o){
     const n = String(note || '').toLowerCase().trim();
     const nm = n.split('\n')[0].trim().replace(/\s+/g, ' ');
-    if(window.__noteMap && window.__noteMap[nm]){ const m = window.__noteMap[nm]; return m === 'none' ? 'other' : m === 'kidzzly' || m === 'rs kids' ? 'kidzzly' : m === 'ersal' ? 'ersal' : m === 'socky' ? 'socky' : m === 'bloom' ? 'bloom' : m === 'bunny' ? 'bunny' : 'italy'; }
+    if(window.__noteMap && window.__noteMap[nm]){ const m = window.__noteMap[nm]; return m === 'none' ? 'other' : m === 'rs kids' ? 'rs kids' : m === 'kidzzly' ? 'kidzzly' : m === 'ersal' ? 'ersal' : m === 'socky' ? 'socky' : m === 'bloom' ? 'bloom' : m === 'bunny' ? 'bunny' : 'italy'; }
     if(/^(sock|سوك|شراب)/.test(n)) return 'socky';
     let b = null; try{ b = prGetBrand(note); }catch(e){}
     if(b && window.cbLike && window.cbLike(b)) b = window.cbLike(b);   // 🏷️ براند جديد = زي البراند اللي اختارناه
@@ -5481,8 +5483,8 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
       const pg = o && sqPages ? [o.phone, o.phone2, o.customer_phone].map(phKey).map(k => k && sqPages[k]).find(x => x != null) : null;
       return pg != null ? pageGroup(pg) : 'italy';
     }
-    if(b === 'rs kids' || b === 'kidzzly') return 'kidzzly';
-    if(b === 'bloom') return 'other';   // ⛔ Bloom اتشال
+    if(b === 'rs kids' || b === 'bloom') return b;   // 🙈 مخفيين — مش بيظهروا في تقسيمة المحفظة ولا بيتضافوا على Kidzzly
+    if(b === 'kidzzly') return 'kidzzly';
     if(b === 'bunny') return 'bunny';
     if(b === 'ersal') return 'ersal';
     if(['dream', 'dream wa', 'dream msg site', 'msg', 'fastplt', 'cara silver', 'cara silver un', 'cara wa'].includes(b)) return 'italy';
@@ -11724,7 +11726,8 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
   // 🏷️ البراند من الـ notes (للمحلات في الصفحة الرئيسية)
   function brandKey(note, srcKey){
     const n = String(note || '').toLowerCase(), k = String(srcKey || '').toLowerCase();
-    if(/^rs|rs kids|رويال|royal/.test(n)) return 'kidzzly';   // ⛔ RS اتشال
+    if(/^rs|rs kids|رويال|royal/.test(n)) return 'rs';   // 🙈 مخفي (مالوش محل)
+    if(/bloom|بلوم/.test(n) || /bloom/.test(k)) return 'bloom';   // 🙈 مخفي
     if(/kid|كيدز/.test(n) || /kid/.test(k)) return 'kidzzly';
     if(/sock|سوك/.test(n) || /sock/.test(k)) return 'socky';
     if(/bunny|باني/.test(n) || /bunny/.test(k)) return 'bunny';
@@ -13755,17 +13758,19 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
   const BR = [ ['italy', '💍 Italy', 'دريم + كارا + واتساتهم', '#b08d57'], ['kidzzly', '🧸 Kidzzly', 'كيدزلي', '#4f8fd8'], ['socky', '🧦 Socky', '', '#3f9b74'], ['bunny', '🐰 Bunny', 'اللاندينج', '#d4789c'], ['other', '❔ أخرى', '', '#9a9a9a'] ];
   function brandOf(note){
     const n = String(note || '').toLowerCase();
-    if(/kid|كيدز|rs\b|^rs|رويال|royal/.test(n)) return 'kidzzly';
+    if(/^\s*(rs\b|rs kids|bloom|بلوم)|رويال|royal/.test(n)) return 'hidden';   // 🙈 RS و Bloom مخفيين
+    if(/kid|كيدز/.test(n)) return 'kidzzly';
     if(/sock|سوك|شراب/.test(n)) return 'socky';
     if(/bunny|باني/.test(n)) return 'bunny';
     if(/dream|دريم|cara|كارا|msg|fastplt|silver|ايطال|إيطال|italy/.test(n)) return 'italy';
     return 'other';
   }
   function splitStats(list){
-    const g = {}; list.forEach(o => { const k = brandOf(o.notes); const x = g[k] = g[k] || { n:0, v:0, notes:{} }; x.n++; x.v += numOf(o.amount) || 0; const nt = String(o.notes || '—'); x.notes[nt] = (x.notes[nt] || 0) + 1; });
+    const g = {}; list.forEach(o => { const k = brandOf(o.notes); if(k === 'hidden') return; const x = g[k] = g[k] || { n:0, v:0, notes:{} }; x.n++; x.v += numOf(o.amount) || 0; const nt = String(o.notes || '—'); x.notes[nt] = (x.notes[nt] || 0) + 1; });
     return g;
   }
   function splitCol(title, list){
+    list = list.filter(o => brandOf(o.notes) !== 'hidden');
     if(!list.length) return '';
     const g = splitStats(list), tot = list.length;
     /* البراندات اللي مش معروفة: كل براند باسمه (من الـ notes) بدل "أخرى" */
@@ -18529,7 +18534,7 @@ table.cs tr.cs-open td{background:#fff7dd}
   const WF_RATE = { ofd:0.55, hold:0.20 };    // نسبة اللي بيتسلم: Pending + مع المندوب / هولد
   function brandOf(o){ let b = null; try{ b = prGetBrand(o.notes); }catch(e){} if(b === 'squad'){ const x = A() && A().squadBrandOf ? A().squadBrandOf(o) : null; b = x || 'dream'; }
     if(b && window.cbLike && window.cbLike(b)) b = window.cbLike(b); return b; }
-  function grpOf(b){ if(!b) return 'other'; if(b === 'kidzzly' || b === 'rs kids') return 'kidzzly'; if(['bunny', 'ersal', 'socky'].includes(b)) return b; return ['dream', 'dream wa', 'dream msg site', 'msg', 'fastplt', 'cara silver', 'cara silver un', 'cara wa', 'lo gel nails'].includes(b) ? 'italy' : 'other'; }
+  function grpOf(b){ if(!b) return 'other'; if(b === 'rs kids' || b === 'bloom') return 'hidden'; if(b === 'kidzzly') return 'kidzzly'; if(['bunny', 'ersal', 'socky'].includes(b)) return b; return ['dream', 'dream wa', 'dream msg site', 'msg', 'fastplt', 'cara silver', 'cara silver un', 'cara wa', 'lo gel nails'].includes(b) ? 'italy' : 'other'; }
   const price = o => num(o.total_amount ?? o.price);
   function pieces(o, b){ if(grpOf(b) === 'italy') return 1; try{ return Math.max(1, prPiecesSmart(o.shipment_contents || '', price(o), b || '')); }catch(e){ return 1; } }
   const isRet = o => { const v = o.returned_Client_date; return v && String(v).trim() && String(v).trim() !== 'NaT'; };
@@ -19076,7 +19081,7 @@ table.cs tr.cs-open td{background:#fff7dd}
   const isRej = o => String(o.Order_Delivery_Status ?? '').trim() === '6';
   const isUnd = o => { try{ return A().category(o) === 'undelivered'; }catch(e){ return /^[56]$/.test(String(o.Order_Delivery_Status ?? '').trim()); } };
   function brandOf(o){ let b = null; try{ b = prGetBrand(o.notes); }catch(e){} if(b === 'squad'){ const x = A() && A().squadBrandOf ? A().squadBrandOf(o) : null; b = x || 'dream'; } return b || (String(o.notes || '').split('\n')[0].trim() || '—'); }
-  const BG = b => /^(kidzzly|rs kids)$/.test(b) ? '🧸 Kidzzly' : /^(dream|dream wa|dream msg site|msg|fastplt|cara silver|cara silver un|cara wa|lo gel nails)$/.test(b) ? '💍 إيطالي' : b === 'ersal' ? '📨 إرسال' : b === 'bunny' ? '🐰 Bunny' : '🏷️ ' + b;
+  const BG = b => /^(kidzzly)$/.test(b) ? '🧸 Kidzzly' : /^(dream|dream wa|dream msg site|msg|fastplt|cara silver|cara silver un|cara wa|lo gel nails)$/.test(b) ? '💍 إيطالي' : b === 'ersal' ? '📨 إرسال' : b === 'bunny' ? '🐰 Bunny' : '🏷️ ' + b;
   const KEEP = ['💍 إيطالي', '🧸 Kidzzly'];
   async function load(){
     if(!A() || !A().hasCreds()){ S.err = 'محتاج دخول QP على الجهاز ده (من قسم 🚚 QP).'; return draw(); }
