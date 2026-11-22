@@ -12920,7 +12920,8 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
      ===================================================================== */
   const PPD = { couriers:null, sending:false, off:new Set(), missing:false };
   const PP_RE = /مدينه\s*نصر|(^|[\s,،\-\/(])م\s*\.?\s*نصر(?=$|[\s,،\-\/)])|مصر\s*(ال)?جديده|هليوبوليس|nasr\s*-?\s*city|heliopolis|masr\s*el\s*(gedida|gdida|gedeeda)|new\s*cairo\s*heliopolis/i;
-  const isPPArea = r => PP_RE.test(normAr((r.address || '') + ' ' + (r.city || '')));
+  // 🛵 r.ppForce = بعته بإيدك للدفع المقدم (زرار 🛵 جنب الأوردر) حتى لو مش مدينة نصر / مصر الجديدة
+  const isPPArea = r => !!r.ppForce || PP_RE.test(normAr((r.address || '') + ' ' + (r.city || '')));
   const ppRows = () => (S.rows || []).filter(r => !r.serial && isPPArea(r));
   async function ppCouriers(force){
     if(PPD.couriers && !force) return PPD.couriers;
@@ -12938,7 +12939,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
       <p style="margin:0 0 10px;font-size:13px;color:var(--muted)">أوردرات مدينة نصر ومصر الجديدة — <b>مش بتترفع على QP ومش في شيت QP</b>. دوس الزرار وهتروح لقسم <b>🛵 مناديب الدفع المقدم</b>. (لو في أوردر مش عايزه يروح دلوقتي شيل علامته — هيفضل هنا.)</p>
       ${PPD.missing ? `<div class="up-msg err">جدول مناديب الدفع المقدم لسه مش متعمل في Supabase — ${me().is_admin ? 'افتح قسم 🛵 مناديب الدفع المقدم وانسخ الـ SQL وشغّله.' : 'كلّم الأدمن.'}</div>` : ''}
       <div class="pp-list">${L.map(r => { const i = S.rows.indexOf(r); return `<label class="pp-li"><input type="checkbox" data-ppchk="${i}" ${PPD.off.has(r) ? '' : 'checked'}>
-        <span><b>${esc(r.name || '—')}</b> · <span dir="ltr">${esc(phoneOf(r.phone) ? '0' + phoneOf(r.phone) : r.phone)}</span> · ${esc(r.amount || '')} ج<br><small>📍 ${esc(r.address || '')}${r.city ? ' — ' + esc(r.city) : ''}</small>${contentsOf(r) ? `<br><small>📦 ${esc(contentsOf(r))}</small>` : ''}<br><small style="color:#2b6cb0">${esc(r.srcKey === 'squad' ? '🏆 Squad · ' + (r.page || '') : srcLabel(r.srcKey))}</small></span></label>`; }).join('')}</div>
+        <span><b>${esc(r.name || '—')}</b> · <span dir="ltr">${esc(phoneOf(r.phone) ? '0' + phoneOf(r.phone) : r.phone)}</span> · ${esc(r.amount || '')} ج<br><small>📍 ${esc(r.address || '')}${r.city ? ' — ' + esc(r.city) : ''}</small>${contentsOf(r) ? `<br><small>📦 ${esc(contentsOf(r))}</small>` : ''}<br><small style="color:#2b6cb0">${esc(r.srcKey === 'squad' ? '🏆 Squad · ' + (r.page || '') : srcLabel(r.srcKey))}</small>${r.ppForce ? ` <button type="button" class="up-btn" data-ppback="${i}" style="padding:2px 9px;font-size:12px">↩️ رجّعه لـ QP</button>` : ''}</span></label>`; }).join('')}</div>
       <div class="up-row" style="margin-top:10px;align-items:center">
         <button class="up-btn ok" id="ppSend" ${PPD.sending || !pick.length ? 'disabled' : ''} style="background:#2b6cb0;border-color:#2b6cb0">${PPD.sending ? '⏳ بيبعت...' : `🛵 ودّيهم لقسم الدفع المقدم (${pick.length} أوردر · ${sum.toLocaleString('ar-EG')} ج)`}</button>
         ${PPD.couriers && PPD.couriers.length ? `<span style="font-size:12.5px;color:var(--muted)">المسؤول: <b>${esc(PPD.couriers.map(c => c.name).join('، '))}</b></span>` : PPD.couriers ? '<span style="font-size:12.5px;color:var(--muted)">المسؤول لسه ماعملش حساب — الأوردرات هتستناه في القسم وأول ما يدخل هيلاقيها كلها.</span>' : ''}
@@ -13518,7 +13519,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
           <td>${qpCities ? `<select data-upcity="${i}" style="border:none;padding:6px;font-family:Arial;font-size:13px;background:transparent;min-width:100px"><option value="">— اختار —</option>${qpCities.map(c => `<option ${c.name === r.city ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select>` : `<input data-upf="${i}.city" value="${esc(r.city)}" style="min-width:80px">`}</td>
           <td class="qpd">${r.serial ? '' : (r.qpDup && r.qpDup.length ? r.qpDup.slice(0, 2).map(q => `<div>⚠️ مرفوع: <b>${esc(q.serial)}</b> · ${new Date(q.date).toLocaleDateString('ar-EG', { day:'numeric', month:'short' })} · ${esc(String(q.price || '').replace(/\.00$/, ''))} ج · ${esc(q.st)}</div>`).join('') + (r.qpDup.length > 2 ? `<div>+ ${r.qpDup.length - 2} كمان</div>` : '') + (r.dupOk ? '<div class="ok">✔ هيترفع برضه</div>' : `<button class="up-btn" data-dupok="${i}" style="padding:2px 8px;font-size:11.5px;margin-top:3px">✔ ارفعه برضه</button>`) : (D.done ? '<span class="ok">✔ جديد</span>' : (D.loading ? '⏳' : '')))}</td>
           <td class="err">${r.serial ? `<span style="color:#2f7d55;font-weight:700">✅ اترفع ${esc(r.serial)}</span>` : (r.forceOk && problemsOf(r).length ? '<b style="color:#2f7d55">✔ وافقت يترفع:</b> ' : '') + esc(problemsOf(r).filter(x => !/مرفوع في QP قبل كده/.test(x)).join('، '))}</td>
-          <td class="x">${r.serial ? '' : `${!isReady(r) ? `<button data-upforce="${i}" class="up-force" title="موافق يترفع برغم المشكلة — هيطلع فوق مع الجاهزين">✔ ارفعه</button>` : ''}${r.forceOk ? `<button data-upunforce="${i}" title="رجّعه للمشاكل">↩</button>` : ''}${!isReady(r) && !(r.urgent && r.urgent.status === 'open') ? `<button data-urgone="${i}" title="ابعته لحد يصلّحه (أوردرات عاجلة)">🚨</button>` : ''}<button data-updel="${i}" title="امسح الأوردر ده">✕</button>`}</td></tr>`;
+          <td class="x">${r.serial ? '' : `<button data-ppone="${i}" title="ابعته لمناديب الدفع المقدم بدل QP">🛵</button>${!isReady(r) ? `<button data-upforce="${i}" class="up-force" title="موافق يترفع برغم المشكلة — هيطلع فوق مع الجاهزين">✔ ارفعه</button>` : ''}${r.forceOk ? `<button data-upunforce="${i}" title="رجّعه للمشاكل">↩</button>` : ''}${!isReady(r) && !(r.urgent && r.urgent.status === 'open') ? `<button data-urgone="${i}" title="ابعته لحد يصلّحه (أوردرات عاجلة)">🚨</button>` : ''}<button data-updel="${i}" title="امسح الأوردر ده">✕</button>`}</td></tr>`;
         const idx = S.rows.map((r, i) => ({ r, i })).filter(x => x.r.serial || !isPPArea(x.r));
         const ready = idx.filter(x => isReady(x.r)), probs = idx.filter(x => !x.r.serial && !isReady(x.r)), done = idx.filter(x => x.r.serial);
         let t = `<h4 class="up-sec ok">✅ جاهزة للرفع على QP <b>${ready.length}</b> <span>${ready.reduce((a, x) => a + (numOf(x.r.amount) || 0), 0).toLocaleString('ar-EG')} ج</span></h4>`;
@@ -14191,6 +14192,9 @@ create policy "sheets: upload" on storage.objects for insert to authenticated wi
     if($('urgSend')) $('urgSend').onclick = confirmUrgent;
     if($('urgCancel')) $('urgCancel').onclick = () => { S.urgPick = null; draw(); };
     // 🛵 مناديب الدفع المقدم
+    document.querySelectorAll('[data-ppone]').forEach(b => b.onclick = e => { e.preventDefault(); const r = S.rows[Number(b.dataset.ppone)]; if(!r) return; r.ppForce = true; PPD.off.delete(r);
+      flash(`🛵 "${r.name || 'الأوردر'}" اتنقل لكارت مناديب الدفع المقدم فوق — دوس "ودّيهم لقسم الدفع المقدم".`); });
+    document.querySelectorAll('[data-ppback]').forEach(b => b.onclick = e => { e.preventDefault(); e.stopPropagation(); const r = S.rows[Number(b.dataset.ppback)]; if(!r) return; r.ppForce = false; draw(); });
     document.querySelectorAll('[data-ppchk]').forEach(c => c.onchange = () => { const r = S.rows[Number(c.dataset.ppchk)]; if(!r) return; if(c.checked) PPD.off.delete(r); else PPD.off.add(r); draw(); });
     if($('ppSend')) $('ppSend').onclick = sendPrepaid;
     if($('urgModal')) $('urgModal').onclick = e => { if(e.target.id === 'urgModal'){ S.urgPick = null; draw(); } };
