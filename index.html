@@ -1972,12 +1972,12 @@ function viewProfits(){
   return `<div class="pagehead"><h1>💰 الأرباح</h1><p>اختار المدة واحسب الأرباح تلقائيًا من QP والإعلانات، أو ارفع ملف الأوردرات يدويًا.</p></div>
   <div class="card"><h3>⚙️ حساب تلقائي بالمدة (QP + الإعلانات)</h3>
     <p style="font-size:13px;color:var(--muted)">بيجيب أوردرات المدة دي من موقع الشحن QP، وبيجيب مصروف الإعلانات لنفس المدة من شيت الإعلانات، وبيحسب كل حاجة لوحده. لازم تكون داخل على QP من قسم 🚚 QP الأول.</p>
-    <div class="uploadrow">
+    <div class="uploadrow" style="flex-wrap:wrap;gap:8px">${prMonthBtns()}</div>
+    <div class="uploadrow" style="margin-top:10px">
       <label style="display:inline-flex;align-items:center;gap:6px;font-size:13.5px">من <input type="date" id="prAutoFrom" class="plainIn" value="2026-08-01"></label>
       <label style="display:inline-flex;align-items:center;gap:6px;font-size:13.5px">إلى <input type="date" id="prAutoTo" class="plainIn" value="${today}"></label>
       <button class="mockbtn" onclick="QP.calcProfitsRange()">⚙️ احسب الأرباح تلقائيًا</button>
     </div>
-    <div class="uploadrow" style="flex-wrap:wrap;gap:8px;margin-top:8px">${prMonthBtns()}</div>
     <div id="prAutoStatus" style="font-size:13px;color:var(--muted);margin-top:10px"></div>
   </div>
   <div class="card"><h3>🏢 المصاريف الثابتة الشهرية <span style="font-size:13px;font-weight:500;color:var(--muted)">— بتتوزع على الإيطالي و Kidzzly و RS حسب عدد الأوردرات (Bloom مالوش دعوة)، وبتتحسب على عدد أيام الشيت</span></h3>
