@@ -12201,9 +12201,12 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
     if(!canScan()) return '';
     if(PP.list === null){ if(sbc()) loadPP().then(() => { if(PP.list.length) draw(); }); return ''; }
     const due = ppDue(); if(!due.length) return '';
+    let hid = ''; try{ hid = localStorage.getItem('ppBannerHide') || ''; }catch(e){}
+    if(hid === ymd(new Date()) + ':' + due.length) return '';
     return `<div class="up-msg ok" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
       <span>📦 فيه <b>${due.length}</b> أوردر مؤجل (مرفوعين على QP من قبل كده ولسه ماطلعوش في شيت) — هيتضافوا لشيت الـ Pending.</span>
-      <button class="up-btn ok" id="upPPOpen">📦 شيت Pending + المؤجلين (${due.length})</button></div>`;
+      <span style="display:flex;align-items:center;gap:8px"><button class="up-btn ok" id="upPPOpen">📦 شيت Pending + المؤجلين (${due.length})</button>
+      <button type="button" id="upPPHide" data-k="${ymd(new Date())}:${due.length}" title="اخفي التنبيه ده" aria-label="اخفي التنبيه" style="border:none;background:none;font-size:18px;font-weight:700;cursor:pointer;color:var(--muted);padding:2px 6px">✕</button></span></div>`;
   }
   function qpDayHtml(){
     return `<div class="card"><h3>🖨️ شيت أوردرات QP (Print order)</h3>
@@ -14054,6 +14057,7 @@ create policy "sheets: upload" on storage.objects for insert to authenticated wi
     if($('upPPShow')) $('upPPShow').onclick = () => { PP.show = !PP.show; draw(); };
     document.querySelectorAll('[data-ppx]').forEach(b => b.onclick = async () => { if(!confirm('تشيل البوليصة ' + b.dataset.ppx + ' من المؤجلين؟ (مش هتطلع في شيت بعد كده)')) return;
       PP.list = (PP.list || []).filter(x => String(x.serial) !== b.dataset.ppx); try{ await savePP(); }catch(e){ X.msg = 'مااتحفظش: ' + e.message; X.msgErr = true; } draw(); });
+    if($('upPPHide')) $('upPPHide').onclick = () => { if(!confirm('متأكد إنك عايز تخفي تنبيه المؤجلين؟\n(الأوردرات المؤجلة نفسها مش هتتمسح — التنبيه هيرجع بكرة أو لو جه مؤجلين جداد)')) return; try{ localStorage.setItem('ppBannerHide', $('upPPHide').dataset.k); }catch(e){} draw(); };
     if($('upPPOpen')) $('upPPOpen').onclick = () => { X.mode = 'exclude'; X.msg = ''; QD.dayTouched = false; switchSrc('delete'); };
     if($('upExPend')) $('upExPend').onchange = e => { QD.pendOnly = e.target.checked; };
     if($('upExGo')) $('upExGo').onclick = () => exportQPDay(new Set(X.list.map(x => String(x.serial))));
