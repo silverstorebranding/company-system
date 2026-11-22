@@ -3060,8 +3060,9 @@ const Squad = (function(){
   let prefill = null;
   let newOrderType = ''; // '' | 'acc' (Dream) | 'kidzzly'  (كود RS / Bloom / Socky لسه موجود لو احتجناه تاني)
   const ORDER_BRANDS = { acc:'اكسسوارات', kidzzly:'Kidzzly', ersal:'إرسال', rs:'RS', bloom:'Bloom', socky:'Socky' };
-  // 📨 إرسال بيستخدم نفس خانات Kidzzly (المقاس + الطلب بالكتابة) بس المصدر = ليستة صفحات إرسال فوكس
-  const isClothes = t => t === 'kidzzly' || t === 'ersal' || t === 'rs' || t === 'bloom' || t === 'socky';
+  // 📨 إرسال بيستخدم نفس خانات Dream (الطلب من ليستة المنتجات + المقاس) بس المصدر = ليستة صفحات إرسال فوكس
+  const isClothes = t => t === 'kidzzly' || t === 'rs' || t === 'bloom' || t === 'socky';
+  const isAccLike = t => t === 'acc' || t === 'ersal';
   function typePicker(prefix){
     const b = (k, l) => `<button type="button" class="sq-type ${newOrderType === k ? 'on' : ''}" data-otype="${k}">${l}</button>`;
     return `<div class="sq-field"><label>البراند <span class="sq-hint">حدد الأول الأوردر ده تبع أنهي براند</span></label>
@@ -3070,10 +3071,8 @@ const Squad = (function(){
   function clothesFields(prefix, o){
     o = o || {};
     return `
-      <div class="sq-field ${newOrderType === 'ersal' ? 'sq-hide' : ''}" id="${prefix}-c-src"><label for="${prefix}-c-page-name">المصدر</label>
-        ${sourceSelect(prefix + '-c-page-name', o.page_name || '', !isClothes(newOrderType) || newOrderType === 'ersal')}</div>
-      <div class="sq-field ${newOrderType === 'ersal' ? '' : 'sq-hide'}" id="${prefix}-e-src"><label for="${prefix}-e-page">المصدر <span class="sq-hint">البيدج اللي جه منها الأوردر (من 📨 إرسال فوكس)</span></label>
-        ${ersalSelect(prefix + '-e-page', o.page_name || '', newOrderType !== 'ersal')}</div>
+      <div class="sq-field"><label for="${prefix}-c-page-name">المصدر</label>
+        ${sourceSelect(prefix + '-c-page-name', o.page_name || '', !isClothes(newOrderType))}</div>
       <div class="sq-field"><label for="${prefix}-c-size">المقاس</label>
         <input type="text" id="${prefix}-c-size" value="${esc(o.size || '')}" placeholder="اكتب المقاس" autocomplete="off"></div>
       <div class="sq-field"><label for="${prefix}-c-order">الطلب</label>
@@ -3083,14 +3082,16 @@ const Squad = (function(){
     newOrderType = t;
     document.querySelectorAll(`#${prefix}-types .sq-type`).forEach(b => b.classList.toggle('on', b.dataset.otype === t));
     const acc = document.getElementById(`${prefix}-acc`), clo = document.getElementById(`${prefix}-clothes`);
-    if(acc){ acc.classList.toggle('sq-hide', t !== 'acc'); acc.querySelectorAll('input,select').forEach(x => { if(!x.classList.contains('sq-qty')) x.disabled = t !== 'acc'; }); }
+    if(acc){ acc.classList.toggle('sq-hide', !isAccLike(t)); acc.querySelectorAll('input,select').forEach(x => { if(!x.classList.contains('sq-qty')) x.disabled = !isAccLike(t); }); }
     if(clo){
       const was = clo.dataset.brand || '';
       clo.classList.toggle('sq-hide', !isClothes(t)); clo.querySelectorAll('input,textarea,select').forEach(x => x.disabled = !isClothes(t));
       clo.dataset.brand = isClothes(t) ? t : was;
-      // 📨 إرسال: نخفي مصادر Dream/Kidzzly ونظهر ليستة صفحات إرسال (والعكس)
-      const cs = document.getElementById(`${prefix}-c-src`), es = document.getElementById(`${prefix}-e-src`);
-      if(cs){ cs.classList.toggle('sq-hide', t === 'ersal'); cs.querySelectorAll('select').forEach(x => x.disabled = !isClothes(t) || t === 'ersal'); }
+    }
+    {
+      // 📨 إرسال: نخفي مصادر Dream ونظهر ليستة صفحات إرسال (والعكس)
+      const cs = document.getElementById(`${prefix}-a-src`), es = document.getElementById(`${prefix}-e-src`);
+      if(cs){ cs.classList.toggle('sq-hide', t === 'ersal'); cs.querySelectorAll('select').forEach(x => x.disabled = t !== 'acc'); }
       if(es){ es.classList.toggle('sq-hide', t !== 'ersal'); es.querySelectorAll('select').forEach(x => x.disabled = t !== 'ersal' || ersalPages === null || !ersalPages.length); }
       if(t === 'ersal'){ if(ersalPages === null) loadErsalPages(); else refreshErsalSel(prefix); }
     }
@@ -3112,11 +3113,13 @@ const Squad = (function(){
       </div>
       <div class="sq-field"><label for="${prefix}-customer-address">العنوان</label>
         <input type="text" id="${prefix}-customer-address" value="${esc(o.customer_address||'')}"></div>
-      ${isNew ? `<div id="${prefix}-acc" class="${t === 'acc' ? '' : 'sq-hide'}">` : ''}
-      <div class="sq-field"><label for="${prefix}-page-name">المصدر</label>
+      ${isNew ? `<div id="${prefix}-acc" class="${isAccLike(t) ? '' : 'sq-hide'}">` : ''}
+      <div class="sq-field ${isNew && t === 'ersal' ? 'sq-hide' : ''}" id="${prefix}-a-src"><label for="${prefix}-page-name">المصدر</label>
         ${sourceSelect(prefix + '-page-name', o.page_name || '', isNew && t !== 'acc', isNew)}</div>
+      ${isNew ? `<div class="sq-field ${t === 'ersal' ? '' : 'sq-hide'}" id="${prefix}-e-src"><label for="${prefix}-e-page">المصدر <span class="sq-hint">البيدج اللي جه منها الأوردر (من 📨 إرسال فوكس)</span></label>
+        ${ersalSelect(prefix + '-e-page', o.page_name || '', t !== 'ersal')}</div>` : ''}
       <div class="sq-field"><label for="${prefix}-size">المقاس <span class="sq-hint">مثلاً 16 أو 18 — ولو أكتر من قطعة اكتبهم: محبس 18 / دبلة 22</span></label>
-        <input type="text" id="${prefix}-size" value="${esc(o.size||'')}" placeholder="اكتب المقاس" autocomplete="off" ${isNew && t !== 'acc' ? 'disabled' : ''}></div>
+        <input type="text" id="${prefix}-size" value="${esc(o.size||'')}" placeholder="اكتب المقاس" autocomplete="off" ${isNew && !isAccLike(t) ? 'disabled' : ''}></div>
       ${productPicker(prefix, o.order_details)}
       ${isNew ? `</div>
       <div id="${prefix}-clothes" class="${isClothes(t) ? '' : 'sq-hide'}">${clothesFields(prefix, o)}</div>` : ''}`;
@@ -3129,18 +3132,18 @@ const Squad = (function(){
         customer_name: v('customer-name'),
         customer_phone: v('customer-phone'),
         customer_address: v('customer-address'),
-        page_name: newOrderType === 'ersal' ? (v('e-page') ? ERSAL_PREFIX + v('e-page') : '') : v('c-page-name'),
+        page_name: v('c-page-name'),
         amount: v('amount'),
         order_details: v('c-order').trim(),
         size: v('c-size').trim(),
       };
     }
     return {
-      order_type: prefix === 'sq-new' ? ORDER_BRANDS.acc : undefined,
+      order_type: prefix === 'sq-new' ? ORDER_BRANDS[newOrderType === 'ersal' ? 'ersal' : 'acc'] : undefined,
       customer_name: v('customer-name'),
       customer_phone: v('customer-phone'),
       customer_address: v('customer-address'),
-      page_name: v('page-name'),
+      page_name: prefix === 'sq-new' && newOrderType === 'ersal' ? (v('e-page') ? ERSAL_PREFIX + v('e-page') : '') : v('page-name'),
       amount: v('amount'),
       order_details: readPicks(prefix),
       size: v('size').trim(),
@@ -4122,7 +4125,7 @@ grant select, insert, update, delete on public.office_sales to authenticated;`;
       if(!newOrderType){ showToast('حدد الأول البراند: Dream ولا Kidzzly ولا إرسال.', 'error'); return; }
       const p = readFields('sq-new');
       if(!isSource(p.page_name)){ showToast(newOrderType === 'ersal' ? 'اختار البيدج من ليستة صفحات إرسال الأول.' : 'اختار المصدر من الليستة الأول.', 'error'); return; }
-      if(newOrderType === 'acc' && !p.order_details){ showToast('اختار الطلب من الليستة الأول.', 'error'); return; }
+      if(isAccLike(newOrderType) && !p.order_details){ showToast('اختار الطلب من الليستة الأول.', 'error'); return; }
       createOrder(p);
     };
 
