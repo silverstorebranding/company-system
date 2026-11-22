@@ -13995,6 +13995,55 @@ create policy "sheets: upload" on storage.objects for insert to authenticated wi
     if($('sdCopy')) $('sdCopy').onclick = async () => { try{ await navigator.clipboard.writeText(sdText(SD.res) + (SD.url ? `\n\n📄 الشيت: ${SD.url}` : '')); $('sdCopy').textContent = '✔ اتنسخت'; }catch(e){ alert('مقدرتش أنسخ: ' + e.message); } };
     if($('sdClose')) $('sdClose').onclick = () => { window.close(); };
   }
+  /* ➕ أوردرات اترفعت على QP ومااتسجلتش في السجل (زي "ارفعها تاني بسريال جديد" قبل ما يتصلّح)
+     بيجيب أوردرات QP في يوم الرفعة، ويطلّع اللي سريالها مش في أي رفعة في السجل — تعلّم عليهم وتضيفهم للرفعة دي */
+  const HX = { key:'', list:null, sel:{}, busy:false, msg:'', err:false };
+  async function hxFind(key){
+    const api = window.QP && window.QP.api;
+    HX.key = key; HX.list = null; HX.sel = {}; HX.err = false;
+    if(!api || !api.hasCreds()){ HX.msg = '⚠️ لازم تكون عامل دخول QP من قسم 🚚 QP على الجهاز ده.'; HX.err = true; draw(); return; }
+    const x = (histShared || []).find(h => h.id === key); if(!x) return;
+    const day = ymd(new Date(x.at));
+    HX.busy = true; HX.msg = ''; draw();
+    try{
+      let list = await api.fetchRange(day, day, n => { HX.msg = `بيجيب أوردرات QP... ${n}`; draw(); });
+      list = list.filter(q => ymd(new Date(q.order_date)) === day);
+      const inLog = new Set(); (histShared || []).concat(S.hist || []).forEach(h => (h.orders || []).forEach(o => inLog.add(String(o.serial))));
+      HX.list = list.filter(q => q.serial != null && !inLog.has(String(q.serial))).sort((a, b) => new Date(b.order_date) - new Date(a.order_date));
+      HX.msg = HX.list.length ? `لقيت ${HX.list.length} أوردر على QP يوم ${day} مش في السجل (ممكن يكون منهم أوردرات اترفعت من برّه السيستم) — علّم على اللي عايز تضيفهم للرفعة دي.` : `✅ كل أوردرات QP يوم ${day} موجودة في السجل.`;
+    }catch(e){ HX.msg = 'مقدرتش أجيب من QP: ' + e.message; HX.err = true; }
+    HX.busy = false; draw();
+  }
+  function hxPanel(){
+    let h = HX.msg ? `<div class="up-msg ${HX.err ? 'err' : 'ok'}" style="margin:6px 0">${esc(HX.msg)}</div>` : '';
+    if(!HX.list || !HX.list.length) return h;
+    const n = Object.values(HX.sel).filter(Boolean).length;
+    h += `<div class="up-sheet" style="margin-bottom:6px"><table><thead><tr><th></th><th>رقم الشحنة</th><th>الوقت</th><th>العميل</th><th>الموبايل</th><th>السعر</th><th>notes</th><th>المحتوى</th></tr></thead><tbody>
+      ${HX.list.map(q => `<tr><td><input type="checkbox" data-hxsel="${esc(q.serial)}" ${HX.sel[q.serial] ? 'checked' : ''}></td><td style="padding:5px 8px;direction:ltr;font-weight:700">${esc(q.serial)}</td>
+        <td style="padding:5px 8px;direction:ltr">${q.order_date ? esc(new Date(q.order_date).toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' })) : ''}</td><td style="padding:5px 8px">${esc(q.full_name || '')}</td>
+        <td style="padding:5px 8px;direction:ltr">${esc(phoneOf(q.phone))}</td><td style="padding:5px 8px">${numOf(q.total_amount ?? q.price).toLocaleString('ar-EG')}</td><td style="padding:5px 8px">${esc(q.notes || '')}</td>
+        <td style="padding:5px 8px;max-width:240px;white-space:normal">${esc(q.shipment_contents || '')}</td></tr>`).join('')}</tbody></table></div>
+      <button class="up-btn ok" id="hxAdd" ${n ? '' : 'disabled'}>➕ ضيف ${n || ''} للرفعة دي</button>`;
+    return h;
+  }
+  async function hxAdd(){
+    const pick = (HX.list || []).filter(q => HX.sel[q.serial]); if(!pick.length) return;
+    HX.busy = true; draw();
+    try{
+      await loadHist();
+      const x = (histShared || []).find(h => h.id === HX.key); if(!x) throw new Error('الرفعة دي مش لاقيها في السجل.');
+      const have = new Set((x.orders || []).map(o => String(o.serial)));
+      const add = pick.filter(q => !have.has(String(q.serial))).map(q => ({ serial:String(q.serial), name:q.full_name || '', phone:phoneOf(q.phone), address:q.address || '', amount:numOf(q.total_amount ?? q.price),
+        notes:String(q.notes || '').trim(), contents:String(q.shipment_contents || '').trim(), city:q.city || '', src:'🔁 اترفعت تاني بسريال جديد' }));
+      x.orders = (x.orders || []).concat(add); x.n = (Number(x.n) || 0) + add.length; x.total = (Number(x.total) || 0) + add.reduce((a, o) => a + (o.amount || 0), 0);
+      const { error } = await sbc().from('app_kv').upsert({ key:HIST_KV, value:{ list:histShared }, updated_at:new Date().toISOString(), updated_by_name: me().full_name || me().username || '' });
+      if(error) throw error;
+      const loc = (S.hist || []).find(h => h.id === x.id); if(loc){ Object.assign(loc, { orders:x.orders, n:x.n, total:x.total }); try{ localStorage.setItem(HIST_KEY, JSON.stringify(S.hist)); }catch(e){} }
+      HX.list = HX.list.filter(q => !HX.sel[q.serial]); HX.sel = {}; HX.err = false;
+      HX.msg = `✅ اتضاف ${add.length} أوردر للرفعة — بقت ${x.n} أوردر. نزّل شيتها تاني.`;
+    }catch(e){ HX.msg = 'ماتضافوش: ' + e.message; HX.err = true; }
+    HX.busy = false; draw();
+  }
   function histOnly(){
     if(histShared === null){ loadHist().then(draw).catch(() => { histShared = []; }); }
     // المشترك أولاً، وبعده أي حاجة اتسجلت على الجهاز ده بس (شيتات اتنزّلت / رفعات قديمة)
@@ -14003,7 +14052,8 @@ create policy "sheets: upload" on storage.objects for insert to authenticated wi
     if(!L.length) return '';
     return `<div class="card"><h3>🕘 آخر رفع — دوس على أي رفعة تشوف أوردراتها</h3><div class="up-hist">${L.map((x, i) => { const key = x.id || ('l' + i), open = histOpen === key, has = x.orders && x.orders.length;
       return `<div class="uh-item ${open ? 'open' : ''}"><div class="uh-row" ${has ? `data-hist="${esc(key)}"` : ''} style="${has ? 'cursor:pointer' : ''}">${has ? (open ? '🔽' : '◀️') : ''} ${x.qp ? '🚀' : '⬇️'} ${new Date(x.at).toLocaleString('ar-EG', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' })} — <b>${x.n}</b> أوردر · ${Number(x.total).toLocaleString('ar-EG')} ج · notes: <b>${esc(x.notes)}</b>${x.by ? ' · ' + esc(x.by) : ''}${has ? '' : ' <small style="color:var(--muted)">(من غير تفاصيل)</small>'}</div>
-        ${open ? `<div class="uh-body"><div class="up-row" style="margin:6px 0"><button class="up-btn" data-histx="${esc(key)}" style="padding:5px 12px;font-size:12.5px">⬇️ نزّل شيت الرفعة دي</button></div>
+        ${open ? `<div class="uh-body"><div class="up-row" style="margin:6px 0"><button class="up-btn" data-histx="${esc(key)}" style="padding:5px 12px;font-size:12.5px">⬇️ نزّل شيت الرفعة دي</button>${x.id && x.qp ? `<button class="up-btn" data-histfind="${esc(key)}" style="padding:5px 12px;font-size:12.5px" ${HX.busy ? 'disabled' : ''}>${HX.busy && HX.key === key ? '⏳ بيدوّر في QP...' : '🔎 أوردرات اترفعت اليوم ده ومش في السجل'}</button>` : ''}</div>
+          ${HX.key === key ? hxPanel() : ''}
           <div class="up-sheet"><table><thead><tr><th>#</th><th>رقم الشحنة</th><th>العميل</th><th>الموبايل</th><th>العنوان</th><th>السعر</th><th>notes</th><th>المحتوى</th><th>المصدر</th></tr></thead><tbody>
           ${x.orders.map((o, j) => `<tr><td class="rn">${j + 1}</td><td style="padding:5px 8px;direction:ltr;font-weight:700">${esc(o.serial)}</td><td style="padding:5px 8px">${esc(o.name)}</td><td style="padding:5px 8px;direction:ltr">${esc(o.phone)}</td>
             <td style="padding:5px 8px;max-width:240px;white-space:normal">${esc(o.address)}</td><td style="padding:5px 8px">${Number(o.amount || 0).toLocaleString('ar-EG')}</td><td style="padding:5px 8px">${esc(o.notes)}</td>
@@ -14121,6 +14171,9 @@ create policy "sheets: upload" on storage.objects for insert to authenticated wi
     sdWire();
     if($('ptrRef')) $('ptrRef').onclick = () => { PTR.data = null; PTR.busy = false; draw(); };
     document.querySelectorAll('[data-hist]').forEach(el => el.onclick = () => { histOpen = histOpen === el.dataset.hist ? '' : el.dataset.hist; draw(); });
+    document.querySelectorAll('[data-histfind]').forEach(b => b.onclick = () => hxFind(b.dataset.histfind));
+    document.querySelectorAll('[data-hxsel]').forEach(c => c.onchange = () => { HX.sel[c.dataset.hxsel] = c.checked; draw(); });
+    if($('hxAdd')) $('hxAdd').onclick = hxAdd;
     document.querySelectorAll('[data-histx]').forEach(b => b.onclick = () => {
       const all = (histShared || []).concat(S.hist); const x = all.find((h, i) => (h.id || ('l' + i)) === b.dataset.histx) || all.find(h => h.id === b.dataset.histx);
       histSheet(x);
