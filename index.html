@@ -18674,6 +18674,30 @@ table.cs tr.cs-open td{background:#fff7dd}
 @media (max-width:900px){.sqd-g{grid-template-columns:repeat(2,1fr)}}
 @media (max-width:520px){.sqd-g{grid-template-columns:1fr}}
 .wf-k{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px}
+.ot{border:2px solid #1f3d36;overflow:hidden}
+.ot *{box-sizing:border-box}
+.ot-root{margin-top:14px}
+.ot-root{display:flex;justify-content:center;position:relative;z-index:1}
+.ot-circle{width:190px;height:190px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#2e5a50,#1f3d36);color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;box-shadow:0 0 0 8px #e6efe9,0 8px 22px rgba(0,0,0,.18);text-align:center}
+.ot-circle span{font-size:14px;opacity:.85}.ot-circle b{font-size:26px;font-variant-numeric:tabular-nums;margin-top:4px}
+.ot-rail{position:relative;height:30px;margin:0 16.66%}
+.ot-rail::before{content:'';position:absolute;top:0;left:50%;width:3px;height:15px;background:#9fb3aa;transform:translateX(-50%)}
+.ot-rail::after{content:'';position:absolute;top:15px;left:0;right:0;height:3px;background:#9fb3aa;border-radius:3px}
+.ot-brs{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.ot-br{position:relative;display:flex;flex-direction:column;align-items:center}
+.ot-br::before{content:'';position:absolute;top:-12px;left:50%;width:3px;height:12px;background:#9fb3aa;transform:translateX(-50%)}
+.ot-box{position:relative;width:100%;background:var(--panel);border:2.5px solid var(--k);border-radius:14px;padding:26px 12px 12px;text-align:center;margin-top:22px}
+.ot-dot{position:absolute;top:-22px;left:50%;transform:translateX(-50%);width:44px;height:44px;border-radius:50%;background:var(--k);color:#fff;display:flex;align-items:center;justify-content:center;font-size:21px;box-shadow:0 0 0 4px var(--panel)}
+.ot-box>span{display:block;font-weight:800;font-size:15px}.ot-box>b{display:block;font-size:24px;color:var(--k);font-variant-numeric:tabular-nums;margin:2px 0}
+.ot-box>em{display:inline-block;font-style:normal;font-size:12px;font-weight:700;background:var(--k);color:#fff;border-radius:20px;padding:1px 9px}
+.ot-box>small{display:block;font-size:11.5px;color:var(--muted);margin-top:3px}
+.ot-leaves{width:100%;position:relative;padding:12px 0 0 0;display:flex;flex-direction:column;gap:8px}
+.ot-leaves::before{content:'';position:absolute;top:0;bottom:22px;right:50%;width:2px;background:repeating-linear-gradient(var(--k) 0 5px,transparent 5px 9px);opacity:.55}
+.ot-leaf{position:relative;display:flex;gap:9px;align-items:center;background:var(--panel);border:1.5px solid var(--line);border-inline-start:4px solid var(--k);border-radius:10px;padding:7px 10px}
+.ot-leaf i{font-style:normal;width:30px;height:30px;flex:none;border-radius:50%;border:2px solid var(--k);display:flex;align-items:center;justify-content:center;font-size:15px;background:var(--panel)}
+.ot-leaf span{display:block;font-size:12.5px;color:var(--muted)}.ot-leaf b{font-size:16px;font-variant-numeric:tabular-nums}.ot-leaf small{display:block;font-size:11px;color:var(--muted)}
+.ot-w{color:var(--muted)}
+@media (max-width:760px){.ot-brs{grid-template-columns:1fr;gap:6px}.ot-rail{height:14px;margin:0}.ot-rail::after{display:none}.ot-rail::before{height:14px}.ot-br::before{display:none}.ot-circle{width:160px;height:160px}.ot-circle b{font-size:22px}}
 .wf-c{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px;border-top:4px solid var(--k,#1f3d36)}
 .wf-c .n{font-size:24px;font-weight:800;font-variant-numeric:tabular-nums}
 .wf-c .l{font-size:13px;font-weight:700}
@@ -19011,16 +19035,16 @@ table.cs tr.cs-open td{background:#fff7dd}
     const c = k => A().category(k);
     const R = { pending:WF_RATE.ofd, ofd:WF_RATE.ofd, hold:WF_RATE.hold, undel:0 };   // Pending + مع المندوب 55% · هولد 20% · الاندلفرد كله راجع
     const K = ['pending', 'ofd', 'hold', 'undel'];
-    const blank = r => ({ n:0, v:0, p:0, cost:0, r, dv:0, dp:0, dc:0, rp:0, rc:0 });
+    const blank = r => ({ n:0, v:0, p:0, cost:0, r, dv:0, dp:0, dc:0, rp:0, rc:0, dn:0 });
     const G = {}; WF_G.forEach(([g]) => { G[g] = {}; K.forEach(k => G[g][k] = blank(R[k])); G[g].tot = blank(null); });
     const O = blank(null), way = blank(null);
     W.list.forEach(o => { let k = c(o); if(k === 'undelivered'){ if(isRet(o)) return; k = 'undel'; } if(!K.includes(k)) return;
       const b = brandOf(o), g = grpOf(b); if(!G[g]) return;
-      const x = { o, b, g, v:price(o) }; x.p = pieces(o, b); x.cost = goodsCost(x);
+      const x = { o, b, g, v:price(o), fee:num(o.total_fees) }; x.p = pieces(o, b); x.cost = goodsCost(x);
       const r = R[k];
       [G[g][k], G[g].tot, O].concat(k !== 'undel' ? [way] : []).forEach(t => { t.n++; t.v += x.v; t.p += x.p; t.cost += x.cost;
-        t.dv += x.v * r; t.dp += x.p * r; t.dc += x.cost * r; t.rp += x.p * (1 - r); t.rc += x.cost * (1 - r); }); });
-    return { G, wayV:way.v, wayExp:way.dv, out:O };
+        t.dv += x.v * r; t.dn += Math.max(0, x.v - x.fee) * r; t.dp += x.p * r; t.dc += x.cost * r; t.rp += x.p * (1 - r); t.rc += x.cost * (1 - r); }); });
+    return { G, wayV:way.v, wayExp:way.dv, wayNet:way.dn, out:O };
   }
   // 🏦 اللي نملكه دلوقتي = كاش (الخزنة + عند QP + توقع التسليمات − الديون) + بضاعة (المخزن الحالي + المرتجع)
   function owned(){
@@ -19042,6 +19066,29 @@ table.cs tr.cs-open td{background:#fff7dd}
       W.snaps = S;
     }catch(e){}
   }
+  /* 🌳 اللي عندنا: دايرة الإجمالي ← 3 مربعات (مخزن · كاش + اللي اتسحب · جاي من QP بعد الشحن) ← تفصيلة كل واحد */
+  function ownTree(C, wallet, cash, stock){
+    const q = v => v == null ? '<span class="ot-w">…</span>' : fmt(v) + ' ج';
+    const T = W.cash || {}, bk = T.back || { peter:0, fady:0 }, dP = W.cash ? num(T.peter) - num(bk.peter) : null, dF = W.cash ? num(T.fady) - num(bk.fady) : null;
+    const cfC = (W.cfg || {}).cash, safe = cfC != null && cfC !== '' ? num(cfC) : cash;   // الخزنة المكتوبة بالإيد لو موجودة، وإلا رصيد الشيت
+    const ret = C ? C.out.rc : null, way = C ? C.wayNet : null;
+    const goods = ret == null ? null : stock + ret;
+    const money = safe == null || dP == null ? null : safe + dP + dF;
+    const qp = wallet == null && way == null ? null : (wallet || 0) + (way || 0);
+    const all = goods == null || money == null || qp == null ? null : goods + money + qp;
+    const pc = v => all && v != null ? Math.round(v / all * 100) + '%' : '';
+    const leaf = (ic, l, v, sub) => `<div class="ot-leaf"><i>${ic}</i><div><span>${l}</span><b>${q(v)}</b>${sub ? `<small>${sub}</small>` : ''}</div></div>`;
+    const br = (k, ic, l, v, sub, leaves) => `<div class="ot-br" style="--k:${k}"><div class="ot-box"><div class="ot-dot">${ic}</div><span>${l}</span><b>${q(v)}</b>${pc(v) ? `<em>${pc(v)}</em>` : ''}${sub ? `<small>${sub}</small>` : ''}</div>
+      <div class="ot-leaves">${leaves.join('')}</div></div>`;
+    return `<div class="card ot"><h3 style="margin:0 0 4px">🌳 اللي عندنا دلوقتي</h3><p style="margin:0 0 6px;font-size:12.5px;color:var(--muted)">مخزن + كاش (ومعاه اللي انت وفادي سحبتوه) + الكاش اللي لسه جاي من QP بعد خصم الشحن.</p>
+      <div class="ot-root"><div class="ot-circle"><span>💎 الإجمالي</span><b>${q(all)}</b></div></div>
+      <div class="ot-rail"></div>
+      <div class="ot-brs">
+        ${br('#6b4f2a', '📦', 'مخزن', goods, 'بضاعة', [leaf('🏬', 'المخزن الحالي', stock, 'مكتوب بالإيد'), leaf('↩️', 'مرتجع هيرجع', ret, C ? `≈ ${fmt(C.out.rp)} قطعة` : '')])}
+        ${br('#2f7d55', '💵', 'كاش', money, 'الخزنة + اللي اتسحب', [leaf('🏦', 'الخزنة', safe, cfC != null && cfC !== '' ? 'مكتوبة بالإيد' : 'من 💼 الحسابات'), leaf('👤', 'بيتر سحب', dP, ''), leaf('👤', 'فادي سحب', dF, '')])}
+        ${br('#1d4f91', '🚚', 'جاي من QP', qp, 'بعد خصم الشحن', [leaf('👛', 'في محفظة QP', wallet, 'مخصوم الشحن — مع التحويل الجاي'), leaf('🛵', 'هيتسلم من اللي برا', way, C ? `متوقع ${fmt(C.wayExp)} − الشحن ${fmt(C.wayExp - C.wayNet)}` : '')])}
+      </div></div>`;
+  }
   const canEdit = () => me().is_admin || /فادي|فادى|fady/i.test((me().full_name || '') + ' ' + (me().username || ''));
   function view(){
     let h = `<div class="pagehead"><h1>📍 احنا فين؟</h1><p>فلوسنا فين دلوقتي: الأرباح من أول الشهر، اللي لينا عند QP، اللي لسه هيتسلم، اللي برا، وديونا. <small>(مبدئي — هنزوّد عليه)</small></p></div>
@@ -19062,6 +19109,7 @@ table.cs tr.cs-open td{background:#fff7dd}
         <button class="mockbtn" id="wfStSave" style="background:#1f3d36;border-color:#1f3d36;color:#fff">💾 احفظ</button>` : `<b>${fmt(stock0)} ج</b>`}</label>
       <span style="font-weight:700">🏦 الخزنة الحالية (من 💼 الحسابات): <b>${cash == null ? wait : fmt(cash) + ' ج'}</b></span></div>`;
     const retG = C ? C.out.rc : null, expD = C ? C.wayExp : null;
+    h += ownTree(C, wallet, cash, stock0);
     h += `<div class="wf-k" style="grid-template-columns:repeat(5,1fr)">
       ${card('#2f7d55', W.pr && W.pr.act ? esc(W.pr.act) + ' ج' : W.pr && W.pr.err ? '—' : wait, `📈 الربح لحد دلوقتي`, W.pr ? (W.pr.busy ? '⏳ بيحسب بنفس حسبة قسم الأرباح...' : W.pr.err ? '⚠️ ' + esc(W.pr.err) : `أرباح ${esc(monthTxt)} (فعلي) — نفس رقم <a href="#/profits">💰 الأرباح</a> من ${esc(W.pr.from)} لـ ${esc(W.pr.to)}`) : '')}
       ${card('#6b4f2a', fmt(stock0) + ' ج', '📦 المخزن الحالي', 'مكتوب بالإيد فوق')}
