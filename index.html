@@ -17115,7 +17115,12 @@ table.gs tr.wk td.day{color:#c5221f}
   async function saveSnapshot(){
     if(!S.scores || !me().is_admin) return;
     const map = {}; S.scores.forEach(r => map[r.id] = { name:r.name, list:(r.list || []).sort((a, b) => a.k.localeCompare(b.k)), days:r.days, closed:r.closed, missing:r.missing, ren:r.ren, renDel:r.renDel, dayBonus:r.dayBonus, monthBonus:r.monthBonus, deduct:r.deduct, net:r.net });
-    try{ await sb().from('app_kv').upsert({ key:'kd_score_' + S.month, value:{ map, at:new Date().toISOString() }, updated_at:new Date().toISOString(), updated_by_name: me().full_name || me().username || '' }); }catch(e){}
+    // 📅 كل أيام الشهر لكل براند (مش بس المتوزعة) — عشان جدول "الأيام" في مكافأة المتابعة يبين حالة كل يوم
+    const days = {};
+    Object.keys(BR).forEach(brand => { try{ const A = S.assignAll[brand] || {};
+      const L = daysFor(brand, S.month).map(d => ({ k:d.k, goal:d.goal, have:d.have, closed:!!d.closed, missing:d.missing, under:d.rate < BR[brand].target, who:A[d.k] || null, n:d.L.length }));
+      if(L.length) days[BR[brand].name] = { ic:BR[brand].icon, list:L }; }catch(e){} });
+    try{ await sb().from('app_kv').upsert({ key:'kd_score_' + S.month, value:{ map, days, at:new Date().toISOString() }, updated_at:new Date().toISOString(), updated_by_name: me().full_name || me().username || '' }); }catch(e){}
   }
   function flashKD(t, err){ S.msg = (err ? '⚠️ ' : '') + t; draw(); }
   const workUrl = (day, kind) => location.href.split('#')[0] + `#/kidzzly-days/work?b=${S.brand}&d=${day}&k=${kind}`;
@@ -18363,22 +18368,32 @@ table.cs tr.cs-open td{background:#fff7dd}
   /* 📅 لما تفتح "الأيام": جدول بكل أيام الشهر — عمود لكل براند (💍 إيطالي · 🧸 كيدزلي · وأي براند تاني عليها أيام فيه)
      وقدام كل يوم: ✅ تمام · ✅ زايد كام · ⏳/❌ ناقص كام · — لو اليوم مش عليها في البراند ده */
   function fbDaysTable(r){
+    const DY = (F.snap && F.snap.days) || null;   // كل أيام الشهر لكل براند (من آخر حسبة)
     const COLS = [['Dream', '💍 إيطالي'], ['Kidzzly', '🧸 كيدزلي']];
-    (r.list || []).forEach(d => { if(!COLS.some(c => c[0] === d.b)) COLS.push([d.b, (d.ic || '') + ' ' + d.b]); });
-    const at = {}; (r.list || []).forEach(d => at[d.b + '|' + d.k] = d);
+    const addCol = (b, ic) => { if(!COLS.some(c => c[0] === b)) COLS.push([b, (ic || '') + ' ' + b]); };
+    (r.list || []).forEach(d => addCol(d.b, d.ic));
+    const at = {};
+    if(DY) Object.entries(DY).forEach(([b, x]) => { if(!COLS.some(c => c[0] === b) && !(x.list || []).some(d => d.who === r.id)) return; addCol(b, x.ic); (x.list || []).forEach(d => at[b + '|' + d.k] = d); });
+    (r.list || []).forEach(d => at[d.b + '|' + d.k] = Object.assign({}, at[d.b + '|' + d.k] || {}, d, { who:r.id }));
+    const names = {}; Object.entries((F.snap && F.snap.map) || {}).forEach(([id, x]) => names[id] = x.name);
     const y = +F.month.slice(0, 4), m = +F.month.slice(5, 7), n = new Date(y, m, 0).getDate();
     const cell = d => {
-      if(!d) return '<td style="color:#b5b0a5">—</td>';
+      if(!d) return '<td style="color:#b5b0a5">مفيش أوردرات</td>';
+      const mine = d.who === r.id, other = d.who && !mine ? names[d.who] : '';
+      const tag = mine ? '' : `<div style="font-size:11px;font-weight:500;color:var(--muted)">${other ? 'على ' + esc(other) : d.under ? 'مش متوزع' : ''}</div>`;
       const extra = Math.max(0, (d.have || 0) - (d.goal || 0));
-      if(d.closed) return `<td style="background:#e3f3e8;color:#1f5f3a;font-weight:700">${extra ? '✅ زايد ' + extra : '✅ تمام'}</td>`;
-      return `<td style="background:#fbe3e1;color:#a3271a;font-weight:700">${window.seeDeduct() ? '❌' : '⏳'} ناقص ${d.missing}</td>`;
+      const st = d.closed ? (extra ? '✅ زايد ' + extra : '✅ تمام') : '❌ ناقص ' + (d.missing || 0);
+      const bg = d.closed ? '#e3f3e8' : '#fbe3e1', fg = d.closed ? '#1f5f3a' : '#a3271a';
+      return `<td style="background:${bg};color:${fg};font-weight:700;${mine ? 'box-shadow:inset 0 0 0 2px ' + fg : 'opacity:.75'}">${st}${tag}</td>`;
     };
-    let h = `<table class="pr" style="width:auto;min-width:340px;font-size:13px;background:#fff"><tr><th>اليوم</th>${COLS.map(c => `<th>${esc(c[1])}</th>`).join('')}</tr>`;
+    let h = `<table class="pr" style="width:auto;min-width:360px;font-size:13px;background:#fff"><tr><th>اليوم</th>${COLS.map(c => `<th>${esc(c[1])}</th>`).join('')}</tr>`;
     for(let i = 1; i <= n; i++){
       const k = F.month + '-' + String(i).padStart(2, '0');
       h += `<tr><td class="lbl">${esc(new Date(k + 'T12:00:00').toLocaleDateString('ar-EG', { weekday:'short', day:'numeric', month:'short' }))}</td>${COLS.map(c => cell(at[c[0] + '|' + k])).join('')}</tr>`;
     }
-    return h + '</table>';
+    h += '</table><div style="font-size:12px;color:var(--muted);margin-top:6px">الخانة اللي عليها إطار = يوم متوزع عليها · الباقي حالة اليوم للبراند (على مين أو مش متوزع).'
+      + (DY ? '' : ' ⚠️ دوس "🔄 احسب من جديد" عشان تظهر حالة كل أيام الشهر مش بس أيامها.') + '</div>';
+    return h;
   }
   function draw(){
     const el = document.getElementById('sq-fb'); if(!el) return;
