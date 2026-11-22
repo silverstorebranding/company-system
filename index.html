@@ -9021,6 +9021,31 @@ table.pr tr.bd-cat td{background:var(--slate-l);font-weight:700}
   const priceTxt = v => { const p = priceRange(v); return !p ? '' : p.max === Infinity ? p.min + ' وأكتر' : p.min === p.max ? 'بالظبط ' + p.min : 'من ' + p.min + ' لـ ' + p.max; };
 
   // تقسيم محتوى الأوردر لقطع: "+" أو سطر جديد، و"× 3" = 3
+  /* 🧸 عدّ قطع Kidzzly من الكلام المكتوب */
+  const KD_PIECE_PRICE = 250;   // سعر القطعة التقريبي (3 قطع ≈ 760 · 4 قطع ≈ 1000) — للأوردرات اللي مش مفهومة
+  const KD_WORDS = { 'قطعتين':2, 'قطعتان':2, 'طقمين':2, 'بيجامتين':2 };
+  const KD_NUMW = { 'اتنين':2, 'اثنين':2, 'تلات':3, 'تلاته':3, 'تلاتة':3, 'ثلاث':3, 'ثلاثة':3, 'ثلاثه':3, 'اربع':4, 'أربع':4, 'اربعة':4, 'اربعه':4, 'خمس':5, 'خمسة':5, 'خمسه':5, 'ست':6, 'ستة':6, 'سته':6, 'سبع':7, 'تمن':8, 'ثمان':8, 'تسع':9, 'عشر':10 };
+  const kdDig = t => String(t || '').replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d));
+  // 1) العدد مكتوب صريح: "قطعتين" / "3 قطع" / "تلات قطع" / "4 اطقم" — لو أكتر من واحد بيتجمعوا
+  function kdExplicit(text){
+    const t = kdDig(text); let n = 0; const how = [];
+    for(const m of t.matchAll(/(\d{1,2})\s*(قطع|قطعة|قطعه|اطقم|أطقم|بيجامات|pcs|pieces)(?![\u0600-\u06FF])/gi)){ if(+m[1] > 0){ n += +m[1]; how.push(m[0].trim()); } }
+    for(const [w, q] of Object.entries(KD_WORDS)) for(const m of t.matchAll(new RegExp('(^|[^\\u0600-\\u06FF])' + w + '(?![\\u0600-\\u06FF])', 'g'))){ n += q; how.push(w); }
+    for(const [w, q] of Object.entries(KD_NUMW)) for(const m of t.matchAll(new RegExp('(^|[^\\u0600-\\u06FF])' + w + '\\s+(قطع|اطقم|أطقم|بيجامات)(?![\\u0600-\\u06FF])', 'g'))){ n += q; how.push(w + ' ' + m[2]); }
+    return n > 0 ? { n, how:'مكتوب صريح: "' + how.join('" + "') + '"' } : null;
+  }
+  // 2) رقم قبل اسم المنتج: "2دفاية" / "3 دفايات" — بيتجمعوا، واللي بعد "+" من غير رقم بيتحسب لون للقطعة اللي قبله
+  //    (الرقم اللي قبله "مقاس" / "من" / "ل" / "سن" أو بعده "سنين / سنوات / شهور" مش عدد قطع)
+  const KD_NOT_BEFORE = /(مقاس|مقاسات|size|سن|عمر|من|ل|لـ|الى|إلى|و)$/i, KD_NOT_AFTER = /^(سنين|سنوات|سنه|سنة|سنتين|شهور|شهر|سم|كيلو|ك|ج|جنيه|قطع|قطعة|قطعه|اطقم|أطقم|بيجامات)$/;
+  function kdLeading(text){
+    const t = kdDig(text); let n = 0, k = 0; const how = [];
+    for(const m of t.matchAll(/(^|[^\u0600-\u06FF\d])(\d{1,2})\s*([\u0600-\u06FF]{3,})/g)){
+      const before = t.slice(0, m.index + m[1].length).trim().split(/[\s(+\n/،,]+/).pop() || '';
+      if(KD_NOT_BEFORE.test(before) || KD_NOT_AFTER.test(m[3])) continue;
+      if(!(+m[2] > 0)) continue; n += +m[2]; k++; how.push(m[2] + ' ' + m[3]);
+    }
+    return n > 0 ? { n, how:'رقم قبل المنتج: ' + how.join(' + ') + (k > 1 ? ' = ' + n : '') + ' (اللي بعد "+" من غير رقم لون)' } : null;
+  }
   function splitItems(text){
     return String(text || '').replace(/\r/g, '').split(/\s*\+\s*|\n+/).map(x => x.trim()).filter(Boolean);
   }
@@ -9058,6 +9083,11 @@ table.pr tr.bd-cat td{background:var(--slate-l);font-weight:700}
             if(r.perOcc && r.anyN[0]){ const occ = whole.split(r.anyN[0]).length - 1; q = (Number(r.pieces) || 1) * Math.max(1, occ); }
             addP(r.name, q, {}).orders.add(oi); out.pieces += q; row.items.push(r.name + ' × ' + q); rowAdd(row, q, {}); }); out.ok++; row.price = oPrice; out.rows.push(row); return; }
       }
+      // 🧸 Kidzzly: العدد المكتوب صريح ("قطعتين" / "3 قطع") بيكسب · وبعده الرقم اللي قبل المنتج ("2دفاية ... + وردة موف" = 2 — اللي بعد "+" لون)
+      if(bk === 'kidzzly'){
+        const kc = kdExplicit(o.shipment_contents) || kdLeading(o.shipment_contents);
+        if(kc){ addP('قطعة Kidzzly', kc.n, {}).orders.add(oi); out.pieces += kc.n; row.items.push('قطعة × ' + kc.n + ' — ' + kc.how); rowAdd(row, kc.n, {}); out.ok++; row.price = oPrice; out.rows.push(row); return; }
+      }
       splitItems(o.shipment_contents).forEach(raw => {
         const l = norm(raw); if(!l) return;
         const mult = itemMult(raw), ss = sizeShape(raw);
@@ -9083,6 +9113,10 @@ table.pr tr.bd-cat td{background:var(--slate-l);font-weight:700}
       // 3) قاعدة السعر بس (من غير كلمات): لو الأوردر فيه سطور مش مفهومة وسعره مطابق ← بتتحسب مرة واحدة للأوردر
       const pr = row.unknown.length ? cPrice.find(r => priceOk(r, oPrice)) : null;
       if(pr){ const q = Number(pr.pieces) || 1; addP(pr.name, q, {}).orders.add(oi); out.pieces += q; row.items.push(pr.name + ' × ' + q + ' (بالسعر)'); rowAdd(row, q, {}); out.ok += row.unknown.length; row.unknown = []; }
+      // 🧸 Kidzzly: الأوردر اللي مفيش ولا جزء منه مفهوم ← العدد من السعر (3 قطع ≈ 760 · 4 قطع ≈ 1000 · يعني ≈ 250 للقطعة)
+      if(bk === 'kidzzly' && row.unknown.length && !row.items.length && oPrice > 0){
+        const q = Math.max(1, Math.round(oPrice / KD_PIECE_PRICE));
+        addP('قطعة Kidzzly', q, {}).orders.add(oi); out.pieces += q; row.items.push(`قطعة × ${q} — من السعر: ${Math.round(oPrice)} ÷ ${KD_PIECE_PRICE} ≈ ${q} (المكتوب مش مفهوم)`); rowAdd(row, q, {}); row.byPrice = true; out.ok += row.unknown.length; row.unknown = []; }
       row.price = oPrice;
       row.unknown.forEach(raw => { out.unk++; out.unknown[raw] = (out.unknown[raw] || 0) + 1; });
       out.rows.push(row);
