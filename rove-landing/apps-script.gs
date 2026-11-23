@@ -8,7 +8,7 @@ function doPost(e) {
   lock.waitLock(20000);
   try {
     const o = JSON.parse(e.postData.contents);
-    const sh = SpreadsheetApp.getActiveSpreadsheet().getSheets()[0];
+    const sh = SpreadsheetApp.openById('16UgzToP87tB8IokZtekJ9QhCb_3k_5fsuz_fi4HJ-Oo').getSheets()[0];
     if (sh.getLastRow() === 0) sh.appendRow(HEADERS);
     sh.appendRow([o.id, o.created_at, o.name, "'" + o.phone, o.gov, o.address, o.items, o.count,
                   o.unit_price, o.subtotal, o.shipping, o.total, o.notes, o.source, 'جديد']);
