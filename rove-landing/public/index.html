@@ -1,0 +1,399 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Rove | بيجامات أطفال</title>
+<meta name="description" content="بيجامات أطفال ناعمة من سنة لـ 10 سنين. كل ما الباقة تكبر السعر يصغر لحد 180 جنيه للقطعة. الدفع عند الاستلام لكل المحافظات.">
+<meta property="og:title" content="Rove | بيجامات أطفال من 220 جنيه">
+<meta property="og:description" content="كل ما الباقة تكبر السعر يصغر. عايني قبل ما تدفعي، والدفع عند الاستلام.">
+<meta property="og:image" content="/img/duo.jpg">
+<meta name="theme-color" content="#7c5cbf">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link rel="preload" as="image" href="/img/duo.jpg">
+<style>
+:root{
+  --bg:#fffaf5; --card:#ffffff; --ink:#2b2340; --muted:#6f6787; --line:#eee6f5;
+  --brand:#7c5cbf; --brand-2:#9f84dc; --brand-soft:#f1ebfb; --peach:#ffe3d6; --accent:#ff7a59;
+  --ok:#1f9d6b; --danger:#d64545; --radius:18px; --shadow:0 8px 24px rgba(60,40,100,.08);
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Cairo",system-ui,sans-serif;font-size:16px;line-height:1.7;-webkit-font-smoothing:antialiased;padding-bottom:84px}
+img{max-width:100%;display:block}
+a{color:inherit}
+.wrap{max-width:560px;margin:0 auto;padding:0 16px}
+button{font-family:inherit;cursor:pointer}
+.topbar{background:var(--brand);color:#fff;text-align:center;font-size:14px;font-weight:600;padding:8px 12px}
+header.brand{display:flex;align-items:center;justify-content:center;padding:14px 0 6px}
+.logo{font-weight:800;font-size:30px;letter-spacing:1px;color:var(--brand);direction:ltr}
+.logo span{color:var(--accent)}
+.hero{padding:6px 0 18px}
+.hero-img{border-radius:24px;overflow:hidden;box-shadow:var(--shadow);aspect-ratio:896/1000;background:var(--brand-soft)}
+.hero-img img{width:100%;height:100%;object-fit:cover;object-position:center 40%}
+h1{font-size:28px;line-height:1.35;margin:18px 0 6px;font-weight:800}
+.lead{color:var(--muted);margin:0 0 14px}
+.price-pill{display:inline-flex;align-items:baseline;gap:6px;background:var(--peach);color:#b4472b;border-radius:999px;padding:6px 16px;font-weight:700}
+.price-pill b{font-size:24px}
+.cta{display:block;width:100%;border:0;border-radius:16px;background:var(--brand);color:#fff;font-size:19px;font-weight:800;padding:15px;margin-top:16px;text-align:center;text-decoration:none;box-shadow:0 8px 18px rgba(124,92,191,.3)}
+.cta:active{transform:scale(.99)}
+.trust{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:14px}
+.trust span{background:#fff;border:1px solid var(--line);border-radius:999px;padding:4px 12px;font-size:13px;font-weight:600}
+section{padding:22px 0}
+h2{font-size:23px;margin:0 0 4px;font-weight:800}
+.sub{color:var(--muted);margin:0 0 16px;font-size:15px}
+/* ladder */
+.ladder{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+.step{background:#fff;border:1.5px solid var(--line);border-radius:14px;text-align:center;padding:10px 2px;transition:.2s}
+.step small{display:block;font-size:12px;color:var(--muted);font-weight:600}
+.step b{font-size:20px;display:block;line-height:1.3}
+.step.on{border-color:var(--brand);background:var(--brand-soft)}
+.ship-note{margin-top:10px;font-size:14px;color:var(--muted);text-align:center}
+/* products */
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.prod{background:var(--card);border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow);display:flex;flex-direction:column}
+.prod .ph{aspect-ratio:3/4;background:var(--brand-soft);position:relative}
+.prod .ph img{width:100%;height:100%;object-fit:cover}
+.prod .count{position:absolute;top:8px;left:8px;background:var(--brand);color:#fff;border-radius:999px;min-width:28px;height:28px;display:none;align-items:center;justify-content:center;font-weight:800;font-size:14px;padding:0 8px}
+.prod .count.show{display:flex}
+.prod .body{padding:10px;display:flex;flex-direction:column;gap:8px;flex:1}
+.prod h3{margin:0;font-size:16px;font-weight:700;line-height:1.4}
+.prod select{width:100%;font-family:inherit;font-size:15px;padding:8px;border-radius:10px;border:1.5px solid var(--line);background:#fff;color:var(--ink)}
+.prod .add{margin-top:auto;border:0;border-radius:12px;background:var(--brand);color:#fff;font-weight:800;font-size:15px;padding:10px}
+.prod .add.done{background:var(--ok)}
+/* cart */
+.cart{background:#fff;border-radius:var(--radius);box-shadow:var(--shadow);padding:14px}
+.cart-empty{color:var(--muted);text-align:center;padding:8px 0}
+.line{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px dashed var(--line)}
+.line:last-child{border-bottom:0}
+.line img{width:46px;height:56px;object-fit:cover;border-radius:10px}
+.line .t{flex:1;font-size:14px;line-height:1.4}
+.line .t b{display:block;font-size:15px}
+.qty{display:flex;align-items:center;gap:6px}
+.qty button{width:30px;height:30px;border-radius:50%;border:1.5px solid var(--line);background:#fff;font-size:18px;line-height:1;font-weight:700;color:var(--brand)}
+.qty span{min-width:18px;text-align:center;font-weight:800}
+.sum{margin-top:10px;border-top:2px solid var(--line);padding-top:10px;font-size:15px}
+.sum div{display:flex;justify-content:space-between;padding:2px 0}
+.sum .total{font-size:20px;font-weight:800}
+.sum .save{color:var(--ok);font-weight:700}
+.nudge{margin-top:10px;background:var(--brand-soft);color:var(--brand);border-radius:12px;padding:8px 12px;font-size:14px;font-weight:700;text-align:center}
+/* form */
+form{display:grid;gap:12px}
+label{font-weight:700;font-size:15px;display:block;margin-bottom:4px}
+label small{font-weight:600;color:var(--muted)}
+input,select.f,textarea{width:100%;font-family:inherit;font-size:16px;padding:12px;border:1.5px solid var(--line);border-radius:12px;background:#fff;color:var(--ink)}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--brand)}
+textarea{min-height:70px;resize:vertical}
+.err{color:var(--danger);font-size:14px;font-weight:600;display:none}
+.err.show{display:block}
+.box{background:#fff;border-radius:var(--radius);box-shadow:var(--shadow);padding:16px}
+.guarantee{background:linear-gradient(135deg,var(--brand-soft),var(--peach));border-radius:var(--radius);padding:18px;text-align:center}
+.guarantee b{font-size:19px;display:block;margin-bottom:4px}
+.feats{display:grid;gap:10px}
+.feat{display:flex;gap:12px;align-items:flex-start;background:#fff;border-radius:14px;padding:12px;box-shadow:var(--shadow)}
+.feat i{font-style:normal;font-size:24px;line-height:1.2}
+.feat b{display:block}
+.feat p{margin:0;color:var(--muted);font-size:14px}
+.sizes{width:100%;border-collapse:collapse;background:#fff;border-radius:14px;overflow:hidden;box-shadow:var(--shadow);font-size:14px}
+.sizes th,.sizes td{padding:8px;text-align:center;border-bottom:1px solid var(--line)}
+.sizes th{background:var(--brand-soft)}
+details{background:#fff;border-radius:14px;padding:12px 14px;margin-bottom:8px;box-shadow:var(--shadow)}
+summary{font-weight:700;cursor:pointer}
+details p{margin:8px 0 0;color:var(--muted)}
+footer{text-align:center;color:var(--muted);font-size:13px;padding:24px 0 10px}
+/* sticky bar */
+.bar{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--line);box-shadow:0 -6px 20px rgba(60,40,100,.08);padding:10px 16px calc(10px + env(safe-area-inset-bottom));z-index:20}
+.bar .in{max-width:560px;margin:0 auto;display:flex;align-items:center;gap:12px}
+.bar .info{flex:1;line-height:1.3}
+.bar .info b{font-size:18px;display:block}
+.bar .info small{color:var(--muted);font-size:13px}
+.bar a{background:var(--accent);color:#fff;text-decoration:none;font-weight:800;border-radius:14px;padding:12px 18px;font-size:16px;white-space:nowrap}
+/* success */
+.done-screen{display:none;text-align:center;padding:30px 16px}
+.done-screen .ic{font-size:56px}
+.done-screen h2{margin:8px 0}
+.toast{position:fixed;top:14px;left:50%;transform:translate(-50%,-120%);background:var(--ink);color:#fff;padding:10px 18px;border-radius:999px;font-weight:700;font-size:14px;transition:.25s;z-index:30}
+.toast.show{transform:translate(-50%,0)}
+</style>
+<!-- FB_PIXEL -->
+</head>
+<body>
+<div class="topbar">🚚 شحن مجاني من 4 قطع · الدفع عند الاستلام</div>
+
+<main id="page">
+<div class="wrap">
+  <header class="brand"><div class="logo">Rove<span>.</span></div></header>
+
+  <div class="hero">
+    <div class="hero-img"><img src="/img/duo.jpg" alt="أطفال لابسين بيجامات Rove" width="896" height="1200" fetchpriority="high"></div>
+    <h1>بيجامة ناعمة… ونومة أحلى 🌙</h1>
+    <p class="lead">بيجامات أطفال بكم طويل للبنات والأولاد من سنة لـ 10 سنين. اختاري الأشكال اللي بيحبوها، وكل ما الباقة تكبر السعر يصغر.</p>
+    <span class="price-pill">القطعة من <b>220</b> جنيه ← لحد <b>180</b></span>
+    <a class="cta" href="#shop">يلا نختار البيجامات 👇</a>
+    <div class="trust"><span>👀 عايني قبل ما تدفعي</span><span>💵 الدفع عند الاستلام</span><span>📦 لكل المحافظات</span></div>
+  </div>
+</div>
+
+<section id="ladder">
+  <div class="wrap">
+    <h2>كل ما تزوّدي… السعر ينزل</h2>
+    <p class="sub">سعر القطعة على حسب عدد القطع في الطلب كله، وتقدري تخلطي الأشكال والمقاسات.</p>
+    <div class="ladder" id="ladderEl"></div>
+    <p class="ship-note">الشحن 30 جنيه لحد 3 قطع · <b>من 4 قطع الشحن مجاني</b></p>
+  </div>
+</section>
+
+<section id="shop">
+  <div class="wrap">
+    <h2>اختاري الأشكال والمقاسات</h2>
+    <p class="sub">اختاري المقاس (سن الطفل) ودوسي "ضيفي". ممكن تضيفي نفس الشكل بأكتر من مقاس.</p>
+    <div class="grid" id="grid"></div>
+  </div>
+</section>
+
+<section id="cartSec">
+  <div class="wrap">
+    <h2>سلتك 🛍️</h2>
+    <div class="cart" id="cart"></div>
+  </div>
+</section>
+
+<section id="order">
+  <div class="wrap">
+    <h2>خلّصي الطلب</h2>
+    <p class="sub">هنكلمك نأكد الطلب قبل الشحن.</p>
+    <div class="box">
+      <form id="form" novalidate>
+        <div>
+          <label for="phone">رقم الموبايل</label>
+          <input id="phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="01xxxxxxxxx" required>
+        </div>
+        <div>
+          <label for="name">الاسم</label>
+          <input id="name" name="name" autocomplete="name" placeholder="اسمك" required>
+        </div>
+        <div>
+          <label for="gov">المحافظة</label>
+          <select class="f" id="gov" name="gov" required><option value="">اختاري المحافظة</option></select>
+        </div>
+        <div>
+          <label for="address">العنوان <small>(اختياري، ممكن ناخده منك في مكالمة التأكيد)</small></label>
+          <input id="address" name="address" autocomplete="street-address" placeholder="المنطقة، الشارع، رقم العمارة">
+        </div>
+        <div>
+          <label for="notes">ملاحظات <small>(اختياري)</small></label>
+          <textarea id="notes" name="notes" placeholder="أي حاجة حابة تقوليها لنا"></textarea>
+        </div>
+        <p class="err" id="formErr"></p>
+        <button class="cta" id="submitBtn" type="submit" style="margin-top:4px">أكّدي الطلب · ادفعي عند الاستلام</button>
+      </form>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="guarantee">
+      <b>افتحي الشحنة الأول 📦</b>
+      افتحي الطلب قدام المندوب وعايني القطع. عجبتك؟ ادفعي. مش زي ما توقعتي؟ متدفعيش ولا جنيه.
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>ليه Rove؟</h2>
+    <div class="feats">
+      <div class="feat"><i>☁️</i><div><b>خامة ناعمة على جلده</b><p>مريحة طول الليل ومش بتضايق.</p></div></div>
+      <div class="feat"><i>🧸</i><div><b>رسومات بيحبوها</b><p>أرانب وعصافير وتاي داي وأبطال، كل طفل يختار شكله.</p></div></div>
+      <div class="feat"><i>🧺</i><div><b>طقم كامل</b><p>بلوزة بكم طويل وبنطلون، للنوم وللبيت.</p></div></div>
+      <div class="feat"><i>💸</i><div><b>كل ما تزوّدي توفّري</b><p>القطعة بتنزل لحد 180 جنيه، والشحن مجاني من 4 قطع.</p></div></div>
+    </div>
+  </div>
+</section>
+
+<section id="size">
+  <div class="wrap">
+    <h2>محتارة في المقاس؟</h2>
+    <p class="sub">اختاري على حسب سن طفلك. لو طفلك أطول من سنه، خدي المقاس اللي بعده.</p>
+    <table class="sizes">
+      <tr><th>السن</th><th>الطول التقريبي</th></tr>
+      <tr><td>1 – 2 سنة</td><td>80 – 92 سم</td></tr>
+      <tr><td>3 – 4 سنين</td><td>98 – 104 سم</td></tr>
+      <tr><td>5 – 6 سنين</td><td>110 – 116 سم</td></tr>
+      <tr><td>7 – 8 سنين</td><td>122 – 128 سم</td></tr>
+      <tr><td>9 – 10 سنين</td><td>134 – 140 سم</td></tr>
+    </table>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>ماما بتسأل… وRove بيرد</h2>
+    <details><summary>أقدر أعاين قبل ما أدفع؟</summary><p>أيوه، افتحي الشحنة قدام المندوب، ولو مش عاجبك متدفعيش.</p></details>
+    <details><summary>أقدر أخلط أشكال ومقاسات في نفس الطلب؟</summary><p>أيوه، والسعر بيتحسب على عدد القطع كلها مع بعض.</p></details>
+    <details><summary>الشحن بكام؟</summary><p>30 جنيه لحد 3 قطع، ومن 4 قطع وطالع الشحن مجاني.</p></details>
+    <details><summary>الدفع إزاي؟</summary><p>كاش عند الاستلام بعد ما تعايني.</p></details>
+    <details><summary>التوصيل بياخد قد إيه؟</summary><p>هنكلمك نأكد الطلب ونقولك ميعاد التسليم بالظبط.</p></details>
+  </div>
+</section>
+
+<footer>© Rove · بيجامات أطفال</footer>
+</main>
+
+<div class="done-screen wrap" id="done">
+  <div class="ic">🎉</div>
+  <h2>تم تأكيد طلبك</h2>
+  <p class="sub">شكرًا ليكي! هنكلمك قريب نأكد الطلب وميعاد التسليم.</p>
+  <div class="cart" id="doneSummary" style="text-align:right"></div>
+</div>
+
+<div class="bar" id="bar">
+  <div class="in">
+    <div class="info"><b id="barTotal">0 جنيه</b><small id="barSub">لسه مختارتيش قطع</small></div>
+    <a href="#shop" id="barBtn">اختاري</a>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+  // ====== إعدادات الأسعار ======
+  // سعر القطعة على حسب إجمالي عدد القطع (آخر رقم بيتطبق على أي عدد أكبر)
+  var TIERS = [220, 210, 200, 190, 180];
+  var SHIP_FEE = 30, FREE_SHIP_FROM = 4;
+  var PRODUCTS = [
+    {id:'bunny',  name:'بينك أرانب Hi',     img:'/img/bunny-sm.jpg'},
+    {id:'purple', name:'تاي داي موف',       img:'/img/purple-sm.jpg'},
+    {id:'beige',  name:'تاي داي بيج',       img:'/img/beige-sm.jpg'},
+    {id:'birds',  name:'سيمون عصافير',      img:'/img/birds-sm.jpg'},
+    {id:'spider', name:'سماوي سبايدر',      img:'/img/spider-sm.jpg'}
+  ];
+  var SIZES = ['سنة','2 سنين','3 سنين','4 سنين','5 سنين','6 سنين','7 سنين','8 سنين','9 سنين','10 سنين'];
+  var GOVS = ['القاهرة','الجيزة','الإسكندرية','القليوبية','الشرقية','الدقهلية','الغربية','المنوفية','البحيرة','كفر الشيخ','دمياط','بورسعيد','الإسماعيلية','السويس','الفيوم','بني سويف','المنيا','أسيوط','سوهاج','قنا','الأقصر','أسوان','البحر الأحمر','مطروح','الوادي الجديد','شمال سيناء','جنوب سيناء'];
+
+  var $ = function(id){return document.getElementById(id)};
+  var cart = []; // {pid,size,qty}
+  try{ var s = JSON.parse(localStorage.getItem('rove_cart')||'[]'); if(Array.isArray(s)) cart = s.filter(function(l){return byId(l.pid)}); }catch(e){}
+
+  function byId(id){for(var i=0;i<PRODUCTS.length;i++) if(PRODUCTS[i].id===id) return PRODUCTS[i];}
+  function unitFor(n){return n<=0?TIERS[0]:TIERS[Math.min(n,TIERS.length)-1];}
+  function calc(){
+    var n=0; cart.forEach(function(l){n+=l.qty});
+    var unit=unitFor(n), sub=unit*n, ship=n===0?0:(n>=FREE_SHIP_FROM?0:SHIP_FEE);
+    return {n:n,unit:unit,sub:sub,ship:ship,total:sub+ship,save:(TIERS[0]-unit)*n + (n>=FREE_SHIP_FROM?SHIP_FEE:0)};
+  }
+  function save(){try{localStorage.setItem('rove_cart',JSON.stringify(cart))}catch(e){}}
+  function fmt(x){return x.toLocaleString('ar-EG')}
+  function track(ev,params){try{if(window.fbq) fbq('track',ev,params||{})}catch(e){}}
+  function toast(t){var el=$('toast');el.textContent=t;el.classList.add('show');clearTimeout(toast._t);toast._t=setTimeout(function(){el.classList.remove('show')},1600)}
+  function esc(s){return String(s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
+
+  // ladder
+  $('ladderEl').innerHTML = TIERS.map(function(p,i){
+    return '<div class="step" data-i="'+i+'"><small>'+(i===TIERS.length-1?(i+1)+'+ قطع':(i+1)+(i===0?' قطعة':' قطع'))+'</small><b>'+p+'</b><small>جنيه</small></div>';
+  }).join('');
+
+  // products
+  $('grid').innerHTML = PRODUCTS.map(function(p){
+    return '<div class="prod"><div class="ph"><img src="'+p.img+'" alt="'+esc(p.name)+'" loading="lazy" width="448" height="597"><span class="count" id="c-'+p.id+'"></span></div>'+
+      '<div class="body"><h3>'+esc(p.name)+'</h3>'+
+      '<select id="s-'+p.id+'" aria-label="المقاس"><option value="">اختاري السن</option>'+SIZES.map(function(s){return '<option>'+s+'</option>'}).join('')+'</select>'+
+      '<button class="add" type="button" data-id="'+p.id+'">ضيفي للسلة +</button></div></div>';
+  }).join('');
+  $('grid').addEventListener('click',function(e){
+    var b=e.target.closest('.add'); if(!b) return;
+    var id=b.getAttribute('data-id'), sel=$('s-'+id);
+    if(!sel.value){ sel.focus(); sel.style.borderColor='var(--danger)'; toast('اختاري السن الأول'); return; }
+    sel.style.borderColor='';
+    var line=cart.filter(function(l){return l.pid===id&&l.size===sel.value})[0];
+    if(line) line.qty++; else cart.push({pid:id,size:sel.value,qty:1});
+    b.classList.add('done'); b.textContent='اتضافت ✓';
+    setTimeout(function(){b.classList.remove('done');b.textContent='ضيفي للسلة +'},1200);
+    var c=calc(); toast('اتضافت · '+c.n+' قطع · القطعة بـ '+c.unit);
+    track('AddToCart',{content_ids:[id],content_type:'product',value:c.unit,currency:'EGP'});
+    render();
+  });
+
+  // govs
+  $('gov').innerHTML += GOVS.map(function(g){return '<option>'+g+'</option>'}).join('');
+
+  function cartHTML(editable){
+    var c=calc();
+    if(!c.n) return '<div class="cart-empty">السلة فاضية… اختاري شكل ومقاس من فوق 👆</div>';
+    var h=cart.map(function(l,i){var p=byId(l.pid);
+      return '<div class="line"><img src="'+p.img+'" alt=""><div class="t"><b>'+esc(p.name)+'</b>مقاس '+esc(l.size)+'</div>'+
+        (editable?'<div class="qty"><button type="button" data-i="'+i+'" data-d="1">+</button><span>'+l.qty+'</span><button type="button" data-i="'+i+'" data-d="-1">−</button></div>':'<b>× '+l.qty+'</b>')+'</div>';
+    }).join('');
+    h+='<div class="sum"><div><span>'+c.n+' قطع × '+c.unit+' جنيه</span><span>'+c.sub+' جنيه</span></div>'+
+       '<div><span>الشحن</span><span>'+(c.ship?c.ship+' جنيه':'مجاني 🎉')+'</span></div>'+
+       (c.save>0?'<div class="save"><span>وفّرتي</span><span>'+c.save+' جنيه</span></div>':'')+
+       '<div class="total"><span>الإجمالي</span><span>'+c.total+' جنيه</span></div></div>';
+    if(editable){
+      var next=c.n<TIERS.length?TIERS[c.n]:null, msg='';
+      if(c.n<FREE_SHIP_FROM) msg='ضيفي '+(FREE_SHIP_FROM-c.n)+' كمان والشحن يبقى مجاني'+(next?' والقطعة تبقى بـ '+unitFor(FREE_SHIP_FROM):'');
+      else if(next) msg='ضيفي قطعة كمان والقطعة كلها تنزل لـ '+next+' جنيه';
+      if(msg) h+='<div class="nudge">💡 '+msg+'</div>';
+    }
+    return h;
+  }
+
+  function render(){
+    var c=calc();
+    $('cart').innerHTML=cartHTML(true);
+    PRODUCTS.forEach(function(p){var n=0;cart.forEach(function(l){if(l.pid===p.id)n+=l.qty});var el=$('c-'+p.id);el.textContent=n;el.classList.toggle('show',n>0)});
+    var steps=document.querySelectorAll('.step');
+    for(var i=0;i<steps.length;i++) steps[i].classList.toggle('on', c.n>0 && Math.min(c.n,TIERS.length)-1===i);
+    $('barTotal').textContent=c.n?c.total+' جنيه':'من 180 جنيه';
+    $('barSub').textContent=c.n?(c.n+' قطع · '+(c.ship?'+ شحن '+c.ship:'شحن مجاني')):'لسه مختارتيش قطع';
+    $('barBtn').textContent=c.n?'كمّلي الطلب':'اختاري';
+    $('barBtn').setAttribute('href',c.n?'#order':'#shop');
+    save();
+  }
+  $('cart').addEventListener('click',function(e){
+    var b=e.target.closest('button[data-i]'); if(!b) return;
+    var i=+b.getAttribute('data-i'); cart[i].qty+=+b.getAttribute('data-d');
+    if(cart[i].qty<=0) cart.splice(i,1);
+    render();
+  });
+  render();
+
+  var checkoutSent=false;
+  $('form').addEventListener('focusin',function(){ if(!checkoutSent){checkoutSent=true; var c=calc(); track('InitiateCheckout',{num_items:c.n,value:c.total,currency:'EGP'});} });
+
+  var params=new URLSearchParams(location.search);
+  $('form').addEventListener('submit',function(e){
+    e.preventDefault();
+    var err=$('formErr'); err.classList.remove('show');
+    var c=calc();
+    var phone=$('phone').value.replace(/[^\d٠-٩+]/g,'').replace(/[٠-٩]/g,function(d){return '٠١٢٣٤٥٦٧٨٩'.indexOf(d)});
+    var name=$('name').value.trim(), gov=$('gov').value;
+    function fail(m,el){err.textContent=m;err.classList.add('show'); if(el) el.focus();}
+    if(!c.n) return fail('السلة فاضية، اختاري قطعة على الأقل من فوق.');
+    if(!/^(\+?20)?0?1[0125]\d{8}$/.test(phone)) return fail('اكتبي رقم موبايل مصري صحيح (11 رقم).',$('phone'));
+    if(name.length<2) return fail('اكتبي اسمك.',$('name'));
+    if(!gov) return fail('اختاري المحافظة.',$('gov'));
+    var btn=$('submitBtn'); btn.disabled=true; btn.textContent='جاري تأكيد الطلب…';
+    var payload={phone:phone,name:name,gov:gov,address:$('address').value.trim(),notes:$('notes').value.trim(),
+      items:cart.map(function(l){return {pid:l.pid,size:l.size,qty:l.qty}}),
+      utm_source:params.get('utm_source')||'',utm_campaign:params.get('utm_campaign')||'',utm_content:params.get('utm_content')||'',fbclid:params.get('fbclid')?'yes':''};
+    fetch('/api/order',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
+      .then(function(r){return r.json().then(function(j){if(!r.ok||!j.ok) throw new Error(j.error||'error');return j})})
+      .then(function(j){
+        track('Purchase',{value:j.total,currency:'EGP',num_items:j.count,content_type:'product'},{eventID:j.id});
+        $('doneSummary').innerHTML='<div style="font-weight:700;margin-bottom:6px">رقم الطلب: '+esc(j.id)+'</div>'+cartHTML(false);
+        cart=[]; save();
+        $('page').style.display='none'; $('bar').style.display='none'; $('done').style.display='block';
+        window.scrollTo(0,0);
+      })
+      .catch(function(){
+        btn.disabled=false; btn.textContent='أكّدي الطلب · ادفعي عند الاستلام';
+        fail('حصلت مشكلة في الإرسال، جرّبي تاني كمان ثانية.');
+      });
+  });
+})();
+</script>
+</body>
+</html>

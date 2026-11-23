@@ -1,0 +1,26 @@
+name = "shop"
+main = "src/worker.js"
+compatibility_date = "2025-10-01"
+account_id = "ae5b919e00cefb2862a183f92410066c"
+workers_dev = true
+
+[[rules]]
+type = "Data"
+globs = ["**/*.jpg"]
+fallthrough = true
+
+[[rules]]
+type = "Text"
+globs = ["**/*.html"]
+fallthrough = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "rove-orders"
+database_id = "ca14dcc9-8294-4832-97eb-6782362d71f4"
+
+[vars]
+# Google Apps Script web-app URL (ends with /exec). Leave empty until deployed.
+SHEET_URL = ""
+# Facebook Pixel ID (numbers only). Leave empty if none.
+FB_PIXEL_ID = ""
