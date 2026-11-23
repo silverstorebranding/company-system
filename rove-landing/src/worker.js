@@ -52,16 +52,19 @@ async function handleOrder(req, env, ctx) {
 }
 
 async function pushToSheet(env, order) {
+  let status;
   try {
     const r = await fetch(env.SHEET_URL, {
-      method: 'POST', headers: { 'content-type': 'text/plain;charset=utf-8' },
+      method: 'POST',
+      headers: { 'content-type': 'text/plain;charset=utf-8', 'user-agent': 'Mozilla/5.0 (compatible; RoveOrders/1.0)' },
       body: JSON.stringify(order), redirect: 'follow',
     });
-    const ok = r.ok;
-    await env.DB.prepare('UPDATE orders SET sheet_status=? WHERE id=?').bind(ok ? 'sent' : 'http ' + r.status, order.id).run();
+    const txt = (await r.text()).replace(/\s+/g, ' ').slice(0, 400);
+    status = r.ok && txt.includes('"ok":true') ? 'sent' : `http ${r.status} @ ${new URL(r.url).host} :: ${txt}`;
   } catch (e) {
-    await env.DB.prepare('UPDATE orders SET sheet_status=? WHERE id=?').bind('error', order.id).run();
+    status = 'error :: ' + String(e).slice(0, 200);
   }
+  await env.DB.prepare('UPDATE orders SET sheet_status=? WHERE id=?').bind(status, order.id).run();
 }
 
 // Retry orders that didn't reach the sheet (runs on cron)

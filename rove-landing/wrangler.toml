@@ -5,7 +5,7 @@ account_id = "ae5b919e00cefb2862a183f92410066c"
 workers_dev = true
 
 [triggers]
-crons = ["*/10 * * * *"]
+crons = ["*/2 * * * *"]
 
 [[rules]]
 type = "Data"
