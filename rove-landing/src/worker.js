@@ -59,7 +59,10 @@ async function pushToSheet(env, order) {
       headers: { 'content-type': 'text/plain;charset=utf-8', 'user-agent': 'Mozilla/5.0 (compatible; RoveOrders/1.0)' },
       body: JSON.stringify(order), redirect: 'follow',
     });
-    const txt = (await r.text()).replace(/\s+/g, ' ').slice(0, 400);
+    const raw = await r.text();
+    const title = (raw.match(/<title>([^<]*)<\/title>/i) || [])[1] || '';
+    const body = raw.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+    const txt = (title ? '[' + title + '] ' : '') + body.slice(0, 400);
     status = r.ok && txt.includes('"ok":true') ? 'sent' : `http ${r.status} @ ${new URL(r.url).host} :: ${txt}`;
   } catch (e) {
     status = 'error :: ' + String(e).slice(0, 200);
