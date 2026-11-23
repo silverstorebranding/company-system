@@ -1,7 +1,7 @@
 // الصقي الكود ده في Google Sheet ← Extensions ← Apps Script، وبعدين Deploy ← New deployment ← Web app
 // Execute as: Me  |  Who has access: Anyone
 // وابعتي لينك الـ Web app (اللي آخره /exec).
-const HEADERS = ['رقم الطلب','التاريخ','الاسم','الموبايل','المحافظة','العنوان','القطع','العدد','سعر القطعة','المنتجات','الشحن','الإجمالي','ملاحظات','المصدر','الحالة'];
+const HEADERS = ['رقم الطلب','التاريخ','الاسم','الموبايل','المحافظة','العنوان','المنتجات','العدد','سعر القطعة','قبل الشحن','الشحن','الإجمالي','ملاحظات','المصدر','الحالة'];
 
 function doPost(e) {
   const lock = LockService.getScriptLock();
