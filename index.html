@@ -15152,6 +15152,19 @@ a.hm-kpi:hover{box-shadow:0 6px 16px rgba(0,0,0,.07)}
       if(rows.length) await sb().from('inbox').insert(rows); }catch(e){}
     S.modal = null; flash(`✅ اتبعت طلب ${kind === 'bonus' ? 'المكافأة' : 'الخصم'} لـ ${emp.name} — الأدمن هيحدد القيمة.`); load();
   }
+  // 🗑️ مسح موظف نهائي — بيمسح معاه كل خصوماته وإضافاته وسلفه وصرفه في كل الشهور (on delete cascade)
+  async function delEmp(d){
+    if(!d || !d.id) return;
+    const { count } = await sb().from('payroll_entries').select('id', { count:'exact', head:true }).eq('employee_id', d.id);
+    const n = count || 0;
+    if(!confirm(`هتمسح "${d.name}" من الرواتب نهائي${n ? ` ومعاه ${n} حركة (خصومات/إضافات/سلف/صرف) في كل الشهور` : ''}.\nمفيش رجوع. لو هو بس ساب الشغل، الأحسن تخلي حالته "ساب الشغل" بدل المسح.\n\nمتأكد؟`)) return;
+    // اللي كانوا تحت إيده كمدير يبقوا من غير مدير
+    if(S.hasMgr) await sb().from('payroll_employees').update({ manager_emp_id:null }).eq('manager_emp_id', d.id);
+    await sb().from('payroll_entries').delete().eq('employee_id', d.id);
+    const { data, error } = await sb().from('payroll_employees').delete().eq('id', d.id).select('id');
+    if(error || !data || !data.length){ S.modalErr = 'ماتمسحش: ' + (error ? error.message : 'المسح اترفض') + ' — اتأكد إنك داخل بأكونت الأدمن ومش في وضع "اتفرج كأنك".'; return draw(); }
+    S.modal = null; S.modalErr = ''; flash(`🗑️ "${d.name}" اتمسح من الرواتب.`); load();
+  }
   async function saveEmp(d){
     const row = { name: String(d.name || '').trim(), job: d.job || null, dept: d.dept || null, base_salary: num(d.base_salary), phone: d.phone || null, start_date: d.start_date || null, active: d.active !== false, notes: d.notes || null };
     if(!S.needCol) row.profile_id = d.profile_id || null;
@@ -15347,7 +15360,7 @@ a.hm-kpi:hover{box-shadow:0 6px 16px rgba(0,0,0,.07)}
         <div><label>الدور</label><select data-pf="is_manager"><option value="0" ${!d.is_manager ? 'selected' : ''}>👤 موظف</option><option value="1" ${d.is_manager ? 'selected' : ''}>🧑‍💼 مدير</option></select></div>
         <div><label>تحت مين (المدير بتاعه)</label><select data-pf="manager_emp_id"><option value="">— مالوش مدير —</option>${(S.emps || []).filter(x => x.is_manager && x.id !== d.id).map(x => `<option value="${x.id}" ${String(d.manager_emp_id) === String(x.id) ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></div>
         <div style="grid-column:1/-1"><label>🔗 الأكونت بتاعه في السيستم (عشان الـ EOD وعمولة Squad${d.is_manager ? ' — ولازم للمدير عشان يدخل يشوف فريقه' : ''})</label><select data-pf="profile_id"><option value="">— مش مربوط —</option>${(S.profiles || []).map(p => `<option value="${esc(p.id)}" ${d.profile_id === p.id ? 'selected' : ''}>${esc(p.full_name || p.username)}</option>`).join('')}</select></div>
-      </div>${S.modalErr ? `<div class="pr-msg err" style="margin-top:12px">${esc(S.modalErr)}</div>` : ''}<div class="pr-bar" style="margin:16px 0 0"><button class="pr-btn pri" id="prSaveEmp">💾 حفظ</button><button class="pr-btn" data-prclose>إلغاء</button></div></div></div>`; }
+      </div>${S.modalErr ? `<div class="pr-msg err" style="margin-top:12px">${esc(S.modalErr)}</div>` : ''}<div class="pr-bar" style="margin:16px 0 0"><button class="pr-btn pri" id="prSaveEmp">💾 حفظ</button><button class="pr-btn" data-prclose>إلغاء</button>${d.id ? `<button class="pr-btn" id="prDelEmp" style="margin-inline-start:auto;border-color:#c53030;color:#c53030">🗑️ امسح الموظف نهائي</button>` : ''}</div></div></div>`; }
     const emp = S.emps.find(x => String(x.id) === String(M.empId)) || {}, K = KINDS[M.kind], c = calc(emp);
     const dayRate = num(emp.base_salary) / 30;
     return `<div class="pr-modal" id="prModal"><div class="pr-box"><h3>${M.kind === 'payment' ? '💵 صرف مرتب' : (M.kind === 'bonus' ? '➕ إضافة' : M.kind === 'advance' ? '💸 سلفة' : '➖ خصم')} — ${esc(emp.name || '')}</h3>
@@ -15411,6 +15424,7 @@ a.hm-kpi:hover{box-shadow:0 6px 16px rgba(0,0,0,.07)}
     if($('prModal')) $('prModal').onclick = e => { if(e.target.id === 'prModal'){ S.modal = null; draw(); } };
     document.querySelectorAll('[data-pf]').forEach(el => el.oninput = el.onchange = () => { const k = el.dataset.pf; S.modal.d[k] = (k === 'active' || k === 'is_manager' || k === 'show_self') ? el.value === '1' : el.value; if(k === 'is_manager') draw(); });
     if($('prSaveEmp')) $('prSaveEmp').onclick = () => saveEmp(S.modal.d);
+    if($('prDelEmp')) $('prDelEmp').onclick = () => delEmp(S.modal.d);
     document.querySelectorAll('[data-qa-add]').forEach(b => b.onclick = async () => {
       const id = b.dataset.qaAdd, p = (S.profiles || []).find(x => x.id === id); if(!p) return;
       const v = k => (document.querySelector(`[data-qa-${k}="${id}"]`) || {}).value || '';
