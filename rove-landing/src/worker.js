@@ -6,7 +6,7 @@ const TIERS = [220, 210, 200, 190, 180];
 const SHIP_FEE = 30, FREE_SHIP_FROM = 4;
 const PRODUCTS = {
   bunny: 'بينك أرانب Hi', purple: 'تاي داي موف', beige: 'تاي داي بيج',
-  birds: 'سيمون عصافير', spider: 'سماوي سبايدر', kitty: 'بينك قطط وأرانب',
+  birds: 'سيمون عصافير', spider: 'سماوي سبايدر', kitty: 'بينك قطط وأرانب', giraffe: 'أوف وايت زرافة',
 };
 
 const json = (o, s = 200) => new Response(JSON.stringify(o), {
@@ -91,7 +91,7 @@ export default {
     const a = ASSETS[path];
     if (!a) return new Response('Not found', { status: 404 });
     const isHtml = a[1].startsWith('text/html');
-    const res = new Response(a[0], { headers: { 'content-type': a[1], 'cache-control': isHtml ? 'no-cache' : 'public, max-age=604800' } });
+    const res = new Response(a[0], { headers: { 'content-type': a[1], 'cache-control': isHtml ? 'no-cache' : 'public, max-age=86400' } });
     const pixel = /^\d{8,20}$/.test(env.FB_PIXEL_ID || '') ? env.FB_PIXEL_ID : '';
     if (pixel && (res.headers.get('content-type') || '').includes('text/html')) {
       const snippet = `<script>!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');fbq('init','${pixel}');fbq('track','PageView');</script>`;
