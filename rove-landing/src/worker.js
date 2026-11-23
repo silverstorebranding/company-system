@@ -6,7 +6,7 @@ const TIERS = [220, 210, 200, 190, 180];
 const SHIP_FEE = 30, FREE_SHIP_FROM = 4;
 const PRODUCTS = {
   bunny: 'بينك أرانب Hi', purple: 'تاي داي موف', beige: 'تاي داي بيج',
-  birds: 'سيمون عصافير', spider: 'سماوي سبايدر',
+  birds: 'سيمون عصافير', spider: 'سماوي سبايدر', kitty: 'بينك قطط وأرانب',
 };
 
 const json = (o, s = 200) => new Response(JSON.stringify(o), {

@@ -89,7 +89,7 @@ h2{font-size:22px;margin:0 0 4px;font-weight:800}
 .piece-h{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-weight:800}
 .piece-h small{color:var(--muted);font-weight:600;font-size:13px}
 .lbl{font-size:13px;color:var(--muted);font-weight:700;margin:6px 0}
-.designs{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+.designs{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
 .d{border:2px solid transparent;border-radius:12px;padding:0;background:none;position:relative;overflow:hidden;aspect-ratio:1}
 .d img{width:100%;height:100%;object-fit:cover;border-radius:10px}
 .d.on{border-color:var(--brand)}
@@ -309,12 +309,15 @@ footer{text-align:center;color:var(--muted);font-size:13px;padding:20px 0 8px}
   var POPULAR = 4;
   var DEFAULT_BUNDLE = 4;
   var PRODUCTS = [
-    {id:'bunny',  name:'بينك أرانب Hi', img:'/img/bunny-sm.jpg',  th:'/img/bunny-th.jpg'},
-    {id:'purple', name:'تاي داي موف',   img:'/img/purple-sm.jpg', th:'/img/purple-th.jpg'},
-    {id:'beige',  name:'تاي داي بيج',   img:'/img/beige-sm.jpg',  th:'/img/beige-th.jpg'},
-    {id:'birds',  name:'سيمون عصافير',  img:'/img/birds-sm.jpg',  th:'/img/birds-th.jpg'},
-    {id:'spider', name:'سماوي سبايدر',  img:'/img/spider-sm.jpg', th:'/img/spider-th.jpg'}
+    {id:'spider', name:'سماوي سبايدر',     img:'/img/spider-sm.jpg', th:'/img/spider-th.jpg'},
+    {id:'bunny',  name:'بينك أرانب Hi',    img:'/img/bunny-sm.jpg',  th:'/img/bunny-th.jpg'},
+    {id:'kitty',  name:'بينك قطط وأرانب',  img:'/img/kitty-sm.jpg',  th:'/img/kitty-th.jpg'},
+    {id:'purple', name:'تاي داي موف',      img:'/img/purple-sm.jpg', th:'/img/purple-th.jpg'},
+    {id:'beige',  name:'تاي داي بيج',      img:'/img/beige-sm.jpg',  th:'/img/beige-th.jpg'},
+    {id:'birds',  name:'سيمون عصافير',     img:'/img/birds-sm.jpg',  th:'/img/birds-th.jpg'}
   ];
+  // صور إضافية في معرض الأشكال
+  var EXTRA_GALLERY = [{after:'bunny', name:'بينك أرانب Hi', img:'/img/bunny2-sm.jpg'}];
   var AGES = ['1','2','3','4','5','6','7','8','9','10'];
   var GOVS = ['القاهرة','الجيزة','الإسكندرية','القليوبية','الشرقية','الدقهلية','الغربية','المنوفية','البحيرة','كفر الشيخ','دمياط','بورسعيد','الإسماعيلية','السويس','الفيوم','بني سويف','المنيا','أسيوط','سوهاج','قنا','الأقصر','أسوان','البحر الأحمر','مطروح','الوادي الجديد','شمال سيناء','جنوب سيناء'];
 
@@ -330,7 +333,8 @@ footer{text-align:center;color:var(--muted);font-size:13px;padding:20px 0 8px}
   function ensurePieces(){ while(state.pieces.length<state.count) state.pieces.push({pid:'',age:''}); state.pieces.length=state.count; }
 
   // gallery
-  $('gallery').innerHTML = PRODUCTS.map(function(p){
+  var gal=[]; PRODUCTS.forEach(function(p){ gal.push(p); EXTRA_GALLERY.forEach(function(x){ if(x.after===p.id) gal.push(x); }); });
+  $('gallery').innerHTML = gal.map(function(p){
     return '<div class="g"><img src="'+p.img+'" alt="'+esc(p.name)+'" loading="lazy" width="448" height="597"><div>'+esc(p.name)+'</div></div>';
   }).join('');
 
