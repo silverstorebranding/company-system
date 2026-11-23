@@ -4,6 +4,9 @@ compatibility_date = "2025-10-01"
 account_id = "ae5b919e00cefb2862a183f92410066c"
 workers_dev = true
 
+[triggers]
+crons = ["*/10 * * * *"]
+
 [[rules]]
 type = "Data"
 globs = ["**/*.jpg"]

@@ -64,7 +64,16 @@ async function pushToSheet(env, order) {
   }
 }
 
+// Retry orders that didn't reach the sheet (runs on cron)
+async function retrySheet(env) {
+  if (!env.SHEET_URL) return;
+  const { results } = await env.DB.prepare(
+    "SELECT * FROM orders WHERE sheet_status IS NOT 'sent' ORDER BY rowid LIMIT 20").all();
+  for (const o of results) await pushToSheet(env, o);
+}
+
 export default {
+  async scheduled(event, env, ctx) { ctx.waitUntil(retrySheet(env)); },
   async fetch(req, env, ctx) {
     const url = new URL(req.url);
     if (url.pathname === '/api/order') {
