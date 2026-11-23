@@ -21,6 +21,6 @@ database_id = "ca14dcc9-8294-4832-97eb-6782362d71f4"
 
 [vars]
 # Google Apps Script web-app URL (ends with /exec). Leave empty until deployed.
-SHEET_URL = ""
+SHEET_URL = "https://script.google.com/macros/s/AKfycbwXfy-lQuZDsGQAB5AE4exI7tSpfuFHR041Ds7YNSrc_-uC2k76xEQ4uNqidU5MP2cl/exec"
 # Facebook Pixel ID (numbers only). Leave empty if none.
 FB_PIXEL_ID = ""
