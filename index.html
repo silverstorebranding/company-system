@@ -16250,7 +16250,7 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
   const DEF_SRC = [{ key:'dream', label:'Dream Easy', color:'#2b6cb0' }, { key:'care', label:'Care Easy', color:'#b0457a' }, { key:'kidzzly', label:'Kidzzly Easy', color:'#4f8fd8' }];
   const SQUAD = { key:'squad', label:'🏆 Squad', color:'#8a6d3b' };
 
-  const S = { open:null, filt:'all', mode:'mtd', day:today(), month:today().slice(0, 7), from:today().slice(0, 8) + '01', to:today(), loading:false, msg:'', err:'', data:null, srcs:null, cache:{} };
+  const S = { open:null, filt:'all', page:'', mode:'mtd', day:today(), month:today().slice(0, 7), from:today().slice(0, 8) + '01', to:today(), loading:false, msg:'', err:'', data:null, srcs:null, cache:{} };
 
   function range(){
     if(S.mode === 'day') return [S.day, S.day];
@@ -16339,19 +16339,29 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
   }
 
   // 📋 لستة الأوردرات لمصدر (ويوم لو اتحدد)
-  function drillRows(){
+  function drillBase(){
     const X = S.data, o = S.open; if(!X || !o) return [];
     return (X.rows || []).filter(r => r.src === o.src && (!o.day || r.inDay === o.day || r.qps.some(q => q.day === o.day)));
+  }
+  // 📄 فلتر الصفحة (عمود "الصفحة") — '' = كل الصفحات
+  const pgOf = r => String(r.page || '').trim();
+  function drillRows(){ const B = drillBase(); return S.page ? B.filter(r => pgOf(r) === S.page) : B; }
+  function pageOpts(){
+    const C = {}; drillBase().forEach(r => { const p = pgOf(r); if(p) C[p] = (C[p] || 0) + 1; });
+    return Object.entries(C).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'ar'));
   }
   const FILTS = [['all', 'الكل'], ['qp', '🚚 راح QP'], ['notqp', '⏳ لسه مارحش QP'], ['del', '✅ اتسلم'], ['notdel', '🚚 راح ومااتسلمش'], ['nolabel', '⚠️ راح QP من غير ليبل']];
   const passF = (r, f) => f === 'qp' ? r.qps.length : f === 'notqp' ? !r.qps.length : f === 'del' ? r.qps.some(q => q.del) : f === 'notdel' ? r.qps.length && !r.qps.some(q => q.del) : f === 'nolabel' ? r.qps.some(q => !q.notes) : true;
   function drillHtml(){
     const o = S.open; if(!o) return '';
     const s = (S.srcs || []).find(x => x.key === o.src) || { label:o.src, color:'#666' };
+    const PG = pageOpts(); if(S.page && !PG.some(([p]) => p === S.page)) S.page = '';
     const all = drillRows(), L = all.filter(r => passF(r, S.filt)).sort((a, b) => (b.inDay || b.qpDay).localeCompare(a.inDay || a.qpDay));
     const dl = d => d ? new Date(d + 'T12:00:00').toLocaleDateString('ar-EG', { weekday:'short', day:'numeric', month:'short' }) : '';
     return `<div class="card om-drill" id="omDrill" style="border-top:5px solid ${esc(s.color)}"><h3>📋 أوردرات ${esc(s.label)}${o.day ? ' — ' + esc(dl(o.day)) : ''} <b>${L.length}</b>
         <button class="om-btn" id="omXls" style="margin-inline-start:auto;padding:5px 12px;font-size:12.5px">⬇️ Excel</button><button class="om-btn" id="omClose" style="padding:5px 12px;font-size:12.5px">✕</button></h3>
+      ${PG.length ? `<div class="om-filts" style="align-items:center"><label style="font-size:13px;font-weight:700">📄 الصفحة <select id="omPage" style="font-family:inherit;font-size:13px;padding:5px 8px;border-radius:8px;border:1px solid var(--line,#ddd);max-width:100%">
+        <option value="">كل الصفحات (${drillBase().length})</option>${PG.map(([p, n]) => `<option value="${esc(p)}" ${S.page === p ? 'selected' : ''}>${esc(p)} (${n})</option>`).join('')}</select></label></div>` : ''}
       <div class="om-filts">${FILTS.map(([k, l]) => `<button class="${S.filt === k ? 'on' : ''}" data-omfilt="${k}">${l} (${all.filter(r => passF(r, k)).length})</button>`).join('')}</div>
       ${L.length ? `<div class="om-wrap"><table class="om-tbl om-dt"><thead><tr><th>جه يوم</th><th>العميل</th><th>الموبايل</th>${o.src === 'squad' ? '<th>الصفحة</th>' : ''}<th>رقم QP</th><th>اترفع يوم</th><th>الليبل على QP (notes)</th><th>حالته في QP</th></tr></thead><tbody>
         ${L.map(r => { const q = r.qps[0];
@@ -16366,7 +16376,7 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
     const L = drillRows().filter(r => passF(r, S.filt));
     const ws = XLSX.utils.json_to_sheet(L.map(r => { const q = r.qps[0] || {}; return { 'جه يوم':r.inDay || '', 'العميل':r.name, 'الموبايل':String(r.phone || ''), 'الصفحة':r.page || '', 'رقم QP':r.qps.map(x => x.serial).join(' / '), 'اترفع يوم':q.day || '', 'notes على QP':q.notes || (r.qps.length ? 'من غير ليبل' : ''), 'حالته في QP':q.status || (r.qps.length ? '' : 'لسه مارحش QP') }; }));
     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'orders');
-    XLSX.writeFile(wb, `أوردرات ${String(s.label).replace(/[^\w؀-ۿ ]/g, '').trim()} ${o.day || S.data.from + '_' + S.data.to}.xlsx`);
+    XLSX.writeFile(wb, `أوردرات ${String(s.label).replace(/[^\w؀-ۿ ]/g, '').trim()}${S.page ? ' - ' + S.page.replace(/[\\/:*?"<>|]/g, '') : ''} ${o.day || S.data.from + '_' + S.data.to}.xlsx`);
   }
   function view(){
     const [from, to] = range();
@@ -16421,8 +16431,9 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
     if($('omFrom')) $('omFrom').onchange = e => { S.from = e.target.value; };
     if($('omTo')) $('omTo').onchange = e => { S.to = e.target.value; };
     if($('omGo')) $('omGo').onclick = () => { S.cache = {}; run(); };
-    main.querySelectorAll('[data-omopen]').forEach(el => el.onclick = () => { const [src, day] = el.dataset.omopen.split('|'); S.open = { src, day: day || '' }; S.filt = 'all'; draw(); const d = main.querySelector('#omDrill'); if(d) d.scrollIntoView({ behavior:'smooth', block:'start' }); });
+    main.querySelectorAll('[data-omopen]').forEach(el => el.onclick = () => { const [src, day] = el.dataset.omopen.split('|'); S.open = { src, day: day || '' }; S.filt = 'all'; S.page = ''; draw(); const d = main.querySelector('#omDrill'); if(d) d.scrollIntoView({ behavior:'smooth', block:'start' }); });
     main.querySelectorAll('[data-omfilt]').forEach(b => b.onclick = () => { S.filt = b.dataset.omfilt; draw(); });
+    if($('omPage')) $('omPage').onchange = e => { S.page = e.target.value; draw(); };
     if($('omClose')) $('omClose').onclick = () => { S.open = null; draw(); };
     if($('omXls')) $('omXls').onclick = drillXls;
   }
