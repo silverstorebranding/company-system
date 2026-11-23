@@ -2799,13 +2799,14 @@ const Squad = (function(){
   const isTodayTs = t => { const d = new Date(t); return !isNaN(d) && localYmd(d) === localYmd(new Date()); };
   async function loadToday(){
     if(!state.session) return;
-    const { data, error } = await sb.from('orders').select('id, agent_id, amount, customer_name, page_name, created_at').gte('created_at', todayStartIso()).order('created_at', { ascending:false });
+    const { data, error } = await sb.from('orders').select('id, agent_id, amount, customer_name, page_name, created_at, status').gte('created_at', todayStartIso()).order('created_at', { ascending:false });
     if(error) return;
     if(!Object.keys(profileNameMap).length){
       const { data: pr } = await sb.from('profiles').select('id, username, full_name');
       (pr || []).forEach(p => profileNameMap[p.id] = p.full_name || p.username || 'موظف');
     }
-    todayOrders = (data || []).filter(o => isTodayTs(o.created_at));
+    // ❌ الملغي مابيتحسبش — نفس حساب كارت "أوردرات النهارده" في الرئيسية
+    todayOrders = (data || []).filter(o => isTodayTs(o.created_at) && !/cancel|ملغ|refus|رفض|return/i.test(String(o.status || '')));
     // 🏢 عملاء المكتب اللي اتسجلوا النهارده بيتحسبوا أوردرات كمان (ماعدا "مااشتراش")
     const { data: off } = await sb.from('office_sales').select('id, agent_id, amount, customer, status, created_at').gte('created_at', todayStartIso());
     (off || []).filter(r => r.status !== 'not_bought' && isTodayTs(r.created_at)).forEach(r => todayOrders.push(officeToToday(r)));
@@ -14674,6 +14675,9 @@ a.hm-kpi:hover{box-shadow:0 6px 16px rgba(0,0,0,.07)}
     const { data: pr } = await sb().from('profiles').select('id, username, full_name');
     const names = {}; (pr || []).forEach(p => names[p.id] = p.full_name || p.username || 'موظف');
     const L = (data || []).filter(o => !isCancel(o.status)), by = {};
+    // 🏢 عملاء المكتب اللي اشتروا النهارده بيتحسبوا أوردرات — نفس حساب زرار "أوردر النهارده" العايم
+    try{ const { data: off } = await sb().from('office_sales').select('agent_id, amount, status, created_at').gte('created_at', dayStart().toISOString());
+      (off || []).filter(r => r.status !== 'not_bought').forEach(r => L.push({ agent_id:r.agent_id, amount:r.amount, created_at:r.created_at })); }catch(e){}
     L.forEach(o => { const b = by[o.agent_id] = by[o.agent_id] || { n:0, v:0 }; b.n++; b.v += Number(o.amount) || 0; });
     H.today = { n:L.length, v:L.reduce((a, o) => a + (Number(o.amount) || 0), 0), top:Object.entries(by).sort((a, b) => b[1].n - a[1].n).slice(0, 6).map(([id, x]) => ({ name:names[id] || 'موظف', ...x })) };
   }
