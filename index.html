@@ -2467,7 +2467,7 @@ const Squad = (function(){
     agentOrders: null,
     agentFilter: 'all',
     agentQ: '',
-    sync: { from:'', closed:'', closedBy:'', closedAt:'', closedLoaded:false, suggest:'', firstOpen:null, blockers:[], loading:false, msg:'', err:'', done:'', result:null, sel:new Set(), selU:new Set(), applying:false },
+    sync: { from:'', fromTouched:false, closed:'', closedBy:'', closedAt:'', closedLoaded:false, suggest:'', firstOpen:null, blockers:[], loading:false, msg:'', err:'', done:'', result:null, sel:new Set(), selU:new Set(), applying:false },
     office: { list:null, loading:false, err:'', month:'', saving:false, people:null, form:{} }, // 🏢 عمولة المكتب
     verify: { from:'', loading:false, msg:'', err:'', done:'', result:null, fix:new Map(), applying:false, agent:'', sent:new Set(), sending:false }, // 🛡️ تحقق من التسليمات
   };
@@ -3335,7 +3335,9 @@ const Squad = (function(){
       const first = op && op[0], yest = localYmd(new Date(Date.now() - DAY));
       let sug = first ? localYmd(new Date(new Date(localYmd(new Date(first.created_at)) + 'T12:00:00').getTime() - DAY)) : yest;
       if(sug > yest) sug = yest;
-      setSync({ closed:(data && data.value && data.value.d) || '', closedBy:(data && data.updated_by_name) || '', closedAt:(data && data.updated_at) || '', suggest:sug, firstOpen:first || null, blockers:op || [] });
+      setSync({ closed:(data && data.value && data.value.d) || '', closedBy:(data && data.updated_by_name) || '', closedAt:(data && data.updated_at) || '', suggest:sug, firstOpen:first || null, blockers:op || [],
+        // 📅 "من تاريخ" بيتملى لوحده بتاريخ الأوردر اللي واقف — إلا لو إنت غيّرته بإيدك
+        ...(state.sync.fromTouched ? {} : { from: first ? localYmd(new Date(first.created_at)) : '' }) });
     }catch(e){}
   }
   async function saveSyncClosed(d){
@@ -3358,7 +3360,8 @@ const Squad = (function(){
 
     let earliest = localYmd(new Date(pend[0].created_at));
     // 🔒 اللي قبل أو في آخر يوم متقفل مش بنطابقه تاني
-    if(state.sync.closed){ const nx = localYmd(new Date(new Date(state.sync.closed + 'T12:00:00').getTime() + DAY)); if(nx > earliest) earliest = nx; }
+    // لو "من تاريخ" مكتوب هو اللي يمشي (حتى لو قبل القفل)، غير كده نبدأ من بعد القفل
+    if(!state.sync.from && state.sync.closed){ const nx = localYmd(new Date(new Date(state.sync.closed + 'T12:00:00').getTime() + DAY)); if(nx > earliest) earliest = nx; }
     const from = state.sync.from && state.sync.from > earliest ? state.sync.from : earliest;
     const list = pend.filter(o => localYmd(new Date(o.created_at)) >= from);
     const qpFrom = localYmd(new Date(new Date(from + 'T12:00:00').getTime() - 2 * DAY));
@@ -3502,7 +3505,7 @@ const Squad = (function(){
         <div class="sq-agentbar" style="margin:0">
           <label class="sq-synclbl">من تاريخ <input type="date" id="sq-sync-from" class="sq-agentq" style="flex:none" value="${esc(S.from)}"></label>
           <button type="button" class="sq-btn" id="sq-sync-run" ${S.loading || S.applying || !logged ? 'disabled' : ''}>${S.loading ? '⏳ بيطابق...' : '🔄 ابدأ المطابقة'}</button>
-          <span class="sq-hint" style="margin:0">سيب التاريخ فاضي عشان يطابق كل الأوردرات اللي لسه قيد التنفيذ${S.closed ? ' بعد آخر يوم متقفل' : ''}.</span>
+          <span class="sq-hint" style="margin:0">${S.from && !S.fromTouched && S.firstOpen ? '📅 متكتب لوحده تاريخ أقدم أوردر واقف — دوس ابدأ المطابقة على طول.' : `سيب التاريخ فاضي عشان يطابق كل الأوردرات اللي لسه قيد التنفيذ${S.closed ? ' بعد آخر يوم متقفل' : ''}.`}</span>
         </div>
         <div class="sq-agentbar" style="margin:12px 0 0;padding-top:12px;border-top:1px dashed var(--line,#ddd)">
           <label class="sq-synclbl">🔒 آخر يوم متقفل <input type="date" id="sq-sync-closed" class="sq-agentq" style="flex:none" value="${esc(S.closed)}" max="${esc(localYmd(new Date()))}"></label>
@@ -4293,7 +4296,7 @@ grant select, insert, update, delete on public.office_sales to authenticated;`;
     });
 
     // 🔄 مطابقة مع QP
-    if($('sq-sync-from')) $('sq-sync-from').onchange = e => { state.sync.from = e.target.value; };
+    if($('sq-sync-from')) $('sq-sync-from').onchange = e => { state.sync.from = e.target.value; state.sync.fromTouched = true; };
     if($('sq-sync-run')) $('sq-sync-run').onclick = runSync;
     if($('sq-sync-closed-save')) $('sq-sync-closed-save').onclick = () => {
       const d = ($('sq-sync-closed') || {}).value || '';
