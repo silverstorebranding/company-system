@@ -2652,6 +2652,21 @@ const Squad = (function(){
     finally{ unshippedBusy = false; }
   }
 
+  /* 🧠 أوردرات QP بتاعة الشهر — بتتجاب مرة لما تفتح صفحة Squad (أو تدوس 🔄 تحديث من QP)،
+     وبعد كده الأوردرات الجديدة وتغيير الحالات بيستخدموا نفس الليستة من غير ما يروحوا لـ QP تاني */
+  const QPMEM = { key:'', list:null, p:null, at:0 };
+  function monthQP(from, force){
+    const api = qpApi(), key = from + '|' + localYmd(new Date());
+    if(!force && QPMEM.key === key && QPMEM.list) return Promise.resolve(QPMEM.list);
+    if(!force && QPMEM.key === key && QPMEM.p) return QPMEM.p;
+    QPMEM.key = key; QPMEM.list = null;
+    const p = QPMEM.p = (api.fetchRangeAll || api.fetchRange)(from, localYmd(new Date()))
+      .then(L => { if(QPMEM.p === p){ QPMEM.list = L; QPMEM.at = Date.now(); } return L; })
+      .finally(() => { if(QPMEM.p === p) QPMEM.p = null; });
+    return p;
+  }
+  const monthQPFrom = () => localYmd(new Date(new Date(monthRange(state.month).from).getTime() - 2 * DAY));
+
   /* ---------- Data ---------- */
   /* 🚚 اتشحن على QP ولا لسه؟ — من سجل الرفع (للكل)، ومن QP نفسه لو الجهاز عامل دخول QP */
   async function loadShipMap(list){
@@ -2660,8 +2675,7 @@ const Squad = (function(){
       ((data && data.value && data.value.list) || []).forEach(h => (h.orders || []).forEach(o => put(o.phone, { serial:o.serial, at:h.at }))); }catch(e){}
     const api = qpApi();
     if(api && api.hasCreds() && list && list.length){ try{
-      const from = list.map(o => new Date(o.created_at)).sort((a, b) => a - b)[0]; from.setDate(from.getDate() - 2);
-      const qp = await (api.fetchRangeAll || api.fetchRange)(localYmd(from), localYmd(new Date()));
+      const qp = await monthQP(monthQPFrom());
       qp.forEach(q => [q.phone, q.phone2, q.customer_phone].forEach(ph => { const k = phoneKey(ph); if(k) map[k] = { serial:q.serial, at:q.order_date, st:String(api.label(q)).replace(/\s*#\d+$/, '') }; })); }catch(e){} }
     state.shipMap = map; render();
   }
@@ -3930,8 +3944,8 @@ const Squad = (function(){
     const api = qpApi(); if(!api || !api.hasCreds()){ state.boardQP = { noCreds:true }; render(); return; }
     if(state.boardQPBusy && !force) return; state.boardQPBusy = true;
     try{
-      const R = monthRange(state.month), qFrom = localYmd(new Date(new Date(R.from).getTime() - 2 * DAY));
-      const qp = await (api.fetchRangeAll || api.fetchRange)(qFrom, localYmd(new Date()));
+      const R = monthRange(state.month);
+      const qp = await monthQP(monthQPFrom(), force);
       const idx = {}; qp.forEach(q => [q.phone, q.phone2, q.customer_phone].forEach(ph => { const k = phoneKey(ph); if(!k) return; (idx[k] = idx[k] || []); if(!idx[k].includes(q)) idx[k].push(q); }));
       const by = {};
       (state.boardOrders || []).forEach(o => { const a = by[o.agent_id] = by[o.agent_id] || Object.fromEntries(BQ_KEYS.map(k => [k, []]));
@@ -4006,6 +4020,7 @@ const Squad = (function(){
       : Q.noCreds ? `<div class="sq-team-l">محتاج دخول QP على الجهاز ده</div>`
       : Q.err || !M ? `<div class="sq-team-l">مقدرناش نجيب من QP${Q.err ? ': ' + esc(Q.err) : ''}</div>`
       : `<div class="sq-team-n">${money(Math.round(M.val))}</div><div class="sq-team-l">✅ ${M.del.toLocaleString('ar-EG')} أوردر اتسلم من ${M.total.toLocaleString('ar-EG')}</div>
+         <div class="sq-team-l" style="font-size:11.5px">${QPMEM.at ? 'آخر سحب من QP ' + esc(new Date(QPMEM.at).toLocaleTimeString('ar-EG', { hour:'2-digit', minute:'2-digit' })) + ' · ' : ''}<a href="#" data-bq-refresh="1">🔄 تحديث من QP</a></div>
          <div class="sq-team-r"><span>نسبة التسليم</span><b>${pct(M.del, M.total)}</b></div>
          ${T.v && M.val ? `<div class="sq-team-r"><span>خدمة العملاء من مبيعات QP</span><b>${pct(T.v, M.val)}</b></div>` : ''}`;
     return `<div class="sq-team">
@@ -4363,6 +4378,7 @@ grant select, insert, update, delete on public.office_sales to authenticated;`;
     // 🔄 مطابقة مع QP
     if($('sq-sync-from')) $('sq-sync-from').onchange = e => { state.sync.from = e.target.value; state.sync.fromTouched = true; };
     if($('sq-sync-run')) $('sq-sync-run').onclick = runSync;
+    document.querySelectorAll('#sq-root [data-bq-refresh]').forEach(a => a.onclick = e => { e.preventDefault(); state.boardQP = null; render(); boardQP(true).then(() => loadShipMap(state.myOrders || [])); });
     if($('sq-sync-closed-save')) $('sq-sync-closed-save').onclick = () => {
       const d = ($('sq-sync-closed') || {}).value || '';
       if(!d){ showToast('اختار التاريخ الأول.', 'error'); return; }
@@ -4469,6 +4485,7 @@ grant select, insert, update, delete on public.office_sales to authenticated;`;
   }
   // بيتنده كل ما المستخدم يفتح صفحة Squad من القائمة
   function mount(){
+    QPMEM.list = null; QPMEM.key = '';   // فتح صفحة Squad = سحب جديد من QP مرة واحدة
     render();
     if(state.session) loadLeaderboard();
   }
@@ -5466,6 +5483,76 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
     return all.filter(o => { if(seen.has(o.serial)) return false; seen.add(o.serial); return true; });
   }
 
+  /* 💾 أوردرات QP الخلصانة بتتحفظ على الجهاز (IndexedDB) ومتتسحبش تاني
+     - اليوم (حسب تاريخ الأوردر في QP) بيتقفل لو عدّى عليه يومين وكل أوردراته حالتها نهائية:
+       اتسلم (3) أو مرفوض (6 / ليستة المرفوض) أو اندلفرد (5) وعدّى عليه 21 يوم
+     - لما أي صفحة تطلب مدة: الأيام المقفولة من أولها بتتاخد من الجهاز، والسحب من QP بيبدأ من أول يوم لسه مفتوح
+     - ليستة العادي وليستة المرفوض كل واحدة ليها كاش لوحدها */
+  const QPC = { db:null, mem:{} };
+  const QPC_DB = 'qp_cache_v1', QPC_ST = 'days';
+  function qpcOpen(){
+    if(QPC.db) return QPC.db;
+    QPC.db = new Promise(res => { try{
+      const r = indexedDB.open(QPC_DB, 1);
+      r.onupgradeneeded = () => { try{ r.result.createObjectStore(QPC_ST, { keyPath:'k' }); }catch(e){} };
+      r.onsuccess = () => res(r.result); r.onerror = () => res(null); r.onblocked = () => res(null);
+    }catch(e){ res(null); } });
+    return QPC.db;
+  }
+  async function qpcGetMany(keys){
+    const out = {}, need = keys.filter(k => { if(QPC.mem[k]){ out[k] = QPC.mem[k]; return false; } return true; });
+    if(!need.length) return out;
+    const db = await qpcOpen(); if(!db) return out;
+    await new Promise(res => { try{
+      const st = db.transaction(QPC_ST, 'readonly').objectStore(QPC_ST); let left = need.length;
+      need.forEach(k => { const g = st.get(k); g.onsuccess = () => { if(g.result){ out[k] = g.result.list; QPC.mem[k] = g.result.list; } if(!--left) res(); }; g.onerror = () => { if(!--left) res(); }; });
+    }catch(e){ res(); } });
+    return out;
+  }
+  async function qpcPut(rows){
+    if(!rows.length) return;
+    rows.forEach(r => QPC.mem[r.k] = r.list);
+    const db = await qpcOpen(); if(!db) return;
+    try{ const st = db.transaction(QPC_ST, 'readwrite').objectStore(QPC_ST); rows.forEach(r => st.put(r)); }catch(e){}
+  }
+  async function qpcClear(){
+    QPC.mem = {};
+    const db = await qpcOpen(); if(!db) return;
+    try{ db.transaction(QPC_ST, 'readwrite').objectStore(QPC_ST).clear(); }catch(e){}
+  }
+  const qpcYmd = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  const qpcAdd = (day, n) => { const d = new Date(day + 'T12:00:00'); d.setDate(d.getDate() + n); return qpcYmd(d); };
+  const qpcFinal = (o, rejected) => {
+    if(rejected) return true;
+    const c = stCode(o);
+    if(c === '3' || c === '6') return true;
+    if(c === '5'){ const t = new Date(o.order_date).getTime(); return !isNaN(t) && Date.now() - t > 21 * 864e5; }
+    return false;
+  };
+  async function qpFetchCached(from, to, onProg, rejected){
+    const lastClosable = qpcAdd(qpcYmd(new Date()), -2), mode = rejected ? 'r' : 'n';
+    const days = []; for(let d = from; d <= to && days.length < 800; d = qpcAdd(d, 1)) days.push(d);
+    const got = await qpcGetMany(days.filter(d => d <= lastClosable).map(d => mode + '|' + d));
+    const parts = []; let start = from;
+    for(const d of days){ const L = got[mode + '|' + d]; if(!L) break; parts.push(L); start = qpcAdd(d, 1); }
+    const cached = [].concat(...parts.reverse());   // من الأحدث للأقدم زي ما QP بيرجّعها
+    if(start > to) return cached;
+    const base = cached.length;
+    const live = await qpFetchRange(start, to, (n, pct) => onProg && onProg(base + n, pct), rejected);
+    // 💾 نقفل الأيام اللي خلصت (لو السحب ماوصلش للحد الأقصى — عشان مانحفظش يوم ناقص)
+    if(live.length < QP_MAX_PAGES * QP_PAGE_SIZE - QP_PAGE_SIZE){
+      const by = {}; live.forEach(o => { const t = new Date(o.order_date); if(isNaN(t)) return; const d = qpcYmd(t); (by[d] = by[d] || []).push(o); });
+      const put = [];
+      for(let d = start; d <= to && d <= lastClosable; d = qpcAdd(d, 1)){
+        const L = by[d] || [];
+        if(!L.every(o => qpcFinal(o, rejected))) break;   // أول يوم فيه أوردر مفتوح بيوقف القفل
+        put.push({ k: mode + '|' + d, list: L });
+      }
+      qpcPut(put);
+    }
+    return live.concat(cached);
+  }
+
   async function qpFetch(){
     qpLoading = true; qpErr = ''; qpInfo = ''; qpProg = 0; qpRerender();
     try{
@@ -6230,12 +6317,14 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
     // بيستخدمه قسم الـ Squad في المطابقة
     api: {
       hasCreds: () => !!creds,
-      fetchRange: (from, to, onProg) => qpFetchRange(from, to, onProg),
+      fetchRange: (from, to, onProg) => qpFetchCached(from, to, onProg, false),
+      // 💾 مسح أوردرات QP المحفوظة على الجهاز (لو حصل لخبطة)
+      clearCache: () => qpcClear(),
       // 📦 الـ Pending بس (status=1) — ولو QP تجاهل الفلتر بنفلتر إحنا بعدها
       fetchPending: (from, to, onProg) => qpFetchRange(from, to, onProg, false, '1'),
       // 📞 للمقارنة: كل الأوردرات حتى المرفوضة (QP بيخبّي المرفوض في الليستة العادية)
-      fetchRangeAll: async (from, to, onProg) => { const a = await qpFetchRange(from, to, onProg, false); let b = [];
-        try{ b = await qpFetchRange(from, to, n => onProg && onProg(a.length + n), true); }catch(e){}
+      fetchRangeAll: async (from, to, onProg) => { const a = await qpFetchCached(from, to, onProg, false); let b = [];
+        try{ b = await qpFetchCached(from, to, n => onProg && onProg(a.length + n), true); }catch(e){}
         const seen = new Set(); return a.concat(b).filter(o => { if(seen.has(o.serial)) return false; seen.add(o.serial); return true; }); },
       // 🔎 أوردر واحد برقم الشحنة من ليستة QP — أي حالة (Pending أو لأ، ومرفوض كمان)
       findSerial: async serial => {
