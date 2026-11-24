@@ -2592,7 +2592,7 @@ const Squad = (function(){
      (المتسجّلة في 📨 إرسال فوكس) ولخدمة العملاء صاحبة الأوردر. بس الأوردرات اللي عدّى عليها 24 ساعة كاملة ولسه مخرجتش.
      بيشتغل من جهاز الأدمن اللي عليه دخول QP (لازم نقارن بـ QP نفسه)، وبيتسجّل في app_kv: unshipped_alert = { d, n } عشان مايتبعتش مرتين */
   let unshippedTimer = null, unshippedBusy = false;
-  const UNSHIP_KV = 'unshipped_alert', UNSHIP_DAYS = 10;
+  const UNSHIP_KV = 'unshipped_alert', UNSHIP_DAYS = 10, UNSHIP_START = '2026-11-24';   // 📅 النظام بدأ من اليوم ده — الأوردرات الأقدم مش داخلة
   async function unshippedDaily(){
     if(unshippedBusy || !state.session || !isAdminUser()) return;
     const api = qpApi(); if(!api || !api.hasCreds()) return;
@@ -2601,7 +2601,9 @@ const Squad = (function(){
     try{
       const { data: kv } = await sb.from('app_kv').select('value').eq('key', UNSHIP_KV).maybeSingle();
       if(kv && kv.value && kv.value.d === today) return;
-      const now = Date.now(), oldest = new Date(now - UNSHIP_DAYS * DAY), cut = new Date(now - DAY);
+      const now = Date.now(), cut = new Date(now - DAY);
+      let oldest = new Date(now - UNSHIP_DAYS * DAY); const st = new Date(UNSHIP_START + 'T00:00:00'); if(st > oldest) oldest = st;
+      if(cut <= oldest) return;   // لسه مفيش أوردرات عدّى عليها 24 ساعة من ساعة ما النظام بدأ
       const { data: L, error } = await sb.from('orders').select('*').or('status.is.null,status.eq.pending')
         .gte('created_at', oldest.toISOString()).lte('created_at', cut.toISOString()).order('created_at', { ascending:true });
       if(error) return;
@@ -2634,7 +2636,8 @@ const Squad = (function(){
       const add = (to, list, withAgent, extra) => {
         if(!to || sentTo.has(to) || !list.length) return; sentTo.add(to);
         rows.push({ kind:'task', from_id:myId, from_name, to_id:to, to_name:nameOf(to), title:title(list.length),
-          body:`الأوردرات دي متسجّلة في Squad من أكتر من 24 ساعة ولسه مخرجتش (مش لاقيينها على QP برقم الموبايل):\n\n${list.map(o => line(o, withAgent)).join('\n\n')}\n\n${extra}`,
+          body:`الأوردرات دي متسجّلة في Squad من أكتر من 24 ساعة ولسه مخرجتش (مش لاقيينها على QP برقم الموبايل):\n\n${list.map(o => line(o, withAgent)).join('\n\n')}\n\n${extra}\n\nدوس 🔁 إعادة رفع الأوردر عشان يرجع لقسم 📤 رفع الأوردرات.`
+            + '#REUP#' + JSON.stringify(list.map(o => ({ id:o.id, at:o.created_at, n:o.customer_name || o.customer_phone || '' }))),
           due_date: today });
       };
       const fix = 'لو الأوردر اترفع برقم تاني عدّلي الرقم في Squad، ولو اتلغى غيّري حالته لـ "اتلغى"، غير كده ارفعيه على QP النهارده.';
@@ -10641,7 +10644,43 @@ makeAccounts({ route:'accounts-socky', table:'accounts_entries_socky', icon:'�
 
   /* ---------- 🖨️ أوامر الطباعة (جاية من المخزن) ---------- */
   const PRINT_MARK = '#PRINT#';
-  const bodyText = x => String(x.body || '').split(PRINT_MARK)[0].trim();
+  const REUP_MARK = '#REUP#';
+  const bodyText = x => String(x.body || '').split(PRINT_MARK)[0].split(REUP_MARK)[0].trim();
+  /* 🔁 إعادة رفع أوردر Squad اللي مخرجش — بيتضاف لـ app_kv: up_requeue = { list:[{ id, at, by, t }] }
+     وقسم 📤 رفع الأوردرات بيجيبه تاني مع أوردرات Squad لحد ما يترفع */
+  function reupOf(x){
+    const b = String(x.body || ''), i = b.indexOf(REUP_MARK);
+    if(i < 0) return null;
+    try{ return JSON.parse(b.slice(i + REUP_MARK.length)); }catch(e){ return null; }
+  }
+  let REUPQ = null;
+  async function loadReupQ(){
+    try{ const { data } = await sb().from('app_kv').select('value').eq('key', 'up_requeue').maybeSingle(); REUPQ = new Set(((data && data.value && data.value.list) || []).map(r => String(r.id))); }
+    catch(e){ REUPQ = new Set(); }
+    if(isInbox()) draw();
+  }
+  async function doReup(msgId, oid){
+    const x = (S.items || []).find(i => String(i.id) === String(msgId)); if(!x) return;
+    const L = (reupOf(x) || []).filter(o => !oid || String(o.id) === String(oid)); if(!L.length) return;
+    try{
+      const { data } = await sb().from('app_kv').select('value').eq('key', 'up_requeue').maybeSingle();
+      const list = ((data && data.value && data.value.list) || []).filter(r => !L.some(o => String(o.id) === String(r.id)));
+      L.forEach(o => list.push({ id:o.id, at:o.at, by:myName(), t:new Date().toISOString() }));
+      const { error } = await sb().from('app_kv').upsert({ key:'up_requeue', value:{ list }, updated_at:new Date().toISOString(), updated_by_name:myName() });
+      if(error) throw error;
+      REUPQ = new Set(list.map(r => String(r.id)));
+      flash(`🔁 ${L.length === 1 ? 'الأوردر رجع' : L.length + ' أوردرات رجعوا'} لقسم 📤 رفع الأوردرات — هيظهر لما تجيب أوردرات Squad.`, true);
+    }catch(e){ flash('ماتضافش لإعادة الرفع: ' + e.message, false); }
+  }
+  const reupBtns = x => {
+    const L = reupOf(x); if(!L || !L.length) return '';
+    if(!REUPQ) loadReupQ();
+    const q = REUPQ || new Set();
+    return L.map(o => q.has(String(o.id))
+      ? `<span class="ib-tag d">🔁 ${esc(o.n)} — مستني الرفع</span>`
+      : `<button class="ib-btn sm" data-ib-reup="${x.id}" data-oid="${esc(o.id)}">🔁 إعادة رفع الأوردر${L.length > 1 ? ': ' + esc(o.n) : ''}</button>`).join('')
+      + (L.length > 1 && L.some(o => !q.has(String(o.id))) ? `<button class="ib-btn ok sm" data-ib-reup="${x.id}" data-oid="">🔁 إعادة رفع الكل (${L.length})</button>` : '');
+  };
   function printOf(x){
     const b = String(x.body || ''), i = b.indexOf(PRINT_MARK);
     if(i < 0) return null;
@@ -10677,6 +10716,7 @@ makeAccounts({ route:'accounts-socky', table:'accounts_entries_socky', icon:'�
     ${isDone ? `<div class="ib-note">✔ خلصت ${when(x.done_at)}${x.done_note ? ' — ملاحظة: ' + esc(x.done_note) : ''}</div>` : ''}
     <div class="acts">
       ${printOf(x) ? `<button class="ib-btn sm" data-ib-print="${x.id}">🖨️ اطبع</button>` : ''}
+      ${reupBtns(x)}
       ${incoming && isTask && !isDone ? `<button class="ib-btn ok sm" data-ib-done="${x.id}">✔️ خلّصتها</button>` : ''}
       ${incoming && isTask && isDone ? `<button class="ib-btn ghost sm" data-ib-reopen="${x.id}">↩️ لسه مخلصتش</button>` : ''}
       ${incoming ? `<button class="ib-btn ghost sm" data-ib-reply="${x.id}">↩ رد</button>` : ''}
@@ -10836,6 +10876,7 @@ makeAccounts({ route:'accounts-socky', table:'accounts_entries_socky', icon:'�
     document.querySelectorAll('[data-ib-kind]').forEach(b => b.onclick = () => { draw(); S.form.kind = b.getAttribute('data-ib-kind'); draw(); });
     document.querySelectorAll('[data-ib-done]').forEach(b => b.onclick = e => { e.stopPropagation(); done(b.getAttribute('data-ib-done')); });
     document.querySelectorAll('[data-ib-print]').forEach(b => b.onclick = e => { e.stopPropagation(); doPrint(b.getAttribute('data-ib-print')); });
+    document.querySelectorAll('[data-ib-reup]').forEach(b => b.onclick = e => { e.stopPropagation(); b.disabled = true; doReup(b.getAttribute('data-ib-reup'), b.getAttribute('data-oid')); });
     document.querySelectorAll('[data-ib-reopen]').forEach(b => b.onclick = e => { e.stopPropagation(); reopen(b.getAttribute('data-ib-reopen')); });
     document.querySelectorAll('[data-ib-del]').forEach(b => b.onclick = e => { e.preventDefault(); e.stopPropagation(); del(b.getAttribute('data-ib-del')); });
     document.querySelectorAll('[data-ib-reply]').forEach(b => b.onclick = e => { e.stopPropagation(); const x = (S.items || []).find(i => String(i.id) === b.getAttribute('data-ib-reply')); if(x){ S.view = 'chats'; S.peer = peerOf(x); draw(); markSeen(); scrollEnd(); } });
@@ -11812,7 +11853,18 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
       if(!S.periodMode && (S.src === 'squad' || S.src === 'all')) await advanceSquad();
       if(!S.periodMode && (isEasy(S.src) || S.src === 'all')) await advancePtr();
       await saveDone([...(S.skipped || [])]);
+      // 🔁 أوردر إعادة رفع اتشال من الشيت بإيدك ← يطلع من ليستة إعادة الرفع
+      const sk = [...(S.skipped || [])].filter(k => k.startsWith('squad|at|'));
+      if(sk.length){ const { data } = await sbc().from('app_kv').select('value').eq('key', 'up_requeue').maybeSingle();
+        const ids = ((data && data.value && data.value.list) || []).filter(r => sk.includes(`squad|at|${r.at}`)).map(r => r.id); await clearRequeue(ids); }
     }catch(e){}
+  }
+  // 🔁 الأوردرات اللي اترفعت تاني بتتشال من ليستة إعادة الرفع
+  async function clearRequeue(ids){
+    if(!ids || !ids.length) return;
+    const { data } = await sbc().from('app_kv').select('value').eq('key', 'up_requeue').maybeSingle();
+    const all = (data && data.value && data.value.list) || [], list = all.filter(r => !ids.some(id => String(id) === String(r.id)));
+    if(list.length !== all.length) await sbc().from('app_kv').upsert({ key:'up_requeue', value:{ list }, updated_at:new Date().toISOString(), updated_by_name: me().full_name || me().username || '' });
   }
   const notDone = rows => E.showOld ? rows : rows.filter(r => !DONE || !DONE.has(skipKey(r)));
 
@@ -11857,12 +11909,23 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
     let data = [], off = 0;
     for(;;){ const r = await sbc().from('orders').select('*').gt('created_at', from).order('created_at', { ascending:true }).range(off, off + 999);
       if(r.error) throw r.error; data = data.concat(r.data || []); if(!r.data || r.data.length < 1000 || data.length >= 20000) break; off += 1000; }
+    // 🔁 أوردرات اتطلب إعادة رفعها من رسالة "مترفعتش على QP" — بتيجي حتى لو أقدم من آخر أوردر اتاخد
+    let REQ = [];
+    if(!fromOverride){ try{
+      const { data: rq } = await sbc().from('app_kv').select('value').eq('key', 'up_requeue').maybeSingle();
+      REQ = ((rq && rq.value && rq.value.list) || []);
+      const have = new Set(data.map(o => String(o.id))), ids = REQ.map(r => r.id).filter(id => !have.has(String(id)));
+      if(ids.length){ const { data: extra } = await sbc().from('orders').select('*').in('id', ids).or('status.is.null,status.eq.pending'); data = (extra || []).concat(data); }
+    }catch(e){} }
+    const reqIds = new Set(REQ.map(r => String(r.id)));
+    if(reqIds.size && DONE) data.forEach(o => { if(reqIds.has(String(o.id))) DONE.delete(`squad|at|${o.created_at}`); });
     return (data || []).map(o => {
       const page = String(o.page_name || '').trim() || 'بدون مصدر';
       const r = { name:o.customer_name || '', phone:o.customer_phone || '', address:o.customer_address || '', amount:String(o.amount ?? ''),
         agent: SQ.names[o.agent_id] || '', contents: [o.order_type && o.order_type !== 'اكسسوارات' ? o.order_type + ':' : '', o.order_details || ''].filter(Boolean).join(' '),
         source:page, size:o.size || '', note:'', city:'', srcKey:'squad', sqId:o.id, sqAt:o.created_at, orderAt:o.created_at, page,
         ref: SQ.names[o.agent_id] || '', estatus: o.status === 'pending' ? '' : (o.status || '') };
+      if(reqIds.has(String(o.id))) r.requeued = true;
       r.city = guessCity(r.address);
       return check(r);
     });
@@ -13745,6 +13808,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
     if(ok && (S.src === 'squad' || S.src === 'all')){ try{ if(!S.periodMode) await advanceSquad(); await savePageNotes(); }catch(e){} }
     if(ok && (S.src === 'squad' || S.src === 'all' || isEasy(S.src))){
       try{ await saveDone([...(S.rows || []).filter(r => r.serial && (r.srcKey === 'squad' || isEasy(r.srcKey))).map(skipKey), ...[...(S.skipped || [])]]); }catch(e){}
+      try{ await clearRequeue((S.rows || []).filter(r => r.requeued && r.serial).map(r => r.sqId)); }catch(e){}
     }
     if(ok){ try{ await closeUrgent(rows.filter(r => r.serial)); }catch(e){} }
     if(ok && S.src === 'restore'){ try{ await markRestored(S.rows || []); }catch(e){} }
