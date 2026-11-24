@@ -19110,6 +19110,28 @@ table.cs tr.cs-open td{background:#fff7dd}
 .wf-split>div{border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--paper)}
 .wf-split span{display:block;font-size:13px;font-weight:700;color:var(--muted)}
 .wf-split>div>b{display:block;font-size:22px;margin:2px 0;font-variant-numeric:tabular-nums}
+.fd{display:flex;flex-direction:column;align-items:center;width:100%}
+.fd-row{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;width:100%}
+.fd-two{display:grid;grid-template-columns:1fr 1fr;gap:14px;width:100%;justify-items:center}
+.fd-n{flex:1 1 150px;max-width:240px;border:2px solid var(--c);border-radius:12px;background:var(--panel);padding:10px 10px 8px;text-align:center;box-sizing:border-box}
+.fd-ic{font-size:22px;line-height:1.2}.fd-l{font-weight:700;font-size:13.5px}
+.fd-v{font-size:19px;font-weight:800;color:var(--c);font-variant-numeric:tabular-nums;white-space:nowrap}
+.fd-h{font-size:11.5px;color:var(--muted);line-height:1.6;margin-top:4px}.fd-h b{color:var(--ink)}
+.fd-k{width:78%;height:14px;border:2.5px solid var(--c);border-top:none;border-radius:0 0 14px 14px;margin-top:8px}
+.fd-a{display:flex;flex-direction:column;align-items:center;color:var(--c)}
+.fd-a::before{content:'';width:2.5px;height:16px;background:var(--c)}
+.fd-a::after{content:'';border:8px solid transparent;border-top:10px solid var(--c);border-bottom:0}
+.fd-a span{font-size:12px;font-weight:800;border:1.5px solid var(--c);border-radius:20px;padding:1px 10px;background:var(--panel)}
+.fd-c{display:flex;flex-direction:column;align-items:center;max-width:300px;text-align:center}
+.fd-cc{width:124px;height:124px;border-radius:50%;border:4px solid var(--c);background:var(--panel);display:flex;flex-direction:column;justify-content:center;align-items:center;box-shadow:0 4px 14px rgba(0,0,0,.08);font-size:12.5px;font-weight:700;padding:6px;box-sizing:border-box}
+.fd-cc b{font-size:17px;color:var(--c);font-variant-numeric:tabular-nums;white-space:nowrap}
+.fd-c.big .fd-cc{width:168px;height:168px;border-width:6px;font-size:14px}.fd-c.big .fd-cc b{font-size:23px}
+.fd-br{border:1.5px dashed var(--c);border-radius:16px;padding:12px 8px;box-sizing:border-box}
+.fd-bt{font-weight:800;color:var(--c);margin-bottom:8px}
+.fd-side{display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;margin:4px 0}
+.fd-op{font-size:30px;font-weight:800;color:var(--c);padding:0 2px}
+.fd-out{display:flex;align-items:center;gap:8px;margin-top:14px;padding-top:12px;border-top:1.5px dashed var(--line);width:100%;justify-content:center;font-size:22px}
+@media (max-width:700px){.fd-two{grid-template-columns:1fr}.fd-two>.fd-a{display:none}.fd-n{flex-basis:130px}}
 @media (max-width:900px){.wf-k{grid-template-columns:repeat(2,1fr)!important}}
 @media (max-width:520px){.wf-k{grid-template-columns:1fr!important}}
 </style>
@@ -19496,6 +19518,13 @@ table.cs tr.cs-open td{background:#fff7dd}
     const inp = 'padding:7px 9px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit';
     const G = '#2f7d55', Rd = '#c0392b', Dk = '#1f3d36', Br = '#6b4f2a';
     const how = t => `<div class="wf-how">🧮 ${t}</div>`;
+    // 🎨 رسمة: مربع · دايرة · سهم · قوس بيلم كذا مربع
+    const J = v => fmt(v) + ' ج';
+    const nd = (ic, l, v, col, hw) => `<div class="fd-n" style="--c:${col}"><div class="fd-ic">${ic}</div><div class="fd-l">${l}</div><div class="fd-v">${v}</div>${hw ? `<div class="fd-h">🧮 ${hw}</div>` : ''}</div>`;
+    const cir = (ic, l, v, col, hw, big) => `<div class="fd-c${big ? ' big' : ''}" style="--c:${col}"><div class="fd-cc"><span>${ic}</span><span>${l}</span><b>${v}</b></div>${hw ? `<div class="fd-h">🧮 ${hw}</div>` : ''}</div>`;
+    const arr = (t, col) => `<div class="fd-a" style="--c:${col || 'var(--muted)'}">${t ? `<span>${t}</span>` : ''}</div>`;
+    const brk = col => `<div class="fd-k" style="--c:${col}"></div>`;
+    const op = (t, col) => `<div class="fd-op" style="--c:${col || 'var(--ink)'}">${t}</div>`;
 
     // ✍️ الأرقام اللي بتتكتب بالإيد — في مكان واحد
     const cashMan = CF.cash != null && CF.cash !== '' ? num(CF.cash) : null;
@@ -19515,24 +19544,41 @@ table.cs tr.cs-open td{background:#fff7dd}
       h += `<div class="card" style="border:2px dashed var(--line);text-align:center"><p class="none" style="margin:0">⏳ بيستنى الأرقام (أوردرات QP · الخزنة · الديون) — وبعدين يحسب.${A() && A().hasCreds() ? '' : ' محتاج دخول QP على الجهاز ده.'}</p></div>`;
     } else {
       const C = B.C, O = C.out;
-      const ln = (ic, l, v, col, hw) => `<div class="wf-ln"><div class="wf-lt"><span>${ic} ${l}</span><b style="color:${col}">${fmt(v)} ج</b></div>${hw ? how(hw) : ''}</div>`;
-      h += `<div class="card" style="border:2px solid ${Dk}"><h3 style="margin:0 0 6px">💎 الميزانية — احنا فين دلوقتي</h3>
-        <div class="wf-sec" style="color:${G}">✅ اللي لينا — ${fmt(B.have)} ج</div>
-        ${ln('🏦', 'الخزنة', B.safe, G, B.man != null ? `مكتوبة بالإيد فوق (${fmt(B.man)} ج). رصيد شيت 💼 الحسابات ${fmt(B.sheet)} ج — الفرق ${fmt(B.man - B.sheet)} ج.` : `رصيد شيت 💼 الحسابات للشهر ده = رصيد أول الشهر + كل الداخل − كل المصاريف − سحب الشركاء.`)}
-        ${ln('👛', 'فلوس اتحصّلت ولسه مجتش (محفظة QP)', B.wallet, G, B.walletOk ? 'رصيد المحفظة من QP مباشرة — أوردرات اتسلمت والشحن اتخصم منها، ولسه ماتحولتش لنا.' : '⚠️ مقدرناش نجيب المحفظة من QP — محسوبة 0.')}
-        ${ln('🛵', 'فلوس أوردرات لسه هتتسلم', B.way, G, `أوردرات الشهر اللي لسه برا (Pending ومع المندوب وهولد) قيمتها ${fmt(C.wayV)} ج.<br>المتوقع يتسلم: Pending ومع المندوب ${Math.round(WF_RATE.ofd * 100)}% · هولد ${Math.round(WF_RATE.hold * 100)}% = ${fmt(C.wayExp)} ج − شحنها ${fmt(C.wayExp - C.wayNet)} ج = <b>${fmt(B.way)} ج</b>.<br>Kidzzly والإيطالي بس · الأوردرات من ${esc(W.from || '')} لحد النهارده.`)}
-        ${ln('↩️', 'بضاعة برا هترجع المخزن', B.ret, Br, `الجزء اللي مش هيتسلم من نفس الأوردرات (${fmt(100 - WF_RATE.ofd * 100)}% من Pending ومع المندوب · ${fmt(100 - WF_RATE.hold * 100)}% من الهولد · والـ Undelivered اللي لسه مرجعش كله) ≈ ${fmt(O.rp)} قطعة × <b>التكلفة</b> (Kidzzly ${fmt2(wfPiece())} ج للقطعة · الإيطالي زي قسم الأرباح).<br>كل أوردر برا متقسم: الجزء اللي هيتسلم في 🛵 فوق، والباقي هنا — مفيش أوردر بيتعد مرتين.`)}
-        ${ln('📦', 'المخزن دلوقتي', B.stock, Br, `مكتوب بالإيد فوق (بالتكلفة مش بسعر البيع)${CF.stock_at ? ' — آخر تحديث ' + esc(dShort(CF.stock_at)) : ''}.`)}
-        <div class="wf-sec" style="color:${Rd}">❌ اللي علينا — ${fmt(B.debts)} ج</div>
-        ${ln('🧾', 'الديون', B.debts, Rd, `مجموع ${(W.debts || []).length} بند مكتوبين في آخر الصفحة. لو فيه مرتبات أو إيجار مستحقين ولسه ماتدفعوش، اكتبهم دين — المصاريف اللي اتدفعت خلاص مخصومة من الخزنة أصلًا.`)}
-        <div class="wf-tot"><span>💎 الصافي</span><b style="color:${B.net < 0 ? Rd : Dk}">${fmt(B.net)} ج</b></div>
-        ${how(`اللي لينا ${fmt(B.have)} − اللي علينا ${fmt(B.debts)} = ${fmt(B.net)} ج`)}
-        <div class="wf-split">
-          <div><span>💵 منه فلوس</span><b style="color:${G}">${fmt(B.money - B.debts)} ج</b>${how(`الخزنة ${fmt(B.safe)} + المحفظة ${fmt(B.wallet)} + اللي هيتسلم ${fmt(B.way)} − الديون ${fmt(B.debts)}`)}</div>
-          <div><span>📦 ومنه بضاعة</span><b style="color:${Br}">${fmt(B.goods)} ج</b>${how(`المخزن ${fmt(B.stock)} + اللي هيرجع ${fmt(B.ret)}`)}</div>
+      const P1 = Math.round(WF_RATE.ofd * 100), P2 = Math.round(WF_RATE.hold * 100);
+      h += `<div class="card" style="border:2px solid ${Dk}"><h3 style="margin:0 0 4px">💎 احنا فين دلوقتي</h3>
+        <p style="margin:0 0 10px;font-size:12.5px;color:var(--muted)">امشي مع الأسهم من فوق لتحت: كل مربع رقم، وتحته اتحسب إزاي. المربعات بتتجمع في دواير، والدواير بتتجمع لحد الصافي.</p>
+        <div class="fd">
+          ${nd('🚚', 'الأوردرات اللي لسه برا', `${fmt(O.n)} أوردر · ${J(O.v)}`, '#1d4f91', `أوردرات QP من ${esc(W.from || '')} لحد النهارده (Kidzzly والإيطالي) حالتها Pending أو مع المندوب أو هولد أو Undelivered ولسه مرجعتش. تكلفة بضاعتها ${J(O.cost)}.<br>كل أوردر بيتقسم: جزء هيتسلم (فلوس) وجزء هيرجع (بضاعة) — مفيش أوردر بيتعد مرتين.`)}
+          <div class="fd-two">
+            ${arr(`الجزء اللي هيتسلم ⬅ 🛵`, G)}
+            ${arr(`الجزء اللي هيرجع ⬅ ↩️`, Br)}
+          </div>
+          <div class="fd-two">
+            <div class="fd fd-br" style="--c:${G}"><div class="fd-bt">💵 فلوس</div>
+              <div class="fd-row">
+                ${nd('🏦', 'الخزنة', J(B.safe), G, B.man != null ? `مكتوبة بالإيد فوق. شيت 💼 الحسابات بيقول ${J(B.sheet)} (الفرق ${J(B.man - B.sheet)}).` : 'رصيد شيت 💼 الحسابات = أول الشهر + الداخل − المصاريف − سحب الشركا.')}
+                ${nd('👛', 'اتحصّلت ولسه مجتش', J(B.wallet), G, B.walletOk ? 'محفظة QP: أوردرات اتسلمت والشحن اتخصم، ولسه ماتحولتش.' : '⚠️ مقدرناش نجيب المحفظة من QP — محسوبة 0.')}
+                ${nd('🛵', 'هيتسلم وفلوسه جاية', J(B.way), G, `اللي برا Pending ومع المندوب × ${P1}% وهولد × ${P2}% = ${J(C.wayExp)} − الشحن ${J(C.wayExp - C.wayNet)}`)}
+              </div>
+              ${brk(G)}${arr('', G)}
+              ${cir('💵', 'فلوس', J(B.money), G, `${J(B.safe)} + ${J(B.wallet)} + ${J(B.way)}`)}
+            </div>
+            <div class="fd fd-br" style="--c:${Br}"><div class="fd-bt">📦 بضاعة (بالتكلفة)</div>
+              <div class="fd-row">
+                ${nd('📦', 'في المخزن دلوقتي', J(B.stock), Br, `مكتوب بالإيد فوق${CF.stock_at ? ' — آخر تحديث ' + esc(dShort(CF.stock_at)) : ' — لسه ماتحدّثش'}.`)}
+                ${nd('↩️', 'برا وهترجع المخزن', J(B.ret), Br, `الباقي من اللي برا (${100 - P1}% · ${100 - P2}% · والـ Undelivered كله) ≈ ${fmt(O.rp)} قطعة × التكلفة (Kidzzly ${fmt2(wfPiece())} ج للقطعة).`)}
+              </div>
+              ${brk(Br)}${arr('', Br)}
+              ${cir('📦', 'بضاعة', J(B.goods), Br, `${J(B.stock)} + ${J(B.ret)}`)}
+            </div>
+          </div>
+          ${brk(Dk)}${arr('', Dk)}
+          ${cir('✅', 'اللي لينا', J(B.have), Dk, `فلوس ${J(B.money)} + بضاعة ${J(B.goods)}`)}
+          ${arr('ناقص', Rd)}${nd('🧾', 'اللي علينا (ديون)', J(B.debts), Rd, `${(W.debts || []).length} بند مكتوبين آخر الصفحة. مرتبات أو إيجار مستحقين ولسه ماتدفعوش؟ اكتبهم هنا — اللي اتدفع اتخصم من الخزنة خلاص.`)}
+          ${arr('يساوي', Dk)}
+          ${cir('💎', 'الصافي', J(B.net), B.net < 0 ? Rd : Dk, `اللي لينا ${J(B.have)} − اللي علينا ${J(B.debts)}<br>منه فلوس <b>${J(B.money - B.debts)}</b> · ومنه بضاعة <b>${J(B.goods)}</b>`, true)}
+          <div class="fd-out">🚪 ${nd('👤', 'الشركا سحبوا الشهر ده', J(B.drawn), '#5b4a7a', `بيتر ${J(B.dP)} · فادي ${J(B.dF)} (من شيت الحسابات بعد خصم المصاريف اللي دفعوها من جيبهم). <b>خرجوا من الشركة</b> فمخصومين من الخزنة ومش في اللي لينا — بيرجعوا في 🔍 مراجعة الربح تحت.`)}</div>
         </div>
-        <div class="wf-ln" style="border:none;margin-top:8px"><div class="wf-lt"><span>👤 الشركا سحبوا الشهر ده</span><b style="color:#5b4a7a">${fmt(B.drawn)} ج</b></div>
-          ${how(`بيتر ${fmt(B.dP)} · فادي ${fmt(B.dF)} — من شيت 💼 الحسابات بعد خصم المصاريف اللي دفعوها من جيبهم. <b>مش داخلين في اللي لينا</b> لأنهم خرجوا من الشركة خلاص (ومخصومين من الخزنة).`)}</div>
       </div>`;
 
       // 🤝 الشركا 50% / 50% — على الفلوس بس
@@ -19559,20 +19605,20 @@ table.cs tr.cs-open td{background:#fff7dd}
       const pf = part(F), pa = part(Ac);
       const known = /^📥 مبيعات|شحن|تكلفة البضاعة|هوالك|الرواتب|عمولة البنات|برامج|نثريات|إيجار|كهربا|نسبة|إجمالي التكاليف|صافي الربح|أوردرات|منها مبيعات|^📢 إعلانات/;
       pf.other = Object.entries(F).filter(([l]) => !known.test(l)).reduce((a, [, v]) => a + v, 0);
-      const bl = (l, v, sign, col, sub) => `<div class="wf-ln"><div class="wf-lt"><span>${l}</span><b style="color:${col}">${sign}${fmt(Math.abs(v))} ج</b></div>${sub ? how(sub) : ''}</div>`;
-      h += `<div class="wf-split" style="margin-bottom:10px">
-          <div><span>✅ الربح لحد النهارده (فعلي)</span><b>${esc(W.pr.act)} ج</b>${how('من الأوردرات اللي اتسلمت فعلًا − كل مصاريف الشهر لحد النهارده.')}</div>
-          <div><span>📈 الربح المتوقع للشهر</span><b style="color:${pExp < 0 ? Rd : Dk}">${esc(W.pr.exp)} ج</b>${how(`الفعلي + ربح اللي لسه هيتسلم ${fmt(pWay)} ج.`)}</div></div>`;
-      if(pf.rev > 0) h += `<details><summary style="cursor:pointer;font-weight:700;color:var(--brass-d)">🧾 تفصيلة الربح المتوقع</summary><div style="max-width:640px;margin-top:6px">
-          ${bl('📥 المبيعات', pf.rev, '', G, `اتسلم ${fmt(pa.rev)} + متوقع يتسلم ${fmt(pf.rev - pa.rev)}`)}
-          ${bl('📦 تكلفة البضاعة', pf.cogs, '− ', Rd, `بتاعة اللي اتسلم ${fmt(pa.cogs)} + المتوقع ${fmt(pf.cogs - pa.cogs)}`)}
-          ${bl('🚚 الشحن', pf.ship, '− ', Rd, `التسليمات والبايظ والمرتجع: فعلي ${fmt(pa.ship)} + متوقع ${fmt(pf.ship - pa.ship)}`)}
-          ${bl('📣 الإعلانات', pf.ads, '− ', Rd, 'من Meta للشهر ده')}
-          ${bl('🏢 مرتبات وعمولات وإيجار وبرامج ومكتب', pf.fixed, '− ', Rd, 'من 🧾 مراجعة المصاريف تحت (الشهري ÷ 30 × الأيام اللي فاتت)')}
-          ${pf.other ? bl('➖ مصاريف تانية (يدوي)', pf.other, '− ', Rd) : ''}
-          ${bl('💔 هوالك', pf.waste, '− ', Rd)}
-          ${W.pr.branchN ? bl('🏬 ربح الفرع', W.pr.branchN, '+ ', G) : ''}
-          <div class="wf-tot"><span>= صافي الربح</span><b style="color:${pExp < 0 ? Rd : Dk}">${esc(W.pr.exp)} ج</b></div></div></details>`;
+      const mins = [['📦', 'تكلفة البضاعة', pf.cogs, `بتاعة اللي اتسلم ${J(pa.cogs)} + المتوقع ${J(pf.cogs - pa.cogs)}`], ['🚚', 'الشحن', pf.ship, `تسليمات وبايظ ومرتجع: فعلي ${J(pa.ship)} + متوقع ${J(pf.ship - pa.ship)}`],
+        ['📣', 'الإعلانات', pf.ads, 'من Meta للشهر ده'], ['🏢', 'مرتبات وعمولات وإيجار وبرامج', pf.fixed, 'من 🧾 مراجعة المصاريف تحت: الشهري ÷ 30 × الأيام اللي فاتت'],
+        ['💔', 'هوالك', pf.waste, ''], ['➖', 'مصاريف تانية', pf.other, 'مكتوبة بالإيد في 💰 الأرباح']].filter(x => x[2]);
+      h += `<div class="fd">`;
+      if(pf.rev > 0) h += `${nd('📥', 'المبيعات', J(pf.rev), G, `اللي اتسلم ${J(pa.rev)} + المتوقع يتسلم ${J(pf.rev - pa.rev)}`)}
+          ${arr('ناقص', Rd)}
+          <div class="fd-row">${mins.map(x => nd(x[0], x[1], J(x[2]), Rd, x[3])).join('')}</div>
+          ${brk(Rd)}${arr(W.pr.branchN ? `+ 🏬 ربح الفرع ${J(W.pr.branchN)}` : 'الباقي', Dk)}`;
+      h += `${cir('📈', 'ربح الشهر المتوقع', esc(W.pr.exp) + ' ج', pExp < 0 ? Rd : Dk, pf.rev > 0 ? `المبيعات ${J(pf.rev)} − المصاريف ${J(mins.reduce((a, x) => a + x[2], 0))}${W.pr.branchN ? ' + الفرع ' + J(W.pr.branchN) : ''}` : '', true)}
+          <div class="fd-row" style="margin-top:6px">
+            ${nd('✅', 'منه اتحقق فعلًا', esc(W.pr.act) + ' ج', G, 'من الأوردرات اللي اتسلمت − كل مصاريف الشهر لحد النهارده')}
+            ${op('+', Dk)}
+            ${nd('⏳', 'ومنه لسه جاي', J(pWay), '#1d4f91', 'ربح الأوردرات اللي متوقع تتسلم (الإعلانات والمصاريف اتخصمت خلاص في الفعلي)')}
+          </div></div>`;
       h += how(`نفس أرقام <a href="#/profits">💰 الأرباح</a> من ${esc(W.pr.from || '')} لـ ${esc(W.pr.to || '')}.`);
       // 🔍 المراجعة: الربح ≈ (الصافي دلوقتي − الصافي أول الشهر) + سحب الشركا
       const Sp = (W.snaps || {})[prevMonth()], st = Sp && Sp.last, stNet = st ? (st.v === 2 ? st.net : num(st.cash) + num(st.goods)) : null;
@@ -19582,10 +19628,19 @@ table.cs tr.cs-open td{background:#fff7dd}
       else {
         const grow = B.net - stNet + B.drawn, diff = grow - pExp;
         const okD = Math.abs(diff) <= Math.max(5000, Math.abs(pExp) * 0.15);
-        h += `<div class="wf-split">
-            <div><span>📊 الزيادة في الصافي + السحب</span><b>${fmt(grow)} ج</b>${how(`الصافي دلوقتي ${fmt(B.net)} − الصافي آخر ${esc(new Date(prevMonth() + '-15').toLocaleDateString('ar-EG', { month:'long' }))} ${fmt(stNet)} (اتحفظ ${esc(dShort(st.at))}) + الشركا سحبوا ${fmt(B.drawn)}`)}</div>
-            <div><span>📈 الربح المتوقع</span><b>${fmt(pExp)} ج</b>${how('من فوق')}</div>
-            <div><span>${okD ? '✅' : '⚠️'} الفرق</span><b style="color:${okD ? G : Rd}">${fmt(diff)} ج</b>${how(okD ? 'قريبين من بعض — الحسابات ماشية مع بعض.' : 'فرق كبير — راجع: المخزن اتحدث؟ فيه مصروف ماتسجلش أو اتسجل مرتين؟ فيه دين اتدفع أو اتضاف؟ فلوس اتحطت في الشركة من برا؟')}</div></div>
+        const mName = new Date(prevMonth() + '-15').toLocaleDateString('ar-EG', { month:'long' }), should = stNet + pExp - B.drawn;
+        h += `<div class="fd"><div class="fd-row" style="align-items:center">
+            ${cir('📸', `الصافي آخر ${esc(mName)}`, J(stNet), 'var(--muted)', `اتحفظ لوحده ${esc(dShort(st.at))}`)}
+            ${op('+', G)}${nd('📈', 'ربح الشهر', J(pExp), G, 'من فوق')}
+            ${op('−', '#5b4a7a')}${nd('👤', 'سحب الشركا', J(B.drawn), '#5b4a7a', 'خرج من الشركة')}
+            ${op('=', Dk)}${cir('🎯', 'المفروض نكون', J(should), Dk, '')}
+          </div>
+          ${arr('نقارن بـ', Dk)}
+          <div class="fd-row" style="align-items:center">
+            ${cir('💎', 'الصافي دلوقتي', J(B.net), Dk, 'من 💎 احنا فين فوق')}
+            ${op('−', Dk)}${cir('🎯', 'المفروض', J(should), Dk, '')}
+            ${op('=', okD ? G : Rd)}${nd(okD ? '✅' : '⚠️', 'الفرق', J(B.net - should), okD ? G : Rd, okD ? 'قريبين — الحسابات ماشية مع بعض.' : 'فرق كبير — راجع: المخزن اتحدث؟ مصروف ماتسجلش أو اتسجل مرتين؟ دين اتدفع أو اتضاف؟ فلوس اتحطت من برا؟')}
+          </div></div>
           ${how(`${st.v === 2 ? '' : '⚠️ صافي الشهر اللي فات اتحفظ بالحسبة القديمة — المقارنة تقريبية الشهر ده. '}المنطق: الربح مش فلوس زيادة جنب الخزنة والبضاعة — هو الزيادة فيهم. فلو كل حاجة متسجلة صح، الزيادة في الصافي + اللي الشركا سحبوه ≈ الربح.`)}`;
       }
     }
