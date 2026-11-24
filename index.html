@@ -169,6 +169,7 @@ table.sum th.grp{font-size:16px;color:#fff}
 table.sum th.g-dream{background:#5b3f7a}
 table.sum th.g-cara{background:#2f5f73}
 table.sum th.g-rs{background:#a0456e}
+table.sum th.g-bunny{background:#c0628f}
 table.sum th.g-bloom{background:#3d7a5a}
 table.sum th.act{background:#e7eeec;color:#3f5a56}
 table.sum th.exp{background:#fbf0d9;color:#5f4b28}
@@ -1636,7 +1637,7 @@ function prBuildTotalCard(){
   const sqOf=bs=>bs.reduce((a,b)=>a+(prSquadN[b]||0),0);
   const rows=G.map(([l,bs,c])=>{bs.forEach(b=>used.add(b)); const v=bs.reduce((a,b)=>a+n(b),0), q=sqOf(bs); return [l,v,c,q?`🏆 منهم ${q.toLocaleString('ar-EG')} من Squad (${v?Math.round(q/v*100):0}%)`:''];});
   // 🏆 في جدول الخلاصة تحت اسم DREAM و KIDZZLY
-  [['S_sq_dream',['dream','dream msg site','dream wa']],['S_sq_kidzzly',['kidzzly']]].forEach(([id,bs])=>{const e=document.getElementById(id); if(!e)return; const v=bs.reduce((a,b)=>a+n(b),0), q=sqOf(bs);
+  [['S_sq_dream',['dream','dream msg site','dream wa']],['S_sq_kidzzly',['kidzzly']],['S_sq_bunny',['bunny']]].forEach(([id,bs])=>{const e=document.getElementById(id); if(!e)return; const v=bs.reduce((a,b)=>a+n(b),0), q=sqOf(bs);
     e.textContent=`${v.toLocaleString('ar-EG')} أوردر · 🏆 منهم ${q.toLocaleString('ar-EG')} من Squad`;});
   PR_BRANDS.filter(b=>!used.has(b)).forEach(b=>rows.push(['🏷️ '+b.toUpperCase(),n(b),'#5aa9a0']));   // براندات جديدة
   const hidN={}; prHiddenRows.forEach(r=>{const b=prGetBrand(r[PR_notesCol-1]); hidN[b]=(hidN[b]||0)+1;});
@@ -2020,14 +2021,15 @@ function viewProfits(){
   <div class="card" id="prFixedView">${prFixedViewHtml()}</div>
   <div id="prResults" style="display:none">
     <div class="card" id="prTotalCard"></div>
-    <div class="card"><h3>⭐ الخلاصة — DREAM و KIDZZLY و CARA و إرسال صفحة</h3>
+    <div class="card"><h3>⭐ الخلاصة — DREAM و KIDZZLY و BUNNY و CARA و إرسال صفحة</h3>
       <div class="tablewrap"><table class="sum">
-        <tr><th rowspan="2">البند</th><th colspan="2" class="grp g-dream">DREAM المجمع<div id="S_sq_dream" style="font-size:11.5px;font-weight:500;opacity:.9"></div></th><th colspan="2" class="grp g-rs sep">KIDZZLY<div id="S_sq_kidzzly" style="font-size:11.5px;font-weight:500;opacity:.9"></div></th><th colspan="2" class="grp g-cara sep">CARA المجمع</th><th colspan="2" class="grp g-cara sep">إرسال صفحة</th></tr>
-        <tr><th class="act">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th><th class="act sep">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th><th class="act sep">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th><th class="act sep">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th></tr>
+        <tr><th rowspan="2">البند</th><th colspan="2" class="grp g-dream">DREAM المجمع<div id="S_sq_dream" style="font-size:11.5px;font-weight:500;opacity:.9"></div></th><th colspan="2" class="grp g-rs sep">KIDZZLY<div id="S_sq_kidzzly" style="font-size:11.5px;font-weight:500;opacity:.9"></div></th><th colspan="2" class="grp g-bunny sep">🐰 BUNNY<div id="S_sq_bunny" style="font-size:11.5px;font-weight:500;opacity:.9"></div></th><th colspan="2" class="grp g-cara sep">CARA المجمع</th><th colspan="2" class="grp g-cara sep">إرسال صفحة</th></tr>
+        <tr><th class="act">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th><th class="act sep">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th><th class="act sep">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th><th class="act sep">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th><th class="act sep">✔️ فعلي</th><th class="exp">🔮 بعد التوقع</th></tr>
         ${[['rev','📥 المبيعات',''],['cost','🔴 التكاليف',''],['prof','✅ الأرباح','big'],['pct','📊 نسبة الأرباح','big'],['ads','📢 نسبة الإعلانات','']].map(([k,l,cls])=>`
         <tr class="${cls}"><td class="lbl">${l}</td>
           <td class="act" id="S_${k}_dream_group_A">—</td><td class="exp" id="S_${k}_dream_group_F">—</td>
           <td class="act sep" id="S_${k}_kidzzly_A">—</td><td class="exp" id="S_${k}_kidzzly_F">—</td>
+          <td class="act sep" id="S_${k}_bunny_A">—</td><td class="exp" id="S_${k}_bunny_F">—</td>
           <td class="act sep" id="S_${k}_cara_group_A">—</td><td class="exp" id="S_${k}_cara_group_F">—</td>
           <td class="act sep" id="S_${k}_ersal_A">—</td><td class="exp" id="S_${k}_ersal_F">—</td></tr>`).join('')}
       </table></div>
