@@ -3473,7 +3473,7 @@ const Squad = (function(){
       if((x = f(R.nomatch))) return '❌ ' + esc(x.why);
       return '<span class="mut">مادخلش في المطابقة (قبل التاريخ المختار)</span>';
     };
-    return `<div style="margin:12px 0 0">
+    return `<div style="margin:28px 0 0">
       <h3 class="sq-synch" style="margin:0 0 6px">🚧 الأوردرات اللي واقفة — أقدم ${B.length} أوردر لسه قيد التنفيذ</h3>
       <p class="sq-hint" style="margin:0 0 8px">أول أوردر هنا هو اللي مانع القفل يتقدّم. غيّر حالته أو عدّله أو امسحه لو غلط، والاقتراح هيتحدّث لوحده.</p>
       <div class="sq-tablecard"><table class="sq-table"><thead><tr><th>الموظف</th><th>العميل</th><th>الموبايل</th><th>الطلب</th><th>القيمة</th><th>تاريخ الأوردر</th><th>في QP</th><th>الحالة</th><th></th></tr></thead><tbody>
@@ -3520,14 +3520,13 @@ const Squad = (function(){
           <button type="button" class="sq-btn sq-sm" id="sq-sync-closed-sug" style="margin-inline-start:8px" ${S.loading || S.applying ? 'disabled' : ''}>🔒 اقفل لحد ${esc(S.suggest)}</button>
           <div class="sq-hint" style="margin:4px 0 0">الأحسن تعمل المطابقة وتأكدها الأول، وبعدين الاقتراح ده هيتحدّث لوحده.</div>
         </div>` : ''}
-        ${blockersHtml()}
         ${S.closed && S.suggest && S.suggest < S.closed ? `<div class="sq-err" style="margin:10px 0 0">⚠️ فيه أوردر لسه قيد التنفيذ من يوم ${esc(S.firstOpen ? localYmd(new Date(S.firstOpen.created_at)) : '')} — يعني قبل القفل (${esc(S.closed)})، والمطابقة مش هتشوفه. لو عايزه يتطابق ارجع القفل لـ ${esc(S.suggest)}.</div>` : ''}
       </div>`;
     if(S.err) h += `<div class="sq-err">${esc(S.err)}</div>`;
     if(S.done) h += `<div class="sq-ok">${esc(S.done)}</div>`;
     if(S.loading) return h + `<div class="sq-loading">${esc(S.msg || 'بيشتغل...')}</div>`;
-    const R = S.result; if(!R) return h;
-    if(R.empty) return h + `<div class="sq-empty">مفيش أوردرات قيد التنفيذ دلوقتي.</div>`;
+    const R = S.result; if(!R) return h + blockersHtml();
+    if(R.empty) return h + `<div class="sq-empty">مفيش أوردرات قيد التنفيذ دلوقتي.</div>` + blockersHtml();
 
     const nm = id => esc(profileNameMap[id] || '—');
     const qd = q => { const d = new Date(q.order_date); return isNaN(d) ? '—' : d.toLocaleDateString('ar-EG', { day:'numeric', month:'short' }); };
@@ -3572,7 +3571,7 @@ const Squad = (function(){
 
     if(R.nomatch.length) h += `<details class="sq-syncdet"><summary>❓ مالهاش مطابقة في QP — ${R.nomatch.length}</summary>
       <div class="sq-tablecard"><table class="sq-table">${thead(false)}<tbody>${R.nomatch.map(x => `<tr>${base(x.o)}<td data-label="السبب" class="mut">${esc(x.why)}</td></tr>`).join('')}</tbody></table></div></details>`;
-    return h;
+    return h + blockersHtml();
   }
 
   /* =====================================================================
