@@ -2584,6 +2584,69 @@ const Squad = (function(){
     loadMyOrders();
     loadLeaderboard();
     subscribeOrderFeed();
+    // 🚫 تنبيه يومي بالأوردرات اللي عدّى عليها 24 ساعة ولسه مترفعتش على QP
+    if(!unshippedTimer){ setTimeout(unshippedDaily, 30000); unshippedTimer = setInterval(unshippedDaily, 3600000); }
+  }
+
+  /* 🚫 أوردرات Squad اللي مترفعتش على QP — مرة واحدة في اليوم بتتبعت رسالة للأدمن ولمديرة خدمة العملاء
+     (المتسجّلة في 📨 إرسال فوكس) ولخدمة العملاء صاحبة الأوردر. بس الأوردرات اللي عدّى عليها 24 ساعة كاملة ولسه مخرجتش.
+     بيشتغل من جهاز الأدمن اللي عليه دخول QP (لازم نقارن بـ QP نفسه)، وبيتسجّل في app_kv: unshipped_alert = { d, n } عشان مايتبعتش مرتين */
+  let unshippedTimer = null, unshippedBusy = false;
+  const UNSHIP_KV = 'unshipped_alert', UNSHIP_DAYS = 10;
+  async function unshippedDaily(){
+    if(unshippedBusy || !state.session || !isAdminUser()) return;
+    const api = qpApi(); if(!api || !api.hasCreds()) return;
+    const today = localYmd(new Date());
+    unshippedBusy = true;
+    try{
+      const { data: kv } = await sb.from('app_kv').select('value').eq('key', UNSHIP_KV).maybeSingle();
+      if(kv && kv.value && kv.value.d === today) return;
+      const now = Date.now(), oldest = new Date(now - UNSHIP_DAYS * DAY), cut = new Date(now - DAY);
+      const { data: L, error } = await sb.from('orders').select('*').or('status.is.null,status.eq.pending')
+        .gte('created_at', oldest.toISOString()).lte('created_at', cut.toISOString()).order('created_at', { ascending:true });
+      if(error) return;
+      const qpFrom = new Date(oldest.getTime() - 2 * DAY);
+      const qp = await (api.fetchRangeAll || api.fetchRange)(localYmd(qpFrom), today);
+      if(!qp || !qp.length) return;   // لو QP مرجعش حاجة خالص نعتبره عطل ومانبعتش تنبيهات غلط
+      const idx = {};
+      qp.forEach(q => [q.phone, q.phone2, q.customer_phone].forEach(ph => { const k = phoneKey(ph); if(k) (idx[k] = idx[k] || []).push(q); }));
+      const miss = (L || []).filter(o => {
+        const k = phoneKey(o.customer_phone); if(!k) return true;
+        const t0 = new Date(o.created_at).getTime() - 1.5 * DAY;
+        return !(idx[k] || []).some(q => { const t = new Date(q.order_date).getTime(); return isNaN(t) || t >= t0; });
+      });
+      // نسجّل إن النهارده اتعمل قبل ما نبعت، عشان لو جهازين فاتحين مايتبعتش مرتين
+      await sb.from('app_kv').upsert({ key:UNSHIP_KV, value:{ d:today, n:miss.length }, updated_at:new Date().toISOString(), updated_by_name:(state.profile || {}).full_name || (state.profile || {}).username || '' });
+      if(!miss.length) return;
+
+      const { data: profs } = await sb.from('profiles').select('id, full_name, username');
+      const nameOf = id => { const p = (profs || []).find(x => x.id === id); return p ? (p.full_name || p.username || '') : (profileNameMap[id] || ''); };
+      let mgr = '';
+      try{ const { data: ef } = await sb.from('app_kv').select('value').eq('key', 'ersal_focus').maybeSingle(); mgr = (ef && ef.value && ef.value.manager) || ''; }catch(e){}
+      const me = (window.AuthGate && window.AuthGate.me && window.AuthGate.me()) || {};
+      const myId = me.id || (state.session.user || {}).id, from_name = me.full_name || me.username || 'السيستم';
+      const hrs = o => Math.floor((now - new Date(o.created_at).getTime()) / 3600000);
+      const line = (o, withAgent) => `• ${o.customer_name || '—'} — ${o.customer_phone || '—'}${withAgent ? ' — 👤 ' + (nameOf(o.agent_id) || '—') : ''}
+   🧾 ${String(o.order_details || '—').replace(/\s+/g, ' ').slice(0, 120)}${o.amount ? ' · 💰 ' + o.amount + ' ج' : ''}
+   📅 ${fmtDate(o.created_at)} (من ${hrs(o)} ساعة)${o.page_name ? ' · 📣 ' + o.page_name : ''}`;
+      const title = n => `🚫 ${n} أوردر عدّى عليهم 24 ساعة ولسه مترفعوش على QP`;
+      const rows = [], sentTo = new Set();
+      const add = (to, list, withAgent, extra) => {
+        if(!to || sentTo.has(to) || !list.length) return; sentTo.add(to);
+        rows.push({ kind:'task', from_id:myId, from_name, to_id:to, to_name:nameOf(to), title:title(list.length),
+          body:`الأوردرات دي متسجّلة في Squad من أكتر من 24 ساعة ولسه مخرجتش (مش لاقيينها على QP برقم الموبايل):\n\n${list.map(o => line(o, withAgent)).join('\n\n')}\n\n${extra}`,
+          due_date: today });
+      };
+      const fix = 'لو الأوردر اترفع برقم تاني عدّلي الرقم في Squad، ولو اتلغى غيّري حالته لـ "اتلغى"، غير كده ارفعيه على QP النهارده.';
+      // خدمة العملاء: كل واحدة أوردراتها بس
+      const byAgent = {}; miss.forEach(o => { if(o.agent_id) (byAgent[o.agent_id] = byAgent[o.agent_id] || []).push(o); });
+      const mgrList = miss, adminList = miss;
+      add(myId, adminList, true, 'تقدر تشوفهم كلهم من 🔄 مطابقة مع QP.');
+      add(mgr, mgrList, true, 'يُرجى المتابعة مع خدمة العملاء إن الأوردرات دي تترفع النهارده.');
+      Object.entries(byAgent).forEach(([id, list]) => add(id, list, false, fix));
+      if(rows.length) await sb.from('inbox').insert(rows);
+    }catch(e){ /* هنحاول تاني الساعة الجاية */ }
+    finally{ unshippedBusy = false; }
   }
 
   /* ---------- Data ---------- */
