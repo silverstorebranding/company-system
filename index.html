@@ -2467,7 +2467,7 @@ const Squad = (function(){
     agentOrders: null,
     agentFilter: 'all',
     agentQ: '',
-    sync: { from:'', closed:'', closedBy:'', closedAt:'', closedLoaded:false, loading:false, msg:'', err:'', done:'', result:null, sel:new Set(), selU:new Set(), applying:false },
+    sync: { from:'', closed:'', closedBy:'', closedAt:'', closedLoaded:false, suggest:'', firstOpen:null, loading:false, msg:'', err:'', done:'', result:null, sel:new Set(), selU:new Set(), applying:false },
     office: { list:null, loading:false, err:'', month:'', saving:false, people:null, form:{} }, // 🏢 عمولة المكتب
     verify: { from:'', loading:false, msg:'', err:'', done:'', result:null, fix:new Map(), applying:false, agent:'', sent:new Set(), sending:false }, // 🛡️ تحقق من التسليمات
   };
@@ -3327,8 +3327,14 @@ const Squad = (function(){
   async function loadSyncClosed(){
     state.sync.closedLoaded = true;
     try{
-      const { data } = await sb.from('app_kv').select('value, updated_by_name, updated_at').eq('key', SYNC_CLOSED_KV).maybeSingle();
-      setSync({ closed:(data && data.value && data.value.d) || '', closedBy:(data && data.updated_by_name) || '', closedAt:(data && data.updated_at) || '' });
+      const [{ data }, { data: op }] = await Promise.all([
+        sb.from('app_kv').select('value, updated_by_name, updated_at').eq('key', SYNC_CLOSED_KV).maybeSingle(),
+        // أقدم أوردر لسه قيد التنفيذ — اليوم اللي قبله كل أوردراته خلصانة (اتسلم / اندلفرد / اتلغى)
+        sb.from('orders').select('id, customer_name, created_at').or('status.is.null,status.eq.pending').order('created_at', { ascending:true }).limit(1) ]);
+      const first = op && op[0], yest = localYmd(new Date(Date.now() - DAY));
+      let sug = first ? localYmd(new Date(new Date(localYmd(new Date(first.created_at)) + 'T12:00:00').getTime() - DAY)) : yest;
+      if(sug > yest) sug = yest;
+      setSync({ closed:(data && data.value && data.value.d) || '', closedBy:(data && data.updated_by_name) || '', closedAt:(data && data.updated_at) || '', suggest:sug, firstOpen:first || null });
     }catch(e){}
   }
   async function saveSyncClosed(d){
@@ -3444,7 +3450,7 @@ const Squad = (function(){
     const fail = del.length + und.length - okD - okU;
     setSync({ applying:false, result:null, sel:new Set(), selU:new Set(),
       done: `✅ اتعلم ${okD} أوردر "اتسلم" و ${okU} أوردر "اندلفرد".` + (fail ? ` ⚠️ ${fail} أوردر مااتحدّثش — قاعدة البيانات رافضة إن الأدمن يعدّل أوردرات غيره، لازم كود الـ SQL يتشغّل.` : '') });
-    loadMyOrders(); loadLeaderboard();
+    loadMyOrders(); loadLeaderboard(); loadSyncClosed();
   }
 
   function SyncView(){
@@ -3467,6 +3473,12 @@ const Squad = (function(){
             ? `كل الأوردرات لحد <b>${esc(S.closed)}</b> متقفلة ومش هتتطابق تاني — المطابقة هتبدأ من اليوم اللي بعده، فبتسحب من QP أقل.${S.closedBy ? ` <span class="mut">(${esc(S.closedBy)})</span>` : ''}`
             : 'حدد آخر يوم خلّصته خالص، والمطابقة مش هترجعله تاني وهتسحب من QP اللي بعده بس.'}</span>
         </div>
+        ${S.suggest && S.suggest !== S.closed && !(S.closed && S.suggest < S.closed) ? `<div class="sq-ok" style="margin:10px 0 0">
+          💡 آخر يوم كل أوردراته خلصانة (اتسلم / اندلفرد / اتلغى) ومش محتاجين نرجعله هو <b>${esc(S.suggest)}</b>${S.firstOpen ? ` — أقدم أوردر لسه قيد التنفيذ يوم ${esc(localYmd(new Date(S.firstOpen.created_at)))}${S.firstOpen.customer_name ? ' (' + esc(S.firstOpen.customer_name) + ')' : ''}` : ' — مفيش أوردرات قيد التنفيذ خالص'}.
+          <button type="button" class="sq-btn sq-sm" id="sq-sync-closed-sug" style="margin-inline-start:8px" ${S.loading || S.applying ? 'disabled' : ''}>🔒 اقفل لحد ${esc(S.suggest)}</button>
+          <div class="sq-hint" style="margin:4px 0 0">الأحسن تعمل المطابقة وتأكدها الأول، وبعدين الاقتراح ده هيتحدّث لوحده.</div>
+        </div>` : ''}
+        ${S.closed && S.suggest && S.suggest < S.closed ? `<div class="sq-err" style="margin:10px 0 0">⚠️ فيه أوردر لسه قيد التنفيذ من يوم ${esc(S.firstOpen ? localYmd(new Date(S.firstOpen.created_at)) : '')} — يعني قبل القفل (${esc(S.closed)})، والمطابقة مش هتشوفه. لو عايزه يتطابق ارجع القفل لـ ${esc(S.suggest)}.</div>` : ''}
       </div>`;
     if(S.err) h += `<div class="sq-err">${esc(S.err)}</div>`;
     if(S.done) h += `<div class="sq-ok">${esc(S.done)}</div>`;
@@ -4249,6 +4261,7 @@ grant select, insert, update, delete on public.office_sales to authenticated;`;
       if(d > localYmd(new Date())){ showToast('مينفعش تقفل يوم لسه ماجاش.', 'error'); return; }
       saveSyncClosed(d);
     };
+    if($('sq-sync-closed-sug')) $('sq-sync-closed-sug').onclick = () => { if(window.confirm(`تقفل كل الأوردرات لحد ${state.sync.suggest}؟ المطابقة مش هترجعلهم تاني.`)) saveSyncClosed(state.sync.suggest); };
     if($('sq-sync-closed-clear')) $('sq-sync-closed-clear').onclick = () => { if(window.confirm('تشيل القفل؟ المطابقة هترجع تبص على كل الأوردرات من الأول.')) saveSyncClosed(''); };
     if($('sq-sync-apply')) $('sq-sync-apply').onclick = applySync;
     const syncCount = () => {
