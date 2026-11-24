@@ -1243,6 +1243,7 @@ function prProcess(rows){
   prBuildTotalCard();
   prBuildUnbrandedTable();
   prBuildItemsTable(rows);
+  try{ prBuildPriceTable(); }catch(e){}
   prRecalc();
   document.getElementById('prResults').style.display='block';
   setTimeout(prBuildGuide,0); // بعد ما الإعلانات واليدوي يتملوا
@@ -1702,6 +1703,34 @@ function prFilterItems(q){
   });
 }
 
+/* 💵 الأوردرات حسب السعر: كام أوردر بكل سعر ونسبة تسليمه (بفلتر سعر + براند) */
+function prBuildPriceTable(){
+  const wrap=document.getElementById('prPriceWrap'); if(!wrap) return;
+  const rows=window.__prLastRows||[];
+  const bSel=document.getElementById('prPriceBrand');
+  if(bSel&&!bSel.dataset.ready){ bSel.dataset.ready='1';
+    bSel.innerHTML='<option value="">كل البراندات</option>'+PR_BRANDS.map(b=>`<option value="${b}">${b.toUpperCase()}</option>`).join(''); }
+  const fb=bSel?bSel.value:'';
+  const q=String((document.getElementById('prPriceQ')||{}).value||'').trim();
+  const qs=q?q.split(/[,،\s]+/).map(prNum).filter(x=>x>0):[];
+  const map={};
+  rows.forEach(r=>{
+    const p=prNum(r[PR_priceCol-1]); if(!(p>0)) return;
+    if(fb&&prGetBrand(r[PR_notesCol-1])!==fb) return;
+    const st=r[PR_statusCol-1], m=map[p]||(map[p]={n:0,d:0,o:0,h:0,u:0});
+    m.n++; if(st==='Delivered')m.d++; else if(st==='Out for Delivery')m.o++; else if(st==='Hold')m.h++; else if(st==='Undelivered')m.u++;
+  });
+  let list=Object.entries(map).map(([p,m])=>[+p,m]);
+  if(qs.length) list=list.filter(([p])=>qs.includes(p));
+  list.sort((a,b)=>b[1].n-a[1].n||a[0]-b[0]);
+  const pct=(d,n)=>n?((d/n)*100).toFixed(1)+'%':'—';
+  const tot=list.reduce((t,[,m])=>{['n','d','o','h','u'].forEach(k=>t[k]+=m[k]);return t;},{n:0,d:0,o:0,h:0,u:0});
+  const row=(lbl,m,cls)=>`<tr${cls?` class="${cls}"`:''}><td class="lbl">${lbl}</td><td>${m.n}</td><td>${m.d}</td><td><b>${pct(m.d,m.n)}</b></td><td>${m.o}</td><td>${m.h}</td><td>${m.u}</td><td>${pct(m.d,m.d+m.u)}</td></tr>`;
+  wrap.innerHTML=list.length?'<table class="pr"><tr><th>السعر</th><th>عدد الأوردرات</th><th>اتسلم</th><th>نسبة التسليم</th><th>🚚 OFD</th><th>⏸️ Hold</th><th>↩️ Undelivered</th><th>تسليم من اللي خلص</th></tr>'
+    +row(qs.length?'الإجمالي (الأسعار المختارة)':'الإجمالي',tot,'total')+list.map(([p,m])=>row(prFmt(p)+' ج',m)).join('')+'</table>'
+    :'<p style="color:var(--muted)">مفيش أوردرات بالسعر ده.</p>';
+}
+
 /* إحصائية تفاصيل الطلبات (العمود L) */
 function prBuildItemsTable(rows){
   const map={};
@@ -2088,6 +2117,14 @@ function viewProfits(){
     <div class="card"><h3>8) أوردرات الباكدج</h3>
       <p style="font-size:13px;color:var(--muted)">كام أوردر في العمود L مكتوب فيه كلمة "باكدج" وكام لأ — على كل الأوردرات في الملف.</p>
       <div class="tablewrap"><table class="pr" id="prPkgTable"></table></div>
+    </div>
+    <div class="card"><h3>9) 💵 الأوردرات حسب السعر — العدد ونسبة التسليم</h3>
+      <p style="font-size:13px;color:var(--muted)">اكتب سعر (أو كذا سعر بفاصلة، مثلاً: 625, 950) واختار براند لو عايز. نسبة التسليم = اتسلم ÷ كل الأوردرات بالسعر ده · "تسليم من اللي خلص" = اتسلم ÷ (اتسلم + Undelivered).</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+        <input id="prPriceQ" oninput="prBuildPriceTable()" inputmode="numeric" placeholder="🔍 السعر… مثلاً: 625" style="flex:1;min-width:160px;padding:9px 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink)">
+        <select id="prPriceBrand" onchange="prBuildPriceTable()" style="padding:9px 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink)"></select>
+      </div>
+      <div class="tablewrap" id="prPriceWrap" style="max-height:480px;overflow-y:auto"></div>
     </div>
   </div>`;
 }
