@@ -20087,8 +20087,11 @@ table.cs tr.cs-open td{background:#fff7dd}
     const byC = {}; R.forEach(x => (byC[x.c] = byC[x.c] || []).push(x));
     const CL = Object.entries(byC).sort((a, b) => b[1].length - a[1].length), mx = CL[0][1].length;
     const groups = [...new Set(R.map(x => x.g))].sort();
+    // ❔ "أسباب تانية" بتتسمى باسم أكتر سبب جواها (زي "لاغى")
+    const catL = c => { if(c !== 'other' || !byC.other) return CAT_L[c]; const t = {}; byC.other.forEach(x => { const k = (x.r || '').replace(/\s+/g, ' ').trim(); if(k) t[k] = (t[k] || 0) + 1; });
+      const top = Object.entries(t).sort((a, b) => b[1] - a[1])[0]; return top ? '❌ ' + esc(top[0]) : CAT_L[c]; };
     h += `<div class="card"><h3>📊 الأسباب مجمّعة</h3><div class="tablewrap"><table class="pr" style="width:100%"><tr><th>السبب</th><th>العدد</th><th>النسبة</th><th></th>${groups.length > 1 ? groups.map(g => `<th>${esc(g)}</th>`).join('') : ''}</tr>
-      ${CL.map(([c, L]) => `<tr style="cursor:pointer" data-rfc="${c}"><td class="lbl">${CAT_L[c]} ${S.cat === c ? '▲' : '▼'}</td><td><b>${fmt(L.length)}</b></td><td>${pct(L.length, n)}</td><td>${barH(L.length, mx)}</td>${groups.length > 1 ? groups.map(g => `<td>${fmt(L.filter(x => x.g === g).length)}</td>`).join('') : ''}</tr>
+      ${CL.map(([c, L]) => `<tr style="cursor:pointer" data-rfc="${c}"><td class="lbl">${catL(c)} ${S.cat === c ? '▲' : '▼'}</td><td><b>${fmt(L.length)}</b></td><td>${pct(L.length, n)}</td><td>${barH(L.length, mx)}</td>${groups.length > 1 ? groups.map(g => `<td>${fmt(L.filter(x => x.g === g).length)}</td>`).join('') : ''}</tr>
         ${S.cat === c ? `<tr><td colspan="${4 + (groups.length > 1 ? groups.length : 0)}" style="background:var(--slate-l);padding:8px;white-space:normal">${(() => { const t = {}; L.forEach(x => { const k = (x.r || '(فاضي)').replace(/\s+/g, ' ').trim(); t[k] = (t[k] || 0) + 1; });
           const TL = Object.entries(t).sort((a, b) => b[1] - a[1]);
           // 📋 الأسباب تحت بعض: العدد · النسبة جوه المجموعة · النسبة من كل اللي متسلمش
@@ -20100,11 +20103,11 @@ table.cs tr.cs-open td{background:#fff7dd}
     const raw = {}; R.forEach(x => { const k = (x.r || '').replace(/\s+/g, ' ').trim(); if(k) raw[k] = (raw[k] || 0) + 1; });
     const RL = Object.entries(raw).sort((a, b) => b[1] - a[1]).slice(0, 25);
     if(RL.length) h += `<div class="card"><h3>📝 أكتر الأسباب المكتوبة</h3><div class="tablewrap"><table class="pr" style="width:100%"><tr><th>السبب في QP</th><th>المجموعة</th><th>العدد</th><th></th></tr>
-      ${RL.map(([k, v]) => `<tr><td class="lbl" style="white-space:normal">${esc(k)}</td><td style="font-size:12.5px">${CAT_L[catOf(k)]}</td><td><b>${fmt(v)}</b></td><td>${barH(v, RL[0][1], '#8a5a00')}</td></tr>`).join('')}</table></div></div>`;
+      ${RL.map(([k, v]) => `<tr><td class="lbl" style="white-space:normal">${esc(k)}</td><td style="font-size:12.5px">${catL(catOf(k))}</td><td><b>${fmt(v)}</b></td><td>${barH(v, RL[0][1], '#8a5a00')}</td></tr>`).join('')}</table></div></div>`;
     // 📋 الأوردرات
     const OL = (S.cat ? R.filter(x => x.c === S.cat) : R).slice().sort((a, b) => String(b.o.order_date).localeCompare(String(a.o.order_date)));
     const show = S.showAll ? OL : OL.slice(0, 100);
-    h += `<div class="card"><h3>📋 الأوردرات${S.cat ? ' — ' + CAT_L[S.cat] : ''} (${fmt(OL.length)})</h3><div class="tablewrap"><table class="pr" style="width:100%;font-size:13px"><tr><th>التاريخ</th><th>الشحنة</th><th>العميل</th><th>الموبايل</th><th>البراند</th><th>الحالة</th><th>السبب</th></tr>
+    h += `<div class="card"><h3>📋 الأوردرات${S.cat ? ' — ' + catL(S.cat) : ''} (${fmt(OL.length)})</h3><div class="tablewrap"><table class="pr" style="width:100%;font-size:13px"><tr><th>التاريخ</th><th>الشحنة</th><th>العميل</th><th>الموبايل</th><th>البراند</th><th>الحالة</th><th>السبب</th></tr>
       ${show.map(x => `<tr><td>${esc(String(x.o.order_date || '').slice(0, 10))}</td><td style="direction:ltr">${esc(x.o.serial)}</td><td>${esc(x.o.full_name || '')}</td><td style="direction:ltr">${esc(x.o.phone || '')}</td><td>${esc(x.g)}</td><td>${isRej(x.o) ? '🚫 مرفوض' : '💔 Undelivered'}</td><td style="text-align:right;white-space:normal">${esc(x.r || '—')}</td></tr>`).join('')}</table></div>
       ${OL.length > 100 ? `<button class="mockbtn" id="rfAll" style="margin-top:8px">${S.showAll ? 'اعرض أول 100 بس' : 'اعرض الكل (' + fmt(OL.length) + ')'}</button>` : ''}</div>`;
     return h;
