@@ -5260,6 +5260,9 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
 .qp-chip:hover{border-color:var(--brass)}
 .qp-chip.on{background:var(--brass-d);color:#fff;border-color:var(--brass-d)}
 .qp-chip b{font-weight:700}
+.qp-pchip{border:1px solid var(--line);background:var(--paper);color:var(--ink);border-radius:16px;padding:5px 12px;font-family:inherit;font-size:13.5px;cursor:pointer}
+.qp-pchip small{color:var(--muted)}
+.qp-pchip.on{background:var(--brass);border-color:var(--brass);color:#fff;font-weight:700}.qp-pchip.on small{color:#fff}
 .qp-search{width:100%;padding:9px 12px;border:1px solid var(--line);border-radius:8px;margin-bottom:12px;background:var(--panel);color:var(--ink);font-size:14px}
 .qp-userline{font-size:13px;color:var(--muted)}
 .qp-userline b{color:var(--brass-d)}
@@ -5390,7 +5393,7 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
   let qpFrom = '2026-08-01';
   let qpTo   = new Date().toISOString().slice(0,10);
   let qpOrders = null, qpLoading = false, qpErr = '', qpInfo = '', qpProg = 0, qpFetchedAt = null;
-  let qpStFilter = 'all', qpQuery = '';
+  let qpStFilter = 'all', qpQuery = '', qpPrice = '';   // qpPrice: أسعار مفصولة بفاصلة (350, 500) أو مدى (300-400)
 
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const fmt = n => Math.round(n).toLocaleString('ar-EG');
@@ -5599,9 +5602,23 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
     else if(qpStFilter.startsWith('cat:')) l = l.filter(o => catOf(o) === qpStFilter.slice(4));
     else if(qpStFilter !== 'all') l = l.filter(o => stCode(o) === qpStFilter);
     const q = qpQuery.trim().toLowerCase();
-    if(q) l = l.filter(o => [o.full_name, o.phone, o.serial, o.notes, o.city, o.customer_phone].some(v => String(v ?? '').toLowerCase().includes(q)));
+    if(q) l = l.filter(o => [o.full_name, o.phone, o.serial, o.notes, o.city, o.customer_phone, o.shipment_contents].some(v => String(v ?? '').toLowerCase().includes(q)));
+    const pm = qpPriceMatch();
+    if(pm) l = l.filter(o => pm(Math.round(num(o.price))));
     return l;
   };
+  /* 💰 فلتر بالسعر: "350, 500" = بالظبط · "300-400" = من لحد */
+  function qpPriceMatch(){
+    const t = String(qpPrice || '').replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).trim();
+    if(!t) return null;
+    const exact = new Set(), ranges = [];
+    t.split(/[,،\s]+/).filter(Boolean).forEach(x => {
+      const m = x.match(/^(\d+)-(\d+)$/);
+      if(m) ranges.push([+m[1], +m[2]]); else if(/^\d+$/.test(x)) exact.add(+x);
+    });
+    if(!exact.size && !ranges.length) return null;
+    return v => exact.has(v) || ranges.some(([a, b]) => v >= Math.min(a, b) && v <= Math.max(a, b));
+  }
 
   /* =====================================================================
      📊 لوحة QP — نفس فكرة صفحة Analytics في موقع QP، محسوبة من الأوردرات نفسها
@@ -6218,6 +6235,27 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
       ${brs.map(([b,v]) => `<tr><td class="lbl" style="text-align:right">${esc(b)}</td><td>${fmt(v.n)}</td><td>${fmt(v.del||0)}</td><td>${v.n?((v.del||0)/v.n*100).toFixed(1)+'%':'—'}</td><td>${fmt(v.salesDel||0)}</td></tr>`).join('')}
     </table></div></div>`;
 
+    // 💰 فلتر بالسعر — الأسعار الأكتر تكرارًا (على حسب فلتر الحالة والبحث) + خانة تكتب فيها
+    const savedPrice = qpPrice; qpPrice = ''; const base = qpFiltered(); qpPrice = savedPrice;
+    const pc = {}; base.forEach(o => { const v = Math.round(num(o.price)); if(v > 0) pc[v] = (pc[v] || 0) + 1; });
+    const topP = Object.entries(pc).sort((a, b) => b[1] - a[1]).slice(0, 14).map(([v]) => +v).sort((a, b) => a - b);
+    const selSet = new Set(String(qpPrice).split(/[,،\s]+/).filter(x => /^\d+$/.test(x)).map(Number));
+    h += `<div class="card"><h3>💰 فلتر بالسعر</h3>
+      <p class="none" style="margin:0 0 8px">دوس على سعر أو أكتر، أو اكتب الأسعار بفاصلة (مثلاً <b>350, 500</b>) أو مدى (<b>300-400</b>). ولو عايز المسلّم بس دوس على مربع <b>${esc(QP_CATS.delivered ? QP_CATS.delivered.label : 'اتسلم')}</b> فوق.</p>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">${topP.map(v => `<button type="button" class="qp-pchip${selSet.has(v) ? ' on' : ''}" onclick="QP.togglePrice(${v})">${fmt(v)} ج <small>(${fmt(pc[v])})</small></button>`).join('')}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><input class="qp-price" inputmode="numeric" placeholder="مثلاً: 350, 500" value="${esc(qpPrice)}" oninput="QP.price(this.value)" style="width:220px;padding:8px 11px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink);font-family:inherit;font-size:14px">
+      ${qpPrice ? '<button class="linkbtn" onclick="QP.price(\'\', true)">✕ امسح فلتر السعر</button>' : ''}</div>`;
+    if(qpPriceMatch()){
+      const L = qpFiltered(), by = {};
+      L.forEach(o => { const v = Math.round(num(o.price)), c = catOf(o); const r = by[v] = by[v] || { n:0, cat:{} }; r.n++; r.cat[c] = (r.cat[c] || 0) + 1; });
+      const cols = QP_CAT_ORDER.filter(c => L.some(o => catOf(o) === c));
+      const tot = { n:L.length, cat:{} }; L.forEach(o => { const c = catOf(o); tot.cat[c] = (tot.cat[c] || 0) + 1; });
+      const row = (lbl, r, b) => `<tr${b ? ' class="total"' : ''}><td><b>${lbl}</b></td><td>${fmt(r.n)}</td>${cols.map(c => `<td>${fmt(r.cat[c] || 0)}</td>`).join('')}<td><b>${r.n ? ((r.cat.delivered || 0) / r.n * 100).toFixed(1) + '%' : '—'}</b></td></tr>`;
+      h += `<div class="tablewrap" style="margin-top:10px"><table class="pr"><tr><th>السعر</th><th>عدد الأوردرات</th>${cols.map(c => `<th style="color:${QP_CATS[c].color}">${esc(QP_CATS[c].label)}</th>`).join('')}<th>✅ نسبة التسليم</th></tr>
+        ${Object.keys(by).map(Number).sort((a, b) => a - b).map(v => row(fmt(v) + ' ج', by[v])).join('')}${Object.keys(by).length > 1 ? row('الإجمالي', tot, true) : ''}</table></div>`;
+    }
+    h += `</div>`;
+
     // الجدول
     const list = qpFiltered();
     const cap = 400;
@@ -6229,18 +6267,19 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
         <td class="lbl" style="text-align:right">${esc(o.full_name || '—')}</td>
         <td>${esc(o.phone || '—')}</td>
         <td>${esc(o.city || '—')}</td>
-        <td>${esc(qpBrand(o.notes))}</td>
+        <td title="${esc(o.notes || '')}">${esc(qpBrand(o.notes))}${o.notes && String(o.notes).trim() !== qpBrand(o.notes) ? `<div style="font-size:11.5px;color:var(--muted);white-space:normal;max-width:180px">🏷️ ${esc(String(o.notes).slice(0, 80))}</div>` : ''}</td>
+        <td class="lbl" style="text-align:right;font-weight:400;white-space:normal;max-width:300px;font-size:12px">${esc(String(o.shipment_contents || '—').slice(0, 200))}</td>
         <td>${fmt(num(o.price))}</td>
         <td>${fmt(num(o.total_fees))}</td>
         <td><span class="qp-tag" style="background:${s.color}22;color:${s.color}">${esc(s.label)}</span>${isReturned(o) ? ' <span class="qp-tag qp-ret">مرتجع</span>' : ''}</td>
         <td>${isNaN(d) ? '—' : d.toLocaleDateString('ar-EG',{day:'numeric',month:'short'})}</td>
       </tr>`;
     }).join('');
-    h += `<div class="card"><h3>الأوردرات — ${fmt(list.length)}${qpStFilter==='stuck' ? ' (مرتجعات لينا عند QP — راجع للفرع)' : qpStFilter.startsWith('cat:') ? ' (' + esc(QP_CATS[qpStFilter.slice(4)].label) + ')' : qpStFilter!=='all' ? ' (' + esc(qpStatus(qpStFilter).label) + ')' : ''}</h3>
-      <input class="qp-search" placeholder="🔍 دوّر باسم العميل، التليفون، السيريال، البراند، أو المدينة..." value="${esc(qpQuery)}" oninput="QP.search(this.value)">
+    h += `<div class="card"><h3>الأوردرات — ${fmt(list.length)}${qpPrice && qpPriceMatch() ? ' · 💰 ' + esc(qpPrice) + ' ج' : ''}${qpStFilter==='stuck' ? ' (مرتجعات لينا عند QP — راجع للفرع)' : qpStFilter.startsWith('cat:') ? ' (' + esc(QP_CATS[qpStFilter.slice(4)].label) + ')' : qpStFilter!=='all' ? ' (' + esc(qpStatus(qpStFilter).label) + ')' : ''}</h3>
+      <input class="qp-search" placeholder="🔍 دوّر باسم العميل، التليفون، السيريال، الليبل، محتوى الأوردر، أو المدينة..." value="${esc(qpQuery)}" oninput="QP.search(this.value)">
       <div class="tablewrap" style="max-height:520px;overflow-y:auto"><table class="pr">
-        <tr><th>السيريال</th><th>العميل</th><th>الموبايل</th><th>المدينة</th><th>البراند</th><th>القيمة</th><th>الشحن</th><th>الحالة</th><th>التاريخ</th></tr>
-        ${rows || '<tr><td colspan="9" class="none">مفيش نتايج للبحث ده.</td></tr>'}
+        <tr><th>السيريال</th><th>العميل</th><th>الموبايل</th><th>المدينة</th><th>البراند / الليبل</th><th>📦 الأوردر</th><th>القيمة</th><th>الشحن</th><th>الحالة</th><th>التاريخ</th></tr>
+        ${rows || '<tr><td colspan="10" class="none">مفيش نتايج للبحث ده.</td></tr>'}
       </table></div>
       ${list.length > cap ? `<p class="none" style="margin-top:8px">بيعرض أول ${cap} أوردر بس. ضيّق بالبحث أو بالحالة عشان تشوف الباقي. الإحصائيات فوق محسوبة على الكل.</p>` : ''}
     </div>`;
@@ -6377,6 +6416,9 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
     filterSt(k){ qpStFilter = k; qpRerender(); },
     mapSt(k, c){ if(c) qpMap[k] = c; else delete qpMap[k]; qpSaveMap(); qpRerender(); },
     resetMap(){ qpMap = Object.assign({}, QP_MAP_DEFAULT); try{ localStorage.removeItem(QP_MAP_LS); }catch(e){} qpRerender(); },
+    price(v, clear){ qpPrice = v; qpRerender(); if(clear) return;
+      const inp = document.querySelector('.qp-price'); if(inp){ inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); } },
+    togglePrice(v){ const s = new Set(String(qpPrice).split(/[,،\s]+/).filter(Boolean)); const k = String(v); if(s.has(k)) s.delete(k); else s.add(k); qpPrice = [...s].join(', '); qpRerender(); },
     search(v){ qpQuery = v; qpRerender();
       const inp = document.querySelector('.qp-search'); if(inp){ inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); } },
     toProfits(){
@@ -6925,6 +6967,14 @@ async function exportToSheet(btn) {
       .filter(g => g.items.length);
     // 📨 الرسايل والمهام لكل الناس — أول حاجة في القايمة، وجنبها عدد الجديد
     const ibN = (window.Inbox && window.Inbox.count) ? window.Inbox.count() : 0;
+    // 💵 راتبي / 👥 فريقي ورواتبهم + الصفحات المفتوحة للكل — مش جوه GROUPS فكانت مش بتظهر في القايمة
+    const mine = [];
+    if(window.MySalary && window.MySalary.has()) mine.push({ label:'💵 راتبي', href:'#/my-salary' });
+    if(window.MyTeam && window.MyTeam.has()) mine.push({ label:'👥 فريقي ورواتبهم', href:'#/team' });
+    if(mine.length && !(me && me.is_admin)) groups.unshift({ title:'راتبي', items:mine });
+    const open = [{ label:'🧩 مشاكل الأوردرات', href:'#/order-issues' }, { label:'✏️ تعديل أوردر موجود', href:'#/order-edit' }, { label:'📊 نسب التسليمات', href:'#/delivery-rates' }]
+      .filter(x => !seenHref.has(x.href));
+    if(open.length) groups.push({ title:'متاح للكل', items:open });
     groups.unshift({ title:'التواصل', items:[{ label:'📨 الرسايل والمهام' + (ibN ? ' (' + ibN + ' جديد)' : ''), href:'#/inbox' }, { label:'🚨 أوردرات عاجلة', href:'#/urgent' }] });
     if(me && me.is_admin) groups.push({ title:'الإدارة', items:[{ label:'⚙️ الحسابات والصلاحيات', href:'#/admin' }] });
     return groups;
@@ -17015,6 +17065,7 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
     if(!me().id || !sb()) return;
     const { data, error } = await sb().from('payroll_employees').select('*').eq('profile_id', me().id).limit(5);
     S.mgr = !error && data ? (data.find(x => x.is_manager) || null) : null;
+    window.MyTeam = { has: () => !!S.mgr };
     document.querySelectorAll('a.navlink[href="#/team"]').forEach(a => a.classList.toggle('mgr-hide', !S.mgr));
   }
   async function load(){
@@ -17112,6 +17163,7 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
     if(!me().id || !sb()) return;
     const { data, error } = await sb().from('payroll_employees').select('*').eq('profile_id', me().id).limit(3);
     S.emp = !error && data ? (data.find(e => e.active !== false) || null) : null;
+    window.MySalary = { has: () => !!S.emp };
     document.querySelectorAll('a.navlink[href="#/my-salary"]').forEach(a => a.classList.toggle('mgr-hide', !S.emp));
   }
   async function load(){
