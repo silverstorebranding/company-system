@@ -4050,7 +4050,7 @@ const Squad = (function(){
   }
   /* 📊 مربع فوق: إجمالي مبيعات (تسليمات) خدمة العملاء كلهم + نسبة التسليم + العمولة — وقدامها مبيعات QP من أول الشهر لليوم */
   function TeamSalesBox(admin){
-    const B = state.board, Q = state.boardQP, M = state.boardQPMonth;
+    const B = state.board && state.board.filter(r => !/جوليا|julia|jolia|peter|بيتر/i.test(r.name || '')), Q = state.boardQP, M = state.boardQPMonth;
     if(!B) return `<div class="sq-team"><div class="sq-loading" style="margin:0">⏳ بيحسب مبيعات خدمة العملاء...</div></div>`;
     const T = B.reduce((a, r) => ({ n:a.n + r.total, d:a.d + r.delivered, v:a.v + (r.delValue || 0), c:a.c + (r.totalComm || 0), due:a.due + (r.dueComm || 0) }), { n:0, d:0, v:0, c:0, due:0 });
     const pct = (x, y) => y ? (Math.round(x / y * 1000) / 10) + '%' : '—';
@@ -4064,12 +4064,12 @@ const Squad = (function(){
          ${T.v && M.val ? `<div class="sq-team-r"><span>خدمة العملاء من مبيعات QP</span><b>${pct(T.v, M.val)}</b></div>` : ''}`;
     return `<div class="sq-team">
       <div class="sq-team-c cs"><h4>🎧 مبيعات خدمة العملاء كلهم <small>(التسليمات · ${esc(new Date((state.month || sqCurMonth()) + '-15').toLocaleDateString('ar-EG', { month:'long', year:'numeric' }))})</small></h4>
-        <div class="sq-team-n">${money(Math.round(T.v))}</div><div class="sq-team-l">✅ ${T.d.toLocaleString('ar-EG')} أوردر اتسلم من ${T.n.toLocaleString('ar-EG')} · ${B.length} موظف</div>
+        <div class="sq-team-n">${money(Math.round(T.v))}</div><div class="sq-team-l">✅ ${T.d.toLocaleString('ar-EG')} أوردر اتسلم من ${T.n.toLocaleString('ar-EG')} · ${B.length} موظفات</div>
         <div class="sq-team-r"><span>نسبة تسليماتهم كلهم</span><b>${pct(T.d, T.n)}</b></div>
         <div class="sq-team-r"><span>عمولتهم كلهم (المستحقة)</span><b>${money(Math.round(T.due))} <small>= ${pct(T.due, T.v)} من التسليمات</small></b></div>
         <div class="sq-team-r sm"><span title="عمولة اللي اتسلم + 5 ج على كل أوردر ماتسلمش (قيد التنفيذ / اندلفرد / ملغي) + عمولة المكتب — لكل الموظفين من غير شرط نسبة الـ50%">العمولة الإجمالية (من غير شرط الـ50%)</span><b>${money(Math.round(T.c))}</b></div>
         ${B.length ? `<table style="width:100%;border-collapse:collapse;margin-top:10px;font-size:13px"><thead><tr style="color:var(--muted);font-size:12px;text-align:right"><th style="padding:4px 2px;font-weight:600">👩‍💼 الموظفة</th><th style="padding:4px 2px;font-weight:600">باعت (اتسلم)</th><th style="padding:4px 2px;font-weight:600">✅ أوردرات</th><th style="padding:4px 2px;font-weight:600">💰 عمولتها (المستحقة)</th></tr></thead><tbody>
-          ${B.filter(r => !/جوليا|julia|jolia|peter|بيتر/i.test(r.name || '')).sort((x, y) => (y.delValue || 0) - (x.delValue || 0)).map(r => `<tr style="border-top:1px solid var(--line)"><td style="padding:5px 2px;font-weight:700">${esc(r.name || '')}</td><td style="padding:5px 2px"><b>${money(Math.round(r.delValue || 0))}</b></td><td style="padding:5px 2px">${(r.delivered || 0).toLocaleString('ar-EG')} من ${(r.total || 0).toLocaleString('ar-EG')} <small style="color:var(--muted)">(${pct(r.delivered, r.total)})</small></td><td style="padding:5px 2px"><b>${money(Math.round(r.dueComm || 0))}</b>${Math.round(r.totalComm || 0) !== Math.round(r.dueComm || 0) ? `<br><small style="color:var(--muted)" title="من غير شرط الـ50%">إجمالي ${money(Math.round(r.totalComm || 0))}</small>` : ''}</td></tr>`).join('')}</tbody></table>` : ''}</div>
+          ${[...B].sort((x, y) => (y.delValue || 0) - (x.delValue || 0)).map(r => `<tr style="border-top:1px solid var(--line)"><td style="padding:5px 2px;font-weight:700">${esc(r.name || '')}</td><td style="padding:5px 2px"><b>${money(Math.round(r.delValue || 0))}</b></td><td style="padding:5px 2px">${(r.delivered || 0).toLocaleString('ar-EG')} من ${(r.total || 0).toLocaleString('ar-EG')} <small style="color:var(--muted)">(${pct(r.delivered, r.total)})</small></td><td style="padding:5px 2px"><b>${money(Math.round(r.dueComm || 0))}</b>${Math.round(r.totalComm || 0) !== Math.round(r.dueComm || 0) ? `<br><small style="color:var(--muted)" title="من غير شرط الـ50%">إجمالي ${money(Math.round(r.totalComm || 0))}</small>` : ''}</td></tr>`).join('')}</tbody></table>` : ''}</div>
       ${admin ? `<div class="sq-team-c qp"><h4>🚚 مبيعات QP <small>(التسليمات${M ? ` · من ${dt(M.from)} لـ ${dt(M.to)}` : ' · من أول الشهر لليوم'})</small></h4>${qpSide}</div>` : ''}
     </div>`;
   }
