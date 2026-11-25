@@ -16448,6 +16448,26 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
       <div class="pp-kpi"><div class="n" style="color:#2f7d55">${cnt('delivered')}</div><div class="l">✅ اتسلم</div></div>
       <div class="pp-kpi"><div class="n" style="color:#c0392b">${cnt('failed')}</div><div class="l">❌ ماتسلمش</div></div>
       <div class="pp-kpi"><div class="n">${money(sumD)}</div><div class="l">قيمة اللي اتسلم</div></div></div>`;
+    // 🍩 دايرة: إجمالي الأوردرات متقسمة حسب الحالة (العدد + النسبة)
+    if(LD.length){
+      const SEG = [['delivered', '✅ اتسلم', '#2f7d55'], ['failed', '❌ ماتسلمش', '#c0392b'], ['out', '🛵 مع المندوب', '#2b5a8a'], ['pending', '⏳ لسه', '#d69e2e']]
+        .map(([k, l, c]) => ({ k, l, c, n: cnt(k) })).filter(x => x.n);
+      const tot = LD.length, R = 70, C = 2 * Math.PI * R, pc = n => (Math.round(n / tot * 1000) / 10) + '%';
+      let off = 0;
+      const arcs = SEG.map(x => { const len = x.n / tot * C, g = SEG.length > 1 ? Math.min(2, len / 3) : 0;
+        const el = `<circle cx="90" cy="90" r="${R}" fill="none" stroke="${x.c}" stroke-width="28" stroke-dasharray="${Math.max(0, len - g)} ${C}" stroke-dashoffset="${-off}"><title>${x.l}: ${x.n} (${pc(x.n)})</title></circle>`; off += len; return el; }).join('');
+      const done = cnt('delivered') + cnt('failed');
+      h += `<div class="card" style="display:flex;align-items:center;gap:22px;flex-wrap:wrap;justify-content:center;margin:0 0 14px">
+        <svg viewBox="0 0 180 180" width="190" height="190" role="img" aria-label="تقسيم ${tot} أوردر حسب الحالة" style="flex:0 0 auto">
+          <circle cx="90" cy="90" r="${R}" fill="none" stroke="var(--line)" stroke-width="28"/>
+          <g transform="rotate(-90 90 90)">${arcs}</g>
+          <text x="90" y="88" text-anchor="middle" style="font-size:34px;font-weight:800;fill:var(--ink)">${tot}</text>
+          <text x="90" y="112" text-anchor="middle" style="font-size:13px;fill:var(--muted)">أوردر</text></svg>
+        <div style="display:flex;flex-direction:column;gap:8px;min-width:230px;flex:1;max-width:360px">
+          ${SEG.map(x => `<div style="display:flex;align-items:center;gap:10px;font-size:15px"><i style="width:14px;height:14px;border-radius:4px;background:${x.c};flex:0 0 auto"></i><span style="flex:1">${x.l}</span><b style="font-size:18px">${x.n}</b><span dir="ltr" style="min-width:56px;text-align:left;font-weight:700;color:${x.k === 'pending' ? '#b7791f' : x.c}">${pc(x.n)}</span></div>`).join('')}
+          ${done ? `<div style="border-top:1px dashed var(--line);padding-top:8px;font-size:13px;color:var(--muted)">نسبة التسليم من اللي خلص (اتسلم + ماتسلمش): <b style="color:#2f7d55" dir="ltr">${Math.round(cnt('delivered') / done * 1000) / 10}%</b></div>` : ''}
+        </div></div>`;
+    }
     if(S.adv && !S.advMissing) h += `<div class="pp-advbar" data-ppview="acc" title="افتح حسابات المناديب">
       <div><span>💵 المندوب دفع مقدم</span><b>${money(paid)}</b><small>${openA.length} دفعة مفتوحة · ${AC.reduce((s, r) => s + r.os.length, 0)} أوردر</small></div>
       <div><span>− قيمة اللي اتسلم منهم</span><b style="color:#2f7d55">${money(adel)}</b></div>
