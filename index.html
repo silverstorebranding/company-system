@@ -2203,8 +2203,9 @@ const Squad = (function(){
   // 🧸 "إرسال صفحة kidzzly" = إرسال صفحة لبراند Kidzzly — بيظهر في فورم Kidzzly بس، عمولته زي إرسال صفحة، وبيتحسب في الأرباح على Kidzzly
   // 🐰 Bunny: نفس مصادر Kidzzly بالظبط بس باسم bunny — وبتظهر في فورم Bunny بس
   const BUNNY_SOURCES = ['واتساب bunny', 'بيدج bunny', 'إرسال صفحة bunny'];
-  // 🟣 Rove: مصدره "بيدج rove"
-  const ORDER_SOURCES = ['واتساب دريم', 'بيدج دريم', 'واتساب كيدزلي', 'بيدج كيدزلي', 'بيدج rove', 'إرسال صفحة', 'إرسال صفحة kidzzly'].concat(BUNNY_SOURCES);
+  // 🟣 Rove: براند لوحده — مصدره "بيدج rove" بس، وبيظهر في فورم Rove بس
+  const ROVE_SOURCES = ['بيدج rove'];
+  const ORDER_SOURCES = ['واتساب دريم', 'بيدج دريم', 'واتساب كيدزلي', 'بيدج كيدزلي', 'إرسال صفحة', 'إرسال صفحة kidzzly'].concat(BUNNY_SOURCES, ROVE_SOURCES);
   const KIDZZLY_ONLY_SOURCES = ['إرسال صفحة kidzzly'];
   const SOURCE_LABEL = { 'إرسال صفحة':'إرسال', 'إرسال صفحة kidzzly':'إرسال صفحة Kidzzly', 'واتساب bunny':'واتساب Bunny', 'بيدج bunny':'بيدج Bunny', 'إرسال صفحة bunny':'إرسال صفحة Bunny', 'بيدج rove':'بيدج Rove' };
   // 📨 قسم "إرسال" في أوردر جديد: المصدر = اسم البيدج من 📨 إرسال فوكس، وبيتسجل page_name = "إرسال صفحة - <اسم البيدج>"
@@ -2245,7 +2246,8 @@ const Squad = (function(){
     // فورم Dream (أوردر جديد) مابيظهرش فيه مصادر Kidzzly بس
     const L = isRenewSrc(val) ? [val] : ORDER_SOURCES.filter(x => x === val
       || (brand === 'bunny' ? BUNNY_SOURCES.includes(x)                                   // 🐰 فورم Bunny: مصادر Bunny بس
-        : !BUNNY_SOURCES.includes(x) && (!dreamForm || !KIDZZLY_ONLY_SOURCES.includes(x)))
+        : brand === 'rove' ? ROVE_SOURCES.includes(x)                                     // 🟣 فورم Rove: بيدج Rove بس
+        : !BUNNY_SOURCES.includes(x) && !ROVE_SOURCES.includes(x) && (!dreamForm || !KIDZZLY_ONLY_SOURCES.includes(x)))
       || (!dreamForm && !brand));   // التجديد مصدره ثابت · التعديل بيشوف كل المصادر
     if(isErsalPage(val)) L.unshift(val);   // 📨 أوردر من قسم إرسال (في التعديل)
     return `<select id="${id}" required ${disabled ? 'disabled' : ''}>
@@ -3292,20 +3294,21 @@ const Squad = (function(){
   // ♻️ تجديد أوردر اندلفرد من صفحة "🎯 أيام تحت الهدف": بيانات العميل بتتملى لوحدها، وبعد التسجيل بيتعلّم إنه تجديد لليوم ده
   let prefill = null;
   let newOrderType = ''; // '' | 'acc' (Dream) | 'kidzzly'  (كود RS / Bloom / Socky لسه موجود لو احتجناه تاني)
-  const ORDER_BRANDS = { acc:'اكسسوارات', kidzzly:'Kidzzly', bunny:'Bunny', ersal:'إرسال', socky:'Socky' };
+  const ORDER_BRANDS = { acc:'اكسسوارات', kidzzly:'Kidzzly', bunny:'Bunny', rove:'Rove', ersal:'إرسال', socky:'Socky' };
+  const cloSrcBrand = t => t === 'bunny' || t === 'rove' ? t : 'kidzzly';   // ليستة المصادر في فورم Kidzzly / Bunny / Rove
   // 📨 إرسال بيستخدم نفس خانات Dream (الطلب من ليستة المنتجات + المقاس) بس المصدر = ليستة صفحات إرسال فوكس
-  const isClothes = t => t === 'kidzzly' || t === 'bunny' || t === 'socky';   // 🐰 Bunny نفس فورم Kidzzly
+  const isClothes = t => t === 'kidzzly' || t === 'bunny' || t === 'rove' || t === 'socky';   // 🟣 Rove نفس فورم Kidzzly   // 🐰 Bunny نفس فورم Kidzzly
   const isAccLike = t => t === 'acc' || t === 'ersal';
   function typePicker(prefix){
     const b = (k, l) => `<button type="button" class="sq-type ${newOrderType === k ? 'on' : ''}" data-otype="${k}">${l}</button>`;
     return `<div class="sq-field"><label>البراند <span class="sq-hint">حدد الأول الأوردر ده تبع أنهي براند</span></label>
-      <div class="sq-types" id="${prefix}-types">${b('acc', '💍 Dream')}${b('kidzzly', '🧸 Kidzzly')}${b('bunny', '🐰 Bunny')}${b('ersal', '📨 إرسال')}</div></div>`;
+      <div class="sq-types" id="${prefix}-types">${b('acc', '💍 Dream')}${b('kidzzly', '🧸 Kidzzly')}${b('bunny', '🐰 Bunny')}${b('rove', '🟣 Rove')}${b('ersal', '📨 إرسال')}</div></div>`;
   }
   function clothesFields(prefix, o){
     o = o || {};
     return `
       <div class="sq-field"><label for="${prefix}-c-page-name">المصدر</label>
-        ${sourceSelect(prefix + '-c-page-name', o.page_name || '', !isClothes(newOrderType), false, newOrderType === 'bunny' ? 'bunny' : 'kidzzly')}</div>
+        ${sourceSelect(prefix + '-c-page-name', o.page_name || '', !isClothes(newOrderType), false, cloSrcBrand(newOrderType))}</div>
       <div class="sq-field"><label for="${prefix}-c-size">المقاس</label>
         <input type="text" id="${prefix}-c-size" value="${esc(o.size || '')}" placeholder="اكتب المقاس" autocomplete="off"></div>
       <div class="sq-field"><label for="${prefix}-c-order">الطلب</label>
@@ -3322,8 +3325,8 @@ const Squad = (function(){
       clo.dataset.brand = isClothes(t) ? t : was;
       // 🐰 لما تبدّل بين Kidzzly و Bunny ليستة المصادر بتتغير
       const cs0 = document.getElementById(`${prefix}-c-page-name`);
-      if(cs0 && isClothes(t) && cs0.dataset.for !== t){ const keep = cs0.value; cs0.outerHTML = sourceSelect(`${prefix}-c-page-name`, '', false, false, t === 'bunny' ? 'bunny' : 'kidzzly');
-        const n0 = document.getElementById(`${prefix}-c-page-name`); if(n0){ n0.dataset.for = t; if([...n0.options].some(o => o.value === keep)) n0.value = keep; } }
+      if(cs0 && isClothes(t) && cs0.dataset.for !== t){ const keep = cs0.value; cs0.outerHTML = sourceSelect(`${prefix}-c-page-name`, '', false, false, cloSrcBrand(t));
+        const n0 = document.getElementById(`${prefix}-c-page-name`); if(n0){ n0.dataset.for = t; if([...n0.options].some(o => o.value === keep)) n0.value = keep; else if(t === 'rove') n0.value = ROVE_SOURCES[0]; } }
     }
     {
       // 📨 إرسال: نخفي مصادر Dream ونظهر ليستة صفحات إرسال (والعكس)
@@ -4487,7 +4490,7 @@ grant select, insert, update, delete on public.office_sales to authenticated;`;
     if($('sq-prefill-x')) $('sq-prefill-x').onclick = () => { const b = prefill && prefill.back; prefill = null; newOrderType = ''; if(b) go(b); else render(); };
     if($('sq-order-form')) $('sq-order-form').onsubmit = e => {
       e.preventDefault();
-      if(!newOrderType){ showToast('حدد الأول البراند: Dream ولا Kidzzly ولا Bunny ولا إرسال.', 'error'); return; }
+      if(!newOrderType){ showToast('حدد الأول البراند: Dream ولا Kidzzly ولا Bunny ولا Rove ولا إرسال.', 'error'); return; }
       const p = readFields('sq-new');
       if(!isSource(p.page_name)){ showToast(newOrderType === 'ersal' ? 'اختار البيدج من ليستة صفحات إرسال الأول.' : 'اختار المصدر من الليستة الأول.', 'error'); return; }
       if(isAccLike(newOrderType) && !p.order_details){ showToast('اختار الطلب من الليستة الأول.', 'error'); return; }
@@ -5899,7 +5902,7 @@ table.pr tr.cmp-sel td{background:var(--slate-l);font-weight:700}
     try{ const { data } = await c.from('app_kv').select('value').eq('key', 'wallet_note_map').maybeSingle(); window.__noteMap = (data && data.value && data.value.map) || {}; }catch(e){}
   }
   // 📒 الـ notes اللي أوردر Squad يتحسب بيها في الأرباح وأيام التسليم حسب مصدره
-  const pageNote = pg => { const p = String(pg || ''); if(/^إرسال صفحة - /.test(p)) return 'ersal'; if(/bunny|باني/i.test(p)) return 'bunny'; if(/كيدز|kid/i.test(p)) return 'kidzzly'; if(/إرسال|ارسال/.test(p)) return 'ersal'; if(/واتساب\s*دريم|dream\s*wa/i.test(p)) return 'dream wa'; if(/دريم|dream/i.test(p)) return 'dream'; return null; };
+  const pageNote = pg => { const p = String(pg || ''); if(/^إرسال صفحة - /.test(p)) return 'ersal'; if(/bunny|باني/i.test(p)) return 'bunny'; if(/rove|روف/i.test(p)) return 'rove'; if(/كيدز|kid/i.test(p)) return 'kidzzly'; if(/إرسال|ارسال/.test(p)) return 'ersal'; if(/واتساب\s*دريم|dream\s*wa/i.test(p)) return 'dream wa'; if(/دريم|dream/i.test(p)) return 'dream'; return null; };
   const squadPageOf = o => o && sqPages ? [o.phone, o.phone2, o.customer_phone].map(phKey).map(k => k && sqPages[k]).find(x => x != null) : null;
   // للأرباح وأيام التسليم: لو notes = squad رجّع البراند الحقيقي من المصدر (أو null لو مش معروف)
   // 🏆 أوردر QP ده جاي من Squad؟ = نفس موبايل العميل عليه أوردر في Squad اتسجل من 20 يوم قبل الرفع على QP لحد يوم بعده
@@ -12078,7 +12081,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
   // 🐰 أوردرات Bunny (مصدر EasyOrders أو صفحة Squad اسمها فيه bunny / باني) → الـ notes = bunny لوحدها لو مفيش notes متكتبة
   const BUNNY_RE = /bunny|باني/i;
   // 📨 أوردرات قسم إرسال (page_name = "إرسال صفحة - الامل") ← الـ notes بتتكتب لوحدها "ارسال صفحة الامل"
-  const pageNote = pg => SQ.pageNotes[pg] || (/^إرسال صفحة - ./.test(String(pg || '')) ? 'ارسال صفحة ' + String(pg).replace(/^إرسال صفحة - /, '').trim() : '') || (BUNNY_RE.test(String(pg || '')) ? 'bunny' : '');
+  const pageNote = pg => SQ.pageNotes[pg] || (/^إرسال صفحة - ./.test(String(pg || '')) ? 'ارسال صفحة ' + String(pg).replace(/^إرسال صفحة - /, '').trim() : '') || (BUNNY_RE.test(String(pg || '')) ? 'bunny' : '') || (/rove|روف/i.test(String(pg || '')) ? 'rove' : '');   // 🟣 Rove → notes = rove
   async function loadSquadPtr(){
     const { data } = await sbc().from('app_kv').select('*').in('key', [SQ_KV, PN_KV]);
     (data || []).forEach(r => {
