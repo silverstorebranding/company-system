@@ -11979,6 +11979,23 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
     if(error){ E.missing = /app_kv|relation|schema cache|does not exist/i.test(error.message); }
     else if(data && data.value && Array.isArray(data.value.list) && data.value.list.length) SOURCES = data.value.list.filter(x => x && x.key !== 'socky'); // 🧦 Socky اتقفل
     E.srcLoaded = true;
+    try{ await discoverLabels(); }catch(e){}
+  }
+  /* 🏷️ ليبلات اللاندينج: كل لاندينج ليها ليبل بيتكتب في لوحة الأدمن بتاعتها، والأوردر بيوصل هنا على ?src=<الليبل>
+     أول ما يوصل أوردر بليبل جديد، بيتضاف لوحده كمصدر — والـ notes = الليبل نفسه (bunny-xxx بيتحسب Bunny في الأرباح)،
+     وتقدر تغيّر الـ notes من ⚙️ المصادر */
+  async function discoverLabels(){
+    if(E.missing) return;
+    const since = new Date(Date.now() - 45 * 864e5).toISOString();
+    const { data, error } = await sbc().from('easy_orders').select('source').gte('received_at', since).not('source', 'is', null).order('seq', { ascending:false }).limit(3000);
+    if(error || !data) return;
+    const known = new Set(SOURCES.map(x => x.key).concat(['dream', 'socky', 'squad', 'restore']));
+    const fresh = [...new Set(data.map(x => String(x.source || '').trim()).filter(k => /^[a-z0-9][a-z0-9-]{0,39}$/.test(k) && !known.has(k)))];
+    if(!fresh.length) return;
+    const add = fresh.map(k => ({ key:k, label:'🏷️ ' + k, note:k, color:'#8a6d3b', auto:true, at:new Date().toISOString() }));
+    const list = SOURCES.concat(add);
+    try{ await saveSources(list); }catch(e){ SOURCES = list; }
+    E.newLabels = (E.newLabels || []).concat(fresh);
   }
   async function saveSources(list){
     const { error } = await sbc().from('app_kv').upsert({ key:SRC_KV, value:{ list }, updated_at:new Date().toISOString(), updated_by_name: me().full_name || me().username || '' });
@@ -14042,6 +14059,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
       ${S.src === 'restore' || (S.store.restore && S.store.restore.rows && S.store.restore.rows.length) ? `<button class="${S.src === 'restore' ? 'on' : ''}" style="--bc:#2f7d55" data-upsrc="restore">♻️ اتمسحت</button>` : ''}
       ${canScan() ? `<button class="${S.src === 'delete' ? 'on' : ''}" style="--bc:#b3261e" data-upsrc="delete">📷 بوالص</button>` : ''}
       ${me().is_admin ? `<button class="${S.src === 'settings' ? 'on' : ''}" style="--bc:#555" data-upsrc="settings" title="إدارة المصادر">⚙️</button>` : ''}</div>`;
+    if(E.newLabels && E.newLabels.length && S.src !== 'delete') h += `<div class="up-msg" style="background:#fbf3e4;border:1px solid #e2c99b;color:#5c4320">🏷️ وصل أوردرات بليبل لاندينج جديد واتضاف كمصدر لوحده: ${E.newLabels.map(k => '<b dir="ltr">' + esc(k) + '</b>').join('، ')} — الـ notes بتاعته = الليبل نفسه (اللي بيبدأ بـ bunny بيتحسب Bunny في الأرباح).${me().is_admin ? ' عايز تغيّر البراند؟ ادخل ⚙️ وغيّر الـ notes.' : ''}</div>`;
     if(S.src !== 'delete' && S.src !== 'settings') h += ppBanner();
     if(S.src === 'settings') return h + settingsHtml() + '</div>';
     if(S.src === 'delete') return h + delHtml() + '</div>';
@@ -14927,7 +14945,7 @@ create policy "sheets: upload" on storage.objects for insert to authenticated wi
     if($('upSrcSave')) $('upSrcSave').onclick = async () => {
       if(E.srcDraft.some(x => !String(x.label).trim())) return alert('كل مصدر لازم يبقى ليه اسم.');
       E.srcSaving = true; draw();
-      try{ await saveSources(E.srcDraft.map(x => ({ key:x.key, label:String(x.label).trim(), note:String(x.note || '').trim(), color:x.color || '#2b6cb0' }))); flash('✅ المصادر اتحفظت.'); }
+      try{ await saveSources(E.srcDraft.map(x => ({ key:x.key, label:String(x.label).trim(), note:String(x.note || '').trim(), color:x.color || '#2b6cb0', ...(x.auto ? { auto:true, at:x.at } : {}) }))); flash('✅ المصادر اتحفظت.'); }
       catch(e){ flash('ماتحفظش: ' + e.message, true); }
       E.srcSaving = false; E.srcDraft = JSON.parse(JSON.stringify(SOURCES)); draw();
     };
