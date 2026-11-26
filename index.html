@@ -2203,9 +2203,10 @@ const Squad = (function(){
   // 🧸 "إرسال صفحة kidzzly" = إرسال صفحة لبراند Kidzzly — بيظهر في فورم Kidzzly بس، عمولته زي إرسال صفحة، وبيتحسب في الأرباح على Kidzzly
   // 🐰 Bunny: نفس مصادر Kidzzly بالظبط بس باسم bunny — وبتظهر في فورم Bunny بس
   const BUNNY_SOURCES = ['واتساب bunny', 'بيدج bunny', 'إرسال صفحة bunny'];
-  const ORDER_SOURCES = ['واتساب دريم', 'بيدج دريم', 'واتساب كيدزلي', 'بيدج كيدزلي', 'إرسال صفحة', 'إرسال صفحة kidzzly'].concat(BUNNY_SOURCES);
+  // 🟣 Rove: مصدره "بيدج rove"
+  const ORDER_SOURCES = ['واتساب دريم', 'بيدج دريم', 'واتساب كيدزلي', 'بيدج كيدزلي', 'بيدج rove', 'إرسال صفحة', 'إرسال صفحة kidzzly'].concat(BUNNY_SOURCES);
   const KIDZZLY_ONLY_SOURCES = ['إرسال صفحة kidzzly'];
-  const SOURCE_LABEL = { 'إرسال صفحة':'إرسال', 'إرسال صفحة kidzzly':'إرسال صفحة Kidzzly', 'واتساب bunny':'واتساب Bunny', 'بيدج bunny':'بيدج Bunny', 'إرسال صفحة bunny':'إرسال صفحة Bunny' };
+  const SOURCE_LABEL = { 'إرسال صفحة':'إرسال', 'إرسال صفحة kidzzly':'إرسال صفحة Kidzzly', 'واتساب bunny':'واتساب Bunny', 'بيدج bunny':'بيدج Bunny', 'إرسال صفحة bunny':'إرسال صفحة Bunny', 'بيدج rove':'بيدج Rove' };
   // 📨 قسم "إرسال" في أوردر جديد: المصدر = اسم البيدج من 📨 إرسال فوكس، وبيتسجل page_name = "إرسال صفحة - <اسم البيدج>"
   //    (بيبدأ بـ "إرسال صفحة" عشان العمولة والأرباح والمحفظة يفضلوا يحسبوه إرسال صفحة زي الأول)
   const ERSAL_PREFIX = 'إرسال صفحة - ';
@@ -2273,6 +2274,7 @@ const Squad = (function(){
     'بيدج دريم':     STD_COMM,
     'واتساب كيدزلي': STD_COMM,
     'بيدج كيدزلي':   STD_COMM,
+    'بيدج rove':     STD_COMM,
     'إرسال صفحة':  { order:10, delivered:30 },
     'إرسال صفحة kidzzly': { order:10, delivered:30 },   // نفس إرسال صفحة
     'واتساب bunny':   STD_COMM,                            // 🐰 Bunny = نفس عمولة Kidzzly
