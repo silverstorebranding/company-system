@@ -16190,6 +16190,9 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
   const ymd = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   const money = n => (Number(n) || 0).toLocaleString('ar-EG') + ' ج';
   const ST = { pending:'⏳ لسه', out:'🛵 مع المندوب', delivered:'✅ اتسلم', failed:'❌ ماتسلمش' };
+  // 💰 المحصّل (للاستلام الجزئي — فاضي = سعر الأوردر) والشحن (المنتج = المحصّل − الشحن)
+  const got = o => o.collected == null ? (Number(o.amount) || 0) : (Number(o.collected) || 0);
+  const shipOf = o => Number(o.ship_fee) || 0;
   const S = { list:null, missing:false, msg:'', msgErr:false, tab:'pending', day:'', courier:'', days:30, couriers:null, sel:new Set(), size:25, page:0,
     view:'orders', adv:null, advMissing:false, advOrd:{}, advOpen:new Set(), advForm:{ amount:'', note:'', courier:'' }, advSaving:false, showSettled:false };
 
@@ -16251,7 +16254,7 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
     const have = new Set((S.list || []).map(o => o.id));
     const need = [...new Set(S.adv.flatMap(a => (a.order_ids || []).map(Number)))].filter(id => !have.has(id) && !S.advOrd[id]);
     for(let i = 0; i < need.length; i += 200){
-      const { data:os } = await sb().from('prepaid_orders').select('id, order_date, customer_name, amount, status, status_note, courier_note, courier_id, courier_name').in('id', need.slice(i, i + 200));
+      const { data:os } = await sb().from('prepaid_orders').select('*').in('id', need.slice(i, i + 200));
       (os || []).forEach(o => { S.advOrd[o.id] = o; });
     }
   }
@@ -16280,6 +16283,24 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
     o.courier_note = t.trim() || null; o.courier_note_at = o.courier_note ? new Date().toISOString() : null; o.courier_note_by = o.courier_note ? (me().full_name || me().username || '') : null;
     flash(o.courier_note ? '📝 الملاحظة اتحفظت.' : '📝 الملاحظة اتمسحت.');
   }
+  const SQL4 = 'محتاج تشغّل ملف prepaid_orders_4.sql في Supabase → SQL Editor الأول.';
+  // 💰 المندوب يعدّل السعر اللي اتحصّل (استلام جزئي) ويكتب قيمة الشحن
+  async function setMoney(id){
+    const o = S.list.find(x => x.id === id); if(!o) return;
+    const num = t => { const v = String(t).replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/[^\d.]/g, ''); return v === '' ? NaN : Number(v); };
+    let a = prompt(`💰 اتحصّل كام من "${o.customer_name || ''}"؟\nسعر الأوردر ${money(o.amount)} — لو العميل استلم جزء ودفع أقل اكتب المبلغ اللي اتدفع فعلاً:`, String(got(o)));
+    if(a === null) return; a = num(a); if(!(a >= 0)) return flash('اكتب المبلغ بالأرقام.', true);
+    let f = prompt(`🚚 قيمة الشحن كام؟\n(بتتخصم من ${money(a)} — والباقي سعر المنتج)`, String(shipOf(o)));
+    if(f === null) return; f = num(f === '' ? '0' : f); if(!(f >= 0)) return flash('اكتب قيمة الشحن بالأرقام.', true);
+    if(f > a) return flash('الشحن أكبر من المبلغ اللي اتحصّل.', true);
+    const coll = a === (Number(o.amount) || 0) ? null : a;
+    const { data, error } = await sb().rpc('prepaid_set_money', { p_id:id, p_collected:coll, p_ship:f });
+    if(error) return flash(/prepaid_set_money|function .* does not exist|schema cache|column/i.test(error.message) ? SQL4 : 'ماتحفظش: ' + error.message, true);
+    if(!data) return flash('ماتحفظش — الأوردر ده مش بتاعك.', true);
+    o.collected = coll; o.ship_fee = f; o.money_at = new Date().toISOString(); o.money_by = me().full_name || me().username || '';
+    if(S.advOrd[o.id]) Object.assign(S.advOrd[o.id], { collected:coll, ship_fee:f });
+    flash(`💰 "${o.customer_name || ''}": اتحصّل ${money(a)} = منتج ${money(a - f)} + شحن ${money(f)}.`);
+  }
   async function saveAdv(ids){
     const M = ordMap(), sum = ids.reduce((a, id) => a + (Number((M.get(id) || {}).amount) || 0), 0);
     const amt = S.advForm.amount === '' ? sum : Number(S.advForm.amount);
@@ -16307,7 +16328,7 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
   async function settleAdv(id, on){
     const a = (S.adv || []).find(x => x.id === id); if(!a) return;
     let note = null;
-    if(on){ const r = advCalc(a, ordMap()); note = prompt(`اقفل الدفعة؟ الباقي للمندوب ${money(r.bal)}.\nاكتب اللي حصل في الحساب (مثلاً: رجّعناله ${Math.max(0, Math.round(r.bal))} ج كاش) — أو سيبها فاضية:`, ''); if(note === null) return; }
+    if(on){ const r = advCalc(a, ordMap()); note = prompt(`اقفل الدفعة؟ ${balTxt(r.bal)}.\nاكتب اللي حصل في الحساب (مثلاً: ${r.bal >= 0 ? 'رجّعناله' : 'دفعلنا'} ${Math.abs(Math.round(r.bal))} ج كاش) — أو سيبها فاضية:`, ''); if(note === null) return; }
     const upd = on ? { settled:true, settled_at:new Date().toISOString(), settled_by_name:me().full_name || me().username || '', settle_note:note.trim() || null } : { settled:false, settled_at:null, settled_by_name:null, settle_note:null };
     const { data, error } = await sb().from('prepaid_advances').update(upd).eq('id', id).select('id');
     if(error || !data || !data.length) return flash('ماتحفظش: ' + (error ? error.message : 'مفيش صلاحية'), true);
@@ -16391,15 +16412,21 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
   function advCalc(a, M){
     const os = (a.order_ids || []).map(id => M.get(Number(id))).filter(Boolean);
     const v = st => os.filter(o => o.status === st).reduce((s, o) => s + (Number(o.amount) || 0), 0);
-    const r = { os, total:os.reduce((s, o) => s + (Number(o.amount) || 0), 0), del:v('delivered'), fail:v('failed'), out:v('out') + v('pending'), paid:Number(a.amount) || 0 };
-    r.bal = r.paid - r.del;   // الباقي للمندوب = اللي دفعه − قيمة اللي اتسلم
+    const D = os.filter(o => o.status === 'delivered');
+    const r = { os, total:os.reduce((s, o) => s + (Number(o.amount) || 0), 0), del:D.reduce((s, o) => s + got(o), 0), ship:D.reduce((s, o) => s + shipOf(o), 0),
+      fail:v('failed'), out:v('out') + v('pending'), paid:Number(a.amount) || 0 };
+    r.net = r.del - r.ship;   // اللي اتسلم بعد خصم مصاريف الشحن
+    r.bal = r.paid - r.net;   // موجب = ليه (المندوب) · سالب = لينا
     return r;
   }
+  const balTxt = b => Math.round(b) === 0 ? '⚖️ خالصين' : b > 0 ? `🛵 ليه عندنا ${money(b)}` : `🏢 لينا عنده ${money(-b)}`;
+  const balClr = b => Math.round(b) === 0 ? 'var(--muted)' : b > 0 ? '#2b5a8a' : '#c0392b';
 
   function card(o){
     const mgr = isMgr(), ph = tel(o.phone), ph2 = o.phone2 ? tel(o.phone2) : '', adv = openAdvOf(o.id);
     return `<div class="pp-card ${o.status} ${S.sel.has(o.id) ? 'sel' : ''}">
-      <div class="pp-top"><input type="checkbox" class="pp-chk" data-ppsel="${o.id}" ${S.sel.has(o.id) ? 'checked' : ''} title="علّم الأوردر"><span class="pp-st ${o.status}">${ST[o.status] || o.status}</span><span class="nm">${esc(o.customer_name || '—')}</span>${adv ? `<span class="pp-st adv" title="دفعة مقدم ${money(adv.amount)}">💵 مدفوع مقدم</span>` : ''}<span class="amt">${money(o.amount)}</span></div>
+      <div class="pp-top"><input type="checkbox" class="pp-chk" data-ppsel="${o.id}" ${S.sel.has(o.id) ? 'checked' : ''} title="علّم الأوردر"><span class="pp-st ${o.status}">${ST[o.status] || o.status}</span><span class="nm">${esc(o.customer_name || '—')}</span>${adv ? `<span class="pp-st adv" title="دفعة مقدم ${money(adv.amount)}">💵 مدفوع مقدم</span>` : ''}<span class="amt">${o.collected != null && got(o) !== (Number(o.amount) || 0) ? `<s style="opacity:.55;font-weight:400;font-size:.85em">${money(o.amount)}</s> ` : ''}${money(got(o))}</span></div>
+      ${o.collected != null || o.ship_fee != null ? `<div class="pp-line" style="font-size:13px">💰 ${o.collected != null && got(o) !== (Number(o.amount) || 0) ? `<b>اتحصّل ${money(got(o))}</b> بدل ${money(o.amount)} · ` : ''}📦 المنتج <b>${money(got(o) - shipOf(o))}</b> + 🚚 الشحن <b>${money(shipOf(o))}</b> <span class="k">${esc(o.money_by || '')} ${esc(tm(o.money_at))}</span></div>` : ''}
       <div class="pp-line"><span class="k">📞</span> <a href="tel:${esc(ph)}" dir="ltr" style="font-weight:700">${esc(ph)}</a>${ph2 ? ` · <a href="tel:${esc(ph2)}" dir="ltr">${esc(ph2)}</a>` : ''}</div>
       <div class="pp-line"><span class="k">📍</span> ${esc(o.address || '—')}${o.city ? ` — ${esc(o.city)}` : ''}</div>
       ${o.contents ? `<div class="pp-line"><span class="k">📦</span> ${esc(o.contents)}</div>` : ''}
@@ -16413,6 +16440,7 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
         ${o.status !== 'delivered' ? `<button class="pp-btn ok" data-ppst="delivered" data-id="${o.id}">✅ اتسلم</button>` : ''}
         ${o.status !== 'failed' ? `<button class="pp-btn no" data-ppst="failed" data-id="${o.id}">❌ ماتسلمش</button>` : ''}
         ${o.status !== 'pending' ? `<button class="pp-btn sm" data-ppst="pending" data-id="${o.id}">↩ رجّعه لسه</button>` : ''}
+        <button class="pp-btn sm" data-ppmoney="${o.id}" title="عدّل المبلغ اللي اتحصّل (استلام جزئي) واكتب قيمة الشحن">💰 السعر والشحن</button>
         <button class="pp-btn sm" data-ppnote="${o.id}">📝 ${o.courier_note ? 'عدّل الملاحظة' : 'ملاحظة'}</button>
         <a class="pp-btn sm" target="_blank" rel="noopener" href="https://wa.me/2${esc(ph)}">💬 واتساب</a>
         <a class="pp-btn sm" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent((o.address || '') + ' ' + (o.city || '') + ' القاهرة')}">🗺️ الخريطة</a>
@@ -16423,7 +16451,7 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
 
   const head = () => {
     const mgr = isMgr();
-    return `<div class="pagehead" style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap"><div><h1>🛵 مناديب الدفع المقدم</h1><p>${S.view === 'acc' ? 'المندوب دفع كام مقدم ولأنهي أوردرات — وبنطرح منها قيمة اللي اتسلم عشان نعرف الباقي.' : mgr ? 'أوردرات مدينة نصر ومصر الجديدة اللي اتبعتت للمناديب من 📤 رفع الأوردرات، وحالة كل أوردر.' : 'دي أوردراتك. أول ما تخرج بيهم علّم 🛵 مع المندوب — وبعد ما توصّل علّم ✅ اتسلم، ولو مااتسلمش علّم ❌ واكتب السبب. وتقدر تكتب 📝 ملاحظة باللي حصل.'}</p></div>
+    return `<div class="pagehead" style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap"><div><h1>🛵 مناديب الدفع المقدم</h1><p>${S.view === 'acc' ? 'المندوب دفع كام مقدم ولأنهي أوردرات — وبنطرح منها اللي اتحصّل من المتسلم بعد خصم الشحن، عشان نعرف هو ليه ولا إحنا لينا.' : mgr ? 'أوردرات مدينة نصر ومصر الجديدة اللي اتبعتت للمناديب من 📤 رفع الأوردرات، وحالة كل أوردر.' : 'دي أوردراتك. أول ما تخرج بيهم علّم 🛵 مع المندوب — وبعد ما توصّل علّم ✅ اتسلم، ولو مااتسلمش علّم ❌ واكتب السبب. وتقدر تكتب 📝 ملاحظة باللي حصل، ومن 💰 السعر والشحن تعدّل المبلغ لو العميل استلم جزء وتكتب قيمة الشحن.'}</p></div>
       <div class="pp-views"><button class="${S.view === 'orders' ? 'on' : ''}" data-ppview="orders">📦 الأوردرات</button><button class="${S.view === 'acc' ? 'on' : ''}" data-ppview="acc">💰 حسابات المناديب</button></div></div>`;
   };
 
@@ -16460,10 +16488,10 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
     if(S.day && !days.includes(S.day)) S.day = '';
     const LD = S.day ? L.filter(o => o.order_date === S.day) : L;
     const cnt = k => LD.filter(o => o.status === k).length;
-    const sumD = LD.filter(o => o.status === 'delivered').reduce((a, o) => a + (Number(o.amount) || 0), 0);
+    const sumD = LD.filter(o => o.status === 'delivered').reduce((a, o) => a + got(o), 0);
     // 💵 الخانة اللي فوق: المندوب دفع كام مقدم (الدفعات المفتوحة) والباقي بعد طرح اللي اتسلم
     const M = ordMap(), openA = (S.adv || []).filter(a => !a.settled && (!mgr || !S.courier || (a.courier_id || '-') === S.courier));
-    const AC = openA.map(a => advCalc(a, M)), paid = AC.reduce((s, r) => s + r.paid, 0), adel = AC.reduce((s, r) => s + r.del, 0);
+    const AC = openA.map(a => advCalc(a, M)), paid = AC.reduce((s, r) => s + r.paid, 0), adel = AC.reduce((s, r) => s + r.net, 0);
     h += `<div class="pp-kpis">
       <div class="pp-kpi"><div class="n">${LD.length}</div><div class="l">أوردر</div></div>
       <div class="pp-kpi"><div class="n" style="color:#8a5a00">${cnt('pending')}</div><div class="l">⏳ لسه</div></div>
@@ -16493,8 +16521,8 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
     }
     if(S.adv && !S.advMissing) h += `<div class="pp-advbar" data-ppview="acc" title="افتح حسابات المناديب">
       <div><span>💵 المندوب دفع مقدم</span><b>${money(paid)}</b><small>${openA.length} دفعة مفتوحة · ${AC.reduce((s, r) => s + r.os.length, 0)} أوردر</small></div>
-      <div><span>− قيمة اللي اتسلم منهم</span><b style="color:#2f7d55">${money(adel)}</b></div>
-      <div><span>= الباقي للمندوب</span><b style="color:${paid - adel > 0 ? '#2b5a8a' : '#c0392b'}">${money(paid - adel)}</b><small>مرتجع / لسه معاه</small></div>
+      <div><span>− اللي اتسلم (بعد الشحن)</span><b style="color:#2f7d55">${money(adel)}</b></div>
+      <div><span>= الحساب</span><b style="color:${balClr(paid - adel)}">${balTxt(paid - adel)}</b><small>مرتجع / لسه معاه</small></div>
       <span class="go">💰 حسابات المناديب ←</span></div>`;
     else if(S.advMissing && mgr) h += `<div class="pp-msg err">عشان خانة "المندوب دفع مقدم" وحسابات المناديب وحالة 🛵 مع المندوب: شغّل ملف <b>prepaid_orders_3.sql</b> في Supabase → SQL Editor مرة واحدة.</div>`;
     h += `<div class="pp-tabs">${[['pending', '⏳ لسه'], ['out', '🛵 مع المندوب'], ['delivered', '✅ اتسلم'], ['failed', '❌ ماتسلمش'], ['all', '📋 الكل']].map(([k, l]) => `<button class="${S.tab === k ? 'on' : ''}" data-pptab="${k}">${l} (${k === 'all' ? LD.length : cnt(k)})</button>`).join('')}</div>
@@ -16530,7 +16558,7 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
     return h;
   }
 
-  /* 💰 حسابات المناديب: كل دفعة مقدم − قيمة اللي اتسلم من أوردراتها = الباقي للمندوب */
+  /* 💰 حسابات المناديب: كل دفعة مقدم − (اللي اتحصّل من المتسلم − الشحن) = موجب ليه · سالب لينا */
   function accView(){
     const mgr = isMgr();
     if(S.advMissing) return `<div class="pp-msg err">حسابات المناديب محتاجة جدول جديد في Supabase.${me().is_admin ? ' شغّل ملف <b>prepaid_orders_3.sql</b> (موجود في الريبو) في Supabase → SQL Editor مرة واحدة.' : ' كلّم الأدمن.'}</div>`;
@@ -16540,14 +16568,16 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
     let h = '';
     // ملخص لكل مندوب (الدفعات المفتوحة بس)
     const per = {};
-    all.filter(x => !x.a.settled).forEach(({ a, r }) => { const k = a.courier_id || ''; const P = per[k] = per[k] || { name:a.courier_name || 'القسم', n:0, paid:0, del:0, fail:0, out:0, bal:0 };
-      P.n++; P.paid += r.paid; P.del += r.del; P.fail += r.fail; P.out += r.out; P.bal += r.bal; });
+    all.filter(x => !x.a.settled).forEach(({ a, r }) => { const k = a.courier_id || ''; const P = per[k] = per[k] || { name:a.courier_name || 'القسم', n:0, paid:0, del:0, ship:0, net:0, fail:0, out:0, bal:0 };
+      P.n++; P.paid += r.paid; P.del += r.del; P.ship += r.ship; P.net += r.net; P.fail += r.fail; P.out += r.out; P.bal += r.bal; });
     const ks = Object.keys(per);
     h += `<div class="pp-acc-sum">${ks.length ? ks.map(k => { const P = per[k]; return `<div class="pp-acc-c">
         <h4>🛵 ${esc(P.name)} <small>${P.n} دفعة مفتوحة</small></h4>
         <div class="row"><span>💵 دفع مقدم</span><b>${money(P.paid)}</b></div>
-        <div class="row"><span>✅ اتسلم (بيتطرح)</span><b style="color:#2f7d55">− ${money(P.del)}</b></div>
-        <div class="row tot"><span>= الباقي للمندوب</span><b style="color:${P.bal >= 0 ? '#2b5a8a' : '#c0392b'}">${money(P.bal)}</b></div>
+        <div class="row"><span>✅ اتحصّل من اللي اتسلم</span><b>${money(P.del)}</b></div>
+        <div class="row sm"><span>🚚 مصاريف الشحن (بتتخصم)</span><b>− ${money(P.ship)}</b></div>
+        <div class="row"><span>= اللي اتسلم بعد الشحن (بيتطرح)</span><b style="color:#2f7d55">− ${money(P.net)}</b></div>
+        <div class="row tot"><span>= الحساب</span><b style="color:${balClr(P.bal)}">${balTxt(P.bal)}</b></div>
         <div class="row sm"><span>منهم ❌ مرتجع</span><b>${money(P.fail)}</b></div>
         <div class="row sm"><span>منهم 🛵 لسه معاه / ⏳ لسه</span><b>${money(P.out)}</b></div></div>`; }).join('') : `<div class="card" style="margin:0"><p style="margin:0;color:var(--muted)">مفيش دفعات مقدم مفتوحة.${mgr ? ' عشان تسجّل دفعة: روح 📦 الأوردرات، علّم الأوردرات اللي المندوب دفع عشانها، واكتب المبلغ في خانة "💵 المندوب دفع كام مقدم".' : ''}</p></div>`}</div>`;
     const L = all.filter(x => S.showSettled || !x.a.settled);
@@ -16563,10 +16593,12 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
           <div><b>💵 ${money(r.paid)}</b> <span class="k">· ${esc(dayLabel(a.pay_date))} · 🛵 ${esc(a.courier_name || 'القسم')} · ${(a.order_ids || []).length} أوردر</span>${a.settled ? ` <span class="pp-st delivered">✔ اتقفل ${esc(tm(a.settled_at))}</span>` : ''}</div>
           <div class="pp-adv-n">
             <span>قيمة الأوردرات <b>${money(r.total)}</b></span>
-            <span>✅ اتسلم <b style="color:#2f7d55">${money(r.del)}</b></span>
+            <span>✅ اتحصّل <b style="color:#2f7d55">${money(r.del)}</b></span>
+            <span>🚚 شحن <b>− ${money(r.ship)}</b></span>
+            <span>= بعد الشحن <b style="color:#2f7d55">${money(r.net)}</b></span>
             <span>❌ مرتجع <b style="color:#c0392b">${money(r.fail)}</b></span>
             <span>🛵/⏳ لسه <b style="color:#2b5a8a">${money(r.out)}</b></span>
-            <span class="tot">الباقي للمندوب <b>${money(r.bal)}</b></span>
+            <span class="tot">الحساب <b style="color:${balClr(r.bal)}">${balTxt(r.bal)}</b></span>
           </div>
           ${a.note ? `<div class="pp-line" style="font-size:13px">📝 ${esc(a.note)}</div>` : ''}
           ${a.settle_note ? `<div class="pp-line" style="font-size:13px">✔ ${esc(a.settle_note)}</div>` : ''}
@@ -16577,7 +16609,7 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
             ${mgr && a.settled ? `<button class="pp-btn sm" data-ppunsettle="${a.id}">↩ افتحها تاني</button>` : ''}
             ${mgr ? `<button class="pp-btn sm" data-ppadvdel="${a.id}" title="امسح الدفعة">🗑️</button>` : ''}
           </div></div>
-        ${open ? `<div class="pp-adv-ol">${(a.order_ids || []).map(id => { const o = M.get(Number(id)); return o ? `<div><span class="pp-st ${o.status}">${ST[o.status] || o.status}</span> <b>${esc(o.customer_name || '—')}</b> <span class="k">${esc(o.order_date || '')}</span>${o.courier_note ? ` <span class="k">📝 ${esc(o.courier_note)}</span>` : ''}${o.status_note ? ` <span class="k">— ${esc(o.status_note)}</span>` : ''}<span style="margin-inline-start:auto">${money(o.amount)}</span></div>` : `<div class="k">أوردر #${esc(id)} (اتمسح)</div>`; }).join('')}</div>` : ''}
+        ${open ? `<div class="pp-adv-ol">${(a.order_ids || []).map(id => { const o = M.get(Number(id)); return o ? `<div><span class="pp-st ${o.status}">${ST[o.status] || o.status}</span> <b>${esc(o.customer_name || '—')}</b> <span class="k">${esc(o.order_date || '')}</span>${o.courier_note ? ` <span class="k">📝 ${esc(o.courier_note)}</span>` : ''}${o.status_note ? ` <span class="k">— ${esc(o.status_note)}</span>` : ''}<span style="margin-inline-start:auto">${o.status === 'delivered' ? `${money(got(o))}${shipOf(o) ? ` <span class="k">(− 🚚 ${money(shipOf(o))})</span>` : ''}` : money(o.amount)}</span></div>` : `<div class="k">أوردر #${esc(id)} (اتمسح)</div>`; }).join('')}</div>` : ''}
       </div>`; }).join('');
     return h;
   }
@@ -16609,6 +16641,7 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
     // 🛵 الحالة الجديدة + الملاحظات + 💰 حسابات المناديب
     main.querySelectorAll('[data-ppview]').forEach(b => b.onclick = () => { S.view = b.dataset.ppview; draw(); scrollTo(0, 0); if(S.view === 'acc' && !S.adv) loadAdv().then(draw); });
     main.querySelectorAll('[data-ppnote]').forEach(b => b.onclick = () => setNote(Number(b.dataset.ppnote)));
+    main.querySelectorAll('[data-ppmoney]').forEach(b => b.onclick = () => setMoney(Number(b.dataset.ppmoney)));
     main.querySelectorAll('[data-ppbulk]').forEach(b => b.onclick = () => {
       const ids = [...S.sel].filter(id => S.list.some(o => o.id === id)), st = b.dataset.ppbulk;
       if(!ids.length) return;
