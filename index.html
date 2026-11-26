@@ -16195,7 +16195,7 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
   const SHIP_DEF = 60;   // 🚚 الشحن الافتراضي لأي أوردر لسه محدش كتب شحنه
   const shipOf = o => o.ship_fee == null ? SHIP_DEF : (Number(o.ship_fee) || 0);
   const S = { list:null, missing:false, msg:'', msgErr:false, tab:'pending', day:'', courier:'', days:30, couriers:null, sel:new Set(), size:25, page:0,
-    view:'orders', adv:null, advMissing:false, advOrd:{}, advOpen:new Set(), advForm:{ amount:'', note:'', courier:'' }, advSaving:false, showSettled:false };
+    view:'orders', adv:null, advMissing:false, advOrd:{}, advOpen:new Set(), advForm:{ amount:'', note:'', courier:'' }, calc:{ paid:'', got:'' }, advSaving:false, showSettled:false };
 
 
   try{ const v = localStorage.getItem('ppSize'); if(v !== null && [10, 25, 50, 0].includes(Number(v))) S.size = Number(v); }catch(e){}
@@ -16591,6 +16591,21 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
     all.filter(x => !x.a.settled).forEach(({ a, r }) => { const k = a.courier_id || ''; const P = per[k] = per[k] || { name:a.courier_name || 'القسم', n:0, paid:0, del:0, ship:0, net:0, fail:0, out:0, bal:0 };
       P.n++; P.paid += r.paid; P.del += r.del; P.ship += r.ship; P.net += r.net; P.fail += r.fail; P.out += r.out; P.bal += r.bal; });
     const ks = Object.keys(per);
+    // 🧮 الحسبة: المندوب دفع كام − اتسلم بكام توتال = مين ليه كام (الخانات بتتملى من الدفعات المفتوحة وتقدر تغيّرها)
+    const sumP = ks.reduce((a, k) => a + per[k].paid, 0), sumN = ks.reduce((a, k) => a + per[k].net, 0);
+    const cp = S.calc.paid !== '' ? S.calc.paid : String(Math.round(sumP * 100) / 100), cn = S.calc.got !== '' ? S.calc.got : String(Math.round(sumN * 100) / 100);
+    h += `<div class="card" style="margin:0 0 14px"><h3 style="margin-top:0">🧮 الحساب</h3>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+        <label style="display:flex;flex-direction:column;gap:4px;font-size:13.5px">💵 المندوب دفع كام
+          <input type="number" inputmode="decimal" id="ppCalcPaid" value="${esc(cp)}" style="width:150px;padding:8px 10px;border:1.5px solid var(--line);border-radius:8px;font:inherit;font-size:17px;font-weight:700"></label>
+        <b style="font-size:22px;padding-bottom:8px">−</b>
+        <label style="display:flex;flex-direction:column;gap:4px;font-size:13.5px">✅ اتسلم بكام توتال
+          <input type="number" inputmode="decimal" id="ppCalcGot" value="${esc(cn)}" style="width:150px;padding:8px 10px;border:1.5px solid var(--line);border-radius:8px;font:inherit;font-size:17px;font-weight:700"></label>
+        <b style="font-size:22px;padding-bottom:8px">=</b>
+        <div id="ppCalcRes" style="font-size:20px;font-weight:800;padding-bottom:8px"></div>
+        ${S.calc.paid !== '' || S.calc.got !== '' ? `<button class="pp-btn sm" id="ppCalcReset" style="margin-bottom:8px">↩ رجّع الأرقام من الدفعات</button>` : ''}
+      </div>
+      <p style="margin:8px 0 0;font-size:12.5px;color:var(--muted)">الأرقام بتتملى لوحدها من الدفعات المفتوحة (اتسلم = بعد خصم الشحن) — وتقدر تكتب أي رقم بإيدك.</p></div>`;
     h += `<div class="pp-acc-sum">${ks.length ? ks.map(k => { const P = per[k]; return `<div class="pp-acc-c">
         <h4>🛵 ${esc(P.name)} <small>${P.n} دفعة مفتوحة</small></h4>
         <div class="row"><span>💵 دفع مقدم</span><b>${money(P.paid)}</b></div>
@@ -16682,6 +16697,15 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
     main.querySelectorAll('[data-ppsettle]').forEach(b => b.onclick = () => settleAdv(Number(b.dataset.ppsettle), true));
     main.querySelectorAll('[data-ppunsettle]').forEach(b => b.onclick = () => settleAdv(Number(b.dataset.ppunsettle), false));
     main.querySelectorAll('[data-ppadvdel]').forEach(b => b.onclick = () => delAdv(Number(b.dataset.ppadvdel)));
+    const cpI = main.querySelector('#ppCalcPaid'), cgI = main.querySelector('#ppCalcGot'), cr = main.querySelector('#ppCalcRes');
+    if(cpI && cgI && cr){
+      const upd = () => { const b = (Number(cpI.value) || 0) - (Number(cgI.value) || 0);
+        cr.innerHTML = `<span style="color:${balClr(b)}">${balTxt(b)}</span>`; };
+      cpI.oninput = () => { S.calc.paid = cpI.value; upd(); };
+      cgI.oninput = () => { S.calc.got = cgI.value; upd(); };
+      upd();
+    }
+    const crs = main.querySelector('#ppCalcReset'); if(crs) crs.onclick = () => { S.calc = { paid:'', got:'' }; draw(); };
     const ss = main.querySelector('#ppShowSet'); if(ss) ss.onclick = () => { S.showSettled = !S.showSettled; draw(); };
   }
   function mount(){ document.querySelectorAll('#sidebar a.navlink').forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#/prepaid')); draw(); load(); }
