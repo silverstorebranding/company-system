@@ -16192,7 +16192,8 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
   const ST = { pending:'⏳ لسه', out:'🛵 مع المندوب', delivered:'✅ اتسلم', failed:'❌ ماتسلمش' };
   // 💰 المحصّل (للاستلام الجزئي — فاضي = سعر الأوردر) والشحن (المنتج = المحصّل − الشحن)
   const got = o => o.collected == null ? (Number(o.amount) || 0) : (Number(o.collected) || 0);
-  const shipOf = o => Number(o.ship_fee) || 0;
+  const SHIP_DEF = 60;   // 🚚 الشحن الافتراضي لأي أوردر لسه محدش كتب شحنه
+  const shipOf = o => o.ship_fee == null ? SHIP_DEF : (Number(o.ship_fee) || 0);
   const S = { list:null, missing:false, msg:'', msgErr:false, tab:'pending', day:'', courier:'', days:30, couriers:null, sel:new Set(), size:25, page:0,
     view:'orders', adv:null, advMissing:false, advOrd:{}, advOpen:new Set(), advForm:{ amount:'', note:'', courier:'' }, advSaving:false, showSettled:false };
 
@@ -16289,13 +16290,14 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
     const f = String(val).trim() === '' ? null : Number(val);
     if(f != null && !(f >= 0)) return flash('اكتب الشحن بالأرقام.', true);
     if(f != null && f > got(o)) return flash('الشحن أكبر من إجمالي الأوردر.', true);
+    if(o.ship_fee == null && (f === SHIP_DEF || f == null)) return;   // لسه على الافتراضي
     if((o.ship_fee == null ? null : Number(o.ship_fee)) === f) return;
     const { data, error } = await sb().rpc('prepaid_set_money', { p_id:id, p_collected:o.collected == null ? null : Number(o.collected), p_ship:f });
     if(error) return flash(/prepaid_set_money|function .* does not exist|schema cache|column/i.test(error.message) ? SQL4 : 'ماتحفظش: ' + error.message, true);
     if(!data) return flash('ماتحفظش — الأوردر ده مش بتاعك.', true);
     o.ship_fee = f; o.money_at = new Date().toISOString(); o.money_by = me().full_name || me().username || '';
     if(S.advOrd[o.id]) S.advOrd[o.id].ship_fee = f;
-    flash(`🚚 "${o.customer_name || ''}": الشحن ${money(f)} — الإجمالي بعد الشحن ${money(got(o) - (f || 0))}.`);
+    flash(`🚚 "${o.customer_name || ''}": الشحن ${money(shipOf(o))} — الإجمالي بعد الشحن ${money(got(o) - shipOf(o))}.`);
   }
   const SQL4 = 'محتاج تشغّل ملف prepaid_orders_4.sql في Supabase → SQL Editor الأول.';
   // 💰 المندوب يعدّل السعر اللي اتحصّل (استلام جزئي) ويكتب قيمة الشحن
@@ -16305,14 +16307,14 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
     let a = prompt(`💰 اتحصّل كام من "${o.customer_name || ''}"؟\nسعر الأوردر ${money(o.amount)} — لو العميل استلم جزء ودفع أقل اكتب المبلغ اللي اتدفع فعلاً:`, String(got(o)));
     if(a === null) return; a = num(a); if(!(a >= 0)) return flash('اكتب المبلغ بالأرقام.', true);
     const f = o.ship_fee == null ? null : Number(o.ship_fee);   // 🚚 الشحن بيتكتب في الخانة جنب الأوردر
-    if(f != null && f > a) return flash('الشحن أكبر من المبلغ اللي اتحصّل — عدّل خانة الشحن الأول.', true);
+    if((f == null ? SHIP_DEF : f) > a) return flash('الشحن أكبر من المبلغ اللي اتحصّل — عدّل خانة الشحن الأول.', true);
     const coll = a === (Number(o.amount) || 0) ? null : a;
     const { data, error } = await sb().rpc('prepaid_set_money', { p_id:id, p_collected:coll, p_ship:f });
     if(error) return flash(/prepaid_set_money|function .* does not exist|schema cache|column/i.test(error.message) ? SQL4 : 'ماتحفظش: ' + error.message, true);
     if(!data) return flash('ماتحفظش — الأوردر ده مش بتاعك.', true);
     o.collected = coll; o.ship_fee = f; o.money_at = new Date().toISOString(); o.money_by = me().full_name || me().username || '';
     if(S.advOrd[o.id]) Object.assign(S.advOrd[o.id], { collected:coll, ship_fee:f });
-    flash(`💰 "${o.customer_name || ''}": اتحصّل ${money(a)} — بعد الشحن ${money(a - (f || 0))}.`);
+    flash(`💰 "${o.customer_name || ''}": اتحصّل ${money(a)} — بعد الشحن ${money(a - shipOf(o))}.`);
   }
   async function saveAdv(ids){
     const M = ordMap(), sum = ids.reduce((a, id) => a + (Number((M.get(id) || {}).amount) || 0), 0);
@@ -16443,7 +16445,7 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
       <div class="pp-line pp-ship" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:14px">
         <span>💰 الإجمالي <b>${money(got(o))}</b></span>
         <span>− 🚚 الشحن</span>
-        <input type="number" inputmode="decimal" min="0" data-ppship="${o.id}" value="${o.ship_fee != null ? esc(o.ship_fee) : ''}" placeholder="اكتب الشحن" style="width:110px;padding:5px 8px;border:1.5px solid var(--line);border-radius:8px;font:inherit">
+        <input type="number" inputmode="decimal" min="0" data-ppship="${o.id}" value="${o.ship_fee != null ? esc(o.ship_fee) : SHIP_DEF}" placeholder="${SHIP_DEF}" style="width:110px;padding:5px 8px;border:1.5px solid var(--line);border-radius:8px;font:inherit">
         <span>= الإجمالي بعد الشحن <b data-ppnet="${o.id}" style="color:#2f7d55;font-size:16px">${money(got(o) - shipOf(o))}</b></span></div>
       <div class="pp-line"><span class="k">📞</span> <a href="tel:${esc(ph)}" dir="ltr" style="font-weight:700">${esc(ph)}</a>${ph2 ? ` · <a href="tel:${esc(ph2)}" dir="ltr">${esc(ph2)}</a>` : ''}</div>
       <div class="pp-line"><span class="k">📍</span> ${esc(o.address || '—')}${o.city ? ` — ${esc(o.city)}` : ''}</div>
@@ -16662,7 +16664,7 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
     main.querySelectorAll('[data-ppmoney]').forEach(b => b.onclick = () => setMoney(Number(b.dataset.ppmoney)));
     main.querySelectorAll('[data-ppship]').forEach(inp => {
       const id = Number(inp.dataset.ppship), o = S.list.find(x => x.id === id), out = main.querySelector(`[data-ppnet="${id}"]`);
-      inp.oninput = () => { if(o && out) out.textContent = money(got(o) - (Number(inp.value) || 0)); };
+      inp.oninput = () => { if(o && out) out.textContent = money(got(o) - (inp.value === '' ? SHIP_DEF : (Number(inp.value) || 0))); };
       inp.onchange = () => saveShip(id, inp.value);
       inp.onkeydown = e => { if(e.key === 'Enter') inp.blur(); };
     });
