@@ -16283,6 +16283,20 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
     o.courier_note = t.trim() || null; o.courier_note_at = o.courier_note ? new Date().toISOString() : null; o.courier_note_by = o.courier_note ? (me().full_name || me().username || '') : null;
     flash(o.courier_note ? '📝 الملاحظة اتحفظت.' : '📝 الملاحظة اتمسحت.');
   }
+  // 🚚 خانة الشحن جنب كل أوردر — بتتحفظ أول ما تخرج من الخانة أو تدوس Enter
+  async function saveShip(id, val){
+    const o = S.list.find(x => x.id === id); if(!o) return;
+    const f = String(val).trim() === '' ? null : Number(val);
+    if(f != null && !(f >= 0)) return flash('اكتب الشحن بالأرقام.', true);
+    if(f != null && f > got(o)) return flash('الشحن أكبر من إجمالي الأوردر.', true);
+    if((o.ship_fee == null ? null : Number(o.ship_fee)) === f) return;
+    const { data, error } = await sb().rpc('prepaid_set_money', { p_id:id, p_collected:o.collected == null ? null : Number(o.collected), p_ship:f });
+    if(error) return flash(/prepaid_set_money|function .* does not exist|schema cache|column/i.test(error.message) ? SQL4 : 'ماتحفظش: ' + error.message, true);
+    if(!data) return flash('ماتحفظش — الأوردر ده مش بتاعك.', true);
+    o.ship_fee = f; o.money_at = new Date().toISOString(); o.money_by = me().full_name || me().username || '';
+    if(S.advOrd[o.id]) S.advOrd[o.id].ship_fee = f;
+    flash(`🚚 "${o.customer_name || ''}": الشحن ${money(f)} — الإجمالي بعد الشحن ${money(got(o) - (f || 0))}.`);
+  }
   const SQL4 = 'محتاج تشغّل ملف prepaid_orders_4.sql في Supabase → SQL Editor الأول.';
   // 💰 المندوب يعدّل السعر اللي اتحصّل (استلام جزئي) ويكتب قيمة الشحن
   async function setMoney(id){
@@ -16290,16 +16304,15 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
     const num = t => { const v = String(t).replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/[^\d.]/g, ''); return v === '' ? NaN : Number(v); };
     let a = prompt(`💰 اتحصّل كام من "${o.customer_name || ''}"؟\nسعر الأوردر ${money(o.amount)} — لو العميل استلم جزء ودفع أقل اكتب المبلغ اللي اتدفع فعلاً:`, String(got(o)));
     if(a === null) return; a = num(a); if(!(a >= 0)) return flash('اكتب المبلغ بالأرقام.', true);
-    let f = prompt(`🚚 قيمة الشحن كام؟\n(بتتخصم من ${money(a)} — والباقي سعر المنتج)`, String(shipOf(o)));
-    if(f === null) return; f = num(f === '' ? '0' : f); if(!(f >= 0)) return flash('اكتب قيمة الشحن بالأرقام.', true);
-    if(f > a) return flash('الشحن أكبر من المبلغ اللي اتحصّل.', true);
+    const f = o.ship_fee == null ? null : Number(o.ship_fee);   // 🚚 الشحن بيتكتب في الخانة جنب الأوردر
+    if(f != null && f > a) return flash('الشحن أكبر من المبلغ اللي اتحصّل — عدّل خانة الشحن الأول.', true);
     const coll = a === (Number(o.amount) || 0) ? null : a;
     const { data, error } = await sb().rpc('prepaid_set_money', { p_id:id, p_collected:coll, p_ship:f });
     if(error) return flash(/prepaid_set_money|function .* does not exist|schema cache|column/i.test(error.message) ? SQL4 : 'ماتحفظش: ' + error.message, true);
     if(!data) return flash('ماتحفظش — الأوردر ده مش بتاعك.', true);
     o.collected = coll; o.ship_fee = f; o.money_at = new Date().toISOString(); o.money_by = me().full_name || me().username || '';
     if(S.advOrd[o.id]) Object.assign(S.advOrd[o.id], { collected:coll, ship_fee:f });
-    flash(`💰 "${o.customer_name || ''}": اتحصّل ${money(a)} = منتج ${money(a - f)} + شحن ${money(f)}.`);
+    flash(`💰 "${o.customer_name || ''}": اتحصّل ${money(a)} — بعد الشحن ${money(a - (f || 0))}.`);
   }
   async function saveAdv(ids){
     const M = ordMap(), sum = ids.reduce((a, id) => a + (Number((M.get(id) || {}).amount) || 0), 0);
@@ -16426,7 +16439,12 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
     const mgr = isMgr(), ph = tel(o.phone), ph2 = o.phone2 ? tel(o.phone2) : '', adv = openAdvOf(o.id);
     return `<div class="pp-card ${o.status} ${S.sel.has(o.id) ? 'sel' : ''}">
       <div class="pp-top"><input type="checkbox" class="pp-chk" data-ppsel="${o.id}" ${S.sel.has(o.id) ? 'checked' : ''} title="علّم الأوردر"><span class="pp-st ${o.status}">${ST[o.status] || o.status}</span><span class="nm">${esc(o.customer_name || '—')}</span>${adv ? `<span class="pp-st adv" title="دفعة مقدم ${money(adv.amount)}">💵 مدفوع مقدم</span>` : ''}<span class="amt">${o.collected != null && got(o) !== (Number(o.amount) || 0) ? `<s style="opacity:.55;font-weight:400;font-size:.85em">${money(o.amount)}</s> ` : ''}${money(got(o))}</span></div>
-      ${o.collected != null || o.ship_fee != null ? `<div class="pp-line" style="font-size:13px">💰 ${o.collected != null && got(o) !== (Number(o.amount) || 0) ? `<b>اتحصّل ${money(got(o))}</b> بدل ${money(o.amount)} · ` : ''}📦 المنتج <b>${money(got(o) - shipOf(o))}</b> + 🚚 الشحن <b>${money(shipOf(o))}</b> <span class="k">${esc(o.money_by || '')} ${esc(tm(o.money_at))}</span></div>` : ''}
+      ${o.collected != null && got(o) !== (Number(o.amount) || 0) ? `<div class="pp-line" style="font-size:13px">💰 <b>اتحصّل ${money(got(o))}</b> بدل ${money(o.amount)} <span class="k">${esc(o.money_by || '')} ${esc(tm(o.money_at))}</span></div>` : ''}
+      <div class="pp-line pp-ship" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:14px">
+        <span>💰 الإجمالي <b>${money(got(o))}</b></span>
+        <span>− 🚚 الشحن</span>
+        <input type="number" inputmode="decimal" min="0" data-ppship="${o.id}" value="${o.ship_fee != null ? esc(o.ship_fee) : ''}" placeholder="اكتب الشحن" style="width:110px;padding:5px 8px;border:1.5px solid var(--line);border-radius:8px;font:inherit">
+        <span>= الإجمالي بعد الشحن <b data-ppnet="${o.id}" style="color:#2f7d55;font-size:16px">${money(got(o) - shipOf(o))}</b></span></div>
       <div class="pp-line"><span class="k">📞</span> <a href="tel:${esc(ph)}" dir="ltr" style="font-weight:700">${esc(ph)}</a>${ph2 ? ` · <a href="tel:${esc(ph2)}" dir="ltr">${esc(ph2)}</a>` : ''}</div>
       <div class="pp-line"><span class="k">📍</span> ${esc(o.address || '—')}${o.city ? ` — ${esc(o.city)}` : ''}</div>
       ${o.contents ? `<div class="pp-line"><span class="k">📦</span> ${esc(o.contents)}</div>` : ''}
@@ -16440,7 +16458,7 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
         ${o.status !== 'delivered' ? `<button class="pp-btn ok" data-ppst="delivered" data-id="${o.id}">✅ اتسلم</button>` : ''}
         ${o.status !== 'failed' ? `<button class="pp-btn no" data-ppst="failed" data-id="${o.id}">❌ ماتسلمش</button>` : ''}
         ${o.status !== 'pending' ? `<button class="pp-btn sm" data-ppst="pending" data-id="${o.id}">↩ رجّعه لسه</button>` : ''}
-        <button class="pp-btn sm" data-ppmoney="${o.id}" title="عدّل المبلغ اللي اتحصّل (استلام جزئي) واكتب قيمة الشحن">💰 السعر والشحن</button>
+        <button class="pp-btn sm" data-ppmoney="${o.id}" title="عدّل المبلغ اللي اتحصّل لو العميل استلم جزء">💰 عدّل السعر</button>
         <button class="pp-btn sm" data-ppnote="${o.id}">📝 ${o.courier_note ? 'عدّل الملاحظة' : 'ملاحظة'}</button>
         <a class="pp-btn sm" target="_blank" rel="noopener" href="https://wa.me/2${esc(ph)}">💬 واتساب</a>
         <a class="pp-btn sm" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent((o.address || '') + ' ' + (o.city || '') + ' القاهرة')}">🗺️ الخريطة</a>
@@ -16451,7 +16469,7 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
 
   const head = () => {
     const mgr = isMgr();
-    return `<div class="pagehead" style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap"><div><h1>🛵 مناديب الدفع المقدم</h1><p>${S.view === 'acc' ? 'المندوب دفع كام مقدم ولأنهي أوردرات — وبنطرح منها اللي اتحصّل من المتسلم بعد خصم الشحن، عشان نعرف هو ليه ولا إحنا لينا.' : mgr ? 'أوردرات مدينة نصر ومصر الجديدة اللي اتبعتت للمناديب من 📤 رفع الأوردرات، وحالة كل أوردر.' : 'دي أوردراتك. أول ما تخرج بيهم علّم 🛵 مع المندوب — وبعد ما توصّل علّم ✅ اتسلم، ولو مااتسلمش علّم ❌ واكتب السبب. وتقدر تكتب 📝 ملاحظة باللي حصل، ومن 💰 السعر والشحن تعدّل المبلغ لو العميل استلم جزء وتكتب قيمة الشحن.'}</p></div>
+    return `<div class="pagehead" style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap"><div><h1>🛵 مناديب الدفع المقدم</h1><p>${S.view === 'acc' ? 'المندوب دفع كام مقدم ولأنهي أوردرات — وبنطرح منها اللي اتحصّل من المتسلم بعد خصم الشحن، عشان نعرف هو ليه ولا إحنا لينا.' : mgr ? 'أوردرات مدينة نصر ومصر الجديدة اللي اتبعتت للمناديب من 📤 رفع الأوردرات، وحالة كل أوردر.' : 'دي أوردراتك. أول ما تخرج بيهم علّم 🛵 مع المندوب — وبعد ما توصّل علّم ✅ اتسلم، ولو مااتسلمش علّم ❌ واكتب السبب. وتقدر تكتب 📝 ملاحظة باللي حصل، واكتب 🚚 الشحن في الخانة جنب كل أوردر، ومن 💰 عدّل السعر تغيّر المبلغ لو العميل استلم جزء.'}</p></div>
       <div class="pp-views"><button class="${S.view === 'orders' ? 'on' : ''}" data-ppview="orders">📦 الأوردرات</button><button class="${S.view === 'acc' ? 'on' : ''}" data-ppview="acc">💰 حسابات المناديب</button></div></div>`;
   };
 
@@ -16642,6 +16660,12 @@ grant select, insert, update, delete on public.payroll_employees, public.payroll
     main.querySelectorAll('[data-ppview]').forEach(b => b.onclick = () => { S.view = b.dataset.ppview; draw(); scrollTo(0, 0); if(S.view === 'acc' && !S.adv) loadAdv().then(draw); });
     main.querySelectorAll('[data-ppnote]').forEach(b => b.onclick = () => setNote(Number(b.dataset.ppnote)));
     main.querySelectorAll('[data-ppmoney]').forEach(b => b.onclick = () => setMoney(Number(b.dataset.ppmoney)));
+    main.querySelectorAll('[data-ppship]').forEach(inp => {
+      const id = Number(inp.dataset.ppship), o = S.list.find(x => x.id === id), out = main.querySelector(`[data-ppnet="${id}"]`);
+      inp.oninput = () => { if(o && out) out.textContent = money(got(o) - (Number(inp.value) || 0)); };
+      inp.onchange = () => saveShip(id, inp.value);
+      inp.onkeydown = e => { if(e.key === 'Enter') inp.blur(); };
+    });
     main.querySelectorAll('[data-ppbulk]').forEach(b => b.onclick = () => {
       const ids = [...S.sel].filter(id => S.list.some(o => o.id === id)), st = b.dataset.ppbulk;
       if(!ids.length) return;
