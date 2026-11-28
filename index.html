@@ -4005,7 +4005,8 @@ const Squad = (function(){
       state.boardQP = by;
       // 🚚 مبيعات QP من أول الشهر لليوم (حسب تاريخ الأوردر في QP)
       const mF = R.fromD, mT = localYmd(new Date()) < R.toD ? localYmd(new Date()) : localYmd(new Date(new Date(R.to).getTime() - DAY));
-      const qv = q => Number(String(q.total_amount ?? q.price ?? '').replace(/[^\d.]/g, '')) || 0;
+      // 💰 نفس خانة السعر اللي في 💰 الأرباح وقسم 🚚 QP (price) — عشان الرقمين يطابقوا
+      const qv = q => Number(String(q.price ?? q.total_amount ?? '').replace(/[^\d.]/g, '')) || 0;
       const inM = qp.filter(q => { const d = String(q.order_date || '').slice(0, 10); return d >= mF && d <= mT; });
       const qd = inM.filter(q => api.category(q) === 'delivered');
       const qf = q => Number(String(q.total_fees ?? '').replace(/[^\d.]/g, '')) || 0;   // 🚚 الشحن
