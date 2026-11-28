@@ -14410,15 +14410,17 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
       PPT.err = !!error; PPT.list = error ? null : (data || []); }catch(e){ PPT.err = true; PPT.list = null; }
     PPT.day = d; PPT.at = Date.now(); PPT.busy = false; if(isUP()) draw();
   }
-  /* 🚚 من QP نفسه: الأوردرات اللي اتعملت النهارده على QP وحالتها Pending (من السيستم أو من الموقع مباشرة) */
+  /* 🚚 من QP نفسه: كل الأوردرات اللي حالتها Pending على QP دلوقتي (كل الأيام — زي تبويب Pending في QP وشيت البيكب) */
   const QPT = { day:'', list:null, all:0, at:0, busy:false, err:'' };
   async function loadQPToday(force){
     const api = window.QP && window.QP.api, d = ymd(new Date());
     if(!api || !api.hasCreds()){ QPT.err = 'nocreds'; return; }
     if(QPT.busy || (!force && QPT.day === d && QPT.list && Date.now() - QPT.at < 180000)) return;
     QPT.busy = true;
-    try{ const L = (await api.fetchRange(d, d)).filter(q => ymd(new Date(q.order_date)) === d);
-      QPT.all = L.length; QPT.list = L.filter(q => String(q.Order_Delivery_Status ?? '').trim() === '1'); QPT.err = ''; }
+    try{ const from = ymd(new Date(Date.now() - 60 * 86400000));
+      const L = await (api.fetchPending || api.fetchRange)(from, d);
+      const seen = new Set(); QPT.list = L.filter(q => String(q.Order_Delivery_Status ?? '').trim() === '1' && !seen.has(String(q.serial)) && seen.add(String(q.serial)));
+      QPT.all = QPT.list.filter(q => ymd(new Date(q.order_date)) === d).length; QPT.err = ''; }
     catch(e){ QPT.err = e.message || 'err'; }
     QPT.day = d; QPT.at = Date.now(); QPT.busy = false; if(isUP()) draw();
   }
@@ -14434,9 +14436,9 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
         if(QPT.err === 'nocreds') return '';
         const v = L ? L.reduce((a, q) => a + (numOf(q.price ?? q.total_amount ?? q.amount) || 0), 0) : null;
         return `<div style="flex:1;min-width:150px;background:var(--panel);border:1.5px solid #b7791f;border-radius:12px;padding:10px 14px">
-          <div style="font-size:13px;color:var(--muted)">⏳ على QP النهارده — Pending</div>
+          <div style="font-size:13px;color:var(--muted)">⏳ Pending على QP دلوقتي (كل الأيام)</div>
           <div style="font-size:26px;font-weight:800;color:#b7791f">${L ? L.length.toLocaleString('ar-EG') : (QPT.err ? '—' : '…')} <small style="font-size:13px;font-weight:600">أوردر</small></div>
-          <div style="font-size:12.5px;color:var(--muted)">${L ? Math.round(v).toLocaleString('ar-EG') + ' ج · كل أوردرات النهارده على QP ' + QPT.all.toLocaleString('ar-EG') : (QPT.err && QPT.err !== 'nocreds' ? 'مقدرناش نجيب من QP' : 'بيجيب من QP...')}${L && L.length !== Q.length ? ` · <b style="color:${L.length > Q.length ? '#b3261e' : '#2f7d55'}">الفرق ${Math.abs(L.length - Q.length).toLocaleString('ar-EG')}</b>` : ''}</div></div>`; })()}${box('🛵', 'راح لمناديب الدفع المقدم', P ? P.length : null, P ? pv : null, '#8a4fb0')}${box('📦', 'الإجمالي', P ? Q.length + P.length : null, P ? qv + pv : null, '#2f7d55')}</div></div>`;
+          <div style="font-size:12.5px;color:var(--muted)">${L ? Math.round(v).toLocaleString('ar-EG') + ' ج · منهم اتعمل النهارده ' + QPT.all.toLocaleString('ar-EG') : (QPT.err && QPT.err !== 'nocreds' ? 'مقدرناش نجيب من QP' : 'بيجيب من QP...')}</div></div>`; })()}${box('🛵', 'راح لمناديب الدفع المقدم', P ? P.length : null, P ? pv : null, '#8a4fb0')}${box('📦', 'الإجمالي', P ? Q.length + P.length : null, P ? qv + pv : null, '#2f7d55')}</div></div>`;
   }
   function todayUpBtn(){
     if(histShared === null){ loadHist().then(draw).catch(() => { histShared = []; }); return ''; }
