@@ -4008,7 +4008,8 @@ const Squad = (function(){
       const qv = q => Number(String(q.total_amount ?? q.price ?? '').replace(/[^\d.]/g, '')) || 0;
       const inM = qp.filter(q => { const d = String(q.order_date || '').slice(0, 10); return d >= mF && d <= mT; });
       const qd = inM.filter(q => api.category(q) === 'delivered');
-      state.boardQPMonth = { total:inM.length, del:qd.length, val:qd.reduce((a, q) => a + qv(q), 0), from:mF, to:mT };
+      const qf = q => Number(String(q.total_fees ?? '').replace(/[^\d.]/g, '')) || 0;   // 🚚 الشحن
+      state.boardQPMonth = { total:inM.length, del:qd.length, val:qd.reduce((a, q) => a + qv(q), 0), fees:qd.reduce((a, q) => a + qf(q), 0), from:mF, to:mT };
     }catch(e){ state.boardQP = { err:e.message }; }
     state.boardQPBusy = false; render();
   }
@@ -4063,7 +4064,9 @@ const Squad = (function(){
     const qpSide = !Q ? `<div class="sq-team-l">⏳ بيجيب من QP...</div>`
       : Q.noCreds ? `<div class="sq-team-l">محتاج دخول QP على الجهاز ده</div>`
       : Q.err || !M ? `<div class="sq-team-l">مقدرناش نجيب من QP${Q.err ? ': ' + esc(Q.err) : ''}</div>`
-      : `<div class="sq-team-n">${money(Math.round(M.val))}</div><div class="sq-team-l">✅ ${M.del.toLocaleString('ar-EG')} أوردر اتسلم من ${M.total.toLocaleString('ar-EG')}</div>
+      : `<div class="sq-team-n">${money(Math.round(M.val))}</div><div class="sq-team-l" style="font-weight:700">💵 اتسلم بكام (شامل الشحن)</div>
+         <div class="sq-team-r"><span>📦 من غير الشحن <small style="color:var(--muted)">(شحن ${money(Math.round(M.fees || 0))})</small></span><b>${money(Math.round(M.val - (M.fees || 0)))}</b></div>
+         <div class="sq-team-l">✅ ${M.del.toLocaleString('ar-EG')} أوردر اتسلم من ${M.total.toLocaleString('ar-EG')}</div>
          <div class="sq-team-l" style="font-size:11.5px">${QPMEM.at ? 'آخر سحب من QP ' + esc(new Date(QPMEM.at).toLocaleTimeString('ar-EG', { hour:'2-digit', minute:'2-digit' })) + ' · ' : ''}<a href="#" data-bq-refresh="1">🔄 تحديث من QP</a></div>
          <div class="sq-team-r"><span>نسبة التسليم</span><b>${pct(M.del, M.total)}</b></div>
          ${T.v && M.val ? `<div class="sq-team-r"><span>خدمة العملاء من مبيعات QP</span><b>${pct(T.v, M.val)}</b></div>` : ''}`;
