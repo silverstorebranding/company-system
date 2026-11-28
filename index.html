@@ -14424,15 +14424,28 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
     catch(e){ QPT.err = e.message || 'err'; }
     QPT.day = d; QPT.at = Date.now(); QPT.busy = false; if(isUP()) draw();
   }
+  /* 🚀 اللي اترفع على QP النهارده — من QP نفسه (أي حالة، من السيستم أو من الموقع) */
+  const QPU = { day:'', list:null, at:0, busy:false, err:'' };
+  async function loadQPUp(force){
+    const api = window.QP && window.QP.api, d = ymd(new Date());
+    if(!api || !api.hasCreds()){ QPU.err = 'nocreds'; return; }
+    if(QPU.busy || (!force && QPU.day === d && QPU.list && Date.now() - QPU.at < 180000)) return;
+    QPU.busy = true;
+    try{ const seen = new Set(); QPU.list = (await api.fetchRange(d, d)).filter(q => ymd(new Date(q.order_date)) === d && !seen.has(String(q.serial)) && seen.add(String(q.serial))); QPU.err = ''; }
+    catch(e){ QPU.err = e.message || 'err'; }
+    QPU.day = d; QPU.at = Date.now(); QPU.busy = false; if(isUP()) draw();
+  }
   function todaySummary(){
-    loadPPToday(); loadQPToday();
-    const Q = todayUploads(), P = PPT.day === ymd(new Date()) ? PPT.list : null;
+    loadPPToday(); loadQPToday(); loadQPUp();
+    const LOG = todayUploads(), QU = QPU.day === ymd(new Date()) && QPU.list ? QPU.list : null, P = PPT.day === ymd(new Date()) ? PPT.list : null;
+    // ✅ الرقم الصح = اللي على QP فعلاً (لو مفيش دخول QP على الجهاز: سجل الرفع)
+    const Q = QU ? QU.map(q => ({ amount:q.price })) : LOG;
     const qv = Q.reduce((a, o) => a + (numOf(o.amount) || 0), 0), pv = (P || []).reduce((a, o) => a + (Number(o.amount) || 0), 0);
     const box = (ic, l, n, v, c) => `<div style="flex:1;min-width:150px;background:var(--panel);border:1.5px solid ${c};border-radius:12px;padding:10px 14px">
       <div style="font-size:13px;color:var(--muted)">${ic} ${l}</div><div style="font-size:26px;font-weight:800;color:${c}">${n == null ? (PPT.err ? '—' : '…') : n.toLocaleString('ar-EG')} <small style="font-size:13px;font-weight:600">أوردر</small></div>
       <div style="font-size:12.5px;color:var(--muted)">${v == null ? '' : Math.round(v).toLocaleString('ar-EG') + ' ج'}</div></div>`;
     return `<div class="card" style="margin-bottom:12px"><h3 style="margin:0 0 10px">📅 ملخص النهارده — ${new Date().toLocaleDateString('ar-EG', { weekday:'long', day:'numeric', month:'long' })}</h3>
-      <div style="display:flex;gap:10px;flex-wrap:wrap">${box('🚀', 'اترفع على QP (سجل الرفع)', Q.length, qv, '#2b6cb0')}${(() => { const L = QPT.day === ymd(new Date()) ? QPT.list : null;
+      <div style="display:flex;gap:10px;flex-wrap:wrap">${box('🚀', QU ? 'اترفع على QP النهارده' : (QPU.err === 'nocreds' ? 'اترفع على QP (سجل الرفع)' : 'اترفع على QP'), QU || QPU.err ? Q.length : null, QU || QPU.err ? qv : null, '#2b6cb0')}${(() => { const L = QPT.day === ymd(new Date()) ? QPT.list : null;
         if(QPT.err === 'nocreds') return '';
         const v = L ? L.reduce((a, q) => a + (numOf(q.price ?? q.total_amount ?? q.amount) || 0), 0) : null;
         return `<div style="flex:1;min-width:150px;background:var(--panel);border:1.5px solid #b7791f;border-radius:12px;padding:10px 14px">
