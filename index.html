@@ -14329,16 +14329,20 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
   /* 🕘 سجل الرفع — مشترك لكل الأجهزة (app_kv: up_history)، وكل رفعة فيها أوردراتها */
   const HIST_KV = 'up_history';
   let histShared = null, histOpen = '';
+  let histAt = 0;
   async function loadHist(){
     const { data } = await sbc().from('app_kv').select('*').eq('key', HIST_KV).maybeSingle();
-    histShared = (data && data.value && data.value.list) || [];
+    histShared = (data && data.value && data.value.list) || []; histAt = Date.now();
   }
+  // 🧹 السجل بيحتفظ بكل رفعات آخر 3 أيام (مش آخر 40 رفعة) — عشان يوم فيه رفعات كتير مايضيعش منه حاجة
+  const histKeep = L => { const from = Date.now() - 3 * 864e5; return L.filter((x, i) => i < 40 || new Date(x.at).getTime() >= from).slice(0, 400); };
   async function addHist(entry){
     S.hist.unshift({ ...entry }); S.hist = S.hist.slice(0, 15);
     try{ localStorage.setItem(HIST_KEY, JSON.stringify(S.hist)); }catch(e){}
     try{
-      if(histShared === null) await loadHist();
-      histShared = [entry].concat(histShared || []).slice(0, 40);
+      // ⚠️ كان بيكتب فوق النسخة اللي اتحمّلت أول ما الصفحة فتحت — فلو موظفة تانية رفعت من جهاز تاني، رفعتها كانت بتضيع
+      await loadHist();
+      histShared = histKeep([entry].concat((histShared || []).filter(x => !(x.at === entry.at && x.by === entry.by))));
       await sbc().from('app_kv').upsert({ key:HIST_KV, value:{ list:histShared }, updated_at:new Date().toISOString(), updated_by_name: entry.by });
     }catch(e){}
   }
@@ -14418,6 +14422,7 @@ tr.urg-focus td{background:#dbeafe!important;box-shadow:inset 0 0 0 2px #2b6cb0}
   }
   function todayUpBtn(){
     if(histShared === null){ loadHist().then(draw).catch(() => { histShared = []; }); return ''; }
+    if(Date.now() - histAt > 60000){ histAt = Date.now(); loadHist().then(() => { if(isUP()) draw(); }).catch(() => {}); }   // 🔄 رفعات الأجهزة التانية
     const L = todayUploads();
     return todaySummary() + `<div class="up-row" style="margin:0 0 12px"><button class="up-btn" id="upTodaySheet" ${L.length ? '' : 'disabled'} style="border-color:#2b6cb0;color:#2b6cb0">📊 رفعنا النهارده ${L.length.toLocaleString('ar-EG')} أوردر على QP — ⬇️ نزّلهم في شيت</button>${L.length ? sendBtn() : ''}</div>`;
   }
